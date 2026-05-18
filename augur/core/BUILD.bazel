@@ -192,6 +192,7 @@ py_library(
     deps = [
         ":accounting_tables_py",
         ":annual_tax_py",
+        ":event_streams_py",
         ":local_regulation_py",
         ":market_bundle_py",
         ":policy_runtime_py",
@@ -202,6 +203,16 @@ py_library(
         ":provenance_py",
         ":scenario_set_py",
         ":schemas_py",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "event_streams_py",
+    srcs = ["event_streams.py"],
+    deps = [
+        ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//polars",
     ],

@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 import polars as pl
 
-from augur.core import posting_schemas
+from augur.core import event_streams, posting_schemas
 from augur.core.accounting import (
     ChartAccountRole,
     JournalEntryType,
@@ -203,7 +203,16 @@ class ScenarioRunArrays:
     obligations: tuple[Obligation, ...]
     funding_decisions: tuple[FundingDecision, ...]
     settlement_results: tuple[SettlementResult, ...]
-    failure_events: tuple[FailureEvent, ...]
+    # Long-format polars frame keyed by `rollout_index, month_index, ...`,
+    # with trajectory-identity columns joined in at end-of-run. The
+    # `failure_events` property below materializes back to the
+    # `tuple[FailureEvent, ...]` shape the wire schema + test surface expect.
+    # See `augur/plans/event_stream_polars_refactor.md`.
+    failure_events_frame: pl.DataFrame
+
+    @property
+    def failure_events(self) -> tuple[FailureEvent, ...]:
+        return tuple(event_streams.materialize_failure_events(self.failure_events_frame))
 
     @property
     def rollout_count(self) -> int:
@@ -233,16 +242,29 @@ class ScenarioRunArrays:
             .sort("rollout_index")
             .collect()
         )
-        failures_by_rollout: dict[int, list[FailureEvent]] = {}
-        for event in self.failure_events:
-            failures_by_rollout.setdefault(event.rollout_index, []).append(event)
+        # Pre-aggregate failures per rollout from the long-format frame so
+        # the status loop below doesn't have to iterate the (possibly huge)
+        # event tuple. One row per rollout that ever produced a failure.
+        failure_summary = (
+            self.failure_events_frame.lazy()
+            .group_by("rollout_index")
+            .agg(
+                first_failed_obligation_month_index=pl.col("month_index").min(),
+                failed_obligation_count=pl.col("failure_event_id").count(),
+                unpaid_obligation_usd=pl.col("unpaid_amount_usd").sum(),
+            )
+            .collect()
+        )
+        failure_by_rollout: dict[int, dict[str, Any]] = {
+            int(row["rollout_index"]): row for row in failure_summary.iter_rows(named=True)
+        }
         statuses: list[RolloutStatus] = []
         for row in cash_summary.iter_rows(named=True):
             rollout_index = int(row["rollout_index"])
             min_cash_usd = float(row["min_cash_usd"])
             first_negative_month = row["first_negative_month"]
-            failed_events = failures_by_rollout.get(rollout_index, [])
-            if failed_events:
+            failure_row = failure_by_rollout.get(rollout_index)
+            if failure_row is not None:
                 statuses.append(
                     RolloutStatus(
                         rollout_index=rollout_index,
@@ -251,9 +273,9 @@ class ScenarioRunArrays:
                         first_negative_cash_month_index=(
                             int(first_negative_month) if first_negative_month is not None else None
                         ),
-                        first_failed_obligation_month_index=min(e.month_index for e in failed_events),
-                        failed_obligation_count=len(failed_events),
-                        unpaid_obligation_usd=sum(e.unpaid_amount_usd for e in failed_events),
+                        first_failed_obligation_month_index=int(failure_row["first_failed_obligation_month_index"]),
+                        failed_obligation_count=int(failure_row["failed_obligation_count"]),
+                        unpaid_obligation_usd=float(failure_row["unpaid_obligation_usd"]),
                     )
                 )
             elif first_negative_month is None:
@@ -1358,7 +1380,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     obligations: list[Obligation] = []
     funding_decisions: list[FundingDecision] = []
     settlement_results: list[SettlementResult] = []
-    failure_events: list[FailureEvent] = []
+    failure_events = event_streams.StreamFrameBuilder(event_streams.FAILURE_EVENT_SCHEMA)
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
@@ -2434,6 +2456,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         amount_field="depreciation_recapture_usd",
     )
     trace_identity_by_rollout = _trace_identity_by_rollout(scenario, market_bundle)
+    trace_identity_frame = event_streams.build_identity_frame(trace_identity_by_rollout)
     metric_arrays: dict[str, np.ndarray] = {
         "cash_usd": cash,
         "generic_sp500_value_usd": generic_sp500_value,
@@ -2533,7 +2556,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         settlement_results=_sorted_settlement_results(
             _with_trajectory_identity(settlement_results, trace_identity_by_rollout)
         ),
-        failure_events=_sorted_failure_events(_with_trajectory_identity(failure_events, trace_identity_by_rollout)),
+        failure_events_frame=event_streams.sort_failure_events(
+            event_streams.join_trajectory_identity(failure_events.build(), trace_identity_frame)
+        ),
     )
 
 
@@ -3860,7 +3885,7 @@ def _settle_required_cash_obligations(
     obligations: list[Obligation],
     funding_decisions: list[FundingDecision],
     settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -3995,7 +4020,7 @@ def _settle_required_cash_obligation_at_month_position(
     obligations: list[Obligation],
     funding_decisions: list[FundingDecision],
     settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -4810,7 +4835,7 @@ def _record_unfunded_obligation_decisions(
 def _record_obligation_settlement_rows(
     obligations: list[Obligation],
     settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    failure_events: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4858,17 +4883,29 @@ def _record_obligation_settlement_rows(
                 unpaid_amount_usd=unpaid,
             )
         )
-        if unpaid > 0 and required:
-            failure_events.append(
-                FailureEvent(
-                    rollout_index=rollout_index,
-                    month_index=month_index,
-                    failure_event_id=f"{obligation_id}:failure",
-                    failure_event_type=FailureEventType.UNSETTLED_OBLIGATION,
-                    obligation_id=obligation_id,
-                    actor_id=actor_id,
-                    unpaid_amount_usd=unpaid,
-                )
+    if required:
+        # One column-block per recorder call covering every rollout whose
+        # obligation went (at least partially) unpaid. Per-row allocation
+        # inside the per-rollout loop above is a ~50% perf regression on the
+        # bench when many obligations fail to settle, so this stays out of
+        # the loop.
+        failed_mask = (amount_due_usd > 0) & (unpaid_amount_usd > 0)
+        if failed_mask.any():
+            failed_rollouts = np.nonzero(failed_mask)[0].astype(np.int64)
+            failed_unpaid = unpaid_amount_usd[failed_rollouts].astype(np.float64)
+            obligation_ids = [
+                _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in failed_rollouts
+            ]
+            failure_events.extend(
+                {
+                    "rollout_index": failed_rollouts,
+                    "month_index": np.full(failed_rollouts.size, month_index, dtype=np.int64),
+                    "failure_event_id": [f"{oid}:failure" for oid in obligation_ids],
+                    "failure_event_type": [FailureEventType.UNSETTLED_OBLIGATION.value] * failed_rollouts.size,
+                    "obligation_id": obligation_ids,
+                    "actor_id": [actor_id] * failed_rollouts.size,
+                    "unpaid_amount_usd": failed_unpaid,
+                }
             )
 
 
@@ -5692,7 +5729,7 @@ def _settle_partner_contribution_obligations(
     obligations: list[Obligation],
     funding_decisions: list[FundingDecision],
     settlement_results: list[SettlementResult],
-    failure_events: list[FailureEvent],
+    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
