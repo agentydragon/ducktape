@@ -402,6 +402,7 @@ rust_library(
         "lowering/plans.rs",
         "lowering/rewrite_runtime.rs",
         "lowering/runtime_imports.rs",
+        "lowering/util.rs",
         "lowering/visitors.rs",
     ],
     crate_root = "lowering/mod.rs",
