@@ -224,13 +224,20 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str, r
     )
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
+    """Build the FastAPI app, including all routes.
+
+    `store` is injectable so `export_schema.py` can scrape `app.openapi()`
+    against a stub store without a live database — handlers never execute
+    during OpenAPI extraction, only their signatures matter.
+    """
     frontend_dist = settings.frontend_dist_dir or (Path(__file__).parent / "frontend" / "dist")
 
     # One shared-schema store backs every user; per-user scoping is by
     # `user_id` column. The store seeds a balance row + default prize
     # catalog on first contact for any new user.
-    store = SqlStore(settings.database_url)
+    if store is None:
+        store = SqlStore(settings.database_url)
 
     oidc = settings.oidc_config()
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
