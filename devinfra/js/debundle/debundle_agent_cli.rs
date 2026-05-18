@@ -265,14 +265,19 @@ struct SourceSlice {
 }
 
 /// Run the agent CLI from argv. Returns the appropriate exit code.
+///
+/// Wraps the body in `swc_common::GLOBALS.set(...)` so the SWC hygiene
+/// arena (`Mark`, `SyntaxContext`) is available for parsing and AST
+/// operations. See `main.rs` for the same wrap on the primary binary.
 pub fn run_agent() -> ExitCode {
-    match real_agent(AgentArgs::parse()) {
+    let globals = swc_common::Globals::default();
+    swc_common::GLOBALS.set(&globals, || match real_agent(AgentArgs::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error:#}");
             ExitCode::from(1)
         }
-    }
+    })
 }
 
 fn real_agent(args: AgentArgs) -> Result<()> {

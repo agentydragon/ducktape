@@ -1547,6 +1547,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 body: entry_body,
                 shebang: None,
             },
+            unresolved_mark: runtime_ast.unresolved_mark,
+            top_level_mark: runtime_ast.top_level_mark,
         }),
         header_lines: header_lines.to_vec(),
         metadata: FileMetadata {
@@ -1776,6 +1778,8 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                         body,
                         shebang: None,
                     },
+                    unresolved_mark: runtime_ast.unresolved_mark,
+                    top_level_mark: runtime_ast.top_level_mark,
                 }),
                 header_lines: header,
                 metadata: FileMetadata {

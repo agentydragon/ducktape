@@ -1102,6 +1102,8 @@ fn generate_named_from_default_wrapper(
                 body,
                 shebang: None,
             },
+            unresolved_mark: upstream_ast.unresolved_mark,
+            top_level_mark: upstream_ast.top_level_mark,
         },
         &[],
     )
@@ -1265,6 +1267,8 @@ fn generate_named_from_module_default_wrapper(
                 body,
                 shebang: None,
             },
+            unresolved_mark: upstream_ast.unresolved_mark,
+            top_level_mark: upstream_ast.top_level_mark,
         },
         &[],
     )

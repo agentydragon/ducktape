@@ -13,6 +13,8 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_codegen",
         "@crates//:swc_ecma_parser",
+        "@crates//:swc_ecma_transforms_base",
+        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -343,6 +345,7 @@ rust_library(
         "@crates//:clap",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:swc_common",
     ],
 )
 
@@ -503,5 +506,6 @@ rust_binary(
         ":pipeline",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:swc_common",
     ],
 )
