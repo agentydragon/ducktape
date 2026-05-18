@@ -1595,8 +1595,10 @@ fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
                 declaration_by_name,
                 binding_assignment,
                 &entry_exports_by_original_local,
-                runtime_import_facts,
-                &local_renames,
+                RuntimeImportLookup {
+                    imports: runtime_import_facts,
+                    heuristic_renames: &local_renames,
+                },
             )
         });
         let mut module_import_renames = BTreeMap::<String, String>::new();
@@ -2652,6 +2654,19 @@ fn collect_imported_reexports_by_module(
     by_module
 }
 
+/// Bundle of the two sources `plan_module_reference_needs` consults
+/// for runtime reimports. `imports.imports` is keyed by original
+/// locals (built before naturalization); `heuristic_renames`
+/// (original_local → post-rename local, produced by
+/// `naturalize_module_body`) provides the reverse lookup when the
+/// body has been renamed. The long-term fix is the
+/// collect→validate→execute-once rename pipeline tracked in
+/// <devinfra/js/debundle/TODO.md> ("Rename pipeline").
+struct RuntimeImportLookup<'a> {
+    imports: &'a RuntimeImportFacts,
+    heuristic_renames: &'a BTreeMap<String, String>,
+}
+
 fn plan_module_reference_needs<'a>(
     module_index: usize,
     body_facts: &ModuleBodyFacts,
@@ -2659,15 +2674,7 @@ fn plan_module_reference_needs<'a>(
     declaration_by_name: &BTreeMap<String, usize>,
     binding_assignment: &BTreeMap<String, usize>,
     entry_exports_by_original_local: &BTreeMap<String, EntryExport>,
-    runtime_import_facts: &'a RuntimeImportFacts,
-    // original_local → post-rename local, produced by naturalize_module_body.
-    // `runtime_import_facts.imports` is keyed by original locals (built before
-    // naturalization), but `body_facts.referenced_idents` is post-rename, so
-    // direct lookup misses for any binding the naturalizer touched. Threading
-    // this in is a defensive bridge between two rename eras; the long-term fix
-    // is the collect→validate→execute-once rename pipeline tracked in
-    // <devinfra/js/debundle/TODO.md> ("Rename pipeline").
-    heuristic_renames: &BTreeMap<String, String>,
+    runtime_imports: RuntimeImportLookup<'a>,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
     for name in &body_facts.referenced_idents {
@@ -2710,11 +2717,12 @@ fn plan_module_reference_needs<'a>(
         // `RuntimeImportInfo` keeps `imported = "sA"`, so emit produces
         // `import { sA as propKeyA } from "<src>"` via
         // `runtime_reimport_specifier`'s local-vs-imported branch.
-        let info = runtime_import_facts.imports.get(name).or_else(|| {
-            heuristic_renames
+        let info = runtime_imports.imports.imports.get(name).or_else(|| {
+            runtime_imports
+                .heuristic_renames
                 .iter()
                 .find(|(_, post)| post.as_str() == name)
-                .and_then(|(pre, _)| runtime_import_facts.imports.get(pre))
+                .and_then(|(pre, _)| runtime_imports.imports.imports.get(pre))
         });
         if let Some(info) = info {
             needs.runtime_reimports.insert(name.clone(), info);
