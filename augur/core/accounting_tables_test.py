@@ -188,8 +188,8 @@ def test_with_trajectory_identity_propagates_to_postings() -> None:
 
 def test_sorted_canonical_orders_by_month_then_rollout() -> None:
     trace = _build_simple_trace().sorted_canonical()
-    months = trace.postings.column("month_index").to_pylist()
-    rollouts = trace.postings.column("rollout_index").to_pylist()
+    months = trace.postings["month_index"].to_list()
+    rollouts = trace.postings["rollout_index"].to_list()
     # Each posting row should sort by (month, rollout) primarily.
     pairs = list(zip(months, rollouts, strict=True))
     assert pairs == sorted(pairs)

@@ -45,7 +45,6 @@ py_library(
         ":policy_runtime_py",
         "@pypi//numpy",
         "@pypi//polars",
-        "@pypi//pyarrow",
     ],
 )
 
