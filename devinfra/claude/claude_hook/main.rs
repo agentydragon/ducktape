@@ -637,14 +637,13 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
     // Order matters: bind must precede this so any client that connects
     // immediately after the launcher returns sees a kernel-queued socket.
     if let Some(fd) = ready_fd {
-        let n = unsafe { libc::write(fd, b"READY\n".as_ptr() as *const _, 6) };
-        if n != 6 {
-            eprintln!(
-                "daemon: ready signal write returned {n} (errno={:?})",
-                io::Error::last_os_error().raw_os_error()
-            );
+        // SAFETY: `fork_daemon` passes this FD over exec via `--ready-fd`;
+        // it is valid and uniquely owned by us at this point. Wrapping
+        // in `OwnedFd` claims ownership so `File`'s drop will close it.
+        let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+        if let Err(e) = std::fs::File::from(owned).write_all(b"READY\n") {
+            eprintln!("daemon: ready signal write failed: {e}");
         }
-        unsafe { libc::close(fd) };
     }
 
     // Idle watchdog: SIGTERM after 30min of no requests.
@@ -685,97 +684,91 @@ pub(crate) struct DaemonFork {
 }
 
 pub(crate) fn fork_daemon(daemon_dir: &Path, sock_path: &Path) -> DaemonFork {
-    let log_out = daemon_dir.join("daemon.log");
-    let log_err = daemon_dir.join("daemon.err.log");
+    use nix::sys::wait::waitpid;
+    use nix::unistd::{ForkResult, fork, pipe, setsid};
+    use std::os::fd::IntoRawFd;
+
+    let log_out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(daemon_dir.join("daemon.log"))
+        .expect("open daemon.log");
+    let log_err = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(daemon_dir.join("daemon.err.log"))
+        .expect("open daemon.err.log");
 
     let self_exe = std::env::current_exe().expect("cannot determine own exe path");
 
     // Pipe 1: first child reports the double-forked grandchild's pid back.
-    let mut pid_pipe = [0i32; 2];
-    unsafe { libc::pipe(pid_pipe.as_mut_ptr()) };
-    let (pid_read, pid_write) = (pid_pipe[0], pid_pipe[1]);
-
+    let (pid_read, pid_write) = pipe().expect("pid pipe");
     // Pipe 2: daemon (post-exec) signals readiness. Write end is inherited
     // across exec (no CLOEXEC); read end stays here. If the daemon dies
-    // before writing READY, the kernel closes its FDs and the launcher
-    // reads EOF — race-free pre-bind crash detection.
-    let mut ready_pipe = [0i32; 2];
-    unsafe { libc::pipe(ready_pipe.as_mut_ptr()) };
-    let (ready_read, ready_write) = (ready_pipe[0], ready_pipe[1]);
+    // before writing READY, the kernel closes its FD on process exit and the
+    // launcher reads EOF — race-free pre-bind crash detection.
+    let (ready_read, ready_write) = pipe().expect("ready pipe");
 
-    let pid = unsafe { libc::fork() };
-    if pid > 0 {
-        unsafe {
-            libc::close(pid_write);
-            libc::close(ready_write);
+    // SAFETY: After fork in the child, only async-signal-safe libc calls are
+    // valid until exec. We do setsid + fork + a tiny pipe write + exit (in
+    // the first child) or exec (in the grandchild) — all async-signal-safe.
+    match unsafe { fork() }.expect("fork failed") {
+        ForkResult::Parent { child } => {
+            drop(pid_write);
+            drop(ready_write);
+            waitpid(child, None).ok();
+
+            let mut buf = String::new();
+            let daemon_pid = match std::fs::File::from(pid_read).read_to_string(&mut buf) {
+                Ok(n) if n > 0 => buf.trim().parse().unwrap_or(-1),
+                _ => {
+                    eprintln!("claude-hook: daemon startup pipe returned no data");
+                    -1
+                }
+            };
+            DaemonFork {
+                pid: daemon_pid,
+                ready_read,
+            }
         }
-        unsafe { libc::waitpid(pid, std::ptr::null_mut(), 0) };
-        let mut buf = [0u8; 32];
-        let n = unsafe { libc::read(pid_read, buf.as_mut_ptr() as *mut _, buf.len()) };
-        unsafe { libc::close(pid_read) };
-        let daemon_pid = if n <= 0 {
-            eprintln!("claude-hook: daemon startup pipe returned no data");
-            -1
-        } else {
-            let s = std::str::from_utf8(&buf[..n as usize]).unwrap_or("").trim();
-            s.parse().unwrap_or(-1)
-        };
-        return DaemonFork {
-            pid: daemon_pid,
-            ready_read: unsafe { OwnedFd::from_raw_fd(ready_read) },
-        };
-    }
+        ForkResult::Child => {
+            drop(pid_read);
+            drop(ready_read);
+            setsid().expect("setsid");
 
-    unsafe {
-        libc::close(pid_read);
-        libc::close(ready_read);
-    }
-    unsafe { libc::setsid() };
-    let pid2 = unsafe { libc::fork() };
-    if pid2 > 0 {
-        let msg = pid2.to_string();
-        unsafe { libc::write(pid_write, msg.as_ptr() as *const _, msg.len()) };
-        unsafe {
-            libc::close(pid_write);
-            // First child does not write to the readiness pipe; close so the
-            // grandchild is the only remaining writer.
-            libc::close(ready_write);
-        };
-        std::process::exit(0);
-    }
+            // SAFETY: same constraint as the outer fork.
+            match unsafe { fork() }.expect("second fork failed") {
+                ForkResult::Parent { child: grandchild } => {
+                    let msg = grandchild.as_raw().to_string();
+                    let _ = std::fs::File::from(pid_write).write_all(msg.as_bytes());
+                    drop(ready_write);
+                    std::process::exit(0);
+                }
+                ForkResult::Child => {
+                    drop(pid_write);
+                    // Release ownership so Drop doesn't close it — the FD must
+                    // survive `exec` for the post-exec daemon to read its
+                    // `--ready-fd` arg and signal readiness.
+                    let ready_fd = ready_write.into_raw_fd();
 
-    unsafe { libc::close(pid_write) };
-    // ready_write stays open across exec so the daemon can write "READY".
-
-    let fd_out = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_out)
-        .expect("open daemon.log");
-    let fd_err = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_err)
-        .expect("open daemon.err.log");
-    unsafe {
-        libc::dup2(std::os::unix::io::AsRawFd::as_raw_fd(&fd_out), 1);
-        libc::dup2(std::os::unix::io::AsRawFd::as_raw_fd(&fd_err), 2);
+                    let err = std::process::Command::new(&self_exe)
+                        .args([
+                            "daemon",
+                            "--sock",
+                            sock_path.to_str().unwrap(),
+                            "--daemon-dir",
+                            daemon_dir.to_str().unwrap(),
+                            "--ready-fd",
+                            &ready_fd.to_string(),
+                        ])
+                        .stdout(std::process::Stdio::from(log_out))
+                        .stderr(std::process::Stdio::from(log_err))
+                        .exec();
+                    panic!("exec failed: {err}");
+                }
+            }
+        }
     }
-    drop(fd_out);
-    drop(fd_err);
-
-    let err = std::process::Command::new(&self_exe)
-        .args([
-            "daemon",
-            "--sock",
-            sock_path.to_str().unwrap(),
-            "--daemon-dir",
-            daemon_dir.to_str().unwrap(),
-            "--ready-fd",
-            &ready_write.to_string(),
-        ])
-        .exec();
-    panic!("exec failed: {err}");
 }
 
 pub(crate) async fn wait_for_sock(
@@ -784,38 +777,37 @@ pub(crate) async fn wait_for_sock(
     ready_read: OwnedFd,
     timeout: Duration,
 ) -> Result<(), String> {
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
+
     // Poll the readiness pipe non-blocking alongside the 100ms tick loop.
-    let fd = ready_read.as_raw_fd();
-    unsafe {
-        let flags = libc::fcntl(fd, libc::F_GETFL);
-        if flags >= 0 {
-            libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
-        }
-    }
+    let current = fcntl(&ready_read, FcntlArg::F_GETFL).map_err(|e| format!("F_GETFL: {e}"))?;
+    let flags = OFlag::from_bits_retain(current) | OFlag::O_NONBLOCK;
+    fcntl(&ready_read, FcntlArg::F_SETFL(flags)).map_err(|e| format!("F_SETFL: {e}"))?;
+    let mut ready_file = std::fs::File::from(ready_read);
+
     let deadline = std::time::Instant::now() + timeout;
     let mut buf = [0u8; 16];
     while std::time::Instant::now() < deadline {
-        let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut _, buf.len()) };
-        if n > 0 {
-            // Daemon signaled ready. Verify the socket also accepts a
-            // connection — cheap belt-and-suspenders against a daemon that
-            // wrote READY but somehow lost the listener.
-            if sock_path.exists() && UnixStream::connect(sock_path).await.is_ok() {
-                return Ok(());
+        match ready_file.read(&mut buf) {
+            Ok(0) => {
+                return Err(
+                    "Daemon process died during startup (readiness pipe closed without signal)"
+                        .into(),
+                );
             }
-            return Err("Daemon signaled ready but socket connect failed".into());
-        }
-        if n == 0 {
-            return Err(
-                "Daemon process died during startup (readiness pipe closed without signal)".into(),
-            );
-        }
-        let errno = std::io::Error::last_os_error().raw_os_error();
-        if errno != Some(libc::EAGAIN)
-            && errno != Some(libc::EWOULDBLOCK)
-            && errno != Some(libc::EINTR)
-        {
-            return Err(format!("readiness pipe read error: errno={errno:?}"));
+            Ok(_) => {
+                // Daemon signaled ready. Verify the socket also accepts a
+                // connection — cheap belt-and-suspenders against a daemon
+                // that wrote READY but somehow lost the listener.
+                if sock_path.exists() && UnixStream::connect(sock_path).await.is_ok() {
+                    return Ok(());
+                }
+                return Err("Daemon signaled ready but socket connect failed".into());
+            }
+            Err(e)
+                if e.kind() == io::ErrorKind::WouldBlock
+                    || e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(format!("readiness pipe read error: {e}")),
         }
         // Late-crash detection: daemon wrote pidfile (which happens before
         // the ready signal in `run_daemon`) but died before binding. The
