@@ -158,7 +158,7 @@ pub(super) fn synthesize_mini_factor_plans(
     body: &[ModuleItem],
     residual_plan_index: Option<usize>,
     module_plans: &mut Vec<ModulePlan>,
-    binding_assignment: &mut BTreeMap<String, usize>,
+    binding_assignment: &mut HashMap<Id, usize>,
     bindings_catalogue: &mut HashMap<Id, BindingKind>,
     anonymous_ordinal_assignment: &mut BTreeMap<usize, usize>,
     chunk_top_level_mark: swc_common::Mark,
@@ -192,7 +192,8 @@ pub(super) fn synthesize_mini_factor_plans(
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         for name in names {
-            match binding_assignment.get(name).copied() {
+            let id = top_level_id(name, chunk_top_level_mark);
+            match binding_assignment.get(&id).copied() {
                 None => continue,
                 Some(idx) if Some(idx) == residual_plan_index => continue,
                 Some(_) => return false,
@@ -247,20 +248,20 @@ pub(super) fn synthesize_mini_factor_plans(
             }
             for name in names {
                 bindings.insert(name.clone(), name.clone());
+                let id = top_level_id(name, chunk_top_level_mark);
                 // Move the binding out of the residual plan (if it was
                 // staged there by the sweep above) into the synthesized
                 // plan. The residual plan's bindings/anonymous-ordinal
                 // maps are pruned so it doesn't double-claim members.
-                if let Some(prev) = binding_assignment.get(name).copied() {
-                    if Some(prev) == residual_plan_index {
-                        if let Some(residual_idx) = residual_plan_index {
-                            module_plans[residual_idx].bindings.remove(name);
-                        }
-                    }
+                if let Some(prev) = binding_assignment.get(&id).copied()
+                    && Some(prev) == residual_plan_index
+                    && let Some(residual_idx) = residual_plan_index
+                {
+                    module_plans[residual_idx].bindings.remove(name);
                 }
-                binding_assignment.insert(name.clone(), synthetic_idx);
+                binding_assignment.insert(id.clone(), synthetic_idx);
                 bindings_catalogue.insert(
-                    top_level_id(name, chunk_top_level_mark),
+                    id,
                     BindingKind::Owned {
                         owner: synthetic_module_id,
                     },

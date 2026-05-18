@@ -51,8 +51,8 @@ mod visitors;
 use anonymous::resolve_anonymous_statement_ordinals;
 use body_facts::{ModuleBodyFacts, RefCollector, collect_module_body_facts};
 use chunk_ast::{
-    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_names, declaration_names,
-    top_level_declaration_ids,
+    ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,
+    declaration_names, top_level_declaration_ids,
 };
 use chunk_renames::collect_chunk_renames;
 use exports::{

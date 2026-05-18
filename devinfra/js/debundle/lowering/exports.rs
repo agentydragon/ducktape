@@ -120,13 +120,13 @@ pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> 
 
 pub(super) fn entry_exports_for_moved_bindings(
     declarations: &[TopLevelDecl],
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &HashMap<Id, usize>,
     entry_renames: &BTreeMap<String, String>,
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
-        for name in &decl.names {
-            if binding_assignment.contains_key(name) {
+        for (name, id) in decl.names.iter().zip(&decl.ids) {
+            if binding_assignment.contains_key(id) {
                 let final_local = entry_renames
                     .get(name)
                     .cloned()
@@ -171,7 +171,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 pub(super) fn auto_grown_residual_exports(
     selected_by_module: &[Vec<ModuleItem>],
     declaration_by_name: &HashMap<Id, usize>,
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &HashMap<Id, usize>,
     pre_existing_entry_exports: &HashSet<Id>,
     entry_renames: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
@@ -179,13 +179,10 @@ pub(super) fn auto_grown_residual_exports(
     for body in selected_by_module {
         let facts = collect_module_body_facts(body);
         for id in &facts.referenced_idents {
-            // `binding_assignment` is still String-keyed (spec-derived);
-            // `declaration_by_name` and `pre_existing_entry_exports` are
-            // now `Id`-keyed alongside `provided_locals` / referenced_idents.
             if facts.provided_locals.contains(id) {
                 continue;
             }
-            if binding_assignment.contains_key(id.0.as_ref()) {
+            if binding_assignment.contains_key(id) {
                 continue;
             }
             if !declaration_by_name.contains_key(id) {

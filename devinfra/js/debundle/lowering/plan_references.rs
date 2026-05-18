@@ -137,7 +137,7 @@ pub(super) fn plan_module_reference_needs<'a>(
     body_facts: &ModuleBodyFacts,
     schedule: &Schedule,
     declaration_by_name: &HashMap<Id, usize>,
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &BTreeMap<String, EntryExport>,
     runtime_imports: RuntimeImportLookup<'a>,
 ) -> ModuleReferenceNeeds<'a> {
@@ -170,7 +170,7 @@ pub(super) fn plan_module_reference_needs<'a>(
         }
 
         if !body_facts.provided_locals.contains(body_id)
-            && !binding_assignment.contains_key(name_str)
+            && !binding_assignment.contains_key(body_id)
             && declaration_by_name.contains_key(body_id)
         {
             if let Some(entry_export) = entry_exports_by_original_local.get(name_str) {

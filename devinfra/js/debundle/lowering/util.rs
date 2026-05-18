@@ -112,7 +112,7 @@ pub(super) fn normalize_optional_relative_dir(value: &str) -> Result<String> {
 
 pub(super) fn remaining_item_after_selection(
     item: &ModuleItem,
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &HashMap<Id, usize>,
     selected_by_module: &mut [Vec<ModuleItem>],
 ) -> Result<Vec<ModuleItem>> {
     match item {
@@ -122,8 +122,8 @@ pub(super) fn remaining_item_after_selection(
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match &export_decl.decl {
             Decl::Var(var) => split_var_decl(var, true, binding_assignment, selected_by_module),
             decl => {
-                let names = declaration_names(decl);
-                if let Some(module_index) = assigned_module_for_names(&names, binding_assignment) {
+                let ids = declaration_ids(decl);
+                if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
                     selected_by_module[module_index]
                         .push(ModuleItem::Stmt(Stmt::Decl(decl.clone())));
                     Ok(Vec::new())
@@ -133,8 +133,8 @@ pub(super) fn remaining_item_after_selection(
             }
         },
         ModuleItem::Stmt(Stmt::Decl(decl)) => {
-            let names = declaration_names(decl);
-            if let Some(module_index) = assigned_module_for_names(&names, binding_assignment) {
+            let ids = declaration_ids(decl);
+            if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
                 selected_by_module[module_index].push(item.clone());
                 Ok(Vec::new())
             } else {
@@ -148,13 +148,13 @@ pub(super) fn remaining_item_after_selection(
 pub(super) fn split_var_decl(
     var: &VarDecl,
     was_exported: bool,
-    binding_assignment: &BTreeMap<String, usize>,
+    binding_assignment: &HashMap<Id, usize>,
     selected_by_module: &mut [Vec<ModuleItem>],
 ) -> Result<Vec<ModuleItem>> {
     let mut residual_decls = Vec::new();
     for declarator in &var.decls {
-        let names = binding_names(&declarator.name);
-        if let Some(module_index) = assigned_module_for_names(&names, binding_assignment) {
+        let ids = binding_ids(&declarator.name);
+        if let Some(module_index) = assigned_module_for_ids(&ids, binding_assignment) {
             let selected_var = VarDecl {
                 span: var.span,
                 ctxt: var.ctxt,
@@ -193,13 +193,12 @@ pub(super) fn split_var_decl(
     }
 }
 
-pub(super) fn assigned_module_for_names(
-    names: &[String],
-    binding_assignment: &BTreeMap<String, usize>,
+pub(super) fn assigned_module_for_ids(
+    ids: &[Id],
+    binding_assignment: &HashMap<Id, usize>,
 ) -> Option<usize> {
-    names
-        .iter()
-        .filter_map(|name| binding_assignment.get(name).copied())
+    ids.iter()
+        .filter_map(|id| binding_assignment.get(id).copied())
         .next()
 }
 

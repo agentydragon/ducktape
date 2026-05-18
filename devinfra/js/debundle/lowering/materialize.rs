@@ -122,7 +122,7 @@ pub(super) fn materialize_logical_chunk(
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
     let build_module_plans_started = Instant::now();
-    let mut binding_assignment = BTreeMap::<String, usize>::new();
+    let mut binding_assignment = HashMap::<Id, usize>::new();
     let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
     let mut bindings_catalogue = HashMap::<Id, BindingKind>::new();
@@ -212,7 +212,7 @@ pub(super) fn materialize_logical_chunk(
         for binding in bindings.keys() {
             let binding_id = top_level_id(binding, chunk_top_level_mark);
             if declaration_by_name.contains_key(&binding_id) {
-                binding_assignment.insert(binding.clone(), index);
+                binding_assignment.insert(binding_id.clone(), index);
                 bindings_catalogue.insert(binding_id, BindingKind::Owned { owner: module_id });
             }
         }
@@ -243,7 +243,8 @@ pub(super) fn materialize_logical_chunk(
     // its full name set together regardless. Conflicting claims
     // (two siblings claimed by different modules) are rejected.
     for (claimed_name, sibling_set) in &destructure_siblings {
-        let Some(&owner_index) = binding_assignment.get(claimed_name) else {
+        let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
+        let Some(&owner_index) = binding_assignment.get(&claimed_id) else {
             continue;
         };
         let owner_id = ModuleId(LogicalModuleIndex(owner_index));
@@ -251,13 +252,11 @@ pub(super) fn materialize_logical_chunk(
             if sibling == claimed_name {
                 continue;
             }
-            match binding_assignment.get(sibling).copied() {
+            let sibling_id = top_level_id(sibling, chunk_top_level_mark);
+            match binding_assignment.get(&sibling_id).copied() {
                 None => {
-                    binding_assignment.insert(sibling.clone(), owner_index);
-                    bindings_catalogue.insert(
-                        top_level_id(sibling, chunk_top_level_mark),
-                        BindingKind::Owned { owner: owner_id },
-                    );
+                    binding_assignment.insert(sibling_id.clone(), owner_index);
+                    bindings_catalogue.insert(sibling_id, BindingKind::Owned { owner: owner_id });
                     let plan = &mut module_plans[owner_index];
                     plan.bindings.insert(sibling.clone(), sibling.clone());
                 }
@@ -290,12 +289,12 @@ pub(super) fn materialize_logical_chunk(
         let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
         let mut residual_bindings = HashMap::<String, String>::new();
         for decl in &declarations {
-            for name in &decl.names {
-                if !binding_assignment.contains_key(name) {
-                    binding_assignment.insert(name.clone(), residual_index);
+            for (name, id) in decl.names.iter().zip(&decl.ids) {
+                if !binding_assignment.contains_key(id) {
+                    binding_assignment.insert(id.clone(), residual_index);
                     residual_bindings.insert(name.clone(), name.clone());
                     bindings_catalogue.insert(
-                        top_level_id(name, chunk_top_level_mark),
+                        id.clone(),
                         BindingKind::Owned {
                             owner: residual_module_id,
                         },
@@ -331,17 +330,15 @@ pub(super) fn materialize_logical_chunk(
             let owner_plan = &mut module_plans[owner_index];
             owner_plan.explicit = false;
             for decl in &declarations {
-                for name in &decl.names {
-                    if !binding_assignment.contains_key(name) {
-                        binding_assignment.insert(name.clone(), owner_index);
+                for (name, id) in decl.names.iter().zip(&decl.ids) {
+                    if !binding_assignment.contains_key(id) {
+                        binding_assignment.insert(id.clone(), owner_index);
                         owner_plan
                             .bindings
                             .entry(name.clone())
                             .or_insert_with(|| name.clone());
-                        bindings_catalogue.insert(
-                            top_level_id(name, chunk_top_level_mark),
-                            BindingKind::Owned { owner: owner_id },
-                        );
+                        bindings_catalogue
+                            .insert(id.clone(), BindingKind::Owned { owner: owner_id });
                     }
                 }
             }
@@ -633,6 +630,7 @@ pub(super) fn materialize_logical_chunk(
             declaration_by_name: &declaration_by_name,
             module_plans: &module_plans,
             binding_assignment: &binding_assignment,
+            chunk_top_level_mark,
             anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
             schedule: &schedule,
             chunk_renames: &chunk_renames_map,
