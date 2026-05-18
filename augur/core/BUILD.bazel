@@ -44,6 +44,7 @@ py_library(
         ":accounting_py",
         ":policy_runtime_py",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pyarrow",
     ],
 )
@@ -247,6 +248,7 @@ py_test(
         ":accounting_tables_py",
         ":policy_runtime_py",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

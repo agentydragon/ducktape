@@ -414,6 +414,7 @@ manifest:
     playwright: playwright
     plotnine: plotnine
     pluggy: pluggy
+    polars: polars
     port_for: port_for
     portalocker: portalocker
     posthog: posthog
@@ -623,4 +624,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 538d53f199fee7256f326f722454a263a0f9168bfb0ac3346a3877a45bfc165e
+integrity: 2e2553852fc41690400b9cc6aa3b7e56d25062de07e8407846109130ac2fea51

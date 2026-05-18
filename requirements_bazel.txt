@@ -4055,6 +4055,21 @@ pluggy==1.6.0 \
     # via
     #   pytest
     #   pytest-cov
+polars==1.40.1 \
+    --hash=sha256:ab2694134b137596b5a59bfd7b4c54ebbc9b59f9403127f18e32d363777552e8 \
+    --hash=sha256:c0f861219d1319cdea45c4ce4d30355a47176b8f98dcedf95ea8269f131b8abd
+    # via ducktape (pyproject.toml)
+polars-runtime-32==1.40.1 \
+    --hash=sha256:37f3065615d1bf90d03b5326222df4c5c1f8a5d33e50470aa588e3465e6eb814 \
+    --hash=sha256:5987b30e7aa1059d069498496e8dda35afd592b0ac3d46ed87e3ff8df1ad652c \
+    --hash=sha256:8d7f42a8b3f16fc66002cc0f6516f7dd7653396886ae0ed362ab95c0b3408b59 \
+    --hash=sha256:992d14cf191dde043d36fbdbc98a65e43fbc7e9a5024cecd45f838ac4988c1ee \
+    --hash=sha256:b5cbfaf6b085b420b4bfcbe24e8f665076d1cccfdb80c0484c02a023ce205537 \
+    --hash=sha256:b748ef652270cc49e9e69f99a035e0eb4d5f856d42bcd6ac4d9d80a40142aa1e \
+    --hash=sha256:d249b3743e05986060cec0a7aaa542d020df6c6b876e556023a310efd581f9be \
+    --hash=sha256:e5f7becc237a7ec9d9a10878dc8e54b73bbf4e2d94a2991c37d7a0b38590d8f9 \
+    --hash=sha256:f78bb2abd00101cbb23cc0cb068f7e36e081057a15d2ec2dde3dda280709f030
+    # via polars
 port-for==1.0.0 \
     --hash=sha256:35a848b98cf4cc075fe80dc49ae5c3a78e3ca345a23bd39bf5252277b4eef5c2 \
     --hash=sha256:404d161b1b2c82e2f6b31d8646396b4847d02bf5ee10068c92b7263657a14582
