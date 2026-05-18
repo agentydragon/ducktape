@@ -224,7 +224,7 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             10,
             20,
             {"bet_type": "red", "won": True},
-            1_746_700_000_000,
+            1_778_200_000_000,
         ),  # 2026-05-08
         (
             "ce-2",
@@ -233,7 +233,7 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             10,
             20,
             {"bet_type": "red", "won": True},
-            1_746_700_001_000,
+            1_778_200_001_000,
         ),  # 2026-05-08
         (
             "ce-3",
@@ -242,10 +242,10 @@ def test_casino_stats_aggregates_server_resolved_only(store: SqlStore) -> None:
             10,
             0,
             {"bet_type": "red", "won": False},
-            1_746_800_000_000,
+            1_778_300_000_000,
         ),  # 2026-05-09
-        ("ce-4", "slots", "server_resolved", 5, 100, {"payout_kind": "triple"}, 1_746_700_002_000),  # 2026-05-08
-        ("ce-5", "blackjack", "server_resolved", 4, 8, {"outcome": "win"}, 1_746_700_003_000),  # 2026-05-08
+        ("ce-4", "slots", "server_resolved", 5, 100, {"payout_kind": "triple"}, 1_778_200_002_000),  # 2026-05-08
+        ("ce-5", "blackjack", "server_resolved", 4, 8, {"outcome": "win"}, 1_778_200_003_000),  # 2026-05-08
         ("legacy", "roulette", "client_reported", 99, 0, {"bet_type": "black"}, 1_746_000_000_000),
     ]
     # Need a balance row first (for FK / seed convention).
