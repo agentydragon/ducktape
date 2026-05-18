@@ -138,7 +138,7 @@ pub(super) fn plan_module_reference_needs<'a>(
     schedule: &Schedule,
     declaration_by_name: &HashMap<Id, usize>,
     binding_assignment: &HashMap<Id, usize>,
-    entry_exports_by_original_local: &BTreeMap<String, EntryExport>,
+    entry_exports_by_original_local: &HashMap<Id, EntryExport>,
     runtime_imports: RuntimeImportLookup<'a>,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
@@ -173,7 +173,7 @@ pub(super) fn plan_module_reference_needs<'a>(
             && !binding_assignment.contains_key(body_id)
             && declaration_by_name.contains_key(body_id)
         {
-            if let Some(entry_export) = entry_exports_by_original_local.get(name_str) {
+            if let Some(entry_export) = entry_exports_by_original_local.get(body_id) {
                 needs
                     .residual_entry_imports
                     .insert(name_str.to_string(), entry_export.clone());

@@ -75,12 +75,13 @@ pub(super) fn residual_entry_imports_for_moved_body(
 pub(super) fn collect_entry_exports_by_original_local(
     entry_body: &[ModuleItem],
     entry_renames: &BTreeMap<String, String>,
-) -> BTreeMap<String, EntryExport> {
+    chunk_top_level_mark: swc_common::Mark,
+) -> HashMap<Id, EntryExport> {
     let final_to_original = entry_renames
         .iter()
         .map(|(original, final_name)| (final_name.clone(), original.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut exports = BTreeMap::<String, EntryExport>::new();
+    let mut exports = HashMap::<Id, EntryExport>::new();
     for item in entry_body {
         match item {
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
@@ -100,10 +101,12 @@ pub(super) fn collect_entry_exports_by_original_local(
                         .get(&final_local)
                         .cloned()
                         .unwrap_or_else(|| final_local.clone());
-                    exports.entry(original).or_insert(EntryExport {
-                        local_name: final_local,
-                        exported_name,
-                    });
+                    exports
+                        .entry(top_level_id(&original, chunk_top_level_mark))
+                        .or_insert(EntryExport {
+                            local_name: final_local,
+                            exported_name,
+                        });
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
@@ -112,10 +115,12 @@ pub(super) fn collect_entry_exports_by_original_local(
                         .get(&final_local)
                         .cloned()
                         .unwrap_or_else(|| final_local.clone());
-                    exports.entry(original).or_insert(EntryExport {
-                        local_name: final_local.clone(),
-                        exported_name: final_local,
-                    });
+                    exports
+                        .entry(top_level_id(&original, chunk_top_level_mark))
+                        .or_insert(EntryExport {
+                            local_name: final_local.clone(),
+                            exported_name: final_local,
+                        });
                 }
             }
             _ => {}

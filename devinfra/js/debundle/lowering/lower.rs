@@ -342,7 +342,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         trim_dead_named_specifiers(&mut entry_body, &schedule.bindings);
     });
     let entry_exports_by_original_local = time_phase!(timings, "collect_entry_exports", {
-        collect_entry_exports_by_original_local(&entry_body, &entry_binding_renames)
+        collect_entry_exports_by_original_local(
+            &entry_body,
+            &entry_binding_renames,
+            chunk_top_level_mark,
+        )
     });
     let imported_reexports_by_module = time_phase!(timings, "collect_imported_reexports", {
         collect_imported_reexports_by_module(schedule, module_plans.len())
