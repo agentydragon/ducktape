@@ -1171,13 +1171,42 @@ struct LowerChunkInputs<'a> {
 
 #[derive(Debug, Default)]
 struct ModuleBodyFacts {
-    imported_locals: BTreeSet<String>,
-    provided_locals: BTreeSet<String>,
-    referenced_idents: BTreeSet<String>,
+    /// Local bindings declared by an `import` statement in this module body.
+    /// Keyed by the binding's hygiene-aware `Id` so two same-named bindings
+    /// from different scopes are distinct.
+    imported_locals: HashSet<Id>,
+    /// All locals this module body provides — `imported_locals` plus
+    /// top-level declarations. Keyed by `Id`.
+    provided_locals: HashSet<Id>,
+    /// Every identifier the module body references (read or write).
+    /// Post-naturalize: any binding the heuristic naturalizer renamed
+    /// appears here under the post-rename `(sym, ctxt)` (the rename
+    /// mutates `sym` in place; `ctxt` is preserved).
+    referenced_idents: HashSet<Id>,
 }
 
 struct RuntimeImportFacts {
-    imports: BTreeMap<String, RuntimeImportInfo>,
+    /// Maps a source-chunk import binding's `Id` (the local name at the
+    /// import site) to the `RuntimeImportInfo` describing where it came
+    /// from. Keyed by the **pre-rename** `Id` because the map is built
+    /// before any naturalizer pass runs; `plan_module_reference_needs`
+    /// bridges the rename via `heuristic_renames` when the body has been
+    /// renamed.
+    imports: HashMap<Id, RuntimeImportInfo>,
+}
+
+impl RuntimeImportFacts {
+    /// Sym-only lookup for callers that have a `String`/`&str` binding
+    /// name without hygiene context (typically spec-derived names that
+    /// pre-date the `Id` migration). Returns the first matching entry,
+    /// which is unambiguous within a chunk's top-level scope (resolver
+    /// gives all top-level bindings the same `top_level_mark`).
+    fn lookup_by_sym(&self, sym: &str) -> Option<&RuntimeImportInfo> {
+        self.imports
+            .iter()
+            .find(|(id, _)| id.0.as_ref() == sym)
+            .map(|(_, info)| info)
+    }
 }
 
 #[derive(Debug)]
@@ -2261,7 +2290,7 @@ struct ChunkAstAnalysis {
 }
 
 fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
-    let mut imports = BTreeMap::<String, RuntimeImportInfo>::new();
+    let mut imports = HashMap::<Id, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = BTreeSet::<String>::new();
     let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
@@ -2360,6 +2389,16 @@ fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
     }
 }
 
+fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_ids(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+            declaration_ids(&export_decl.decl)
+        }
+        _ => Vec::new(),
+    }
+}
+
 fn declaration_names(decl: &Decl) -> Vec<String> {
     match decl {
         Decl::Fn(function) => vec![function.ident.sym.to_string()],
@@ -2368,6 +2407,19 @@ fn declaration_names(decl: &Decl) -> Vec<String> {
             .decls
             .iter()
             .flat_map(|decl| binding_names(&decl.name))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn declaration_ids(decl: &Decl) -> Vec<Id> {
+    match decl {
+        Decl::Fn(function) => vec![function.ident.to_id()],
+        Decl::Class(class) => vec![class.ident.to_id()],
+        Decl::Var(var) => var
+            .decls
+            .iter()
+            .flat_map(|decl| binding_ids(&decl.name))
             .collect(),
         _ => Vec::new(),
     }
@@ -2397,9 +2449,38 @@ fn binding_names(pattern: &Pat) -> Vec<String> {
     }
 }
 
+fn binding_ids(pattern: &Pat) -> Vec<Id> {
+    match pattern {
+        Pat::Ident(ident) => vec![ident.id.to_id()],
+        Pat::Rest(rest) => binding_ids(&rest.arg),
+        Pat::Assign(assign) => binding_ids(&assign.left),
+        Pat::Array(array) => array.elems.iter().flatten().flat_map(binding_ids).collect(),
+        Pat::Object(object) => object
+            .props
+            .iter()
+            .flat_map(|prop| match prop {
+                ObjectPatProp::KeyValue(key_value) => binding_ids(&key_value.value),
+                ObjectPatProp::Assign(assign) => vec![assign.key.to_id()],
+                ObjectPatProp::Rest(rest) => binding_ids(&rest.arg),
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 #[derive(Default)]
 struct RefCollector {
-    names: BTreeSet<String>,
+    /// `Id`-keyed references collected from the body. The hygiene-aware
+    /// `Id = (sym, ctxt)` distinguishes same-named bindings declared in
+    /// different scopes (a function parameter `x` vs. a module-level `x`).
+    ids: HashSet<Id>,
+    /// Shadowing tracked by `sym` — kept for backwards-compatible behavior
+    /// with the pre-hygiene collector. With hygiene-correct contexts the
+    /// shadowed-by-sym filter is mostly redundant (the inner-scope ident
+    /// has its own `ctxt`, distinct from any outer reference), but the
+    /// filter preserves the exact set of `referenced_idents` produced
+    /// before the `Id` migration so downstream comparisons (e.g. against
+    /// String-keyed `declaration_by_name` via `sym`) don't drift.
     shadowed_scopes: Vec<BTreeSet<String>>,
 }
 
@@ -2407,7 +2488,7 @@ impl Visit for RefCollector {
     fn visit_ident(&mut self, node: &Ident) {
         let name = node.sym.as_ref();
         if !self.is_shadowed(name) {
-            self.names.insert(name.to_string());
+            self.ids.insert(node.to_id());
         }
     }
 
@@ -2491,7 +2572,12 @@ fn trim_dead_named_specifiers(
     for item in body.iter() {
         item.visit_with(&mut collector);
     }
-    let refs = collector.names;
+    // We only need by-sym membership here (matching the pre-hygiene
+    // `claimed && unused` check); collapse Ids to their syms.
+    // `id.0` is the `swc_atoms::Atom` (a.k.a. `JsWord`) carried in
+    // `Id = (Atom, SyntaxContext)`; we collect refs by sym for the
+    // claimed-and-unused filter below.
+    let refs: HashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -2506,7 +2592,7 @@ fn trim_dead_named_specifiers(
             ImportSpecifier::Named(named) => {
                 let local = named.local.sym.as_ref();
                 let claimed = bindings.contains_key(local);
-                let unused = !refs.contains(local);
+                let unused = !refs.contains(&named.local.sym);
                 !(claimed && unused)
             }
         });
@@ -2567,35 +2653,24 @@ fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts {
         item.visit_with(&mut ref_collector);
         facts
             .provided_locals
-            .extend(top_level_declaration_names(item).0);
+            .extend(top_level_declaration_ids(item));
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for specifier in &import.specifiers {
-                match specifier {
-                    ImportSpecifier::Named(named) => {
-                        facts.imported_locals.insert(named.local.sym.to_string());
-                        facts.provided_locals.insert(named.local.sym.to_string());
-                    }
-                    ImportSpecifier::Default(default) => {
-                        facts.imported_locals.insert(default.local.sym.to_string());
-                        facts.provided_locals.insert(default.local.sym.to_string());
-                    }
-                    ImportSpecifier::Namespace(namespace) => {
-                        facts
-                            .imported_locals
-                            .insert(namespace.local.sym.to_string());
-                        facts
-                            .provided_locals
-                            .insert(namespace.local.sym.to_string());
-                    }
-                }
+                let local = match specifier {
+                    ImportSpecifier::Named(named) => named.local.to_id(),
+                    ImportSpecifier::Default(default) => default.local.to_id(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.to_id(),
+                };
+                facts.imported_locals.insert(local.clone());
+                facts.provided_locals.insert(local);
             }
         }
     }
-    facts.referenced_idents = ref_collector.names;
+    facts.referenced_idents = ref_collector.ids;
     facts
 }
 
-fn record_runtime_imports(item: &ModuleItem, imports: &mut BTreeMap<String, RuntimeImportInfo>) {
+fn record_runtime_imports(item: &ModuleItem, imports: &mut HashMap<Id, RuntimeImportInfo>) {
     let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
         return;
     };
@@ -2603,14 +2678,13 @@ fn record_runtime_imports(item: &ModuleItem, imports: &mut BTreeMap<String, Runt
     for specifier in &import.specifiers {
         match specifier {
             ImportSpecifier::Named(named) => {
-                let local = named.local.sym.to_string();
                 let imported = match &named.imported {
                     Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
                     Some(ModuleExportName::Str(s)) => str_value(s),
                     None => named.local.sym.to_string(),
                 };
                 imports.insert(
-                    local,
+                    named.local.to_id(),
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Named { imported },
                         src: src.clone(),
@@ -2619,7 +2693,7 @@ fn record_runtime_imports(item: &ModuleItem, imports: &mut BTreeMap<String, Runt
             }
             ImportSpecifier::Default(default) => {
                 imports.insert(
-                    default.local.sym.to_string(),
+                    default.local.to_id(),
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Default,
                         src: src.clone(),
@@ -2628,7 +2702,7 @@ fn record_runtime_imports(item: &ModuleItem, imports: &mut BTreeMap<String, Runt
             }
             ImportSpecifier::Namespace(namespace) => {
                 imports.insert(
-                    namespace.local.sym.to_string(),
+                    namespace.local.to_id(),
                     RuntimeImportInfo {
                         kind: RuntimeImportKind::Namespace,
                         src: src.clone(),
@@ -2697,55 +2771,68 @@ fn plan_module_reference_needs<'a>(
     runtime_imports: RuntimeImportLookup<'a>,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
-    for name in &body_facts.referenced_idents {
-        if let Some(ModuleId(LogicalModuleIndex(provider_index))) = schedule.owner_of(name) {
+    for body_id in &body_facts.referenced_idents {
+        // body_id is the hygiene-aware (sym, ctxt) of one referenced ident.
+        // Spec-derived lookup tables (schedule.{owner_of, logical_module},
+        // declaration_by_name, binding_assignment, entry_exports_by_original_local,
+        // LogicalModule.rename_map) are still String-keyed by sym; convert at
+        // each call. `runtime_imports.imports` IS Id-keyed.
+        let name_str = body_id.0.as_ref();
+        if let Some(ModuleId(LogicalModuleIndex(provider_index))) = schedule.owner_of(name_str) {
             if provider_index != module_index
                 && let Some(provider) = schedule.logical_module(LogicalModuleIndex(provider_index))
-                && let Some(exported_name) = provider.rename_map.get(name)
+                && let Some(exported_name) = provider.rename_map.get(name_str)
             {
                 needs
                     .cross_module_imports_by_provider
                     .entry(provider_index)
                     .or_default()
-                    .insert(name.clone(), exported_name.clone());
+                    .insert(name_str.to_string(), exported_name.clone());
             }
             continue;
         }
 
-        if !body_facts.provided_locals.contains(name)
-            && !binding_assignment.contains_key(name)
-            && declaration_by_name.contains_key(name)
+        if !body_facts.provided_locals.contains(body_id)
+            && !binding_assignment.contains_key(name_str)
+            && declaration_by_name.contains_key(name_str)
         {
-            if let Some(entry_export) = entry_exports_by_original_local.get(name) {
+            if let Some(entry_export) = entry_exports_by_original_local.get(name_str) {
                 needs
                     .residual_entry_imports
-                    .insert(name.clone(), entry_export.clone());
+                    .insert(name_str.to_string(), entry_export.clone());
             } else {
-                needs.missing_residual_exports.insert(name.clone());
+                needs.missing_residual_exports.insert(name_str.to_string());
             }
             continue;
         }
 
-        if body_facts.imported_locals.contains(name) {
+        if body_facts.imported_locals.contains(body_id) {
             continue;
         }
         // Direct hit when the body still uses the original local. Fall back to
         // a reverse lookup through `heuristic_renames` when a naturalizer pass
         // renamed the binding (e.g. `sA` → `propKeyA` from a return-object
-        // alias collapse): the body now references `propKeyA`, but the source
-        // chunk's import map is still keyed by `sA`. The recovered
-        // `RuntimeImportInfo` keeps `imported = "sA"`, so emit produces
-        // `import { sA as propKeyA } from "<src>"` via
-        // `runtime_reimport_specifier`'s local-vs-imported branch.
-        let info = runtime_imports.imports.imports.get(name).or_else(|| {
+        // alias collapse): the body now references `(propKeyA, ctxt=X)`, but
+        // the source chunk's import map is keyed by `(sA, ctxt=X)`. The
+        // recovered `RuntimeImportInfo` keeps `imported = "sA"`, so emit
+        // produces `import { sA as propKeyA } from "<src>"` via
+        // `runtime_reimport_specifier`'s local-vs-imported branch. The
+        // naturalizer's in-place sym mutation preserves `ctxt`, so we
+        // reconstruct the pre-rename Id by pairing the pre-rename sym
+        // (looked up in heuristic_renames as the entry whose value
+        // matches the body sym) with the body Id's own ctxt.
+        let info = runtime_imports.imports.imports.get(body_id).or_else(|| {
             runtime_imports
                 .heuristic_renames
                 .iter()
-                .find(|(_, post)| post.as_str() == name)
-                .and_then(|(pre, _)| runtime_imports.imports.imports.get(pre))
+                .find(|(_, post)| post.as_str() == name_str)
+                .and_then(|(pre, _)| {
+                    let pre_id: Id = (pre.as_str().into(), body_id.1);
+                    runtime_imports.imports.imports.get(&pre_id)
+                })
         });
         if let Some(info) = info {
-            needs.runtime_reimports.insert(name.clone(), info);
+            needs.runtime_reimports.insert(name_str.to_string(), info);
         }
     }
     needs
@@ -3903,7 +3990,7 @@ fn resolve_imported_binding(
     source_local: &str,
     imported_from_by_src: &mut BTreeMap<String, String>,
 ) -> Result<(String, String)> {
-    let Some(info) = runtime_import_facts.imports.get(source_local) else {
+    let Some(info) = runtime_import_facts.lookup_by_sym(source_local) else {
         bail!("no import specifier found for `{source_local}` in source chunk");
     };
     let RuntimeImportKind::Named { imported } = &info.kind else {
@@ -4241,20 +4328,23 @@ fn auto_grown_residual_exports(
     let mut needed = BTreeSet::<String>::new();
     for body in selected_by_module {
         let facts = collect_module_body_facts(body);
-        for name in &facts.referenced_idents {
-            if facts.provided_locals.contains(name) {
+        for id in &facts.referenced_idents {
+            // Spec-derived `*_by_name` maps are still keyed by sym;
+            // `provided_locals` / `imported_locals` are Id-keyed.
+            let name_str = id.0.as_ref();
+            if facts.provided_locals.contains(id) {
                 continue;
             }
-            if binding_assignment.contains_key(name) {
+            if binding_assignment.contains_key(name_str) {
                 continue;
             }
-            if !declaration_by_name.contains_key(name) {
+            if !declaration_by_name.contains_key(name_str) {
                 continue;
             }
-            if pre_existing_entry_exports.contains(name) {
+            if pre_existing_entry_exports.contains(name_str) {
                 continue;
             }
-            needed.insert(name.clone());
+            needed.insert(name_str.to_string());
         }
     }
     needed
