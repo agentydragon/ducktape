@@ -237,6 +237,12 @@ impl<'g> RealizabilityIndex<'g> {
 
     /// Apply `delta` and record its inverse on the journal. Returns a
     /// handle that the matching `undo` consumes.
+    ///
+    /// Prefer [`Self::scoped`] when the delta lifetime is lexical —
+    /// the `push`/`undo` pair is then guaranteed to be balanced and
+    /// LIFO-ordered without manual bookkeeping. Use raw `push`/`undo`
+    /// only when the lifetime crosses control-flow boundaries that
+    /// `scoped` can't span.
     pub fn push(&mut self, delta: PartitionDelta) -> DeltaHandle {
         let entry = match delta {
             PartitionDelta::MoveOwners { owners, to } => {
