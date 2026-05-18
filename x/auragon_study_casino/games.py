@@ -184,7 +184,8 @@ def settle_blackjack(player: list[dict[str, str]], dealer: list[dict[str, str]],
         text = "Bust. Dealer takes it."
     elif p_bj and not d_bj:
         outcome = "blackjack"
-        payout = int(current_wager * 2.5)
+        # 3:2 in integer credits — round half up so wager=1 pays 3 (not 2 from truncating int(2.5)).
+        payout = (current_wager * 5 + 1) // 2
         text = "Blackjack! Pays 3:2."
     elif p_bj and d_bj:
         outcome = "push"

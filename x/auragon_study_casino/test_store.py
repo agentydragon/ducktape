@@ -327,6 +327,144 @@ def test_casino_stats_empty_for_fresh_user(store: SqlStore) -> None:
             assert bucket.rtp is None
 
 
+def _seed_blackjack_events(store: SqlStore, fixtures: list[tuple[str, int, int, dict[str, object]]]) -> None:
+    store.state_dump(_U)
+    with store._Session() as s, s.begin():
+        for client_event_id, wager, payout, outcome in fixtures:
+            s.add(
+                GameEventRow(
+                    user_id=_U,
+                    client_event_id=client_event_id,
+                    server_at_ms=1_778_200_000_000,
+                    occurred_at_ms=1_778_200_000_000,
+                    game="blackjack",
+                    event_type="settle",
+                    source="server_resolved",
+                    wager_credits=wager,
+                    payout_tokens=payout,
+                    credits_before=0,
+                    credits_after=0,
+                    tokens_before=0,
+                    tokens_after=0,
+                    server_credits=0,
+                    server_tokens=0,
+                    outcome_json=json.dumps(outcome),
+                    rules_version="server-rules-v1",
+                    rng_version="server-secrets-v1",
+                )
+            )
+
+
+def test_casino_stats_blackjack_summary_and_outcome_freq(store: SqlStore) -> None:
+    """Summary counts split W/L/P/blackjack/bust and exclude pushes from win-rate."""
+    fixtures: list[tuple[str, int, int, dict[str, object]]] = [
+        ("h1", 2, 5, {"outcome": "blackjack", "doubled": False, "dealer_cards": [{"rank": "6", "suit": "♥"}]}),
+        ("h2", 1, 2, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "7", "suit": "♥"}]}),
+        ("h3", 1, 2, {"outcome": "dealerBust", "doubled": False, "dealer_cards": [{"rank": "5", "suit": "♦"}]}),
+        ("h4", 1, 1, {"outcome": "push", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♣"}]}),
+        ("h5", 1, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "A", "suit": "♠"}]}),
+        ("h6", 1, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "10", "suit": "♥"}]}),
+    ]
+    _seed_blackjack_events(store, fixtures)
+
+    bj = next(g for g in store.casino_stats(_U).games if g.game == "blackjack").blackjack
+    assert bj is not None
+    assert bj.summary.count == 6
+    assert bj.summary.wins == 3  # blackjack + win + dealerBust
+    assert bj.summary.losses == 2  # lose + bust
+    assert bj.summary.pushes == 1
+    assert bj.summary.blackjacks == 1
+    assert bj.summary.busts == 1
+    # 3 wins / (3 wins + 2 losses) — push excluded.
+    assert bj.summary.win_rate_excl_push == pytest.approx(3 / 5)
+    assert bj.summary.blackjack_rate == pytest.approx(1 / 6)
+
+    freq_by_key = {f.key: f for f in bj.outcome_freq}
+    assert {f.key for f in bj.outcome_freq} == {"blackjack", "win", "dealerBust", "push", "lose", "bust"}
+    assert freq_by_key["blackjack"].count == 1
+    assert freq_by_key["blackjack"].freq == pytest.approx(1 / 6)
+    assert freq_by_key["blackjack"].avg_wager == pytest.approx(2.0)
+    assert freq_by_key["win"].avg_wager == pytest.approx(1.0)
+
+
+def test_casino_stats_blackjack_by_dealer_upcard_collapses_face_cards(store: SqlStore) -> None:
+    """J/Q/K and 10 share one bucket; A is separate. Slices retain real W/L/P stats."""
+    fixtures: list[tuple[str, int, int, dict[str, object]]] = [
+        # Two hands with dealer-K → bucketed under "10"
+        ("k1", 2, 4, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♠"}]}),
+        ("k2", 2, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "K", "suit": "♣"}]}),
+        # One hand with dealer-Q → also under "10"
+        ("q1", 2, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "Q", "suit": "♦"}]}),
+        # One ace upcard (player-favouring loss)
+        ("a1", 1, 0, {"outcome": "lose", "doubled": False, "dealer_cards": [{"rank": "A", "suit": "♥"}]}),
+    ]
+    _seed_blackjack_events(store, fixtures)
+
+    bj = next(g for g in store.casino_stats(_U).games if g.game == "blackjack").blackjack
+    assert bj is not None
+    by_upcard = {s.key: s for s in bj.by_dealer_upcard}
+
+    ten = by_upcard["10"]
+    assert ten.count == 3
+    assert ten.wins == 1
+    assert ten.losses == 2
+    assert ten.pushes == 0
+    assert ten.wagered == 6
+    assert ten.returned == 4
+    assert ten.net == -2
+    assert ten.rtp == pytest.approx(4 / 6)
+    assert ten.ev_per_credit == pytest.approx(-2 / 6)
+
+    ace = by_upcard["A"]
+    assert ace.count == 1
+    assert ace.losses == 1
+
+    # Other upcards present but empty.
+    for k in ("2", "3", "4", "5", "6", "7", "8", "9"):
+        assert by_upcard[k].count == 0
+        assert by_upcard[k].rtp is None
+
+
+def test_casino_stats_blackjack_by_doubled_separates_doubled_from_baseline(store: SqlStore) -> None:
+    """Doubled and not-doubled hands aggregate independently."""
+    fixtures: list[tuple[str, int, int, dict[str, object]]] = [
+        # Doubled win (initial wager 2 → 4 after double → pays 8)
+        ("d1", 4, 8, {"outcome": "win", "doubled": True, "dealer_cards": [{"rank": "6"}]}),
+        # Doubled loss
+        ("d2", 4, 0, {"outcome": "lose", "doubled": True, "dealer_cards": [{"rank": "10"}]}),
+        # Baseline (no-double) win
+        ("n1", 1, 2, {"outcome": "win", "doubled": False, "dealer_cards": [{"rank": "5"}]}),
+        # Baseline loss
+        ("n2", 1, 0, {"outcome": "bust", "doubled": False, "dealer_cards": [{"rank": "7"}]}),
+    ]
+    _seed_blackjack_events(store, fixtures)
+
+    bj = next(g for g in store.casino_stats(_U).games if g.game == "blackjack").blackjack
+    assert bj is not None
+    by_doubled = {s.key: s for s in bj.by_doubled}
+
+    assert by_doubled["doubled"].count == 2
+    assert by_doubled["doubled"].wagered == 8
+    assert by_doubled["doubled"].returned == 8
+    assert by_doubled["doubled"].net == 0
+    assert by_doubled["doubled"].ev_per_credit == pytest.approx(0.0)
+
+    assert by_doubled["not_doubled"].count == 2
+    assert by_doubled["not_doubled"].wagered == 2
+    assert by_doubled["not_doubled"].returned == 2
+    assert by_doubled["not_doubled"].ev_per_credit == pytest.approx(0.0)
+
+
+def test_casino_stats_blackjack_field_unset_for_other_games(store: SqlStore) -> None:
+    """`blackjack` is populated only on the blackjack game entry, not roulette/slots."""
+    result = store.casino_stats(_U)
+    for game in result.games:
+        if game.game == "blackjack":
+            assert game.blackjack is not None
+        else:
+            assert game.blackjack is None
+
+
 def _balance_select(username: str):
     """Return a select() for the singleton BalanceRow of `username`, locked for update."""
     return select(BalanceRow).where(BalanceRow.user_id == username).with_for_update()

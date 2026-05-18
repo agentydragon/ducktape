@@ -37,6 +37,10 @@ from x.auragon_study_casino.models import (
 )
 from x.auragon_study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
+    BlackjackOutcomeFreq,
+    BlackjackSlice,
+    BlackjackStats,
+    BlackjackSummary,
     CasinoStats,
     GameStats,
     TimeBucketStats,
@@ -175,9 +179,12 @@ class SqlStore:
             )
         events = [game_event_from_row(row) for row in rows]
         theoretical = theoretical_bucket_rtp()
+        blackjack_events = [e for e in events if e.game == "blackjack"]
         games = [
             _aggregate_game(events, "roulette", _ROULETTE_BUCKETS, _roulette_bucket_key, theoretical),
-            _aggregate_game(events, "blackjack", _BLACKJACK_BUCKETS, _blackjack_bucket_key, theoretical),
+            _aggregate_game(events, "blackjack", _BLACKJACK_BUCKETS, _blackjack_bucket_key, theoretical).model_copy(
+                update={"blackjack": _blackjack_stats(blackjack_events)}
+            ),
             _aggregate_game(events, "slots", _SLOTS_BUCKETS, _slots_bucket_key, theoretical),
         ]
         return CasinoStats(
@@ -565,6 +572,154 @@ def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStat
         returned=returned,
         net=returned - wagered,
         rtp=(returned / wagered) if wagered > 0 else None,
+    )
+
+
+# Blackjack-specific aggregators ────────────────────────────────────────────────
+#
+# The generic _aggregate_game treats outcome buckets like roulette bet types,
+# but for blackjack the per-outcome rows are tautological (within "Win", every
+# hand pays 2× wager, so Win-rate=100%, RTP=200%, EV/credit=+1.0 — by
+# definition). These functions produce blackjack-relevant slices instead:
+# strategy diagnostics (by dealer upcard, by doubled-or-not) where all
+# outcomes can occur and the percent columns carry information.
+
+_BJ_WIN_OUTCOMES = frozenset({"blackjack", "win", "dealerBust"})
+_BJ_LOSS_OUTCOMES = frozenset({"lose", "bust"})
+
+# 2..9 keep their literal rank; J/Q/K collapse to "10" (same value to the
+# dealer); "A" is kept separate because soft-17 logic and bust risk differ
+# sharply from a 10-value upcard. Order matters — displayed left-to-right.
+_BJ_UPCARD_BUCKETS: list[tuple[str, str]] = [
+    ("2", "2"),
+    ("3", "3"),
+    ("4", "4"),
+    ("5", "5"),
+    ("6", "6"),
+    ("7", "7"),
+    ("8", "8"),
+    ("9", "9"),
+    ("10", "10"),
+    ("A", "A"),
+]
+
+
+def _bj_upcard_key(outcome: dict[str, Any]) -> str | None:
+    dealer = outcome.get("dealer_cards")
+    if not isinstance(dealer, list) or not dealer:
+        return None
+    first = dealer[0]
+    if not isinstance(first, dict):
+        return None
+    rank = first.get("rank")
+    if rank in ("J", "Q", "K", "10"):
+        return "10"
+    if rank in ("A", "2", "3", "4", "5", "6", "7", "8", "9"):
+        return rank
+    return None
+
+
+def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> BlackjackSlice:
+    wins = losses = pushes = 0
+    wagered = 0
+    returned = 0
+    for e in events:
+        wagered += e.wager_credits
+        returned += e.payout_tokens
+        outcome = e.outcome.get("outcome")
+        if outcome in _BJ_WIN_OUTCOMES:
+            wins += 1
+        elif outcome in _BJ_LOSS_OUTCOMES:
+            losses += 1
+        elif outcome == "push":
+            pushes += 1
+    net = returned - wagered
+    return BlackjackSlice(
+        key=key,
+        label=label,
+        count=len(events),
+        wins=wins,
+        losses=losses,
+        pushes=pushes,
+        wagered=wagered,
+        returned=returned,
+        net=net,
+        rtp=(returned / wagered) if wagered > 0 else None,
+        ev_per_credit=(net / wagered) if wagered > 0 else None,
+    )
+
+
+def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
+    wins = losses = pushes = blackjacks = busts = 0
+    for e in events:
+        outcome = e.outcome.get("outcome")
+        if outcome == "blackjack":
+            blackjacks += 1
+        elif outcome == "bust":
+            busts += 1
+        if outcome in _BJ_WIN_OUTCOMES:
+            wins += 1
+        elif outcome in _BJ_LOSS_OUTCOMES:
+            losses += 1
+        elif outcome == "push":
+            pushes += 1
+    count = len(events)
+    decided = wins + losses
+    return BlackjackSummary(
+        count=count,
+        wins=wins,
+        losses=losses,
+        pushes=pushes,
+        blackjacks=blackjacks,
+        busts=busts,
+        win_rate_excl_push=(wins / decided) if decided > 0 else None,
+        blackjack_rate=(blackjacks / count) if count > 0 else None,
+    )
+
+
+def _blackjack_outcome_freq(events: list[GameEventRead]) -> list[BlackjackOutcomeFreq]:
+    total = len(events)
+    by_key: dict[str, list[GameEventRead]] = {key: [] for key, _ in _BLACKJACK_BUCKETS}
+    for e in events:
+        key = e.outcome.get("outcome")
+        if isinstance(key, str) and key in by_key:
+            by_key[key].append(e)
+    return [
+        BlackjackOutcomeFreq(
+            key=key,
+            label=label,
+            count=len(by_key[key]),
+            freq=(len(by_key[key]) / total) if total > 0 else 0.0,
+            avg_wager=(sum(e.wager_credits for e in by_key[key]) / len(by_key[key])) if by_key[key] else 0.0,
+        )
+        for key, label in _BLACKJACK_BUCKETS
+    ]
+
+
+def _blackjack_upcard_slices(events: list[GameEventRead]) -> list[BlackjackSlice]:
+    by_key: dict[str, list[GameEventRead]] = {key: [] for key, _ in _BJ_UPCARD_BUCKETS}
+    for e in events:
+        key = _bj_upcard_key(e.outcome)
+        if key is not None:
+            by_key[key].append(e)
+    return [_blackjack_slice(key, label, by_key[key]) for key, label in _BJ_UPCARD_BUCKETS]
+
+
+def _blackjack_doubled_slices(events: list[GameEventRead]) -> list[BlackjackSlice]:
+    doubled = [e for e in events if bool(e.outcome.get("doubled"))]
+    not_doubled = [e for e in events if not bool(e.outcome.get("doubled"))]
+    return [
+        _blackjack_slice("doubled", "Doubled", doubled),
+        _blackjack_slice("not_doubled", "Not doubled", not_doubled),
+    ]
+
+
+def _blackjack_stats(events: list[GameEventRead]) -> BlackjackStats:
+    return BlackjackStats(
+        summary=_blackjack_summary(events),
+        outcome_freq=_blackjack_outcome_freq(events),
+        by_dealer_upcard=_blackjack_upcard_slices(events),
+        by_doubled=_blackjack_doubled_slices(events),
     )
 
 

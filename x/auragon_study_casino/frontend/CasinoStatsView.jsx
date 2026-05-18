@@ -113,12 +113,160 @@ function GameStatsCard({ game }) {
 
       {game.total.count === 0 ? (
         <div style={{ fontSize: 13, color: COLORS.creamDim, marginBottom: 12 }}>No resolved games yet.</div>
+      ) : game.blackjack ? (
+        <>
+          <BlackjackPanel total={game.total} stats={game.blackjack} />
+          {game.timeline.length > 0 && <TimelineTable timeline={game.timeline} />}
+        </>
       ) : (
         <>
           <BucketTable buckets={[game.total, ...game.buckets]} />
           {game.timeline.length > 0 && <TimelineTable timeline={game.timeline} />}
         </>
       )}
+    </div>
+  );
+}
+
+function BlackjackPanel({ total, stats }) {
+  const { summary, outcome_freq, by_dealer_upcard, by_doubled } = stats;
+  return (
+    <>
+      <SummaryPanel total={total} summary={summary} />
+      <OutcomeFreqTable rows={outcome_freq} />
+      <SliceTable title="By dealer upcard" rows={by_dealer_upcard} keyLabel="Upcard" />
+      <SliceTable title="Doubled vs not" rows={by_doubled} keyLabel="" />
+    </>
+  );
+}
+
+function SummaryPanel({ total, summary }) {
+  const stat = (label, value, color) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: COLORS.creamDim }}>
+        {label}
+      </span>
+      <span className="mono" style={{ fontSize: 15, color: color ?? COLORS.cream }}>
+        {value}
+      </span>
+    </div>
+  );
+  const netColor = total.net > 0 ? COLORS.goldBright : total.net < 0 ? COLORS.red : COLORS.cream;
+  const evColor =
+    total.ev_per_credit === null || total.ev_per_credit === undefined
+      ? COLORS.creamDim
+      : total.ev_per_credit > 0
+        ? COLORS.goldBright
+        : total.ev_per_credit < 0
+          ? COLORS.red
+          : COLORS.cream;
+  return (
+    <div className="panel" style={{ padding: 14, marginBottom: 14, display: "flex", flexWrap: "wrap", gap: 22 }}>
+      {stat("Plays", fmtInt(summary.count))}
+      {stat("W / L / P", `${fmtInt(summary.wins)} / ${fmtInt(summary.losses)} / ${fmtInt(summary.pushes)}`)}
+      {stat("Win rate (excl. push)", fmtPct(summary.win_rate_excl_push))}
+      {stat("Blackjack rate", fmtPct(summary.blackjack_rate))}
+      {stat("Wagered", fmtInt(total.wagered))}
+      {stat("Returned", fmtInt(total.returned))}
+      {stat("Net", `${total.net > 0 ? "+" : ""}${fmtInt(total.net)}`, netColor)}
+      {stat("Emp. RTP", fmtRtp(total.rtp))}
+      {stat("EV / credit", fmtEv(total.ev_per_credit), evColor)}
+    </div>
+  );
+}
+
+function OutcomeFreqTable({ rows }) {
+  return (
+    <div className="panel" style={{ padding: 12, overflowX: "auto", marginBottom: 14 }}>
+      <div style={{ fontSize: 11, color: COLORS.creamDim, marginBottom: 8, letterSpacing: "0.1em" }}>
+        OUTCOME FREQUENCY
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ color: COLORS.creamDim, textAlign: "right" }}>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>Outcome</th>
+            <th style={{ padding: "6px 8px" }}>Plays</th>
+            <th style={{ padding: "6px 8px" }}>Frequency</th>
+            <th style={{ padding: "6px 8px" }}>Avg wager</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} style={{ borderTop: "1px solid rgba(212,165,72,0.15)", color: COLORS.cream }}>
+              <td style={{ padding: "6px 8px", textAlign: "left" }}>{r.label}</td>
+              <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                {fmtInt(r.count)}
+              </td>
+              <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                {fmtPct(r.freq)}
+              </td>
+              <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                {r.count > 0 ? r.avg_wager.toFixed(2) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SliceTable({ title, rows, keyLabel }) {
+  return (
+    <div className="panel" style={{ padding: 12, overflowX: "auto", marginBottom: 14 }}>
+      <div style={{ fontSize: 11, color: COLORS.creamDim, marginBottom: 8, letterSpacing: "0.1em" }}>
+        {title.toUpperCase()}
+      </div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ color: COLORS.creamDim, textAlign: "right" }}>
+            <th style={{ textAlign: "left", padding: "6px 8px" }}>{keyLabel}</th>
+            <th style={{ padding: "6px 8px" }}>Plays</th>
+            <th style={{ padding: "6px 8px" }}>W-L-P</th>
+            <th style={{ padding: "6px 8px" }}>Wagered</th>
+            <th style={{ padding: "6px 8px" }}>Net</th>
+            <th style={{ padding: "6px 8px" }}>RTP</th>
+            <th style={{ padding: "6px 8px" }}>EV / credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const evColor =
+              r.ev_per_credit === null || r.ev_per_credit === undefined
+                ? COLORS.creamDim
+                : r.ev_per_credit > 0
+                  ? COLORS.goldBright
+                  : r.ev_per_credit < 0
+                    ? COLORS.red
+                    : COLORS.cream;
+            const netColor = r.net > 0 ? COLORS.goldBright : r.net < 0 ? COLORS.red : COLORS.cream;
+            return (
+              <tr key={r.key} style={{ borderTop: "1px solid rgba(212,165,72,0.15)", color: COLORS.cream }}>
+                <td style={{ padding: "6px 8px", textAlign: "left" }}>{r.label}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                  {fmtInt(r.count)}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                  {fmtInt(r.wins)}-{fmtInt(r.losses)}-{fmtInt(r.pushes)}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                  {fmtInt(r.wagered)}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: netColor }} className="mono">
+                  {r.net > 0 ? "+" : ""}
+                  {fmtInt(r.net)}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }} className="mono">
+                  {fmtRtp(r.rtp)}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: evColor }} className="mono">
+                  {fmtEv(r.ev_per_credit)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

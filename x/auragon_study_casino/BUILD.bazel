@@ -140,6 +140,15 @@ py_test(
 )
 
 py_test(
+    name = "test_games",
+    srcs = ["test_games.py"],
+    deps = [
+        ":games",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_store",
     srcs = ["test_store.py"],
     requires_docker = True,
