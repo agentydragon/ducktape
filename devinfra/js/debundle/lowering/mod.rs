@@ -13,7 +13,7 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, ChunkFactorization, DepKind,
-    KnownEffect, LogicalModule as ScheduleLogicalModule, LogicalModuleIndex, ModuleId,
+    KnownEffect, LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId,
     OwnerGraphAndUnits, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
     RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units,
     render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,

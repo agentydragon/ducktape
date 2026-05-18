@@ -483,11 +483,11 @@ pub(super) fn materialize_logical_chunk(
             })?;
         }
         let chunk_top_level_mark = runtime_ast.top_level_mark;
-        let mut logical_modules: Vec<ScheduleLogicalModule> =
+        let mut logical_modules: Vec<FactorizationLogicalModule> =
             time_phase!(timings, "project_schedule_modules", {
                 module_plans
                     .iter()
-                    .map(|plan| ScheduleLogicalModule {
+                    .map(|plan| FactorizationLogicalModule {
                         id: plan.id.clone(),
                         target_file: plan.target_file.clone(),
                         residual: !plan.explicit,
@@ -538,7 +538,7 @@ pub(super) fn materialize_logical_chunk(
             .transpose()?
             .unwrap_or_else(|| target_file.clone());
         let sentinel_idx = logical_modules.len();
-        logical_modules.push(ScheduleLogicalModule {
+        logical_modules.push(FactorizationLogicalModule {
             id: format!("{chunk_id}::anon_residual_sentinel"),
             target_file: sentinel_residual_target,
             residual: true,

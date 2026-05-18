@@ -360,7 +360,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     /// Test-helper residual destination: the synthesized residual
     /// logical module always sits at the highest index appended by
-    /// `schedule_for` / `schedule_with_residual_module`. Tests use this
+    /// `factorization_for` / `factorization_with_residual_module`. Tests use this
     /// instead of the historical `ModuleId::ResidualEntry` literal.
     fn residual() -> ModuleId {
         ModuleId::logical(usize::MAX)
@@ -607,7 +607,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     /// factorization; the materializer bails on any non-empty list.
     #[test]
     fn cross_destination_lazy_write_is_rejected() {
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", residual())],
         );
@@ -643,7 +643,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn same_destination_lazy_write_is_allowed() {
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "let A = 0; function B() { A = 1; }",
             &[("A", logical(0)), ("B", logical(0))],
         );
@@ -656,7 +656,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     /// Resolve a sentinel `residual()` ModuleId to the real residual
-    /// logical-module index. Helper for `schedule_for`: in the new
+    /// logical-module index. Helper for `factorization_for`: in the new
     /// no-variant world the residual is just a logical module, so
     /// tests that used to write `ModuleId::ResidualEntry` now write
     /// `residual()` (a `usize::MAX`-indexed sentinel) and let the
@@ -669,7 +669,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         }
     }
 
-    fn schedule_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
+    fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFactorization {
         let module = parse(source);
         let facts = analyze_facts(&module);
         let mut max_idx: Option<usize> = None;
@@ -713,7 +713,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         )
     }
 
-    fn schedule_with_residual_module(
+    fn factorization_with_residual_module(
         source: &str,
         residual_bindings: &[&str],
         logical_bindings: &[&str],
@@ -757,7 +757,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
-        let factorization = schedule_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
+        let factorization =
+            factorization_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
         assert!(
             factorization.analysis.owner_graph.edges.iter().any(|edge| {
@@ -797,7 +798,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_reports_symbols_currently_peelable_from_residual() {
-        let factorization = schedule_with_residual_module(
+        let factorization = factorization_with_residual_module(
             "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
             &["Leaf", "ResidualUse"],
             &["Existing"],
@@ -837,7 +838,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_allows_symbol_with_lazy_only_residual_dependency() {
-        let factorization = schedule_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
+        let factorization =
+            factorization_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
 
         let report = factorization.owner_graph_report();
         let leaf_horizon = report
@@ -864,8 +866,11 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_blocks_residual_symbol_that_would_create_constraining_scc() {
-        let factorization =
-            schedule_with_residual_module("const A = B + 1; const B = A + 1;", &["A", "B"], &[]);
+        let factorization = factorization_with_residual_module(
+            "const A = B + 1; const B = A + 1;",
+            &["A", "B"],
+            &[],
+        );
 
         let report = factorization.owner_graph_report();
         let a_horizon = report
@@ -896,7 +901,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
 
     #[test]
     fn peelability_does_not_overclaim_pair_when_three_owner_cycle_remains() {
-        let factorization = schedule_with_residual_module(
+        let factorization = factorization_with_residual_module(
             "const A = B + 1; const B = C + 1; const C = A + 1;",
             &["A", "B", "C"],
             &[],
@@ -3400,7 +3405,7 @@ mutable = mutable + 1;"#,
         // nothing readwise (literal init), B's row owns the read
         // of X but its home is mod_1 — so no edge (B reads X
         // within its own module).
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = 1, B = X; const X = 42;",
             &[("A", logical(0)), ("B", logical(1)), ("X", logical(1))],
         );
@@ -3542,7 +3547,7 @@ mutable = mutable + 1;"#,
         // This case demonstrates the split doesn't *miss* real
         // cycles either: the bug bit when multiple declarators
         // had differently-owned reads on the same line.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = X, B = 1; const X = 42; const Y = A;",
             &[
                 ("A", logical(0)),
@@ -3564,7 +3569,7 @@ mutable = mutable + 1;"#,
     fn validate_surfaces_linker_order_for_acyclic_spec() {
         // mod_0 reads B from mod_1 at-init → mod_1 must precede
         // mod_0 in the linker's evaluation order.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = 42;",
             &[("A", logical(0)), ("B", logical(1))],
         );
@@ -3589,7 +3594,7 @@ mutable = mutable + 1;"#,
         // routing of the validator (DESIGN.md "Realizability
         // primitive"), the case has to actually produce a cycle in
         // the constraining-edge subgraph — mutual at-init reads do.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
@@ -3761,7 +3766,7 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn factor_assembly_unclaimed_owners_default_to_residual() {
-        let factorization = schedule_for("const A = 1; const B = 2;", &[]);
+        let factorization = factorization_for("const A = 1; const B = 2;", &[]);
         let summary = partition_summary(&factorization);
         assert_eq!(
             summary,
@@ -3784,7 +3789,8 @@ mutable = mutable + 1;"#,
         // (`crate::factorize`) may suggest "extend mod_0 to include
         // B" as an advisory edit, but factor_assembly refuses to
         // silently move B for the user.
-        let factorization = schedule_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
+        let factorization =
+            factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
         let report = factorization.validate();
         assert_eq!(
             report.atomic_unit_conflicts.len(),
@@ -3804,7 +3810,7 @@ mutable = mutable + 1;"#,
         // Both members of the same atomic unit claimed for the same
         // module — that's the spec author being explicit, not a
         // conflict.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(0))],
         );
@@ -3820,7 +3826,7 @@ mutable = mutable + 1;"#,
 
     #[test]
     fn factor_assembly_records_conflict_on_split_eager_use_cycle() {
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = B + 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
@@ -3847,7 +3853,7 @@ mutable = mutable + 1;"#,
         // cycle when the spec creates one through reverse claims,
         // but factor_assembly itself does not panic / record a
         // conflict here.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
             &[("a1", logical(0)), ("b1", logical(1)), ("a2", logical(0))],
         );
@@ -3862,7 +3868,7 @@ mutable = mutable + 1;"#,
     fn factor_assembly_independent_owners_keep_independent_claims() {
         // Three eager-use chain: A → B → C, no cycle, three atomic
         // units. Each owner's claim takes effect independently.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const C = 3; const B = C + 1; const A = B + 1;",
             &[("A", logical(0)), ("B", logical(1)), ("C", logical(0))],
         );
@@ -3888,7 +3894,7 @@ mutable = mutable + 1;"#,
     /// `module_key`, and `extension_owner_ids` carries C's owner.
     #[test]
     fn factorize_proposes_extension_for_module_with_unclaimed_cycle_member() {
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const B = 1; const A = C + 1; const C = A + 1;",
             &[("A", logical(0)), ("B", logical(0))],
         );
@@ -3947,7 +3953,7 @@ mutable = mutable + 1;"#,
         //   * EagerUse `from→to`           → Loose(Y) → Loose(X)
         //   * Sequenced `to→from` (inverted) → Loose(X) → Loose(Y)
         // ⇒ single SCC, fresh-module proposal.
-        let factorization = schedule_for("const X = init(); const Y = step(X);", &[]);
+        let factorization = factorization_for("const X = init(); const Y = step(X);", &[]);
         let report = factorization.owner_graph_report().factorize;
         let fresh: Vec<&FactorizeCell> = report
             .cells
@@ -3994,7 +4000,7 @@ mutable = mutable + 1;"#,
         // emit-resolvability redesign — entry auto-exports the
         // residual bindings, so the function consumer is
         // independently peelable.)
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             r#"const dep_a = "left";
 const dep_b = "right";
 const consumer = dep_a + dep_b;"#,
@@ -4047,7 +4053,7 @@ const consumer = dep_a + dep_b;"#,
         // `factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal`);
         // lazy reads no longer force closure growth post-emit-
         // resolvability redesign.
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             r#"const dep_a = "left";
 const dep_b = "right";
 const consumer_one = dep_a + dep_b;
@@ -4071,7 +4077,7 @@ const consumer_three = dep_a + dep_b;"#,
 
     #[test]
     fn schedule_report_serializes_linker_order_as_snake_case() {
-        let factorization = schedule_for(
+        let factorization = factorization_for(
             "const A = 1; const B = A + 1;",
             &[("A", logical(0)), ("B", logical(1))],
         );
