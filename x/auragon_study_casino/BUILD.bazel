@@ -91,7 +91,12 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = ["//x/auragon_study_casino/frontend:bundle"],
+    # The bundle is a runtime asset, not a build-time dependency of the
+    # library. Putting it on `:app` would create a cycle: `:export_schema_lib`
+    # imports `:app` to scrape OpenAPI, and the bundle transitively depends on
+    # `:schema_zod` (via the generated zod imports in sync.js), which depends
+    # back on `:export_schema_bin`. The bundle is carried on `:server` /
+    # `:server_bin` instead, the targets that actually run the FastAPI app.
     visibility = ["//visibility:public"],
     deps = [
         ":actions",
@@ -114,11 +119,10 @@ py_library(
     name = "export_schema_lib",
     srcs = ["export_schema.py"],
     deps = [
-        ":actions",
-        ":events",
+        ":app",
+        ":config",
         ":state",
-        ":stats",
-        "@pypi//fastapi",
+        ":store",
     ],
 )
 
@@ -131,6 +135,7 @@ py_binary(
 
 py_binary(
     name = "server",
+    data = ["//x/auragon_study_casino/frontend:bundle"],
     main_module = "x.auragon_study_casino.app",
     visibility = ["//visibility:public"],
     deps = [":app"],
@@ -211,6 +216,7 @@ py_test(
 
 aspect_py_binary(
     name = "server_bin",
+    data = ["//x/auragon_study_casino/frontend:bundle"],
     main = "app.py",
     deps = [":app"],
 )
