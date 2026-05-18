@@ -15,6 +15,13 @@ def format_duration(seconds: float) -> str:
     return f"{m}m"
 
 
+def format_age(seconds: float) -> str:
+    s = max(0, round(seconds))
+    if s < 60:
+        return f"{s}s"
+    return format_duration(s)
+
+
 def format_pace(pace: PaceResult | None) -> str | None:
     if pace is None or not pace.stable:
         return None

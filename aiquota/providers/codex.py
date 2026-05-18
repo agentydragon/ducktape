@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel, ConfigDict
 
-from aiquota.models import ProviderQuota, QuotaWindow
+from aiquota.models import ProviderFetch, QuotaWindow
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,11 @@ def _to_window(w: _WindowData | None) -> QuotaWindow | None:
     )
 
 
-def fetch() -> ProviderQuota:
+def fetch() -> ProviderFetch:
+    now = datetime.now(UTC)
     auth = _read_auth()
     if not auth:
-        return ProviderQuota(provider="codex", error="no codex auth found")
+        return ProviderFetch(error="no codex auth found", fetched_at=now)
 
     headers: dict[str, str] = {
         "Authorization": f"Bearer {auth.access_token}",
@@ -91,9 +92,9 @@ def fetch() -> ProviderQuota:
         resp.raise_for_status()
         usage = _UsageResponse.model_validate(resp.json())
     except Exception as e:
-        return ProviderQuota(provider="codex", error=str(e))
+        return ProviderFetch(error=str(e), fetched_at=now)
 
     rl = usage.rate_limit
     short = _to_window(rl.primary_window if rl else None)
     long = _to_window(rl.secondary_window if rl else None)
-    return ProviderQuota(provider="codex", short_window=short, long_window=long)
+    return ProviderFetch(short_window=short, long_window=long, fetched_at=now)

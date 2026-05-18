@@ -61,6 +61,27 @@ function isStaleFetch(lastFetch) {
   return lastFetch != null && (Date.now() - lastFetch) / 1000 > STALE_AFTER_SECONDS;
 }
 
+function formatAge(seconds) {
+  if (seconds == null || !Number.isFinite(seconds)) return "?";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  return formatDuration(s);
+}
+
+// Pick the windows to render: prefer the latest fetch, but fall back to the
+// last successful snapshot when the latest call returned nothing usable.
+function effectiveWindows(state) {
+  if (state.short != null || state.long != null) {
+    return { short: state.short, long: state.long, staleAge: null };
+  }
+  const snap = state.lastSuccess;
+  if (!snap || (snap.short == null && snap.long == null)) {
+    return { short: null, long: null, staleAge: null };
+  }
+  const ageSeconds = snap.fetchedAt != null ? Math.max(0, (Date.now() - snap.fetchedAt) / 1000) : null;
+  return { short: snap.short, long: snap.long, staleAge: ageSeconds };
+}
+
 function formatFreshness(lastFetch) {
   if (lastFetch == null) return "no successful refresh yet";
   const ageSeconds = Math.max(0, (Date.now() - lastFetch) / 1000);
@@ -167,6 +188,9 @@ function emptyProviderState() {
     extraUsage: null,
     currentlyOverPlan: false,
     extraStatus: "none",
+    // Last successful fetch — populated when the most recent attempt failed
+    // but a prior good snapshot exists. {short, long, extraUsage, fetchedAt}.
+    lastSuccess: null,
   };
 }
 
@@ -247,6 +271,7 @@ const QuotaIndicator = GObject.registerClass(
         extraUsage: node?.extraUsage ?? null,
         currentlyOverPlan: node?.currentlyOverPlan === true,
         extraStatus: node?.extraStatus ?? "none",
+        lastSuccess: node?.lastSuccess ?? null,
       });
       for (const p of this._providers) p.state = provider(data[p.id]);
       this._renderPanel();
@@ -400,6 +425,28 @@ const QuotaIndicator = GObject.registerClass(
       };
     }
 
+    _mapExtraUsage(extra) {
+      if (!extra) return null;
+      return {
+        is_enabled: extra.is_enabled,
+        used_credits: Math.round(extra.used_usd * 100),
+        monthly_limit: Math.round(extra.monthly_limit_usd * 100),
+        utilization: extra.utilization,
+        used_usd: extra.used_usd,
+        monthly_limit_usd: extra.monthly_limit_usd,
+      };
+    }
+
+    _mapLastSuccess(snap) {
+      if (!snap) return null;
+      return {
+        short: this._mapWindow(snap.short_window),
+        long: this._mapWindow(snap.long_window),
+        extraUsage: this._mapExtraUsage(snap.extra_usage),
+        fetchedAt: snap.fetched_at ? new Date(snap.fetched_at).getTime() : null,
+      };
+    }
+
     _loadSubprocessData(data) {
       const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
       for (const p of this._providers) {
@@ -408,25 +455,17 @@ const QuotaIndicator = GObject.registerClass(
           p.state = emptyProviderState();
           continue;
         }
-        const extra = pq.extra_usage ?? null;
+        const out = pq.last_output ?? {};
         p.state = {
-          short: this._mapWindow(pq.short_window),
-          long: this._mapWindow(pq.long_window),
+          short: this._mapWindow(out.short_window),
+          long: this._mapWindow(out.long_window),
           lastFetch: fetchedAt,
-          error: pq.error ?? null,
-          extraUsage: extra
-            ? {
-                is_enabled: extra.is_enabled,
-                used_credits: Math.round(extra.used_usd * 100),
-                monthly_limit: Math.round(extra.monthly_limit_usd * 100),
-                utilization: extra.utilization,
-                used_usd: extra.used_usd,
-                monthly_limit_usd: extra.monthly_limit_usd,
-              }
-            : null,
+          error: out.error ?? null,
+          extraUsage: this._mapExtraUsage(out.extra_usage),
           // Derived policy bits from the Python view model — single source of truth.
           currentlyOverPlan: pq.currently_over_plan === true,
           extraStatus: pq.extra_status ?? "none",
+          lastSuccess: this._mapLastSuccess(pq.last_success),
         };
       }
     }
@@ -445,19 +484,19 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderProvider(state, icon, paceLabel) {
-      if (state.error) {
+      const { short, long, staleAge } = effectiveWindows(state);
+      if (state.error && short == null && long == null) {
         this._setTint(icon, paceLabel, "error");
         paceLabel.set_text("!");
         return;
       }
-      if (state.short == null && state.long == null) {
+      if (short == null && long == null) {
         this._setTint(icon, paceLabel, "unknown");
         paceLabel.set_text("");
         return;
       }
-      const stale = isStaleFetch(state.lastFetch);
-      const shortState = withLiveReset(state.short);
-      const longState = withLiveReset(state.long);
+      const shortState = withLiveReset(short);
+      const longState = withLiveReset(long);
       const shortPace = shortState ? computePace(shortState) : null;
       const longPace = longState ? computePace(longState) : null;
       const shortTint = shortState
@@ -467,6 +506,7 @@ const QuotaIndicator = GObject.registerClass(
         ? tintFor({ pace: longPace, usedPercent: longState.usedPercent, isShort: false })
         : "unknown";
       const overPlan = state.currentlyOverPlan === true;
+      const stale = staleAge != null || isStaleFetch(state.lastFetch);
       const tint = overPlan ? "hot" : stale ? "stale" : bindingTint(shortTint, longTint);
       this._setTint(icon, paceLabel, tint);
       const paceText = formatPace(longPace) ?? "";
@@ -490,10 +530,11 @@ const QuotaIndicator = GObject.registerClass(
           this._setBarFill(p.longRow._usageFill, null);
           this._setBarTint(p.longRow._usageFill, "unknown");
         } else {
+          const { short, long, staleAge } = effectiveWindows(p.state);
           p.shortRow.visible = true;
           p.longRow.visible = true;
-          this._renderPopupRow(p.shortRow, "5h", p.state.short);
-          this._renderPopupRow(p.longRow, "7d", p.state.long);
+          this._renderPopupRow(p.shortRow, "5h", short, staleAge);
+          this._renderPopupRow(p.longRow, "7d", long, staleAge);
         }
       }
     }
@@ -503,8 +544,9 @@ const QuotaIndicator = GObject.registerClass(
       item.label.remove_style_class_name("quota-popup-header-stale");
 
       const parts = [title];
+      const haveCurrentData = state.short != null || state.long != null;
       if (state.error) {
-        const prefix = state.short == null && state.long == null ? "error" : "last refresh failed";
+        const prefix = haveCurrentData ? "last refresh failed" : "error";
         parts.push(`${prefix}: ${state.error}`);
         item.label.add_style_class_name("quota-popup-header-error");
       } else if (isStaleFetch(state.lastFetch)) {
@@ -516,7 +558,7 @@ const QuotaIndicator = GObject.registerClass(
       item.label.set_text(parts.join(" · "));
     }
 
-    _renderPopupRow(item, label, state) {
+    _renderPopupRow(item, label, state, staleAgeSeconds) {
       if (state == null) {
         item._summaryLabel.set_text(`${label}: no data`);
         this._setBarFill(item._timeFill, null);
@@ -533,11 +575,16 @@ const QuotaIndicator = GObject.registerClass(
       const parts = [used, reset];
       if (paceStr) parts.push(`Δ${paceStr}`);
       if (forecast) parts.push(forecast);
+      if (staleAgeSeconds != null) parts.push(`(stale ${formatAge(staleAgeSeconds)})`);
       item._summaryLabel.set_text(`${label}: ${parts.join("  ")}`);
 
       this._setBarFill(item._timeFill, elapsedFraction(liveState));
       this._setBarFill(item._usageFill, liveState.usedPercent == null ? null : liveState.usedPercent / 100);
-      this._setBarTint(item._usageFill, tintFor({ pace, usedPercent: liveState.usedPercent, isShort: label === "5h" }));
+      const usageTint =
+        staleAgeSeconds != null
+          ? "stale"
+          : tintFor({ pace, usedPercent: liveState.usedPercent, isShort: label === "5h" });
+      this._setBarTint(item._usageFill, usageTint);
     }
 
     _setBarFill(fill, fraction) {

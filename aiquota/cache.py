@@ -4,7 +4,7 @@ from pathlib import Path
 from platformdirs import user_cache_dir
 
 from aiquota.config import ConfigFile
-from aiquota.models import AllQuotas, ProviderQuota
+from aiquota.models import AllQuotas, ProviderFetch, ProviderQuota
 from aiquota.providers import claude, codex, zai
 
 CACHE_TTL = timedelta(seconds=120)
@@ -32,7 +32,8 @@ class QuotaCache:
         cached = self.read()
         if cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
-        providers = _fetch_providers(config)
+        prior = {pq.provider: pq for pq in cached.providers} if cached else {}
+        providers = [_assemble(name, fetch, prior.get(name)) for name, fetch in _fetch_providers(config)]
         fresh = AllQuotas(providers=providers, fetched_at=datetime.now(UTC))
         self.write(fresh)
         return fresh
@@ -47,16 +48,25 @@ class QuotaService:
         return self.cache.fetch_all(self.config)
 
 
-def _fetch_providers(config: ConfigFile) -> list[ProviderQuota]:
-    providers: list[ProviderQuota] = []
+def _assemble(name: str, output: ProviderFetch, prior: ProviderQuota | None) -> ProviderQuota:
+    """Wrap a provider fetch in a `ProviderQuota`, carrying the last-known-good
+    snapshot forward when the latest call did not produce usable windows."""
+    success = output if output.error is None and (output.short_window or output.long_window) else None
+    return ProviderQuota(
+        provider=name, last_output=output, last_success=success or (prior.last_success if prior else None)
+    )
+
+
+def _fetch_providers(config: ConfigFile) -> list[tuple[str, ProviderFetch]]:
+    results: list[tuple[str, ProviderFetch]] = []
     for name, fetch_fn in [("claude", claude.fetch), ("codex", codex.fetch)]:
         settings = config.providers.get(name)
         if settings is not None and not settings.enabled:
             continue
-        providers.append(fetch_fn())
+        results.append((name, fetch_fn()))
 
     zai_settings = config.providers.get("zai")
     if zai_settings is None or zai_settings.enabled:
-        providers.append(zai.fetch(api_key_path=zai_settings.api_key_path if zai_settings else None))
+        results.append(("zai", zai.fetch(api_key_path=zai_settings.api_key_path if zai_settings else None)))
 
-    return providers
+    return results

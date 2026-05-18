@@ -23,17 +23,35 @@ def _window_tint(window: QuotaWindow | None, *, is_short: bool) -> str:
 
 def render_provider(pq: ProviderQuota) -> str:
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
-    if pq.error and pq.short_window is None and pq.long_window is None:
-        color = TINT_FG["error"]
-        return f"#[fg={color}]{prefix}:!#[default]"
+    out = pq.last_output
 
-    short_tint = _window_tint(pq.short_window, is_short=True)
-    long_tint = _window_tint(pq.long_window, is_short=False)
+    # If the latest call gave us nothing, fall back to the last successful snapshot.
+    short = out.short_window
+    long = out.long_window
+    stale = False
+    if short is None and long is None and pq.last_success is not None:
+        snap = pq.last_success
+        if snap.short_window is not None or snap.long_window is not None:
+            short = snap.short_window
+            long = snap.long_window
+            stale = True
+
+    if out.error and short is None and long is None:
+        return f"#[fg={TINT_FG['error']}]{prefix}:!#[default]"
+
+    if stale:
+        w = long or short
+        if w is None:
+            return f"#[fg={TINT_FG['stale']}]{prefix}:?#[default]"
+        return f"#[fg={TINT_FG['stale']}]{prefix}:{round(w.used_percent)}%*#[default]"
+
+    short_tint = _window_tint(short, is_short=True)
+    long_tint = _window_tint(long, is_short=False)
     tint = binding_tint(short_tint, long_tint)
     color = TINT_FG.get(tint, "white")
 
     # Show the more informative window (prefer long if available)
-    w = pq.long_window or pq.short_window
+    w = long or short
     if w is None:
         return f"#[fg={color}]{prefix}:?#[default]"
 

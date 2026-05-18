@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from aiquota.models import AllQuotas, ExtraUsage, ProviderQuota, QuotaWindow
+from aiquota.models import AllQuotas, ProviderFetch, ProviderQuota
 
 # Same threshold as render/human.py — see _OVER_PLAN_PERCENT there for rationale.
 _OVER_PLAN_PERCENT = 100.0
@@ -26,10 +26,8 @@ ExtraStatus = Literal["none", "informational", "active"]
 
 class ProviderView(BaseModel):
     provider: str
-    error: str | None
-    short_window: QuotaWindow | None
-    long_window: QuotaWindow | None
-    extra_usage: ExtraUsage | None
+    last_output: ProviderFetch
+    last_success: ProviderFetch | None
     currently_over_plan: bool
     extra_status: ExtraStatus
 
@@ -46,16 +44,14 @@ def to_view(quotas: AllQuotas) -> AllQuotasView:
 def _provider_view(pq: ProviderQuota) -> ProviderView:
     return ProviderView(
         provider=pq.provider,
-        error=pq.error,
-        short_window=pq.short_window,
-        long_window=pq.long_window,
-        extra_usage=pq.extra_usage,
-        currently_over_plan=currently_over_plan(pq),
-        extra_status=_extra_status(pq),
+        last_output=pq.last_output,
+        last_success=pq.last_success,
+        currently_over_plan=currently_over_plan(pq.last_output),
+        extra_status=_extra_status(pq.last_output),
     )
 
 
-def currently_over_plan(pq: ProviderQuota) -> bool:
+def currently_over_plan(out: ProviderFetch) -> bool:
     """True when the user is actively paying USD above subscription right now.
 
     `extra_usage.is_enabled` only signals "feature enabled on the account",
@@ -63,14 +59,14 @@ def currently_over_plan(pq: ProviderQuota) -> bool:
     anything about "right now". The real signal is the 7d window being
     exhausted (every further call now hits the monthly bill).
     """
-    if pq.extra_usage is None or not pq.extra_usage.is_enabled:
+    if out.extra_usage is None or not out.extra_usage.is_enabled:
         return False
-    return pq.long_window is not None and pq.long_window.used_percent >= _OVER_PLAN_PERCENT
+    return out.long_window is not None and out.long_window.used_percent >= _OVER_PLAN_PERCENT
 
 
-def _extra_status(pq: ProviderQuota) -> ExtraStatus:
-    if currently_over_plan(pq):
+def _extra_status(out: ProviderFetch) -> ExtraStatus:
+    if currently_over_plan(out):
         return "active"
-    if pq.extra_usage is not None and pq.extra_usage.is_enabled and pq.extra_usage.used_usd > 0:
+    if out.extra_usage is not None and out.extra_usage.is_enabled and out.extra_usage.used_usd > 0:
         return "informational"
     return "none"

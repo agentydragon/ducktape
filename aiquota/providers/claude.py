@@ -12,7 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ExtraUsage, ProviderQuota, QuotaWindow
+from aiquota.models import ExtraUsage, ProviderFetch, QuotaWindow
 
 logger = logging.getLogger(__name__)
 
@@ -149,15 +149,16 @@ def _to_window(bucket: _UsageBucket | None, window_secs: float) -> QuotaWindow |
     )
 
 
-def fetch() -> ProviderQuota:
+def fetch() -> ProviderFetch:
+    now = datetime.now(UTC)
     creds, token = _read_credentials()
     if not token:
-        return ProviderQuota(provider="claude", error="no credentials found")
+        return ProviderFetch(error="no credentials found", fetched_at=now)
 
     if _token_expired(creds):
         token = _refresh_token(creds)
         if not token:
-            return ProviderQuota(provider="claude", error="token refresh failed")
+            return ProviderFetch(error="token refresh failed", fetched_at=now)
 
     try:
         resp = httpx.get(
@@ -168,7 +169,7 @@ def fetch() -> ProviderQuota:
         resp.raise_for_status()
         usage = _UsageResponse.model_validate(resp.json())
     except Exception as e:
-        return ProviderQuota(provider="claude", error=str(e))
+        return ProviderFetch(error=str(e), fetched_at=now)
 
     short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
     long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
@@ -181,4 +182,4 @@ def fetch() -> ProviderQuota:
             used_usd=eu.used_credits / 100,
             utilization=eu.utilization,
         )
-    return ProviderQuota(provider="claude", short_window=short, long_window=long, extra_usage=extra)
+    return ProviderFetch(short_window=short, long_window=long, extra_usage=extra, fetched_at=now)

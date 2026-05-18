@@ -24,14 +24,29 @@ class ExtraUsage(BaseModel):
     utilization: float
 
 
-class ProviderQuota(BaseModel):
-    provider: str
+class ProviderFetch(BaseModel):
+    """One quota-fetch result for a single provider.
+
+    Used for both `last_output` (what the most recent call returned) and
+    `last_success` (the most recent call that produced usable windows). The
+    `error` field is naturally `None` when a `ProviderFetch` represents a
+    successful fetch.
+    """
+
     short_window: QuotaWindow | None = None
     long_window: QuotaWindow | None = None
-    pace_short: PaceResult | None = None
-    pace_long: PaceResult | None = None
-    error: str | None = None
     extra_usage: ExtraUsage | None = None
+    error: str | None = None
+    fetched_at: datetime
+
+
+class ProviderQuota(BaseModel):
+    provider: str
+    last_output: ProviderFetch
+    # The newest `last_output` whose error was None and which produced at least
+    # one window. May be the same instance as `last_output` (current fetch
+    # succeeded) or older (current fetch errored — fall back for display).
+    last_success: ProviderFetch | None = None
 
 
 class AllQuotas(BaseModel):

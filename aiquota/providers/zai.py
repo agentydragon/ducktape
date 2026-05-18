@@ -12,7 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from aiquota.models import ProviderQuota, QuotaWindow
+from aiquota.models import ProviderFetch, QuotaWindow
 
 logger = logging.getLogger(__name__)
 
@@ -60,27 +60,28 @@ def _to_window(limit: _Limit | None, window_secs: float) -> QuotaWindow | None:
     )
 
 
-def fetch(api_key_path: str | None = None) -> ProviderQuota:
+def fetch(api_key_path: str | None = None) -> ProviderFetch:
+    now = datetime.now(UTC)
     if not api_key_path:
-        return ProviderQuota(provider="zai", error="no api key path configured")
+        return ProviderFetch(error="no api key path configured", fetched_at=now)
 
     try:
         key = Path(api_key_path).expanduser().read_text().strip()
     except OSError as e:
-        return ProviderQuota(provider="zai", error=str(e))
+        return ProviderFetch(error=str(e), fetched_at=now)
     if not key:
-        return ProviderQuota(provider="zai", error="api key file is empty")
+        return ProviderFetch(error="api key file is empty", fetched_at=now)
 
     try:
         resp = httpx.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"}, timeout=API_TIMEOUT_SECS)
         resp.raise_for_status()
         quota = _QuotaResponse.model_validate(resp.json())
     except Exception as e:
-        return ProviderQuota(provider="zai", error=str(e))
+        return ProviderFetch(error=str(e), fetched_at=now)
 
     limits = quota.data.limits if quota.data else []
     short_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 3), None)
     long_limit = next((lim for lim in limits if lim.type == "TOKENS_LIMIT" and lim.unit == 6), None)
     short = _to_window(short_limit, SHORT_WINDOW_SECS)
     long = _to_window(long_limit, LONG_WINDOW_SECS)
-    return ProviderQuota(provider="zai", short_window=short, long_window=long)
+    return ProviderFetch(short_window=short, long_window=long, fetched_at=now)
