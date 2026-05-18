@@ -1,12 +1,28 @@
 use anyhow::{Result, bail};
 use swc_common::sync::Lrc;
-use swc_common::{BytePos, FileName, Mark, SourceMap};
+use swc_common::{BytePos, FileName, GLOBALS, Globals, Mark, SourceMap};
 use swc_ecma_ast::{Module, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use swc_ecma_transforms_base::resolver;
 use swc_ecma_visit::VisitMutWith;
+
+/// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
+/// entry points (`main.rs`, `debundle_agent_cli::run_agent`) wrap the
+/// whole program in `GLOBALS.set(...)`; tests that exercise the parse
+/// pipeline directly (vs. through a subprocess) must wrap each test
+/// body in this helper so `Mark::new()` inside `resolver` has an
+/// arena to mint into.
+///
+/// Within a single thread, nested `GLOBALS.set` calls take the inner
+/// scope's value for the duration of the inner closure — so this is
+/// safe to call from a unit test even if the enclosing thread already
+/// has its own GLOBALS set.
+pub fn with_swc_globals<R>(body: impl FnOnce() -> R) -> R {
+    let globals = Globals::default();
+    GLOBALS.set(&globals, body)
+}
 
 /// Parsed module with SWC hygiene contexts assigned.
 ///
@@ -183,6 +199,11 @@ fn source_file(
 /// `SyntaxContext` to every `Ident`. Returns the parsed module
 /// together with the two `Mark`s the resolver used. After this point
 /// `ident.to_id()` is the canonical binding identity.
+///
+/// Callers MUST be inside a `GLOBALS.set(...)` scope. Production
+/// entry points do this in `main.rs` and `debundle_agent_cli::run_agent`;
+/// tests that exercise this code directly do it via
+/// `with_swc_globals` in their setup.
 fn parse_and_resolve(
     source_name: &str,
     fm: &swc_common::SourceFile,
@@ -271,19 +292,11 @@ fn default_syntax() -> Syntax {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::{DUMMY_SP, GLOBALS, Globals, Spanned};
-
-    /// Wrap `body` in a fresh SWC `GLOBALS` so `Mark::new()` inside the
-    /// resolver pass can mint marks. Production code does the same in
-    /// `main.rs` and `debundle_agent_cli::run_agent`.
-    fn with_globals<R>(body: impl FnOnce() -> R) -> R {
-        let globals = Globals::default();
-        GLOBALS.set(&globals, body)
-    }
+    use swc_common::{DUMMY_SP, Spanned};
 
     #[test]
     fn source_line_index_matches_source_map_line_numbers() {
-        with_globals(|| {
+        with_swc_globals(|| {
             let parsed = parse_js_module(
                 "test.js",
                 "import a from 'a';\n\nconst b =\n  a;\nexport { b };\n",
@@ -310,7 +323,7 @@ mod tests {
 
     #[test]
     fn source_line_index_ignores_dummy_spans() {
-        with_globals(|| {
+        with_swc_globals(|| {
             let parsed = parse_js_module("test.js", "const a = 1;\n").unwrap();
             let line_index = parsed.line_index();
 
