@@ -331,110 +331,125 @@ mod tests {
 
     #[test]
     fn passes_on_clean_module() {
-        let bundle = bundle_with_file(
-            "ok",
-            "entry.js",
-            "const a = 1;\nconst b = 2;\nexport { a, b };\n",
-        );
-        validate_emitted_exports(&bundle).expect("clean module passes");
+        js_ast::with_swc_globals(|| {
+            let bundle = bundle_with_file(
+                "ok",
+                "entry.js",
+                "const a = 1;\nconst b = 2;\nexport { a, b };\n",
+            );
+            validate_emitted_exports(&bundle).expect("clean module passes");
+        });
     }
 
     #[test]
     fn flags_named_alias_colliding_with_local_export() {
-        // The Chromium-silent failure mode the tana smoke hit:
-        // one `export {...}` block ships `BackgroundPattern as av`,
-        // a separate block ships the local `av` directly.
-        let source = "\
+        js_ast::with_swc_globals(|| {
+            // The Chromium-silent failure mode the tana smoke hit:
+            // one `export {...}` block ships `BackgroundPattern as av`,
+            // a separate block ships the local `av` directly.
+            let source = "\
 const BackgroundPattern = () => null;\n\
 function av() {}\n\
 export { BackgroundPattern as av };\n\
 export { av };\n";
-        let bundle = bundle_with_file("chunk", "entry.js", source);
-        let err = validate_emitted_exports(&bundle).expect_err("duplicate av should be rejected");
-        let msg = format!("{err}");
-        assert!(msg.contains("`av` exported 2×"), "missing count: {msg}");
-        assert!(msg.contains("entry.js"), "missing file: {msg}");
-        assert!(msg.contains("chunk chunk"), "missing chunk: {msg}");
+            let bundle = bundle_with_file("chunk", "entry.js", source);
+            let err =
+                validate_emitted_exports(&bundle).expect_err("duplicate av should be rejected");
+            let msg = format!("{err}");
+            assert!(msg.contains("`av` exported 2×"), "missing count: {msg}");
+            assert!(msg.contains("entry.js"), "missing file: {msg}");
+            assert!(msg.contains("chunk chunk"), "missing chunk: {msg}");
+        });
     }
 
     #[test]
     fn flags_export_decl_vs_named_block_duplicate() {
-        let source = "\
+        js_ast::with_swc_globals(|| {
+            let source = "\
 export const x = 1;\n\
 const y = 2;\n\
 export { y as x };\n";
-        let bundle = bundle_with_file("c", "f.js", source);
-        let err = validate_emitted_exports(&bundle).expect_err("duplicate x");
-        let msg = format!("{err}");
-        assert!(msg.contains("`x` exported 2×"), "{msg}");
-        assert!(msg.contains("(decl)"), "decl shape missing: {msg}");
-        assert!(msg.contains("(named)"), "named shape missing: {msg}");
+            let bundle = bundle_with_file("c", "f.js", source);
+            let err = validate_emitted_exports(&bundle).expect_err("duplicate x");
+            let msg = format!("{err}");
+            assert!(msg.contains("`x` exported 2×"), "{msg}");
+            assert!(msg.contains("(decl)"), "decl shape missing: {msg}");
+            assert!(msg.contains("(named)"), "named shape missing: {msg}");
+        });
     }
 
     #[test]
     fn flags_two_default_exports() {
-        let source = "\
+        js_ast::with_swc_globals(|| {
+            let source = "\
 export default 1;\n\
 const fallback = 2;\n\
 export { fallback as default };\n";
-        let bundle = bundle_with_file("c", "f.js", source);
-        let err = validate_emitted_exports(&bundle).expect_err("duplicate default");
-        let msg = format!("{err}");
-        assert!(msg.contains("`default` exported 2×"), "{msg}");
+            let bundle = bundle_with_file("c", "f.js", source);
+            let err = validate_emitted_exports(&bundle).expect_err("duplicate default");
+            let msg = format!("{err}");
+            assert!(msg.contains("`default` exported 2×"), "{msg}");
+        });
     }
 
     #[test]
     fn star_reexport_does_not_count() {
-        // `export *` re-exports whatever the source module exports;
-        // the local `export { foo }` is the only literal-name export
-        // in this file and link-time conflicts from `*` collisions
-        // are diagnosed by the source module's check.
-        let source = "\
+        js_ast::with_swc_globals(|| {
+            // `export *` re-exports whatever the source module exports;
+            // the local `export { foo }` is the only literal-name export
+            // in this file and link-time conflicts from `*` collisions
+            // are diagnosed by the source module's check.
+            let source = "\
 const foo = 1;\n\
 export { foo };\n\
 export * from \"./sibling.js\";\n";
-        let bundle = bundle_with_file("c", "f.js", source);
-        validate_emitted_exports(&bundle).expect("star re-export does not duplicate");
+            let bundle = bundle_with_file("c", "f.js", source);
+            validate_emitted_exports(&bundle).expect("star re-export does not duplicate");
+        });
     }
 
     #[test]
     fn checks_every_file_in_chunk() {
-        // Two files in the same chunk; only one has duplicates.
-        let mut bundle = bundle_with_file("c", "good.js", "export const a = 1;\n");
-        insert_file(
-            &mut bundle,
-            "c",
-            "bad.js",
-            "export const z = 1;\nconst zz = 2;\nexport { zz as z };\n",
-            FileRole::Module,
-        );
-        let err = validate_emitted_exports(&bundle).expect_err("bad file flagged");
-        let msg = format!("{err}");
-        assert!(msg.contains("bad.js"), "{msg}");
-        assert!(!msg.contains("good.js"), "good.js should not appear: {msg}");
+        js_ast::with_swc_globals(|| {
+            // Two files in the same chunk; only one has duplicates.
+            let mut bundle = bundle_with_file("c", "good.js", "export const a = 1;\n");
+            insert_file(
+                &mut bundle,
+                "c",
+                "bad.js",
+                "export const z = 1;\nconst zz = 2;\nexport { zz as z };\n",
+                FileRole::Module,
+            );
+            let err = validate_emitted_exports(&bundle).expect_err("bad file flagged");
+            let msg = format!("{err}");
+            assert!(msg.contains("bad.js"), "{msg}");
+            assert!(!msg.contains("good.js"), "good.js should not appear: {msg}");
+        });
     }
 
     #[test]
     fn source_only_files_are_skipped() {
-        // Files stored as raw source (no AST) are skipped — the pass
-        // walks the in-memory AST and has nothing to inspect for raw
-        // bodies. This is intentional: such files came from upstream
-        // verbatim, not from a pipeline emit path.
-        let mut bundle = bundle_with_file("c", "ok.js", "export const a = 1;\n");
-        bundle.chunks[0].js.files.push(JsFile {
-            path: "raw.js".to_string(),
-            body: JsFileBody::Source(
-                "export const x = 1;\nconst y = 2;\nexport { y as x };\n".to_string(),
-            ),
-            header_lines: Vec::new(),
-            metadata: FileMetadata {
-                chunk_id: "c".to_string(),
-                chunk_file: "raw.js".to_string(),
-                role: FileRole::Module,
-                source_path: "c.js".to_string(),
-                generated_by_selected_module_lowering: false,
-            },
+        js_ast::with_swc_globals(|| {
+            // Files stored as raw source (no AST) are skipped — the pass
+            // walks the in-memory AST and has nothing to inspect for raw
+            // bodies. This is intentional: such files came from upstream
+            // verbatim, not from a pipeline emit path.
+            let mut bundle = bundle_with_file("c", "ok.js", "export const a = 1;\n");
+            bundle.chunks[0].js.files.push(JsFile {
+                path: "raw.js".to_string(),
+                body: JsFileBody::Source(
+                    "export const x = 1;\nconst y = 2;\nexport { y as x };\n".to_string(),
+                ),
+                header_lines: Vec::new(),
+                metadata: FileMetadata {
+                    chunk_id: "c".to_string(),
+                    chunk_file: "raw.js".to_string(),
+                    role: FileRole::Module,
+                    source_path: "c.js".to_string(),
+                    generated_by_selected_module_lowering: false,
+                },
+            });
+            validate_emitted_exports(&bundle).expect("source-only file skipped");
         });
-        validate_emitted_exports(&bundle).expect("source-only file skipped");
     }
 }

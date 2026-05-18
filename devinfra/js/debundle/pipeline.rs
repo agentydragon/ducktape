@@ -600,86 +600,95 @@ mod tests {
 
     #[test]
     fn parse_js_list_rejects_duplicates() {
-        let err = parse_js_list("a.js\na.js\n").expect_err("expected duplicate rejection");
-        assert!(err.to_string().contains("duplicate"));
+        js_ast::with_swc_globals(|| {
+            let err = parse_js_list("a.js\na.js\n").expect_err("expected duplicate rejection");
+            assert!(err.to_string().contains("duplicate"));
+        });
     }
 
     #[test]
     fn parse_js_list_ignores_comments_and_blank_lines() {
-        let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
-        assert_eq!(parsed, vec!["foo.js", "bar.js"]);
+        js_ast::with_swc_globals(|| {
+            let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
+            assert_eq!(parsed, vec!["foo.js", "bar.js"]);
+        });
     }
 
     #[test]
     fn parse_transform_cli_args_matches_js_surface() {
-        let args = TransformArgs::try_parse_from([
-            "debundle",
-            "--spec",
-            "spec.yaml",
-            "--package-root",
-            "pkg=/tmp/pkg",
-            "--packages-root",
-            "/tmp/packages",
-            "--force",
-        ])
-        .expect("parse cli");
-        let cli = args.resolve().expect("resolve cli");
-        assert_eq!(
-            cli.spec_source,
-            TransformSpecSource::Flat {
-                path: PathBuf::from("spec.yaml")
-            }
-        );
-        assert_eq!(
-            cli.package_roots.get("pkg"),
-            Some(&PathBuf::from("/tmp/pkg"))
-        );
-        assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
-        assert!(cli.force);
+        js_ast::with_swc_globals(|| {
+            let args = TransformArgs::try_parse_from([
+                "debundle",
+                "--spec",
+                "spec.yaml",
+                "--package-root",
+                "pkg=/tmp/pkg",
+                "--packages-root",
+                "/tmp/packages",
+                "--force",
+            ])
+            .expect("parse cli");
+            let cli = args.resolve().expect("resolve cli");
+            assert_eq!(
+                cli.spec_source,
+                TransformSpecSource::Flat {
+                    path: PathBuf::from("spec.yaml")
+                }
+            );
+            assert_eq!(
+                cli.package_roots.get("pkg"),
+                Some(&PathBuf::from("/tmp/pkg"))
+            );
+            assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
+            assert!(cli.force);
+        });
     }
 
     #[test]
     fn parse_tree_transform_cli_args() {
-        let args = TransformArgs::try_parse_from([
-            "debundle",
-            "--tree-config",
-            "spec_config.yaml",
-            "--tree-modules",
-            "modules",
-            "--tree-vendor-marks",
-            "vendor_marks.yaml",
-            "--tree-source-root",
-            "/workspace",
-            "--out-root",
-            "out",
-        ])
-        .expect("parse cli");
-        let cli = args.resolve().expect("resolve cli");
-        assert_eq!(
-            cli.spec_source,
-            TransformSpecSource::Tree(CompileSpecTreeOptions {
-                config_path: PathBuf::from("spec_config.yaml"),
-                modules_root: PathBuf::from("modules"),
-                vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
-                source_root: Some(PathBuf::from("/workspace")),
-                out_root: PathBuf::from("out"),
-                force: false,
-            })
-        );
+        js_ast::with_swc_globals(|| {
+            let args = TransformArgs::try_parse_from([
+                "debundle",
+                "--tree-config",
+                "spec_config.yaml",
+                "--tree-modules",
+                "modules",
+                "--tree-vendor-marks",
+                "vendor_marks.yaml",
+                "--tree-source-root",
+                "/workspace",
+                "--out-root",
+                "out",
+            ])
+            .expect("parse cli");
+            let cli = args.resolve().expect("resolve cli");
+            assert_eq!(
+                cli.spec_source,
+                TransformSpecSource::Tree(CompileSpecTreeOptions {
+                    config_path: PathBuf::from("spec_config.yaml"),
+                    modules_root: PathBuf::from("modules"),
+                    vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
+                    source_root: Some(PathBuf::from("/workspace")),
+                    out_root: PathBuf::from("out"),
+                    force: false,
+                })
+            );
+        });
     }
 
     #[test]
     fn run_transform_cli_writes_spec_pipeline_outputs() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        let snapshot = root.join("snapshot");
-        let extracted = root.join("extracted");
-        let out = root.join("out");
-        fs::create_dir_all(snapshot.join("static"))?;
-        fs::create_dir_all(&extracted)?;
-        fs::write(
-            snapshot.join("index.html"),
-            r#"<!doctype html>
+        js_ast::with_swc_globals(|| {
+            let temp = tempfile::tempdir()?;
+            let root = temp.path();
+            let snapshot = root.join("snapshot");
+            let extracted = root.join("extracted");
+            let out = root.join("out");
+            fs::create_dir_all(snapshot.join("static"))?;
+            fs::create_dir_all(&extracted)?;
+            fs::write(
+                snapshot.join("index.html"),
+                r#"<!doctype html>
 <html>
   <head>
     <link rel="modulepreload" href="./static/chunk-DuckMock.js">
@@ -689,232 +698,235 @@ mod tests {
   </body>
 </html>
 "#,
-        )?;
-        fs::write(
-            snapshot.join("static/index-DuckMock.js"),
-            "import { y } from './chunk-DuckMock.js';\nglobalThis.__value = y;\n",
-        )?;
-        fs::write(
-            snapshot.join("static/chunk-DuckMock.js"),
-            "export const y = 2;\n",
-        )?;
-        fs::write(
-            extracted.join("js-files.txt"),
-            "static/index-DuckMock.js\nstatic/chunk-DuckMock.js\n",
-        )?;
-        let js_list_path = extracted.join("js-files.txt");
-        let asset_summary_path = extracted.join("asset-summary.json");
-        fs::write(
-            &asset_summary_path,
-            serde_json::to_string(&AssetSummaryFixture {
-                entry_points: AssetSummaryEntryPoints { html: "index.html" },
-            })?,
-        )?;
-        let spec_path = root.join("transform-spec.yaml");
-        fs::write(
-            &spec_path,
-            serde_yaml::to_string(&PipelineSpecFixture {
-                inputs: PipelineSpecInputs {
-                    input_root: &snapshot,
-                    js_list_path: &js_list_path,
-                },
-                emit_browser_harness: EmitBrowserHarnessFixture {
-                    asset_summary_path: &asset_summary_path,
-                    force: true,
-                    out_dir: &out,
-                    snapshot_root: &snapshot,
-                },
-            })?,
-        )?;
+            )?;
+            fs::write(
+                snapshot.join("static/index-DuckMock.js"),
+                "import { y } from './chunk-DuckMock.js';\nglobalThis.__value = y;\n",
+            )?;
+            fs::write(
+                snapshot.join("static/chunk-DuckMock.js"),
+                "export const y = 2;\n",
+            )?;
+            fs::write(
+                extracted.join("js-files.txt"),
+                "static/index-DuckMock.js\nstatic/chunk-DuckMock.js\n",
+            )?;
+            let js_list_path = extracted.join("js-files.txt");
+            let asset_summary_path = extracted.join("asset-summary.json");
+            fs::write(
+                &asset_summary_path,
+                serde_json::to_string(&AssetSummaryFixture {
+                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
+                })?,
+            )?;
+            let spec_path = root.join("transform-spec.yaml");
+            fs::write(
+                &spec_path,
+                serde_yaml::to_string(&PipelineSpecFixture {
+                    inputs: PipelineSpecInputs {
+                        input_root: &snapshot,
+                        js_list_path: &js_list_path,
+                    },
+                    emit_browser_harness: EmitBrowserHarnessFixture {
+                        asset_summary_path: &asset_summary_path,
+                        force: true,
+                        out_dir: &out,
+                        snapshot_root: &snapshot,
+                    },
+                })?,
+            )?;
 
-        let summary = run_transform_cli(&TransformCli {
-            spec_source: TransformSpecSource::Flat { path: spec_path },
-            package_roots: HashMap::new(),
-            packages_root: None,
-            force: false,
-        })?;
+            let summary = run_transform_cli(&TransformCli {
+                spec_source: TransformSpecSource::Flat { path: spec_path },
+                package_roots: HashMap::new(),
+                packages_root: None,
+                force: false,
+            })?;
 
-        assert_eq!(summary.steps.len(), 3);
-        assert_eq!(summary.preparation_steps.len(), 5);
-        let rendered_summary = render_transform_summary(&summary);
-        assert!(rendered_summary.contains("- load_transform_spec"));
-        assert!(rendered_summary.contains("- prepare_js_chunks"));
-        assert!(rendered_summary.contains("- build_artifact_indexes"));
-        assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
-        assert!(rendered_summary.contains("- validate_emitted_exports"));
-        assert!(rendered_summary.contains("- emit_browser_harness"));
-        assert!(out.join("bootstrap.js").exists());
-        assert!(out.join("manifest.json").exists());
-        let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
-        assert!(entry.contains("../chunk-DuckMock/entry.js"));
-        let chunk_entry = fs::read_to_string(out.join("static/chunk-DuckMock/entry.js"))?;
-        let total_bytes = entry.len() + chunk_entry.len();
-        let total_lines = entry.lines().count() + chunk_entry.lines().count();
+            assert_eq!(summary.steps.len(), 3);
+            assert_eq!(summary.preparation_steps.len(), 5);
+            let rendered_summary = render_transform_summary(&summary);
+            assert!(rendered_summary.contains("- load_transform_spec"));
+            assert!(rendered_summary.contains("- prepare_js_chunks"));
+            assert!(rendered_summary.contains("- build_artifact_indexes"));
+            assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
+            assert!(rendered_summary.contains("- validate_emitted_exports"));
+            assert!(rendered_summary.contains("- emit_browser_harness"));
+            assert!(out.join("bootstrap.js").exists());
+            assert!(out.join("manifest.json").exists());
+            let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
+            assert!(entry.contains("../chunk-DuckMock/entry.js"));
+            let chunk_entry = fs::read_to_string(out.join("static/chunk-DuckMock/entry.js"))?;
+            let total_bytes = entry.len() + chunk_entry.len();
+            let total_lines = entry.lines().count() + chunk_entry.lines().count();
 
-        // The harness tree must be self-contained: every path the manifest
-        // records resolves to a file inside `out_dir`, with no leakage to
-        // the original `extracted/` or `snapshots/` input trees. Consumers
-        // (live proxy, downstream tools) may receive the manifest through
-        // runfiles where the original input trees aren't co-located.
-        let manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/total/files")
-                .and_then(serde_json::Value::as_u64),
-            Some(2),
-        );
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/total/bytes")
-                .and_then(serde_json::Value::as_u64),
-            Some(total_bytes as u64),
-        );
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/total/lines")
-                .and_then(serde_json::Value::as_u64),
-            Some(total_lines as u64),
-        );
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/top_level_entry/files")
-                .and_then(serde_json::Value::as_u64),
-            Some(2),
-        );
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/named_modules/files")
-                .and_then(serde_json::Value::as_u64),
-            Some(0),
-        );
-        assert_eq!(
-            manifest
-                .pointer("/output_metrics/largest_files_by_bytes/0/role")
-                .and_then(serde_json::Value::as_str),
-            Some("top_level_entry"),
-        );
-        assert!(
-            manifest.get("schema_version").is_none(),
-            "harness manifest should not carry a compatibility schema_version"
-        );
-        assert!(
-            manifest.get("parse_plan").is_none(),
-            "harness manifest should no longer carry a parse_plan field"
-        );
-        for field in [
-            "source_html",
-            "asset_summary_path",
-            "chunks_manifest_path",
-            "runtime_root",
-            "out_dir",
-        ] {
-            let value = manifest
-                .get(field)
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_else(|| panic!("manifest is missing {field}"));
-            assert!(
-                !value.starts_with('/') && !value.starts_with(".."),
-                "manifest.{field} = {value:?} escapes the harness tree"
+            // The harness tree must be self-contained: every path the manifest
+            // records resolves to a file inside `out_dir`, with no leakage to
+            // the original `extracted/` or `snapshots/` input trees. Consumers
+            // (live proxy, downstream tools) may receive the manifest through
+            // runfiles where the original input trees aren't co-located.
+            let manifest: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/total/files")
+                    .and_then(serde_json::Value::as_u64),
+                Some(2),
             );
-            let resolved = out.join(value);
-            assert!(
-                resolved.exists(),
-                "manifest.{field} = {value:?} resolves to {resolved:?} which does not exist"
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/total/bytes")
+                    .and_then(serde_json::Value::as_u64),
+                Some(total_bytes as u64),
             );
-        }
-        let chunks_manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(out.join("chunks.manifest.json"))?)?;
-        assert!(
-            chunks_manifest.get("schema_version").is_none(),
-            "chunks manifest should not carry a compatibility schema_version"
-        );
-        assert_eq!(
-            chunks_manifest
-                .get("chunks")
-                .and_then(serde_json::Value::as_array)
-                .map(Vec::len),
-            Some(2)
-        );
-        Ok(())
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/total/lines")
+                    .and_then(serde_json::Value::as_u64),
+                Some(total_lines as u64),
+            );
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/top_level_entry/files")
+                    .and_then(serde_json::Value::as_u64),
+                Some(2),
+            );
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/named_modules/files")
+                    .and_then(serde_json::Value::as_u64),
+                Some(0),
+            );
+            assert_eq!(
+                manifest
+                    .pointer("/output_metrics/largest_files_by_bytes/0/role")
+                    .and_then(serde_json::Value::as_str),
+                Some("top_level_entry"),
+            );
+            assert!(
+                manifest.get("schema_version").is_none(),
+                "harness manifest should not carry a compatibility schema_version"
+            );
+            assert!(
+                manifest.get("parse_plan").is_none(),
+                "harness manifest should no longer carry a parse_plan field"
+            );
+            for field in [
+                "source_html",
+                "asset_summary_path",
+                "chunks_manifest_path",
+                "runtime_root",
+                "out_dir",
+            ] {
+                let value = manifest
+                    .get(field)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_else(|| panic!("manifest is missing {field}"));
+                assert!(
+                    !value.starts_with('/') && !value.starts_with(".."),
+                    "manifest.{field} = {value:?} escapes the harness tree"
+                );
+                let resolved = out.join(value);
+                assert!(
+                    resolved.exists(),
+                    "manifest.{field} = {value:?} resolves to {resolved:?} which does not exist"
+                );
+            }
+            let chunks_manifest: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(out.join("chunks.manifest.json"))?)?;
+            assert!(
+                chunks_manifest.get("schema_version").is_none(),
+                "chunks manifest should not carry a compatibility schema_version"
+            );
+            assert_eq!(
+                chunks_manifest
+                    .get("chunks")
+                    .and_then(serde_json::Value::as_array)
+                    .map(Vec::len),
+                Some(2)
+            );
+            Ok(())
+        })
     }
 
     #[test]
     fn cli_force_overrides_output_stage_force_flags() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        let snapshot = root.join("snapshot");
-        let extracted = root.join("extracted");
-        let js_out = root.join("js-out");
-        let harness_out = root.join("harness-out");
-        fs::create_dir_all(snapshot.join("static"))?;
-        fs::create_dir_all(&extracted)?;
-        fs::create_dir_all(&js_out)?;
-        fs::create_dir_all(&harness_out)?;
-        fs::write(js_out.join("stale.txt"), "old")?;
-        fs::write(harness_out.join("stale.txt"), "old")?;
-        fs::write(
-            snapshot.join("index.html"),
-            r#"<!doctype html>
+        js_ast::with_swc_globals(|| {
+            let temp = tempfile::tempdir()?;
+            let root = temp.path();
+            let snapshot = root.join("snapshot");
+            let extracted = root.join("extracted");
+            let js_out = root.join("js-out");
+            let harness_out = root.join("harness-out");
+            fs::create_dir_all(snapshot.join("static"))?;
+            fs::create_dir_all(&extracted)?;
+            fs::create_dir_all(&js_out)?;
+            fs::create_dir_all(&harness_out)?;
+            fs::write(js_out.join("stale.txt"), "old")?;
+            fs::write(harness_out.join("stale.txt"), "old")?;
+            fs::write(
+                snapshot.join("index.html"),
+                r#"<!doctype html>
 <script type="module" src="./static/index.js"></script>
 "#,
-        )?;
-        fs::write(
-            snapshot.join("static/index.js"),
-            "globalThis.__value = 1;\n",
-        )?;
-        let js_list_path = extracted.join("js-files.txt");
-        fs::write(&js_list_path, "static/index.js\n")?;
-        let asset_summary_path = extracted.join("asset-summary.json");
-        fs::write(
-            &asset_summary_path,
-            serde_json::to_string(&AssetSummaryFixture {
-                entry_points: AssetSummaryEntryPoints { html: "index.html" },
-            })?,
-        )?;
+            )?;
+            fs::write(
+                snapshot.join("static/index.js"),
+                "globalThis.__value = 1;\n",
+            )?;
+            let js_list_path = extracted.join("js-files.txt");
+            fs::write(&js_list_path, "static/index.js\n")?;
+            let asset_summary_path = extracted.join("asset-summary.json");
+            fs::write(
+                &asset_summary_path,
+                serde_json::to_string(&AssetSummaryFixture {
+                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
+                })?,
+            )?;
 
-        let mut spec = empty_transform_spec();
-        spec.inputs = spec::LoadJsChunksArgs {
-            input_root: snapshot.clone(),
-            js_list_path,
-        };
-        spec.write_js_tree = Some(spec::WriteJsTreeConfig {
-            out_dir: js_out.clone(),
-            force: false,
-        });
-        spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
-            asset_summary_path,
-            out_dir: harness_out.clone(),
-            snapshot_root: snapshot,
-            force: false,
-        });
-        let spec_path = root.join("transform-spec.yaml");
-        fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
+            let mut spec = empty_transform_spec();
+            spec.inputs = spec::LoadJsChunksArgs {
+                input_root: snapshot.clone(),
+                js_list_path,
+            };
+            spec.write_js_tree = Some(spec::WriteJsTreeConfig {
+                out_dir: js_out.clone(),
+                force: false,
+            });
+            spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
+                asset_summary_path,
+                out_dir: harness_out.clone(),
+                snapshot_root: snapshot,
+                force: false,
+            });
+            let spec_path = root.join("transform-spec.yaml");
+            fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
-        let summary = run_transform_cli(&TransformCli {
-            spec_source: TransformSpecSource::Flat { path: spec_path },
-            package_roots: HashMap::new(),
-            packages_root: None,
-            force: true,
-        })?;
+            let summary = run_transform_cli(&TransformCli {
+                spec_source: TransformSpecSource::Flat { path: spec_path },
+                package_roots: HashMap::new(),
+                packages_root: None,
+                force: true,
+            })?;
 
-        assert!(
-            summary
-                .steps
-                .iter()
-                .any(|step| matches!(step.stage, PipelineStage::WriteJsTree))
-        );
-        assert!(
-            summary
-                .steps
-                .iter()
-                .any(|step| matches!(step.stage, PipelineStage::EmitBrowserHarness))
-        );
-        assert!(!js_out.join("stale.txt").exists());
-        assert!(!harness_out.join("stale.txt").exists());
-        assert!(js_out.join("static/index/entry.js").exists());
-        assert!(harness_out.join("bootstrap.js").exists());
-        Ok(())
+            assert!(
+                summary
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step.stage, PipelineStage::WriteJsTree))
+            );
+            assert!(
+                summary
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step.stage, PipelineStage::EmitBrowserHarness))
+            );
+            assert!(!js_out.join("stale.txt").exists());
+            assert!(!harness_out.join("stale.txt").exists());
+            assert!(js_out.join("static/index/entry.js").exists());
+            assert!(harness_out.join("bootstrap.js").exists());
+            Ok(())
+        })
     }
 
     fn empty_transform_spec() -> TransformSpec {

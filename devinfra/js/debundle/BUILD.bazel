@@ -472,6 +472,7 @@ rust_library(
         ":artifact",
         ":emit_harness",
         ":identifier_rename_queue",
+        ":js_ast",
         ":logical_modules",
         ":prepare_chunks",
         ":rewrite_specifiers",

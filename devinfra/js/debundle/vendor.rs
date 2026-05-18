@@ -2203,90 +2203,92 @@ mod tests {
 
     #[test]
     fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {
-        let mut artifact = ChunkBundle {
-            chunks: Vec::new(),
-            chunk_table: ChunkTable::default(),
-        };
-        insert_chunk(
-            &mut artifact,
-            "app",
-            r#"import { a } from "../vendor-a/entry.js";
+        js_ast::with_swc_globals(|| {
+            let mut artifact = ChunkBundle {
+                chunks: Vec::new(),
+                chunk_table: ChunkTable::default(),
+            };
+            insert_chunk(
+                &mut artifact,
+                "app",
+                r#"import { a } from "../vendor-a/entry.js";
 import { b as localB } from "../vendor-b/entry.js";
 console.log(a, localB);
 "#,
-        );
-        insert_chunk(
-            &mut artifact,
-            "vendor-a",
-            r#"import { b } from "../vendor-b/entry.js";
+            );
+            insert_chunk(
+                &mut artifact,
+                "vendor-a",
+                r#"import { b } from "../vendor-b/entry.js";
 const a = 1;
 export { a as alpha };
 console.log(b);
 "#,
-        );
-        insert_chunk(
-            &mut artifact,
-            "vendor-b",
-            r#"const b = 2;
+            );
+            insert_chunk(
+                &mut artifact,
+                "vendor-b",
+                r#"const b = 2;
 export { b as beta };
 "#,
-        );
+            );
 
-        let vendor = BTreeMap::from([
-            (
-                "vendor-a.js".to_string(),
-                VendorMark {
-                    identity: "a".to_string(),
-                    role: VendorRole::Module,
-                    level: VendorLevel::BoundaryRename,
-                },
-            ),
-            (
-                "vendor-b.js".to_string(),
-                VendorMark {
-                    identity: "b".to_string(),
-                    role: VendorRole::Module,
-                    level: VendorLevel::BoundaryRename,
-                },
-            ),
-        ]);
+            let vendor = BTreeMap::from([
+                (
+                    "vendor-a.js".to_string(),
+                    VendorMark {
+                        identity: "a".to_string(),
+                        role: VendorRole::Module,
+                        level: VendorLevel::BoundaryRename,
+                    },
+                ),
+                (
+                    "vendor-b.js".to_string(),
+                    VendorMark {
+                        identity: "b".to_string(),
+                        role: VendorRole::Module,
+                        level: VendorLevel::BoundaryRename,
+                    },
+                ),
+            ]);
 
-        let references = ArtifactIndexes::build(&artifact).unwrap();
-        let result = rename_vendor_exports(artifact, &vendor, &references).unwrap();
-        let artifact = result.artifact;
-        let manifest = result.manifest;
+            let references = ArtifactIndexes::build(&artifact).unwrap();
+            let result = rename_vendor_exports(artifact, &vendor, &references).unwrap();
+            let artifact = result.artifact;
+            let manifest = result.manifest;
 
-        assert_eq!(manifest.counts.considered, 2);
-        assert_eq!(manifest.counts.chunks_with_mapping, 2);
-        assert_eq!(manifest.counts.rewrites, 3);
-        assert_eq!(manifest.details[0].chunk_id, "vendor-a");
-        assert_eq!(manifest.details[0].mapping_size, 1);
-        assert_eq!(manifest.details[0].rewrites, 1);
-        assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
-        assert_eq!(manifest.details[1].chunk_id, "vendor-b");
-        assert_eq!(manifest.details[1].mapping_size, 1);
-        assert_eq!(manifest.details[1].rewrites, 2);
-        assert_eq!(
-            manifest.details[1]
-                .callers
-                .iter()
-                .map(|caller| (caller.file.as_str(), caller.rewrites))
-                .collect::<Vec<_>>(),
-            vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
-        );
+            assert_eq!(manifest.counts.considered, 2);
+            assert_eq!(manifest.counts.chunks_with_mapping, 2);
+            assert_eq!(manifest.counts.rewrites, 3);
+            assert_eq!(manifest.details[0].chunk_id, "vendor-a");
+            assert_eq!(manifest.details[0].mapping_size, 1);
+            assert_eq!(manifest.details[0].rewrites, 1);
+            assert_eq!(manifest.details[0].callers[0].file, "app/entry.js");
+            assert_eq!(manifest.details[1].chunk_id, "vendor-b");
+            assert_eq!(manifest.details[1].mapping_size, 1);
+            assert_eq!(manifest.details[1].rewrites, 2);
+            assert_eq!(
+                manifest.details[1]
+                    .callers
+                    .iter()
+                    .map(|caller| (caller.file.as_str(), caller.rewrites))
+                    .collect::<Vec<_>>(),
+                vec![("app/entry.js", 1), ("vendor-a/entry.js", 1)]
+            );
 
-        assert_eq!(
-            named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
-            vec![("alpha".to_string(), "a".to_string())]
-        );
-        assert_eq!(
-            named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
-            vec![("beta".to_string(), "localB".to_string())]
-        );
-        assert_eq!(
-            named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
-            vec![("beta".to_string(), "b".to_string())]
-        );
+            assert_eq!(
+                named_imports(&artifact, "app", "entry.js", "../vendor-a/entry.js"),
+                vec![("alpha".to_string(), "a".to_string())]
+            );
+            assert_eq!(
+                named_imports(&artifact, "app", "entry.js", "../vendor-b/entry.js"),
+                vec![("beta".to_string(), "localB".to_string())]
+            );
+            assert_eq!(
+                named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
+                vec![("beta".to_string(), "b".to_string())]
+            );
+        });
     }
 
     fn insert_chunk(artifact: &mut ChunkBundle, chunk_id: &str, source: &str) {
