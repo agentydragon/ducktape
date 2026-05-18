@@ -77,6 +77,7 @@ rust_library(
         "object_literal_import_collapse_test",
         "object_literal_return_shorthand_drops_import_test",
         "duplicate_export_test",
+        "at_init_promotion_nested_closure_test",
     ]
 ]
 
