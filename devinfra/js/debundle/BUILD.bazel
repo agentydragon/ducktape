@@ -397,6 +397,7 @@ rust_library(
         "lowering/imports_cross.rs",
         "lowering/imports_runtime.rs",
         "lowering/lower.rs",
+        "lowering/materialize.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
         "lowering/plan_references.rs",
