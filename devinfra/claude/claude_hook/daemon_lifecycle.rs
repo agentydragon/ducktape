@@ -10,6 +10,14 @@
 //!   - **Circuit breaker** — file-based exponential backoff on repeated startup
 //!     failures, cleared on success.
 //!   - **`ensure_daemon`** — the full lifecycle orchestration.
+//!
+//! The circuit breaker shares the file path (`startup_failure.json` in the
+//! daemon dir), the algorithm (`2^N` backoff), and the tunables (base 2s, max
+//! 120s) with the Python impl. The JSON schema **diverges**: Python writes
+//! `last_failure` as an ISO-8601 string, this impl writes `last_failure_epoch`
+//! as a Unix-epoch integer. A session that swaps wheel for binary mid-flight
+//! sees the other impl's file as malformed, removes it, and starts a fresh
+//! failure count from zero — no crash, but the accumulated counter is lost.
 
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -117,6 +125,10 @@ pub fn kill_daemon_by_pidfile(pidfile: &Path) {
 // Circuit breaker
 // ---------------------------------------------------------------------------
 
+/// Schema diverges from the Python impl's `StartupFailure`
+/// (`client.py`): Python writes `last_failure` as an ISO-8601 string.
+/// `read_startup_failure` tolerates the mismatch by removing the file,
+/// so cross-impl reads degrade to "no breaker state" rather than crashing.
 #[derive(Serialize, Deserialize)]
 struct StartupFailure {
     consecutive_failures: u32,

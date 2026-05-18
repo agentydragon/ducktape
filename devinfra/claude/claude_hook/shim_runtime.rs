@@ -4,6 +4,16 @@
 //! The daemon resolves the real binary, applies policy (git block, bazelrc
 //! injection), and returns either `Blocked` (shim prints message, exits 1)
 //! or `Execve` with a fully resolved argv (shim just exec's it).
+//!
+//! Diverges from `devinfra/claude/hook_daemon/shim.py` on the daemon-unreachable
+//! path. `shim.py` falls straight through to the original argv (`shim.py:67`);
+//! never spawns a daemon from the shim. This runtime instead calls
+//! `daemon_lifecycle::ensure_daemon` once via `decide_with_recovery` so a
+//! transiently-dead daemon recovers in-process for the very next RPC. The
+//! `startup_failure.json` circuit breaker keeps that recovery cheap when the
+//! daemon panics deterministically: after a couple of failures `ensure_daemon`
+//! short-circuits with the same cooldown (and the same on-disk format) Python's
+//! hook-dispatch path uses (see `daemon_lifecycle.rs`).
 
 use std::collections::HashMap;
 use std::future::Future;
