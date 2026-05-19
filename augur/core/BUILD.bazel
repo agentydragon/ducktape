@@ -213,6 +213,7 @@ py_test(
         ":action_log_py",
         ":scheduled_cashflows_py",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )

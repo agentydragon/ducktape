@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest_bazel
 
 from augur.core.action_log import (
@@ -24,11 +25,8 @@ def test_build_cashflow_log_attributes_scheduled_cash_flows() -> None:
     net_cf = _zero_matrix(rollout_count, month_index.size)
     sale_cf = _zero_matrix(rollout_count, month_index.size)
     partner = _zero_matrix(rollout_count, month_index.size)
-    # Property net cash flow at month 2 only (months 0+ gated to skip month 0).
     net_cf[:, 2] = np.array([100.0, 200.0, 300.0])
-    # Sale cash flow at month 3 only.
     sale_cf[:, 3] = np.array([1000.0, 1000.0, 1000.0])
-    # Partner contribution at month 1.
     partner[:, 1] = np.array([50.0, 50.0, 50.0])
 
     scheduled = build_scheduled_cashflows(
@@ -43,19 +41,20 @@ def test_build_cashflow_log_attributes_scheduled_cash_flows() -> None:
         maintenance_accrual_usd=_zero_matrix(rollout_count, month_index.size),
     )
 
-    log = build_cashflow_log_from_scheduled(scheduled, account_id="checking")
+    log = build_cashflow_log_from_scheduled(scheduled, actor_id="owner", account_id="checking")
     assert log.schema == CASHFLOW_LOG_SCHEMA
 
-    # 3 rollouts × 1 active month each for net_cf and partner, 3 × 1 for sale → 9 rows.
     assert log.height == 9
-    causes = sorted(log["cause"].unique().to_list())
-    assert causes == sorted(
+    assert sorted(log["cause"].unique().to_list()) == sorted(
         {
             CashflowCause.PROPERTY_NET_CASH_FLOW.value,
             CashflowCause.PROPERTY_SALE_CASH_FLOW.value,
             CashflowCause.PARTNER_CONTRIBUTION_USED.value,
         }
     )
+    # All rows carry the same (actor_id, account_id) pair attribution.
+    assert log["actor_id"].unique().to_list() == ["owner"]
+    assert log["account_id"].unique().to_list() == ["checking"]
 
 
 def test_derive_cash_matrix_matches_running_balance() -> None:
@@ -74,11 +73,12 @@ def test_derive_cash_matrix_matches_running_balance() -> None:
         insurance_accrual_usd=_zero_matrix(rollout_count, month_index.size),
         maintenance_accrual_usd=_zero_matrix(rollout_count, month_index.size),
     )
-    log = build_cashflow_log_from_scheduled(scheduled, account_id="checking")
+    log = build_cashflow_log_from_scheduled(scheduled, actor_id="owner", account_id="checking")
     initial = np.array([10_000.0, 20_000.0])
 
     matrix = derive_cash_matrix(
         log,
+        actor_id="owner",
         account_id="checking",
         initial_balance_per_rollout=initial,
         rollout_count=rollout_count,
@@ -86,6 +86,31 @@ def test_derive_cash_matrix_matches_running_balance() -> None:
     )
     expected = np.array([[10_000.0, 10_000.0, 10_500.0, 10_500.0], [20_000.0, 20_000.0, 20_700.0, 20_700.0]])
     np.testing.assert_array_equal(matrix, expected)
+
+
+def test_derive_cash_matrix_filters_by_actor_id() -> None:
+    rollout_count = 1
+    month_index = np.array([0, 1], dtype=np.int64)
+    log = pl.DataFrame(
+        {
+            "rollout_index": [0, 0],
+            "month_index": [1, 1],
+            "actor_id": ["owner", "partner"],
+            "account_id": ["checking", "checking"],
+            "amount_delta_usd": [100.0, 999.0],
+            "cause": ["x", "x"],
+        },
+        schema=CASHFLOW_LOG_SCHEMA,
+    )
+    matrix = derive_cash_matrix(
+        log,
+        actor_id="owner",
+        account_id="checking",
+        initial_balance_per_rollout=np.array([0.0]),
+        rollout_count=rollout_count,
+        month_index=month_index,
+    )
+    np.testing.assert_array_equal(matrix, np.array([[0.0, 100.0]]))
 
 
 def test_derive_cash_matrix_empty_log_returns_initial_repeated() -> None:
@@ -103,11 +128,13 @@ def test_derive_cash_matrix_empty_log_returns_initial_repeated() -> None:
             insurance_accrual_usd=_zero_matrix(rollout_count, month_index.size),
             maintenance_accrual_usd=_zero_matrix(rollout_count, month_index.size),
         ),
+        actor_id="owner",
         account_id="checking",
     )
     initial = np.array([1.0, 2.0, 3.0])
     matrix = derive_cash_matrix(
         log,
+        actor_id="owner",
         account_id="checking",
         initial_balance_per_rollout=initial,
         rollout_count=rollout_count,

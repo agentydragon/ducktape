@@ -8,11 +8,12 @@ the full plan.
 
 Phase 2 of the refactor introduces:
 
-  - `CASHFLOW_LOG_SCHEMA` — one row per (rollout, month, account_id,
-    cause) cash delta.
+  - `CASHFLOW_LOG_SCHEMA` — one row per (rollout, month, actor_id,
+    account_id, cause) cash delta.
   - `build_cashflow_log_from_scheduled(...)` — fold a `ScheduledCashflows`
-    frame's cash-flow kinds into the log shape. Today the engine still
-    maintains the `cash` matrix from its 1D `current_cash` local;
+    frame's cash-flow kinds into the log shape, attributed to one
+    (actor_id, account_id) pair. Today the engine still maintains the
+    `cash` matrix from its 1D `current_cash` local;
     `derive_cash_matrix(...)` reconstructs that matrix from the log +
     initial cash and downstream phases will assert parity then drop the
     matrix maintenance.
@@ -46,6 +47,7 @@ class CashflowCause(StrEnum):
 CASHFLOW_LOG_SCHEMA: dict[str, pl.DataType] = {
     "rollout_index": pl.Int64(),
     "month_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
     "account_id": pl.Utf8(),
     "amount_delta_usd": pl.Float64(),
     "cause": pl.Utf8(),
@@ -59,17 +61,18 @@ _SCHEDULED_TO_CAUSE: dict[ScheduledCashflowKind, CashflowCause] = {
 }
 
 
-def build_cashflow_log_from_scheduled(scheduled: ScheduledCashflows, *, account_id: str) -> pl.DataFrame:
+def build_cashflow_log_from_scheduled(scheduled: ScheduledCashflows, *, actor_id: str, account_id: str) -> pl.DataFrame:
     """Fold a `ScheduledCashflows` frame's cash-flow kinds into the
-    cashflow-log schema, attributed to a single cash account.
+    cashflow-log schema, attributed to a single `(actor_id, account_id)`
+    pair.
 
-    Today the engine has only one cash account (the primary owner's
-    checking); Phase 3+ multi-account support will partition this
-    further. The output frame has one row per `(rollout, month, kind)`
-    where the amount is non-zero; the 0-amount rows are dropped to keep
-    the log compact. Note: `PROPERTY_NET_CASH_FLOW` rows at month=0 are
-    also dropped to match the engine's `if month > 0:` guard at the
-    main-loop application site.
+    Engine today has one cash account (the primary owner's checking) for
+    every scheduled cashflow; multi-account / multi-agent emission lands
+    in Phase 5 alongside per-policy log emission. The output frame has
+    one row per `(rollout, month, kind)` where the amount is non-zero;
+    0-amount rows are dropped. `PROPERTY_NET_CASH_FLOW` and
+    `PARTNER_CONTRIBUTION_USED` rows at month=0 are dropped to match the
+    engine's `if month > 0:` guards at the main-loop application site.
     """
     blocks: list[pl.DataFrame] = []
     for kind, cause in _SCHEDULED_TO_CAUSE.items():
@@ -82,6 +85,7 @@ def build_cashflow_log_from_scheduled(scheduled: ScheduledCashflows, *, account_
             {
                 "rollout_index": rollout_axis,
                 "month_index": month_axis,
+                "actor_id": [actor_id] * amounts.size,
                 "account_id": [account_id] * amounts.size,
                 "amount_delta_usd": amounts,
                 "cause": [cause.value] * amounts.size,
@@ -89,8 +93,6 @@ def build_cashflow_log_from_scheduled(scheduled: ScheduledCashflows, *, account_
             schema=CASHFLOW_LOG_SCHEMA,
         )
         if kind is ScheduledCashflowKind.PROPERTY_NET_CASH_FLOW:
-            # Engine applies this only for month > 0 (see scenario_engine
-            # main loop). Match the gate so the derived matrix lines up.
             frame = frame.filter(pl.col("month_index") > scheduled.month_index[0])
         if kind is ScheduledCashflowKind.PARTNER_CONTRIBUTION_USED:
             frame = frame.filter(pl.col("month_index") > scheduled.month_index[0])
@@ -102,25 +104,20 @@ def build_cashflow_log_from_scheduled(scheduled: ScheduledCashflows, *, account_
 def derive_cash_matrix(
     log: pl.DataFrame,
     *,
+    actor_id: str,
     account_id: str,
     initial_balance_per_rollout: np.ndarray,
     rollout_count: int,
     month_index: np.ndarray,
 ) -> np.ndarray:
-    """Derive a `(rollouts, len(month_index))` cash matrix for one account
-    from `log` + the per-rollout starting balance. Each `[:, M]` column
-    is `initial + sum_{m <= M} amount_delta_usd` for this `account_id`.
-
-    The result is `cash[r, M] = initial[r] + sum(deltas[r, m] for m in
-    month_index where m <= month_index[M])`."""
+    """Derive a `(rollouts, len(month_index))` cash matrix for one
+    `(actor_id, account_id)` pair from `log` + the per-rollout starting
+    balance. Each `[:, M]` column is `initial + sum_{m <= M}
+    amount_delta_usd` for that pair."""
     month_count = int(month_index.size)
-    matrix = np.zeros((rollout_count, month_count), dtype=np.float64)
-    filtered = log.filter(pl.col("account_id") == account_id)
+    filtered = log.filter((pl.col("actor_id") == actor_id) & (pl.col("account_id") == account_id))
     if filtered.height == 0:
-        matrix[:, :] = initial_balance_per_rollout[:, None]
-        return matrix
-    # Group deltas by (rollout, month) then scatter into a dense matrix;
-    # cum-sum along the month axis to produce running balances.
+        return np.broadcast_to(initial_balance_per_rollout[:, None], (rollout_count, month_count)).copy()
     per_month = (
         filtered.group_by(["rollout_index", "month_index"])
         .agg(pl.col("amount_delta_usd").sum())
