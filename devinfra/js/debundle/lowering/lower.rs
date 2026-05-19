@@ -426,14 +426,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 &entry_exports_by_original_local,
                 RuntimeImportLookup {
                     imports: runtime_import_facts,
-                    // `body_facts` walked the pre-rename body
-                    // (naturalize defers application), so every
-                    // referenced ident already carries its
-                    // pre-rename atom — the reverse-lookup path
-                    // through `heuristic_renames` is dead in this
-                    // call. We still pass `local_renames` so the
-                    // dead branch compiles; Phase 9 retires it.
-                    heuristic_renames: &local_renames,
                 },
             )
         });

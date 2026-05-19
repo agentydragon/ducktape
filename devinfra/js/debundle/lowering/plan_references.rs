@@ -124,13 +124,13 @@ pub(super) fn collect_imported_reexports_by_module(
     by_module
 }
 
-/// `naturalize_module_body`) provides the reverse lookup when the
-/// body has been renamed. The long-term fix is the
-/// collect→validate→execute-once rename pipeline tracked in
-/// <devinfra/js/debundle/TODO.md> ("Rename pipeline").
+/// Runtime-import resolution context. Single-field for now;
+/// `heuristic_renames` retired in Phase 9 (the reverse-lookup
+/// path through naturalize's post-rename atoms is dead now that
+/// naturalize defers body application until after this function
+/// runs).
 pub(super) struct RuntimeImportLookup<'a> {
     pub(super) imports: &'a RuntimeImportFacts,
-    pub(super) heuristic_renames: &'a BTreeMap<String, String>,
 }
 
 pub(super) fn plan_module_reference_needs<'a>(
@@ -191,29 +191,13 @@ pub(super) fn plan_module_reference_needs<'a>(
         if body_facts.imported_locals.contains(body_id) {
             continue;
         }
-        // Direct hit when the body still uses the original local. Fall back to
-        // a reverse lookup through `heuristic_renames` when a naturalizer pass
-        // renamed the binding (e.g. `sA` → `propKeyA` from a return-object
-        // alias collapse): the body now references `(propKeyA, ctxt=X)`, but
-        // the source chunk's import map is keyed by `(sA, ctxt=X)`. The
-        // recovered `RuntimeImportInfo` keeps `imported = "sA"`, so emit
-        // produces `import { sA as propKeyA } from "<src>"` via
-        // `runtime_reimport_specifier`'s local-vs-imported branch. The
-        // naturalizer's in-place sym mutation preserves `ctxt`, so we
-        // reconstruct the pre-rename Id by pairing the pre-rename sym
-        // (looked up in heuristic_renames as the entry whose value
-        // matches the body sym) with the body Id's own ctxt.
-        let info = runtime_imports.imports.imports.get(body_id).or_else(|| {
-            runtime_imports
-                .heuristic_renames
-                .iter()
-                .find(|(_, post)| post.as_str() == name_str)
-                .and_then(|(pre, _)| {
-                    let pre_id: Id = (pre.as_str().into(), body_id.1);
-                    runtime_imports.imports.imports.get(&pre_id)
-                })
-        });
-        if let Some(info) = info {
+        // Direct Id-based lookup. Phase 6's deferred naturalize
+        // application means `body_facts` walks pre-rename bodies,
+        // so every `body_id` matches the source chunk's import
+        // map keys directly — the legacy reverse-lookup through
+        // a `heuristic_renames` post→pre map is now dead and was
+        // retired here (Phase 9).
+        if let Some(info) = runtime_imports.imports.imports.get(body_id) {
             needs.runtime_reimports.insert(name_str.to_string(), info);
         }
     }
