@@ -13,7 +13,15 @@ import pytest
 import pytest_bazel
 
 from augur.sim.apply import apply_events
-from augur.sim.scenario import Agent, InitialAccountBalance, RecurringTransfer, Scenario, ScheduledTransfer
+from augur.sim.scenario import (
+    Agent,
+    InitialAccountBalance,
+    InitialLot,
+    RecurringTransfer,
+    Scenario,
+    ScheduledAssetSale,
+    ScheduledTransfer,
+)
 from augur.sim.simulate import _initial_state, simulate
 
 
@@ -292,6 +300,208 @@ def test_combined_one_off_and_recurring() -> None:
         .item()
     )
     assert alice_final == 15000.0
+
+
+def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
+    """L4 part A — single-lot scenario. Alice has 100 units of VTI
+    bought 24 months pre-horizon at $80/unit (so cost basis $8000).
+    At month 3 she sells 30 units at $120/unit; proceeds = $3600
+    credit to checking. After the sale: lot has 70 units remaining,
+    cash up by $3600. One lot_disposition row records the FIFO
+    consumption with cost_basis_consumed = 30 × $80 = $2400."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti_seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=3,
+                cause_id="alice_partial_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=30.0,
+                price_per_unit_usd=120.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=6,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Pre-sale: month 3 cross-section still has 100 units (apply for
+    # month M produces the M+1 cross-section).
+    lots_at_m3 = result.asset_lots.filter(pl.col("month_index") == 3)
+    assert lots_at_m3.get_column("remaining_quantity").to_list() == [100.0]
+
+    # Post-sale: month 4 onward, 70 units remain.
+    for month in (4, 5, 6):
+        snapshot = result.asset_lots.filter(pl.col("month_index") == month)
+        assert snapshot.get_column("remaining_quantity").to_list() == [70.0]
+
+    # Cash: 0 at month 0..3, then $3600 at month 4 onward.
+    cash_trajectory = (
+        result.cash_balances.filter(pl.col("agent_id") == "alice")
+        .sort("month_index")
+        .get_column("balance_usd")
+        .to_list()
+    )
+    assert cash_trajectory == [0.0, 0.0, 0.0, 0.0, 3600.0, 3600.0, 3600.0]
+
+    # Disposition log: one row, with FIFO from the seeded lot.
+    assert result.events_log.lot_dispositions.height == 1
+    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert disp["lot_id"] == "alice_vti_seed"
+    assert disp["cause_id"] == "alice_partial_sale"
+    assert disp["month_index"] == 3
+    assert disp["purchase_month_index"] == -24
+    assert disp["units_sold"] == 30.0
+    assert disp["cost_basis_consumed_usd"] == 2400.0
+    assert disp["proceeds_usd"] == 3600.0
+
+
+def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
+    """Selling all 100 units exhausts the lot. Remaining quantity
+    drops to 0; the lot row persists in the asset_lots frame with
+    `remaining_quantity = 0` (lots are not deleted on full
+    disposition — they remain in state for historical reference)."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti_seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=100.0,
+                cost_basis_per_unit_usd=90.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=2,
+                cause_id="full_liquidation",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=100.0,
+                price_per_unit_usd=150.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=3,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    remaining_after = result.asset_lots.filter(pl.col("month_index") == 3).get_column("remaining_quantity").item()
+    assert remaining_after == 0.0
+
+    assert result.events_log.lot_dispositions.height == 1
+    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert disp["units_sold"] == 100.0
+    assert disp["proceeds_usd"] == 15000.0
+    assert disp["cost_basis_consumed_usd"] == 9000.0
+
+
+def test_asset_sale_scales_across_rollouts() -> None:
+    """The lot frame fans across rollouts identically when inputs
+    are deterministic; the disposition resolution is vectorized
+    over the rollout dimension."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=0,
+                quantity=50.0,
+                cost_basis_per_unit_usd=100.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=20.0,
+                price_per_unit_usd=110.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=2,
+    )
+    rollout_count = 100
+    result = simulate(scenario, rollout_count=rollout_count)
+
+    # Every rollout has one disposition.
+    assert result.events_log.lot_dispositions.height == rollout_count
+    # Every rollout's lot row at end-of-horizon has 30 units remaining.
+    end_state = result.asset_lots.filter(pl.col("month_index") == 2)
+    assert end_state.height == rollout_count
+    assert end_state.get_column("remaining_quantity").unique().to_list() == [30.0]
+
+
+def test_lot_disposition_replay_invariant() -> None:
+    """Replaying the event log from the initial state must
+    reproduce the incremental end-state — for both cash and lots.
+    This catches drift between `apply_events` and the live loop."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=50.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-6,
+                quantity=40.0,
+                cost_basis_per_unit_usd=75.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="partial",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=10.0,
+                price_per_unit_usd=200.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=2,
+    )
+    rollout_count = 3
+
+    result = simulate(scenario, rollout_count=rollout_count)
+
+    initial = _initial_state(scenario, rollout_count)
+    replayed = apply_events(initial, result.events_log)
+
+    final_cash = (
+        result.cash_balances.filter(pl.col("month_index") == 2)
+        .drop("month_index")
+        .sort(["rollout_index", "agent_id", "account_id"])
+    )
+    final_lots = (
+        result.asset_lots.filter(pl.col("month_index") == 2).drop("month_index").sort(["rollout_index", "lot_id"])
+    )
+
+    assert replayed.cash_balances.sort(["rollout_index", "agent_id", "account_id"]).equals(final_cash)
+    assert replayed.asset_lots.sort(["rollout_index", "lot_id"]).equals(final_lots)
 
 
 if __name__ == "__main__":

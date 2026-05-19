@@ -68,13 +68,52 @@ class RecurringTransfer(BaseModel):
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
+class InitialLot(BaseModel):
+    """A tax lot that exists at scenario start. Models pre-existing
+    holdings: Alice already owns 100 units of VTI bought 24 months
+    before the sim starts at $80/unit. The sim creates this lot at
+    month 0 as an `AssetPurchase` event with the supplied
+    `purchase_month_index` (which may be negative — purchases
+    pre-dating the horizon are fine and feed into LTCG/STCG
+    classification of later sales)."""
+
+    lot_id: str
+    agent_id: str
+    asset_id: str
+    purchase_month_index: int
+    quantity: float
+    cost_basis_per_unit_usd: float
+
+
+class ScheduledAssetSale(BaseModel):
+    """Sell a configured quantity of an asset at a fixed month. The
+    sale consumes from the agent's lots of that asset in FIFO order
+    by `purchase_month_index`. Proceeds = `quantity *
+    price_per_unit_usd` are credited to `proceeds_account_id`.
+
+    At spike-1 step 4 the price is configured directly; at L5 + L10
+    the market bundle supplies it from the per-rollout per-month
+    price path."""
+
+    month: int
+    cause_id: str
+    agent_id: str
+    asset_id: str
+    quantity: float
+    price_per_unit_usd: float
+    proceeds_account_id: str
+
+
 class Scenario(BaseModel):
     """Spike-1 simulation scenario. Carries the minimum to run
     a multi-rollout simulation over a fixed horizon with both
-    scheduled and recurring transfers."""
+    scheduled and recurring transfers, plus tax lots and asset
+    sales."""
 
     agents: list[Agent]
     initial_cash: list[InitialAccountBalance]
+    initial_lots: list[InitialLot] = Field(default_factory=list)
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
+    scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     horizon_months: PositiveInt

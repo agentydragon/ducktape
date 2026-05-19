@@ -2,8 +2,8 @@
 
 The state-over-time frames (long-form, keyed by
 `(rollout_index, month_index, ...)`) plus the append-only event
-log. At spike 1 only `cash_balances` is populated; later layers
-add `asset_lots`, `liabilities`, `property_state`, etc.
+log. At spike 1 step 4: `cash_balances` and `asset_lots`. Later
+layers add `liabilities`, `property_state`, etc.
 """
 
 from __future__ import annotations
@@ -21,4 +21,5 @@ class SimulationRun:
     `(rollout_index, month_index, ...)` plus the event log."""
 
     cash_balances: pl.DataFrame
+    asset_lots: pl.DataFrame
     events_log: EventLog
