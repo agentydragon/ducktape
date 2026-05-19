@@ -318,40 +318,6 @@ pub(super) fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<Strin
     collector.names
 }
 
-/// Map plan-side `original -> exported` to `actual_local -> exported`.
-///
-/// When a spec gives a binding a readable exported name, prefer that
-/// readable name as the consumer-side local too. That keeps the final
-/// emitted tree from retaining the input-bundle name merely as an import
-/// alias. Collisions still mint a fresh local and get recorded in
-/// `renames` so the entry body can be rewritten after emission.
-pub(super) fn disambiguate_import_locals(
-    bindings: &BTreeMap<String, String>,
-    occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    bindings
-        .iter()
-        .map(|(original, exported)| {
-            let preferred = if exported != original {
-                exported.as_str()
-            } else {
-                original.as_str()
-            };
-            let actual = if occupied.contains(preferred) {
-                mint_fresh_local_name(preferred, occupied)
-            } else {
-                preferred.to_string()
-            };
-            occupied.insert(actual.clone());
-            if actual != *original {
-                renames.insert(original.clone(), actual.clone());
-            }
-            (actual, exported.clone())
-        })
-        .collect()
-}
-
 /// Map residual-entry imports from `original -> entry export` to
 /// `actual_local -> exported`.
 ///

@@ -1,10 +1,11 @@
 //! Emit cross-module + residual-entry imports for a moved module body.
-//! Both call `disambiguate_*_import_locals` (util.rs) to mint fresh
-//! locals when names collide with already-occupied bindings.
+//! Cross-module imports (Phase 7b) flow through
+//! `disambiguate_import_locals_via_plan`; residual-entry imports still
+//! use the legacy `disambiguate_residual_entry_import_locals` until
+//! Phase 7c migrates the EntryExport-keyed variant.
 
-use super::util::{
-    disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
-};
+use super::chunk_renames::disambiguate_import_locals_via_plan;
+use super::util::{disambiguate_residual_entry_import_locals, import_decl_for_plan};
 use super::*;
 
 pub(super) fn cross_module_imports_for_plan(
@@ -13,7 +14,8 @@ pub(super) fn cross_module_imports_for_plan(
     factorization: &ChunkFactorization,
     occupied: &mut BTreeSet<String>,
     renames: &mut BTreeMap<String, String>,
-) -> Vec<ModuleItem> {
+    chunk_top_level_mark: swc_common::Mark,
+) -> Result<Vec<ModuleItem>> {
     // Sort providers by their position in the factorization's
     // `linker_order` (a topological linearization of `I ∪ S`).
     // ECMA-262's depth-first link traversal visits each module's
@@ -28,19 +30,30 @@ pub(super) fn cross_module_imports_for_plan(
             .linker_position(ModuleId(LogicalModuleIndex(idx)))
             .unwrap_or(usize::MAX)
     });
-    providers
-        .into_iter()
-        .filter_map(|provider_index| {
-            let bindings = imports_by_provider.remove(&provider_index)?;
-            factorization
-                .analysis
-                .logical_module(LogicalModuleIndex(provider_index))
-                .map(|provider| {
-                    let resolved = disambiguate_import_locals(&bindings, occupied, renames);
-                    import_decl_for_plan(from_file, &provider.target_file, &resolved)
-                })
-        })
-        .collect()
+    let mut items = Vec::new();
+    for provider_index in providers {
+        let Some(bindings) = imports_by_provider.remove(&provider_index) else {
+            continue;
+        };
+        let Some(provider) = factorization
+            .analysis
+            .logical_module(LogicalModuleIndex(provider_index))
+        else {
+            continue;
+        };
+        let resolved = disambiguate_import_locals_via_plan(
+            &bindings,
+            occupied,
+            renames,
+            chunk_top_level_mark,
+        )?;
+        items.push(import_decl_for_plan(
+            from_file,
+            &provider.target_file,
+            &resolved,
+        ));
+    }
+    Ok(items)
 }
 
 pub(super) fn residual_entry_imports_for_moved_body(

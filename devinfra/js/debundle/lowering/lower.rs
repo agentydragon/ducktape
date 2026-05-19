@@ -391,8 +391,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 factorization,
                 &mut module_import_locals,
                 &mut module_import_renames,
+                chunk_top_level_mark,
             )
-        });
+        })?;
         let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
             residual_entry_imports_for_moved_body(
                 &plan.id,
