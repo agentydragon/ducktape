@@ -83,6 +83,33 @@ What's left:
       are 10-30 LOC mask-and-sum kernels that map directly to
       `group_by + sum`); the count is what makes it work, not the depth.
 
+## Event-stream polars migration followups
+
+The event-stream root migration in `augur/plans/event_stream_polars_refactor.md`
+landed across commits `a2c3009` (failure_events POC), `d6a9fd7` (obligation
+lifecycle), `a3c0f5e` (funding_decisions), `87453e5` (lot_dispositions),
+`5aa202b` (market_observations), `65ad23a` (accounting_details), `0ac2bc7`
+(effects), `ec69dbc` (policy_decisions + `_with_trajectory_identity`
+teardown). Bench `simulate_set` dropped from 15.7 s → 3.4 s (-78%) at
+3 scenarios × 32 rollouts × 360 months.
+
+Followups still on the table:
+
+- [ ] **`MarketBundle` provider exposes the market-path frame directly.**
+      Today `scenario_engine._market_path_observations_frame` pulls the
+      multiplier matrices off the bundle and assembles a polars frame on
+      the engine side. The bundle already owns the array shape; a method
+      like `market_bundle.market_path_observations_frame(scenario)` lands
+      that responsibility on the right side of the boundary and removes
+      the engine-side glue. Separate concern from the perf refactor;
+      worth doing in a follow-up.
+- [ ] **Migrate `tax_lots` and `liabilities` snapshots** if/when uniform
+      column-major shape becomes worth the diff. Both are end-of-run
+      static, not hot — left alone in this refactor.
+- [ ] **Engine arithmetic → polars expressions** (the remaining
+      `Refactor D` rollup item above). Independent track but reads
+      naturally on the polars-backed `ScenarioRunArrays`.
+
 ## Response wire surface
 
 - [ ] **Extend `ReportSpec` `include_*` gates to the smaller response
