@@ -504,5 +504,204 @@ def test_lot_disposition_replay_invariant() -> None:
     assert replayed.asset_lots.sort(["rollout_index", "lot_id"]).equals(final_lots)
 
 
+def test_fifo_sale_crossing_two_lots() -> None:
+    """L4 part B — multi-lot FIFO crossing. Alice has two lots of
+    VTI: lot A (older, 6 months pre-horizon, 100 units @ $80) and
+    lot B (month 2, 50 units @ $100). At month 8 she sells 120
+    units at $200/unit; FIFO consumes the full 100 units of lot A
+    plus 20 units of lot B. Proceeds = 120 × $200 = $24000."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="lot_a_old",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-6,
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            ),
+            InitialLot(
+                lot_id="lot_b_younger",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=2,
+                quantity=50.0,
+                cost_basis_per_unit_usd=100.0,
+            ),
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=8,
+                cause_id="big_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=120.0,
+                price_per_unit_usd=200.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=10,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Two disposition rows for one sale (FIFO crossed two lots).
+    assert result.events_log.lot_dispositions.height == 2
+    by_lot = {
+        row["lot_id"]: row
+        for row in result.events_log.lot_dispositions.sort("purchase_month_index").iter_rows(named=True)
+    }
+    assert by_lot["lot_a_old"]["units_sold"] == 100.0
+    assert by_lot["lot_a_old"]["cost_basis_consumed_usd"] == 8000.0
+    assert by_lot["lot_a_old"]["proceeds_usd"] == 20000.0
+    assert by_lot["lot_b_younger"]["units_sold"] == 20.0
+    assert by_lot["lot_b_younger"]["cost_basis_consumed_usd"] == 2000.0
+    assert by_lot["lot_b_younger"]["proceeds_usd"] == 4000.0
+
+    # Post-sale lot snapshot: lot A is empty, lot B has 30 units.
+    post = (
+        result.asset_lots.filter(pl.col("month_index") == 9)
+        .sort("lot_id")
+        .select("lot_id", "remaining_quantity")
+        .to_dicts()
+    )
+    assert post == [
+        {"lot_id": "lot_a_old", "remaining_quantity": 0.0},
+        {"lot_id": "lot_b_younger", "remaining_quantity": 30.0},
+    ]
+
+    # Cash credited with full $24000.
+    assert (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 9))
+        .get_column("balance_usd")
+        .item()
+        == 24000.0
+    )
+
+
+def test_fifo_holding_period_classification_per_disposition() -> None:
+    """The disposition log carries `purchase_month_index` and
+    sale-time `month_index` so downstream tax classification can
+    compute holding period = sale - purchase per disposition row.
+    LTCG split happens at 12 months; here the older lot is 18
+    months old (LTCG) and the younger lot is 4 months old (STCG)."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="long_held",
+                agent_id="alice",
+                asset_id="btc",
+                purchase_month_index=-12,
+                quantity=2.0,
+                cost_basis_per_unit_usd=20000.0,
+            ),
+            InitialLot(
+                lot_id="short_held",
+                agent_id="alice",
+                asset_id="btc",
+                purchase_month_index=2,
+                quantity=1.0,
+                cost_basis_per_unit_usd=40000.0,
+            ),
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=6,
+                cause_id="liquidate",
+                agent_id="alice",
+                asset_id="btc",
+                quantity=2.5,
+                price_per_unit_usd=60000.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        horizon_months=7,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    dispositions = result.events_log.lot_dispositions.with_columns(
+        holding_period_months=pl.col("month_index") - pl.col("purchase_month_index")
+    ).sort("purchase_month_index")
+
+    rows = dispositions.iter_rows(named=True)
+    long_disp = next(rows)
+    short_disp = next(rows)
+
+    assert long_disp["lot_id"] == "long_held"
+    assert long_disp["holding_period_months"] == 18  # ≥12 → LTCG
+    assert long_disp["units_sold"] == 2.0
+    assert short_disp["lot_id"] == "short_held"
+    assert short_disp["holding_period_months"] == 4  # <12 → STCG
+    assert short_disp["units_sold"] == 0.5
+
+
+def test_sales_of_two_different_assets_are_independent() -> None:
+    """Two sales at different months on different assets resolve
+    against their own lots independently. Tests that the
+    `(agent, asset)` filter in FIFO doesn't bleed across assets."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="vti_lot",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=0,
+                quantity=10.0,
+                cost_basis_per_unit_usd=100.0,
+            ),
+            InitialLot(
+                lot_id="qqq_lot",
+                agent_id="alice",
+                asset_id="qqq",
+                purchase_month_index=0,
+                quantity=10.0,
+                cost_basis_per_unit_usd=200.0,
+            ),
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=2,
+                cause_id="sell_vti",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=4.0,
+                price_per_unit_usd=150.0,
+                proceeds_account_id="checking",
+            ),
+            ScheduledAssetSale(
+                month=5,
+                cause_id="sell_qqq",
+                agent_id="alice",
+                asset_id="qqq",
+                quantity=3.0,
+                price_per_unit_usd=250.0,
+                proceeds_account_id="checking",
+            ),
+        ],
+        horizon_months=6,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    assert result.events_log.lot_dispositions.height == 2
+
+    end_lots = result.asset_lots.filter(pl.col("month_index") == 6).sort("lot_id")
+    by_lot = {row["lot_id"]: row["remaining_quantity"] for row in end_lots.iter_rows(named=True)}
+    assert by_lot == {"qqq_lot": 7.0, "vti_lot": 6.0}
+
+    # Cash: 4×150 + 3×250 = $1350.
+    assert (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 6))
+        .get_column("balance_usd")
+        .item()
+        == 1350.0
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
