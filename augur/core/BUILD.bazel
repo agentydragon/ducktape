@@ -290,6 +290,7 @@ py_library(
         ":scheduled_cashflows_py",
         ":schemas_py",
         ":simulation_state_py",
+        ":tax_actor_py",
         "@pypi//numpy",
         "@pypi//polars",
     ],

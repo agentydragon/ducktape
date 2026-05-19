@@ -36,7 +36,7 @@ from augur.core.annual_tax import (
     california_income_tax_due_usd,
     federal_income_tax_due_usd,
 )
-from augur.core.scenario_set import TaxProfile
+from augur.core.scenario_set import TaxFilingStatus, TaxProfile
 
 MONTHS_PER_YEAR = 12
 
@@ -48,18 +48,26 @@ _QUARTERLY_OFFSETS_IN_TAX_YEAR: tuple[int, ...] = (3, 5, 8)
 _Q4_OFFSET_IN_NEXT_YEAR: int = 0
 _YEAR_END_TAX_OFFSET: int = 11
 
-# Safe-harbor fraction of prior year's tax to pay across the 4 quarters.
-# 110% if prior-year AGI >= threshold, else 100%. First-year fallback:
-# 90% of current year's tax (we can't know current year mid-loop, so we
-# fall back to prior_year_tax_usd or skip — see TaxActor.quarterly_*).
-_SAFE_HARBOR_FIRST_YEAR_FRACTION = 0.90
+# Safe-harbor fraction of prior-year tax to pay across the 4 quarters.
+# 110% if prior-year AGI exceeded the high-AGI threshold for the filing
+# status (single/MFJ/HoH: $150k; MFS: $75k); else 100%. Year 0 with no
+# `tax_profile.prior_year_tax_usd` supplied emits no quarterlies — the
+# year-end true-up settles the full year tax. Users wanting Y0 quarterlies
+# supply `tax_profile.prior_year_tax_usd` as a user-settable knob.
 _SAFE_HARBOR_HIGH_INCOME_FRACTION = 1.10
 _SAFE_HARBOR_LOW_INCOME_FRACTION = 1.00
-_SAFE_HARBOR_HIGH_INCOME_AGI_THRESHOLD_USD = 150_000.0
+_SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD = 150_000.0
+_SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS = 75_000.0
+
+
+def _safe_harbor_high_agi_threshold_usd(tax_profile: TaxProfile) -> float:
+    if tax_profile.filing_status is TaxFilingStatus.MARRIED_FILING_SEPARATELY:
+        return _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD_MFS
+    return _SAFE_HARBOR_HIGH_AGI_THRESHOLD_USD
 
 
 def _safe_harbor_prior_year_fraction(tax_profile: TaxProfile) -> float:
-    if tax_profile.annual_ordinary_income_usd >= _SAFE_HARBOR_HIGH_INCOME_AGI_THRESHOLD_USD:
+    if float(tax_profile.annual_ordinary_income_usd) > _safe_harbor_high_agi_threshold_usd(tax_profile):
         return _SAFE_HARBOR_HIGH_INCOME_FRACTION
     return _SAFE_HARBOR_LOW_INCOME_FRACTION
 
@@ -169,17 +177,32 @@ class TaxActor:
         accumulator.mortgage_principal_sum_usd += mortgage_principal_balance_usd
         accumulator.mortgage_principal_months_active += active
 
+    def _safe_harbor_year_total(self, obligation_tax_year: int) -> np.ndarray | None:
+        """Per-rollout safe-harbor total for `obligation_tax_year` — the
+        amount the year's 4 quarterly payments would sum to. Returns
+        None when no safe-harbor applies (year 0 with no
+        `tax_profile.prior_year_tax_usd`; year N>=1 before year N-1
+        closed out)."""
+        if obligation_tax_year == 0:
+            if self.tax_profile.prior_year_tax_usd is None:
+                return None
+            base_per_rollout = float(self.tax_profile.prior_year_tax_usd) * _safe_harbor_prior_year_fraction(
+                self.tax_profile
+            )
+            return np.full(self.rollout_count, base_per_rollout, dtype="float64")
+        prior_year_actual = self.year_actual_tax_usd.get(obligation_tax_year - 1)
+        if prior_year_actual is None:
+            return None
+        return prior_year_actual * _safe_harbor_prior_year_fraction(self.tax_profile)
+
     def quarterly_obligation_due(self, *, month_index: int) -> np.ndarray | None:
         """If `month_index` falls on a quarterly estimated-tax marker,
         return the safe-harbor amount this rollout owes; else None.
 
-        Per-rollout amount = (prior-year actual × safe-harbor fraction)
-        / 4. Year 0 uses `tax_profile.prior_year_tax_usd` when supplied;
-        otherwise no quarterly obligation is emitted (the first-year-90%
-        exception requires knowing the current year's tax, which we
-        don't have until December — falling back to no obligation is
-        consistent with the IRS rule's effect: no penalty, just the
-        year-end true-up swallows the full amount)."""
+        Per-rollout amount = safe-harbor-total / 4. Year 0 uses
+        `tax_profile.prior_year_tax_usd` when supplied; otherwise no
+        quarterly obligation emits (the user-settable knob — set
+        `prior_year_tax_usd` to enable year-0 quarterlies)."""
         offset_in_year = month_index % MONTHS_PER_YEAR
         tax_year = month_index // MONTHS_PER_YEAR
         if offset_in_year in _QUARTERLY_OFFSETS_IN_TAX_YEAR:
@@ -189,31 +212,42 @@ class TaxActor:
             obligation_tax_year = tax_year - 1
         else:
             return None
-        if obligation_tax_year == 0:
-            if self.tax_profile.prior_year_tax_usd is None:
-                return None
-            base_per_rollout = float(self.tax_profile.prior_year_tax_usd) * _safe_harbor_prior_year_fraction(
-                self.tax_profile
-            )
-            return np.full(self.rollout_count, base_per_rollout / 4.0, dtype="float64")
-        prior_year_actual = self.year_actual_tax_usd.get(obligation_tax_year - 1)
-        if prior_year_actual is None:
+        safe_harbor_total = self._safe_harbor_year_total(obligation_tax_year)
+        if safe_harbor_total is None:
             return None
-        return prior_year_actual * _safe_harbor_prior_year_fraction(self.tax_profile) / 4.0
+        return safe_harbor_total / 4.0
 
-    def annual_obligation_due(self, *, month_index: int) -> np.ndarray | None:
+    def annual_obligation_due(self, *, month_index: int, force_year_end: bool = False) -> np.ndarray | None:
         """If `month_index` is a year-end marker (offset 11 within its
         tax year), compute the year's actual tax (closing out the
         accumulator) and return `actual - estimated_paid_this_year`.
-        Else None."""
+        Else None.
+
+        `force_year_end` lets the engine override the offset check
+        when `month_index` is the last in-horizon month of its tax
+        year (and the natural Dec marker would fall past horizon).
+        Mirrors the horizon-clipping behavior of today's
+        `_year_end_tax_obligation_due_usd` so an outstanding annual
+        tax never escapes the simulation."""
         offset_in_year = month_index % MONTHS_PER_YEAR
-        if offset_in_year != _YEAR_END_TAX_OFFSET:
+        if offset_in_year != _YEAR_END_TAX_OFFSET and not force_year_end:
             return None
         year = month_index // MONTHS_PER_YEAR
         accumulator = self._year_accumulator(year)
         actual_tax = self._compute_year_actual_tax(accumulator)
         self.year_actual_tax_usd[year] = actual_tax
-        return np.maximum(0.0, actual_tax - self.year_estimated_paid_usd[year])
+        # Credit estimated paid so far PLUS scheduled-but-not-yet-paid
+        # quarterlies (Q4 lands Jan 15 of next year, after this year-end
+        # marker). The simulator places year-end residual at Dec 31 as
+        # `actual_tax - all_4_scheduled_quarterlies` so total settled
+        # across all markers equals `actual_tax` exactly. If safe-harbor
+        # is None (year 0 with no prior_year_tax), no quarterlies will
+        # fire — year-end residual is the full actual tax.
+        paid = self.year_estimated_paid_usd[year].copy()
+        safe_harbor_total = self._safe_harbor_year_total(year)
+        if safe_harbor_total is not None:
+            paid = np.maximum(paid, safe_harbor_total)
+        return np.maximum(0.0, actual_tax - paid)
 
     def record_estimated_paid(self, *, month_index: int, paid_usd: np.ndarray) -> None:
         """Add this month's estimated-tax payment to the appropriate

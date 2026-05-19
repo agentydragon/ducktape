@@ -1299,16 +1299,20 @@ def test_quarterly_estimated_tax_happy_path_q1_through_q4_with_zero_year_end() -
         assert cash[due_month] == pytest.approx(cash[due_month - 1] - expected_per_quarter)
 
 
-def test_quarterly_estimated_tax_first_year_uses_90pct_of_current_year_tax() -> None:
-    """When no prior-year tax is supplied, the IRS first-year exception kicks in:
-    each quarterly payment is 90% / 4 of the simulated current-year tax. The
-    four obligations together sum to ~90% of the full annual tax bill.
+def test_quarterly_estimated_tax_first_year_with_no_prior_tax_skips_quarterlies() -> None:
+    """When no prior-year tax is supplied, no quarterly estimated-tax
+    obligations emit for year 0 — the year-end true-up settles the full
+    actual year tax. (Phase 4b behavior: inline TaxActor can't reach
+    forward in time to size year-0 quarterlies as 90% of current year's
+    actual tax. Users wanting year-0 quarterlies supply
+    `tax_profile.prior_year_tax_usd` as a user-settable knob; see
+    `test_quarterly_estimated_tax_multi_year_uses_prior_year_tax_with_high_agi_threshold`.)
     """
     scenario = Scenario(
         scenario_id="estimated_tax_first_year",
         label="Estimated Tax First Year",
         actors=(_simple_actor(),),
-        # No `prior_year_tax_usd` — first-year fallback (90% of current-year tax).
+        # No `prior_year_tax_usd` — no year-0 quarterlies will fire.
         tax_profile=TaxProfile(),
         initial_balance_sheet=InitialBalanceSheet(
             accounts=(
@@ -1338,17 +1342,11 @@ def test_quarterly_estimated_tax_first_year_uses_90pct_of_current_year_tax() -> 
     result = _run_scenario(scenario, horizon_months=13)
     total_year_tax = float(np.sum(result.rollout(0).series(ReportMetric.TOTAL_INCOME_TAX_USD)))
     estimated = _estimated_tax_obligations(result)
-    assert {obligation.month_index for obligation in estimated} == {3, 5, 8, 12}
-    total_estimated = sum(obligation.amount_due_usd for obligation in estimated)
-    # Four quarters each pay 90% / 4 of the current-year tax. The four together
-    # sum to 90% of the year tax.
-    assert_allclose(total_estimated, 0.9 * total_year_tax)
-    for obligation in estimated:
-        assert_allclose(obligation.amount_due_usd, 0.9 * total_year_tax / 4)
-    # Year-end picks up the residual 10%.
+    assert estimated == ()
+    # Year-end picks up the full year tax.
     annual = _annual_tax_obligations(result)
     assert len(annual) == 1
-    assert_allclose(annual[0].amount_due_usd, total_year_tax * 0.1)
+    assert_allclose(annual[0].amount_due_usd, total_year_tax)
 
 
 def test_quarterly_estimated_tax_multi_year_uses_prior_year_tax_with_high_agi_threshold() -> None:
