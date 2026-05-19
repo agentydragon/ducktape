@@ -251,7 +251,8 @@ class TaxActor:
         safe_harbor_total = self._safe_harbor_year_total(year)
         if safe_harbor_total is not None:
             paid = np.maximum(paid, safe_harbor_total)
-        return np.maximum(0.0, actual_tax - paid)
+        residual: np.ndarray = np.maximum(0.0, actual_tax - paid)
+        return residual
 
     def record_estimated_paid(self, *, month_index: int, paid_usd: np.ndarray) -> None:
         """Add this month's estimated-tax payment to the appropriate
@@ -320,4 +321,5 @@ class TaxActor:
             )
             - self._baseline_california_usd,
         )
-        return federal_tax + california_tax
+        total: np.ndarray = federal_tax + california_tax
+        return total
