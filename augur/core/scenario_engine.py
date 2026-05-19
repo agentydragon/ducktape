@@ -67,7 +67,6 @@ from augur.core.scenario_set import (
     CryptoAssetPosition,
     Effect,
     FailureEvent,
-    FailureEventType,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
     FundingDecision,
@@ -107,7 +106,6 @@ from augur.core.scenario_set import (
     SellPublicStockDecision,
     SellSp500Effect,
     SettlementResult,
-    SettlementStatus,
     SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxFilingStatus,
@@ -200,19 +198,27 @@ class ScenarioRunArrays:
     lot_dispositions: tuple[LotDisposition, ...]
     liabilities: tuple[LiabilityState, ...]
     accounting_details: tuple[AccountingDetail, ...]
-    obligations: tuple[Obligation, ...]
     funding_decisions: tuple[FundingDecision, ...]
-    settlement_results: tuple[SettlementResult, ...]
-    # Long-format polars frame keyed by `rollout_index, month_index, ...`,
-    # with trajectory-identity columns joined in at end-of-run. The
-    # `failure_events` property below materializes back to the
-    # `tuple[FailureEvent, ...]` shape the wire schema + test surface expect.
+    # Single root for the obligation lifecycle. Three Pydantic surfaces
+    # (`obligations`, `settlement_results`, `failure_events`) materialize
+    # from this one frame via projection/filter at end-of-run — `obligations`
+    # is the full set, `settlement_results` is a column subset (different
+    # status-enum class, identical string values), `failure_events` is the
+    # `unpaid > 0 & required` filter with a derived `failure_event_id`.
     # See `augur/plans/event_stream_polars_refactor.md`.
-    failure_events_frame: pl.DataFrame
+    obligations_frame: pl.DataFrame
+
+    @property
+    def obligations(self) -> tuple[Obligation, ...]:
+        return tuple(event_streams.materialize_obligations(self.obligations_frame))
+
+    @property
+    def settlement_results(self) -> tuple[SettlementResult, ...]:
+        return tuple(event_streams.materialize_settlement_results(self.obligations_frame))
 
     @property
     def failure_events(self) -> tuple[FailureEvent, ...]:
-        return tuple(event_streams.materialize_failure_events(self.failure_events_frame))
+        return tuple(event_streams.materialize_failure_events(self.obligations_frame))
 
     @property
     def rollout_count(self) -> int:
@@ -246,11 +252,12 @@ class ScenarioRunArrays:
         # the status loop below doesn't have to iterate the (possibly huge)
         # event tuple. One row per rollout that ever produced a failure.
         failure_summary = (
-            self.failure_events_frame.lazy()
+            self.obligations_frame.lazy()
+            .filter((pl.col("unpaid_amount_usd") > 0) & pl.col("required"))
             .group_by("rollout_index")
             .agg(
                 first_failed_obligation_month_index=pl.col("month_index").min(),
-                failed_obligation_count=pl.col("failure_event_id").count(),
+                failed_obligation_count=pl.col("obligation_id").count(),
                 unpaid_obligation_usd=pl.col("unpaid_amount_usd").sum(),
             )
             .collect()
@@ -1377,10 +1384,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     lot_dispositions: list[LotDisposition] = []
     liabilities: list[LiabilityState] = []
     accounting_details: list[AccountingDetail] = []
-    obligations: list[Obligation] = []
+    # One root accumulator for the entire obligation lifecycle. The
+    # `obligations`, `settlement_results`, and `failure_events` Pydantic
+    # surfaces are projection/filter views over this single frame at
+    # end-of-run (see `event_streams.materialize_*`).
+    obligations = event_streams.StreamFrameBuilder(event_streams.OBLIGATION_LIFECYCLE_SCHEMA)
     funding_decisions: list[FundingDecision] = []
-    settlement_results: list[SettlementResult] = []
-    failure_events = event_streams.StreamFrameBuilder(event_streams.FAILURE_EVENT_SCHEMA)
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
@@ -1488,8 +1497,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     checking_floor_shortfall_usd=checking_floor_shortfall,
                     obligations=obligations,
                     funding_decisions=funding_decisions,
-                    settlement_results=settlement_results,
-                    failure_events=failure_events,
                     accounting=accounting,
                     sp500_sale_action_records=sp500_sale_action_records,
                     crypto_sale_action_records=crypto_sale_action_records,
@@ -1778,7 +1785,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         source_month_tax_due_usd=annual_tax.total_income_tax_usd,
         tax_profile=scenario.tax_profile,
     )
-    settlement_count_before_estimated = len(settlement_results)
+    obligation_blocks_before_estimated = obligations.block_count()
     # PE funding state is shared across all post-loop obligation settlements.
     # Sales taken to fund obligations update remaining units/basis/value matrices
     # in place and append to the action-record list so the standard
@@ -1815,8 +1822,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall_usd=checking_floor_shortfall,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -1827,8 +1832,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         int(tax_year_by_position_for_credit.max()) + 1 if tax_year_by_position_for_credit.size else 0
     )
     estimated_payments_credit = _estimated_payments_credit_per_year_usd(
-        settlement_results=settlement_results,
-        initial_settlement_count=settlement_count_before_estimated,
+        obligations_slice=obligations.build_slice(obligation_blocks_before_estimated),
         tax_year_count=tax_year_count_for_credit,
         rollout_count=rollout_count,
     )
@@ -1858,8 +1862,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         checking_floor_shortfall_usd=checking_floor_shortfall,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -2007,8 +2009,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2041,8 +2041,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2077,8 +2075,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             checking_floor_shortfall_usd=checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -2102,8 +2098,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         owner_actor_id=primary_owner_actor_id,
         obligations=obligations,
         funding_decisions=funding_decisions,
-        settlement_results=settlement_results,
-        failure_events=failure_events,
         accounting=accounting,
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
@@ -2549,15 +2543,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         accounting_details=_sorted_accounting_details(
             _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
         ),
-        obligations=_sorted_obligations(_with_trajectory_identity(obligations, trace_identity_by_rollout)),
         funding_decisions=_sorted_funding_decisions(
             _with_trajectory_identity(funding_decisions, trace_identity_by_rollout)
         ),
-        settlement_results=_sorted_settlement_results(
-            _with_trajectory_identity(settlement_results, trace_identity_by_rollout)
-        ),
-        failure_events_frame=event_streams.sort_failure_events(
-            event_streams.join_trajectory_identity(failure_events.build(), trace_identity_frame)
+        obligations_frame=event_streams.sort_obligation_lifecycle(
+            event_streams.join_trajectory_identity(obligations.build(), trace_identity_frame)
         ),
     )
 
@@ -3337,20 +3327,6 @@ def _sorted_accounting_details(records: list[AccountingDetail]) -> tuple[Account
     )
 
 
-def _sorted_obligations(records: list[Obligation]) -> tuple[Obligation, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda obligation: (
-                obligation.month_index,
-                obligation.rollout_index,
-                obligation.obligation_type,
-                obligation.obligation_id,
-            ),
-        )
-    )
-
-
 def _sorted_funding_decisions(records: list[FundingDecision]) -> tuple[FundingDecision, ...]:
     return tuple(
         sorted(
@@ -3362,34 +3338,6 @@ def _sorted_funding_decisions(records: list[FundingDecision]) -> tuple[FundingDe
                 decision.decision_type,
                 decision.policy_id or "",
                 decision.obligation_id,
-            ),
-        )
-    )
-
-
-def _sorted_settlement_results(records: list[SettlementResult]) -> tuple[SettlementResult, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda settlement: (
-                settlement.month_index,
-                settlement.rollout_index,
-                settlement.obligation_type,
-                settlement.obligation_id,
-            ),
-        )
-    )
-
-
-def _sorted_failure_events(records: list[FailureEvent]) -> tuple[FailureEvent, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda event: (
-                event.month_index,
-                event.rollout_index,
-                event.failure_event_type,
-                event.failure_event_id,
             ),
         )
     )
@@ -3819,46 +3767,53 @@ def _quarterly_estimated_tax_obligation_due_usd(
 
 
 def _estimated_payments_credit_per_year_usd(
-    *,
-    settlement_results: list[SettlementResult],
-    initial_settlement_count: int,
-    tax_year_count: int,
-    rollout_count: int,
+    *, obligations_slice: pl.DataFrame, tax_year_count: int, rollout_count: int
 ) -> np.ndarray:
     """Sum estimated-tax `amount_paid_usd` against the Dec 31 year-end true-up.
 
-    Reads the settlement rows appended since `initial_settlement_count` and
-    aggregates the paid amounts for `ESTIMATED_TAX_PAYMENT` rows by the tax
-    year their `month_index` falls into. Only estimated payments whose due
-    month is at or before the tax year's Dec 31 (offset 11) credit toward
-    that year's residual — the Q4 obligation for tax year N lands on Jan 15
-    of year N+1 (offset 12), which is after the Dec 31 year-end and therefore
+    `obligations_slice` is the slice of the obligation lifecycle frame
+    written since estimated-tax recording started — typically built via
+    `obligations.build_slice(start_block)`. The function aggregates the
+    paid amounts for `ESTIMATED_TAX_PAYMENT` rows by the tax year their
+    `month_index` falls into. Only estimated payments whose due month is at
+    or before the tax year's Dec 31 (offset 11) credit toward that year's
+    residual — the Q4 obligation for tax year N lands on Jan 15 of year
+    N+1 (offset 12), which is after the Dec 31 year-end and therefore
     cannot reduce the year-end true-up amount. The Q4 payment is still a
     legitimate prepayment toward year N's tax bill in IRS terms, but the
     year-end obligation amount the simulator computes at Dec 31 can only
     "see" payments that have already happened by that date.
+
+    The Q4 obligation for tax year N lands at month `N*12 + 12` (Jan 15 of
+    year N+1) but pays toward year N's tax bill, so it credits year N's
+    year-end residual. The Dec 31 year-end true-up at month `N*12 + 11`
+    thus "looks ahead" to credit the scheduled Q4 payment — by the time
+    the simulator finishes processing the estimated-tax obligations for
+    the whole horizon, Q4 has either been paid or has failed independently
+    as its own obligation, so the year-end can treat it as known. Q1/Q2/Q3
+    (offsets 3/5/8) credit their own tax year by straightforward integer
+    division; Q4 (offset 12) needs the -1 correction below.
     """
     credit = np.zeros((rollout_count, tax_year_count), dtype="float64")
-    for settlement in settlement_results[initial_settlement_count:]:
-        if settlement.obligation_type is not ObligationType.ESTIMATED_TAX_PAYMENT:
-            continue
-        # The Q4 obligation for tax year N lands at month `N*12 + 12` (Jan 15
-        # of year N+1) but pays toward year N's tax bill, so it credits year
-        # N's year-end residual. The Dec 31 year-end true-up at month `N*12 +
-        # 11` thus "looks ahead" to credit the scheduled Q4 payment — by the
-        # time the simulator finishes processing the estimated-tax obligations
-        # for the whole horizon, Q4 has either been paid or has failed
-        # independently as its own obligation, so the year-end can treat it as
-        # known. Q1/Q2/Q3 (offsets 3/5/8) credit their own tax year by
-        # straightforward integer division; Q4 (offset 12) needs the -1
-        # correction below.
-        due_month = settlement.month_index
-        if due_month % MONTHS_PER_YEAR == 0 and due_month >= MONTHS_PER_YEAR:
-            tax_year = due_month // MONTHS_PER_YEAR - 1
-        else:
-            tax_year = due_month // MONTHS_PER_YEAR
-        if 0 <= tax_year < tax_year_count:
-            credit[settlement.rollout_index, tax_year] += settlement.amount_paid_usd
+    if obligations_slice.height == 0:
+        return credit
+    tax_year_expr = (
+        pl.when((pl.col("month_index") % MONTHS_PER_YEAR == 0) & (pl.col("month_index") >= MONTHS_PER_YEAR))
+        .then(pl.col("month_index") // MONTHS_PER_YEAR - 1)
+        .otherwise(pl.col("month_index") // MONTHS_PER_YEAR)
+        .alias("tax_year")
+    )
+    aggregated = (
+        obligations_slice.lazy()
+        .filter(pl.col("obligation_type") == ObligationType.ESTIMATED_TAX_PAYMENT.value)
+        .with_columns(tax_year_expr)
+        .filter((pl.col("tax_year") >= 0) & (pl.col("tax_year") < tax_year_count))
+        .group_by(["rollout_index", "tax_year"])
+        .agg(credit_usd=pl.col("amount_paid_usd").sum())
+        .collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        credit[int(row["rollout_index"]), int(row["tax_year"])] = float(row["credit_usd"])
     return credit
 
 
@@ -3882,10 +3837,8 @@ def _settle_required_cash_obligations(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: list[Obligation],
+    obligations: event_streams.StreamFrameBuilder,
     funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -3920,8 +3873,6 @@ def _settle_required_cash_obligations(
             checking_floor_shortfall_usd=checking_floor_shortfall_usd,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
@@ -4017,10 +3968,8 @@ def _settle_required_cash_obligation_at_month_position(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: list[Obligation],
+    obligations: event_streams.StreamFrameBuilder,
     funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -4331,8 +4280,6 @@ def _settle_required_cash_obligation_at_month_position(
     )
     _record_obligation_settlement_rows(
         obligations,
-        settlement_results,
-        failure_events,
         obligation_type=obligation_type,
         actor_id=actor_id,
         creditor_id=creditor_id,
@@ -4833,9 +4780,7 @@ def _record_unfunded_obligation_decisions(
 
 
 def _record_obligation_settlement_rows(
-    obligations: list[Obligation],
-    settlement_results: list[SettlementResult],
-    failure_events: event_streams.StreamFrameBuilder,
+    obligations: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4847,86 +4792,59 @@ def _record_obligation_settlement_rows(
     unpaid_amount_usd: np.ndarray,
     required: bool = True,
 ) -> None:
-    for rollout_index in np.nonzero(amount_due_usd > 0)[0].tolist():
-        due = float(amount_due_usd[rollout_index])
-        paid = float(amount_paid_usd[rollout_index])
-        unpaid = float(unpaid_amount_usd[rollout_index])
-        obligation_id = _obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index)
-        obligation_status = _obligation_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
-        settlement_status = _settlement_status(amount_due_usd=due, unpaid_amount_usd=unpaid)
-        obligations.append(
-            Obligation(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=obligation_id,
-                obligation_type=obligation_type,
-                actor_id=actor_id,
-                creditor_id=creditor_id,
-                due_month_index=month_index,
-                amount_due_usd=due,
-                amount_paid_usd=paid,
-                unpaid_amount_usd=unpaid,
-                status=obligation_status,
-                source_policy_id=source_policy_id,
-            )
-        )
-        settlement_results.append(
-            SettlementResult(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=obligation_id,
-                obligation_type=obligation_type,
-                actor_id=actor_id,
-                status=settlement_status,
-                amount_due_usd=due,
-                amount_paid_usd=paid,
-                unpaid_amount_usd=unpaid,
-            )
-        )
-    if required:
-        # One column-block per recorder call covering every rollout whose
-        # obligation went (at least partially) unpaid. Per-row allocation
-        # inside the per-rollout loop above is a ~50% perf regression on the
-        # bench when many obligations fail to settle, so this stays out of
-        # the loop.
-        failed_mask = (amount_due_usd > 0) & (unpaid_amount_usd > 0)
-        if failed_mask.any():
-            failed_rollouts = np.nonzero(failed_mask)[0].astype(np.int64)
-            failed_unpaid = unpaid_amount_usd[failed_rollouts].astype(np.float64)
-            obligation_ids = [
-                _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in failed_rollouts
-            ]
-            failure_events.extend(
-                {
-                    "rollout_index": failed_rollouts,
-                    "month_index": np.full(failed_rollouts.size, month_index, dtype=np.int64),
-                    "failure_event_id": [f"{oid}:failure" for oid in obligation_ids],
-                    "failure_event_type": [FailureEventType.UNSETTLED_OBLIGATION.value] * failed_rollouts.size,
-                    "obligation_id": obligation_ids,
-                    "actor_id": [actor_id] * failed_rollouts.size,
-                    "unpaid_amount_usd": failed_unpaid,
-                }
-            )
+    # One column-block per recorder call covering every rollout with a
+    # non-zero obligation due. Per-row allocation inside a per-rollout loop
+    # was a measured +54% bench regression (a2c3009 followup); the
+    # vectorized form clears that.
+    nonzero_mask = amount_due_usd > 0
+    if not nonzero_mask.any():
+        return
+    nonzero_rollouts = np.nonzero(nonzero_mask)[0].astype(np.int64)
+    nonzero_due = amount_due_usd[nonzero_rollouts].astype(np.float64)
+    nonzero_paid = amount_paid_usd[nonzero_rollouts].astype(np.float64)
+    nonzero_unpaid = unpaid_amount_usd[nonzero_rollouts].astype(np.float64)
+    obligation_ids = [
+        _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in nonzero_rollouts
+    ]
+    obligations.extend(
+        {
+            "rollout_index": nonzero_rollouts,
+            "month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
+            "obligation_id": obligation_ids,
+            "obligation_type": [obligation_type.value] * nonzero_rollouts.size,
+            "actor_id": [actor_id] * nonzero_rollouts.size,
+            "creditor_id": [creditor_id] * nonzero_rollouts.size,
+            "due_month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
+            "amount_due_usd": nonzero_due,
+            "amount_paid_usd": nonzero_paid,
+            "unpaid_amount_usd": nonzero_unpaid,
+            "status": _vectorized_status_strings(nonzero_due, nonzero_unpaid),
+            "source_policy_id": [source_policy_id] * nonzero_rollouts.size,
+            "required": np.full(nonzero_rollouts.size, required, dtype=np.bool_),
+        }
+    )
+
+
+def _vectorized_status_strings(amount_due_usd: np.ndarray, unpaid_amount_usd: np.ndarray) -> list[str]:
+    # `ObligationStatus.value == SettlementStatus.value` for the three states
+    # (paid / partially_paid / unpaid), so one string column serves both
+    # Pydantic surfaces. Implementation mirrors `_obligation_status`.
+    out: list[str] = []
+    paid = ObligationStatus.PAID.value
+    partial = ObligationStatus.PARTIALLY_PAID.value
+    unpaid_status = ObligationStatus.UNPAID.value
+    for due, unpaid in zip(amount_due_usd.tolist(), unpaid_amount_usd.tolist(), strict=True):
+        if unpaid <= 0:
+            out.append(paid)
+        elif unpaid >= due:
+            out.append(unpaid_status)
+        else:
+            out.append(partial)
+    return out
 
 
 def _obligation_id(obligation_type: ObligationType, *, rollout_index: int, month_index: int) -> str:
     return f"{obligation_type.value}:rollout:{rollout_index}:month:{month_index}"
-
-
-def _obligation_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> ObligationStatus:
-    if unpaid_amount_usd <= 0:
-        return ObligationStatus.PAID
-    if unpaid_amount_usd >= amount_due_usd:
-        return ObligationStatus.UNPAID
-    return ObligationStatus.PARTIALLY_PAID
-
-
-def _settlement_status(*, amount_due_usd: float, unpaid_amount_usd: float) -> SettlementStatus:
-    if unpaid_amount_usd <= 0:
-        return SettlementStatus.PAID
-    if unpaid_amount_usd >= amount_due_usd:
-        return SettlementStatus.UNPAID
-    return SettlementStatus.PARTIALLY_PAID
 
 
 def _sorted_effects(effects: list[Effect]) -> tuple[Effect, ...]:
@@ -5726,10 +5644,8 @@ def _settle_partner_contribution_obligations(
     policy_steps: tuple[ActorPolicyStep[Policy], ...],
     partner_equity: PartnerEquityArrays,
     owner_actor_id: str,
-    obligations: list[Obligation],
+    obligations: event_streams.StreamFrameBuilder,
     funding_decisions: list[FundingDecision],
-    settlement_results: list[SettlementResult],
-    failure_events: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -5796,8 +5712,6 @@ def _settle_partner_contribution_obligations(
             checking_floor_shortfall_usd=partner_checking_floor_shortfall,
             obligations=obligations,
             funding_decisions=funding_decisions,
-            settlement_results=settlement_results,
-            failure_events=failure_events,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
