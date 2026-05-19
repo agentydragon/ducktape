@@ -2081,6 +2081,21 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         amount_due_usd=outside_rent_due,
     )
+    # Partner-contribution obligations: per-agreement state lives on the
+    # contributing actor (its own checking cash, sp500, crypto). Build
+    # one settlement context per agreement so the main month loop can
+    # settle inline like the primary owner's obligations do.
+    partner_settlement_contexts = [
+        _PartnerSettlementContext.new(
+            scenario=scenario,
+            agreement=agreement,
+            owner_actor_id=primary_owner_actor_id,
+            rollout_count=rollout_count,
+            month_count=month_count,
+            month_index=month_index,
+        )
+        for agreement in partner_equity.agreements
+    ]
     # Pre-inline-tax record lists feed `annual_sale_tax_allocation`'s
     # gain inputs so the per-month tax reporting matrices reflect the
     # same gains TaxActor used to size the inline obligation amounts
@@ -2543,6 +2558,48 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             remaining_sp500_basis = _ob_settled.remaining_sp500_basis
             remaining_crypto_quantity = _ob_settled.remaining_crypto_quantity
             remaining_crypto_basis = _ob_settled.remaining_crypto_basis
+        # Partner-contribution obligations: per-agreement settlement on the
+        # contributing actor's checking cash. Each agreement has its own
+        # 1D state vectors (independent of the primary owner's cash path);
+        # the settlement journal entry is a cross-actor transfer that
+        # debits the owner and credits the contributor, so settling here
+        # doesn't compete with the primary owner's cash for the month's
+        # taxes / mortgage / special-assessment / outside-rent.
+        for _partner_ctx in partner_settlement_contexts:
+            _partner_due = _partner_ctx.accumulator.amount_due_usd[:, month]
+            if not np.any(_partner_due > 0):
+                continue
+            _partner_settled = _settle_required_cash_obligation_at_month_position(
+                market_bundle=market_bundle,
+                month_position=month,
+                due_month_index=int(month_index[month]),
+                policy_steps=policy_steps,
+                obligation_amount_usd=_partner_due,
+                obligation_kind=_partner_ctx.accumulator.obligation_kind,
+                creditor_id=primary_owner_actor_id,
+                source_policy_id=_partner_ctx.agreement.policy.policy_id,
+                actor_id=_partner_ctx.agreement.policy.actor_id,
+                sources=_partner_ctx.sources,
+                cash_usd=_partner_ctx.current_cash,
+                generic_sp500_value_usd=_partner_ctx.remaining_sp500_units * sp500_multiplier,
+                remaining_sp500_units=_partner_ctx.remaining_sp500_units,
+                remaining_sp500_basis=_partner_ctx.remaining_sp500_basis,
+                crypto_value_usd=_partner_ctx.remaining_crypto_quantity * crypto_multiplier,
+                remaining_crypto_quantity=_partner_ctx.remaining_crypto_quantity,
+                remaining_crypto_basis=_partner_ctx.remaining_crypto_basis,
+                crypto_sale_usd=_partner_ctx.crypto_sale_usd,
+                crypto_sale_basis_usd=_partner_ctx.crypto_sale_basis_usd,
+                checking_floor_shortfall_usd=_partner_ctx.checking_floor_shortfall_usd,
+                accumulator=_partner_ctx.accumulator,
+                accounting=accounting,
+                sp500_sale_action_records=sp500_sale_action_records,
+                crypto_sale_action_records=crypto_sale_action_records,
+            )
+            _partner_ctx.current_cash = _partner_settled.cash_usd
+            _partner_ctx.remaining_sp500_units = _partner_settled.remaining_sp500_units
+            _partner_ctx.remaining_sp500_basis = _partner_settled.remaining_sp500_basis
+            _partner_ctx.remaining_crypto_quantity = _partner_settled.remaining_crypto_quantity
+            _partner_ctx.remaining_crypto_basis = _partner_settled.remaining_crypto_basis
         # Recompute the per-asset values after any inline tax sales for
         # the snapshot block below.
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
@@ -2884,29 +2941,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     special_assessment_accumulator.emit_funding_decisions(funding_decisions)
     outside_rent_accumulator.emit_obligations(obligations)
     outside_rent_accumulator.emit_funding_decisions(funding_decisions)
-    # Partner contribution obligations: each PartnerEquityAccrualPolicy emits a
-    # required monthly PARTNER_CONTRIBUTION obligation on the contributing actor.
-    # Settlement is a cross-actor transfer (debit owner CHECKING_CASH, credit
-    # partner CHECKING_CASH). The partner's CHECKING_CASH balance is tracked in
-    # its own (rollout, month) array — partners aren't represented in the main
-    # `cash` array (which tracks the primary owner's checking cash). A
-    # contributing-actor shortfall produces a FailureEvent and flips the rollout
-    # to FAILED, mirroring the mortgage/tax/special-assessment paths.
-    _settle_partner_contribution_obligations(
-        scenario=scenario,
-        market_bundle=market_bundle,
-        month_index=month_index,
-        rollout_count=rollout_count,
-        month_count=month_count,
-        policy_steps=policy_steps,
-        partner_equity=partner_equity,
-        owner_actor_id=primary_owner_actor_id,
-        obligations=obligations,
-        funding_decisions=funding_decisions,
-        accounting=accounting,
-        sp500_sale_action_records=sp500_sale_action_records,
-        crypto_sale_action_records=crypto_sale_action_records,
-    )
+    # Partner-contribution obligations: settlement happens inline in the
+    # main month loop above (per-agreement, after the primary owner's
+    # tax/mortgage/special/outside_rent block). Flush each agreement's
+    # accumulator row blocks to the event streams here.
+    for _partner_ctx in partner_settlement_contexts:
+        _partner_ctx.accumulator.emit_obligations(obligations)
+        _partner_ctx.accumulator.emit_funding_decisions(funding_decisions)
     _record_journal_entry_batches(
         accounting,
         month_index=month_index,
@@ -4988,6 +5029,76 @@ class _PrivateEquityFundingState:
     initial_private_equity: float
     source_holding_id: str
     sale_action_records: list[PrivateEquitySaleActionRecord]
+
+
+@dataclass
+class _PartnerSettlementContext:
+    """Per-agreement state for inline partner-contribution settlement.
+
+    Each `PartnerEquityAgreementArrays` has an obligation accumulator + per-rollout
+    1D state (the contributing actor's cash, SP500 units/basis, crypto
+    quantity/basis). The main month loop threads this state forward across
+    iterations; post-loop the accumulator's row blocks are flushed to the
+    obligation + funding-decision event streams."""
+
+    agreement: PartnerEquityAgreementArrays
+    sources: _ObligationFundingSources
+    accumulator: _ObligationFundingAccumulator
+    current_cash: np.ndarray  # (rollouts,) — contributing actor's checking cash
+    remaining_sp500_units: np.ndarray
+    remaining_sp500_basis: np.ndarray
+    remaining_crypto_quantity: np.ndarray
+    remaining_crypto_basis: np.ndarray
+    # Per-month decision matrices (sale amounts/basis/checking-floor shortfall).
+    crypto_sale_usd: np.ndarray
+    crypto_sale_basis_usd: np.ndarray
+    checking_floor_shortfall_usd: np.ndarray
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        scenario: Scenario,
+        agreement: PartnerEquityAgreementArrays,
+        owner_actor_id: str,
+        rollout_count: int,
+        month_count: int,
+        month_index: np.ndarray,
+    ) -> _PartnerSettlementContext:
+        contributing_actor_id = agreement.policy.actor_id
+        sources = _ObligationFundingSources.for_actor(scenario, actor_id=contributing_actor_id)
+        accumulator = _ObligationFundingAccumulator.new(
+            obligation_kind=_PartnerContributionObligationKind(
+                property_id=agreement.property_id, recipient_actor_id=owner_actor_id
+            ),
+            creditor_id=owner_actor_id,
+            source_policy_id=agreement.policy.policy_id,
+            actor_id=contributing_actor_id,
+            cash_source_account_id=(
+                sources.cash_source_account.account_id if sources.cash_source_account is not None else None
+            ),
+            rollout_count=rollout_count,
+            month_index=month_index,
+            amount_due_usd=agreement.column("contribution_usd"),
+        )
+        partner_initial_cash = _partner_initial_funding_cash_usd(
+            scenario,
+            actor_id=contributing_actor_id,
+            configured_contribution_total_usd=float(np.max(np.sum(agreement.column("contribution_usd"), axis=1))),
+        )
+        return cls(
+            agreement=agreement,
+            sources=sources,
+            accumulator=accumulator,
+            current_cash=np.full(rollout_count, partner_initial_cash, dtype="float64"),
+            remaining_sp500_units=np.zeros(rollout_count, dtype="float64"),
+            remaining_sp500_basis=np.zeros(rollout_count, dtype="float64"),
+            remaining_crypto_quantity=np.zeros(rollout_count, dtype="float64"),
+            remaining_crypto_basis=np.zeros(rollout_count, dtype="float64"),
+            crypto_sale_usd=np.zeros((rollout_count, month_count), dtype="float64"),
+            crypto_sale_basis_usd=np.zeros((rollout_count, month_count), dtype="float64"),
+            checking_floor_shortfall_usd=np.zeros((rollout_count, month_count), dtype="float64"),
+        )
 
 
 @dataclass(frozen=True)
