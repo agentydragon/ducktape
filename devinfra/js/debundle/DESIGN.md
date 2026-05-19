@@ -353,6 +353,41 @@ the entry module's import order so the linker's reverse-DFS lands
 on a topological linearization of `I ∪ S`. Acyclicity of `I ∪ S`
 guarantees such a linearization exists.
 
+#### Emission modes
+
+`S` is materialised at owner level (`graph.rs::emit_s_chain`) and
+the chunk spec picks one of two modes via
+`chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain`:
+
+- **Strict chain** (default): for each impure top-level statement,
+  emit one `Sequenced` edge to the immediately previous impure
+  statement. This is the transitive reduction of the total order
+  over impure statements; it preserves reachability and all SCCs
+  while keeping the owner-edge count linear. Soundest path —
+  every realizable schedule satisfies it.
+
+- **Dataflow-aware** (opt-in): per-statement `(writes, reads)`
+  effect summaries (`StatementEffectSummary` in `facts.rs`) drive a
+  last-writer-precedes-reader-or-writer emission. For each impure
+  statement `curr`, emit `Sequenced(curr → prev)` only when `prev`
+  is the most recent prior writer of a cell in `curr.reads ∪
+curr.writes`. Soundness follows because any swap of two
+  consecutive impure statements with disjoint cells is unobservable
+  to any third party.
+
+  Effect cells are binding-storage cells (rebinds + identifier
+  reads) and static-key `globalThis.<prop>` cells. The mode is
+  **conditionally correct** (see AGENTS.md → "Conditionally-correct
+  optimizations"): statements containing constructs that defeat
+  static cell tracking — direct `eval(...)`, `with`,
+  `Function(...)` / `new Function(...)`, computed-key
+  `globalThis[<expr>]`, `defineProperty` on globals, `Proxy` on
+  globals — flip `dataflow_summarizable=false` and fall back to a
+  strict S-edge against every prior impure owner (also acting as
+  an opaque barrier for later statements). Auditing the input
+  bundle for these shapes is the precondition (see
+  `dataflow_audit.md`).
+
 ### Relationship
 
 ```
