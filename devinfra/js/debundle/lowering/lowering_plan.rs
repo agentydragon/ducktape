@@ -79,10 +79,8 @@ pub enum NamePolicy {
     Required(Atom),
     /// Prefer this name; if it's taken, fall back to `name_1`,
     /// `name_2`, … until a free name is found. Collision-resolution
-    /// renames use this (today's `disambiguate_import_locals`).
-    /// `_N` is the unified suffix convention adopted by Phase 7
-    /// of the plan-pipeline migration — `mint_fresh_local_name` in
-    /// `lowering/util.rs` was updated to match.
+    /// renames use this (today's `disambiguate_import_locals_via_plan`
+    /// and `disambiguate_residual_entry_import_locals_via_plan`).
     MintOrSuffix(Atom),
 }
 

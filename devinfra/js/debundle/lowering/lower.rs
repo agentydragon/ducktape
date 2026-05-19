@@ -385,24 +385,31 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         let mut module_import_renames = BTreeMap::<String, String>::new();
         let mut module_import_locals = collect_local_binding_names(&body);
         let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
+            let mut ctx = super::imports_cross::RenameContext {
+                occupied: &mut module_import_locals,
+                renames: &mut module_import_renames,
+                chunk_top_level_mark,
+            };
             cross_module_imports_for_plan(
                 &plan.target_file,
                 cross_module_imports_by_provider,
                 factorization,
-                &mut module_import_locals,
-                &mut module_import_renames,
-                chunk_top_level_mark,
+                &mut ctx,
             )
         })?;
         let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
+            let mut ctx = super::imports_cross::RenameContext {
+                occupied: &mut module_import_locals,
+                renames: &mut module_import_renames,
+                chunk_top_level_mark,
+            };
             residual_entry_imports_for_moved_body(
                 &plan.id,
                 entry_file,
                 &plan.target_file,
                 residual_entry_imports,
                 missing_residual_exports,
-                &mut module_import_locals,
-                &mut module_import_renames,
+                &mut ctx,
             )
         })?;
         if !module_import_renames.is_empty() {

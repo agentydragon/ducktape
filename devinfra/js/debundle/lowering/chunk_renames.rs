@@ -1,10 +1,9 @@
 //! Validate + collect chunk-level `chunk_renames` from the spec,
 //! including the body-level checks driven through `LoweringPlan`
-//! (Phase 5 of the plan-pipeline migration). Phase 7a adds a
-//! Plan-based wrapper for the entry-body import-disambiguation
-//! call site in `lower.rs`. The other import-disambiguation call
-//! sites (`imports_cross.rs`) still use the legacy
-//! `mint_fresh_local_name` path — migrating them is a follow-up.
+//! (Phase 5 of the plan-pipeline migration). Phases 7a-c also
+//! routed every import-disambiguation call site through Plan
+//! submission, retiring the legacy `mint_fresh_local_name`
+//! helper.
 //!
 //! The AST mutation itself still runs through `IdentifierRenamer`
 //! in `lower.rs` — the executor migration lands later, once all
@@ -203,6 +202,61 @@ pub(super) fn disambiguate_import_locals_via_plan(
             emit_renames.insert(original.clone(), actual.clone());
         }
         resolved.insert(actual, exported.clone());
+    }
+    Ok(resolved)
+}
+
+/// Phase 7c counterpart of [`disambiguate_import_locals_via_plan`]
+/// for residual-entry imports keyed on `EntryExport` (different
+/// shape — preferred local is the entry's actual local name, not
+/// the spec-exported alias). Returns `(actual_local → exported)`.
+pub(super) fn disambiguate_residual_entry_import_locals_via_plan(
+    imports: &BTreeMap<String, super::plan_references::EntryExport>,
+    occupied: &mut BTreeSet<String>,
+    emit_renames: &mut BTreeMap<String, String>,
+    chunk_top_level_mark: Mark,
+) -> Result<BTreeMap<String, String>> {
+    let mut occupied_by_scope = HashMap::new();
+    occupied_by_scope.insert(
+        Scope::Chunk,
+        occupied
+            .iter()
+            .map(|s| Atom::from(s.as_str()))
+            .collect::<HashSet<_>>(),
+    );
+    let mut plan = LoweringPlan::new(ModuleId::logical(0), Vec::new(), occupied_by_scope);
+
+    let mut resolved = BTreeMap::new();
+    for (original, entry_export) in imports {
+        let preferred = entry_export.local_name.as_str();
+        let outcome = plan.submit(
+            LoweringOp::Rename {
+                scope: Scope::Chunk,
+                original: top_level_id(original, chunk_top_level_mark),
+                name: NamePolicy::MintOrSuffix(Atom::from(preferred)),
+                reason: "residual_entry_import_disambiguation",
+                priority: Priority::ImportInduced,
+            },
+            SubmitPolicy::Fail,
+        )?;
+        let actual = match outcome {
+            SubmitOutcome::Accepted {
+                final_op:
+                    LoweringOp::Rename {
+                        name: NamePolicy::Required(atom),
+                        ..
+                    },
+            } => atom.to_string(),
+            other => bail!(
+                "unexpected submit outcome for residual-entry import disambiguation \
+                 (binding {original} → preferred {preferred}): {other:?}"
+            ),
+        };
+        occupied.insert(actual.clone());
+        if actual != *original {
+            emit_renames.insert(original.clone(), actual.clone());
+        }
+        resolved.insert(actual, entry_export.exported_name.clone());
     }
     Ok(resolved)
 }

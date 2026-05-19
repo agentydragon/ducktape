@@ -1,20 +1,31 @@
 //! Emit cross-module + residual-entry imports for a moved module body.
-//! Cross-module imports (Phase 7b) flow through
-//! `disambiguate_import_locals_via_plan`; residual-entry imports still
-//! use the legacy `disambiguate_residual_entry_import_locals` until
-//! Phase 7c migrates the EntryExport-keyed variant.
+//! Both fresh-local minting paths flow through `LoweringPlan` via
+//! `disambiguate_import_locals_via_plan` (cross-module, Phase 7b)
+//! and `disambiguate_residual_entry_import_locals_via_plan`
+//! (residual-entry, Phase 7c).
 
-use super::chunk_renames::disambiguate_import_locals_via_plan;
-use super::util::{disambiguate_residual_entry_import_locals, import_decl_for_plan};
+use super::chunk_renames::{
+    disambiguate_import_locals_via_plan, disambiguate_residual_entry_import_locals_via_plan,
+};
+use super::util::import_decl_for_plan;
 use super::*;
+
+/// Shared rename-context bundle for the import-disambiguation
+/// helpers. Bundling the three rename-state pieces in one struct
+/// keeps function signatures under clippy's argument-count
+/// threshold and makes the intent ("this is the rename state for
+/// the surrounding module emit") visible at the call site.
+pub(super) struct RenameContext<'a> {
+    pub(super) occupied: &'a mut BTreeSet<String>,
+    pub(super) renames: &'a mut BTreeMap<String, String>,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
+}
 
 pub(super) fn cross_module_imports_for_plan(
     from_file: &str,
     mut imports_by_provider: BTreeMap<usize, BTreeMap<String, String>>,
     factorization: &ChunkFactorization,
-    occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
-    chunk_top_level_mark: swc_common::Mark,
+    ctx: &mut RenameContext<'_>,
 ) -> Result<Vec<ModuleItem>> {
     // Sort providers by their position in the factorization's
     // `linker_order` (a topological linearization of `I ∪ S`).
@@ -43,9 +54,9 @@ pub(super) fn cross_module_imports_for_plan(
         };
         let resolved = disambiguate_import_locals_via_plan(
             &bindings,
-            occupied,
-            renames,
-            chunk_top_level_mark,
+            ctx.occupied,
+            ctx.renames,
+            ctx.chunk_top_level_mark,
         )?;
         items.push(import_decl_for_plan(
             from_file,
@@ -62,8 +73,7 @@ pub(super) fn residual_entry_imports_for_moved_body(
     from_file: &str,
     imports: BTreeMap<String, EntryExport>,
     missing_exports: BTreeSet<String>,
-    occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
+    ctx: &mut RenameContext<'_>,
 ) -> Result<Vec<ModuleItem>> {
     if !missing_exports.is_empty() {
         // Defense-in-depth: `auto_grown_residual_exports` is supposed
@@ -82,7 +92,12 @@ pub(super) fn residual_entry_imports_for_moved_body(
     if imports.is_empty() {
         return Ok(Vec::new());
     }
-    let resolved = disambiguate_residual_entry_import_locals(&imports, occupied, renames);
+    let resolved = disambiguate_residual_entry_import_locals_via_plan(
+        &imports,
+        ctx.occupied,
+        ctx.renames,
+        ctx.chunk_top_level_mark,
+    )?;
     Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
 }
 

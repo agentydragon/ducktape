@@ -318,38 +318,6 @@ pub(super) fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<Strin
     collector.names
 }
 
-/// Map residual-entry imports from `original -> entry export` to
-/// `actual_local -> exported`.
-///
-/// Unlike logical-module imports, the readable local is not the entry's
-/// public export name. Entry exports can be minified aliases that collide with
-/// unrelated source locals (`export { DialogButtonRow as B }` while source
-/// local `B` is a vendor import). Prefer the entry's actual local name so the
-/// moved body keeps referring to the same residual binding it referenced in
-/// the original chunk.
-pub(super) fn disambiguate_residual_entry_import_locals(
-    bindings: &BTreeMap<String, EntryExport>,
-    occupied: &mut BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    bindings
-        .iter()
-        .map(|(original, entry_export)| {
-            let preferred = entry_export.local_name.as_str();
-            let actual = if occupied.contains(preferred) {
-                mint_fresh_local_name(preferred, occupied)
-            } else {
-                preferred.to_string()
-            };
-            occupied.insert(actual.clone());
-            if actual != *original {
-                renames.insert(original.clone(), actual.clone());
-            }
-            (actual, entry_export.exported_name.clone())
-        })
-        .collect()
-}
-
 /// Pre-fill `exported` on `export { local }` re-export specifiers whose
 /// `local` is about to be renamed, so the public export name survives.
 pub(super) fn preserve_export_specifier_names(
@@ -373,17 +341,6 @@ pub(super) fn preserve_export_specifier_names(
             continue;
         }
         spec.exported = Some(spec.orig.clone());
-    }
-}
-
-pub(super) fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
-    let mut suffix = 1usize;
-    loop {
-        let candidate = format!("{base}_{suffix}");
-        if !occupied.contains(&candidate) {
-            return candidate;
-        }
-        suffix += 1;
     }
 }
 
