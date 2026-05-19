@@ -916,7 +916,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 agent_id="alice",
                 asset_id="vti",
                 purchase_month_index=-24,
-                quantity=10.0,
+                quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
             )
         ],
@@ -939,7 +939,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 cause_id="alice_long_sale",
                 agent_id="alice",
                 asset_id="vti",
-                quantity=10.0,
+                quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",
             )
