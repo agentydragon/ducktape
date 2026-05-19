@@ -7,15 +7,18 @@
 use super::chunk_renames::{
     disambiguate_import_locals_via_plan, disambiguate_residual_entry_import_locals_via_plan,
 };
+use super::lowering_plan::LoweringPlan;
 use super::util::import_decl_for_plan;
 use super::*;
 
 /// Shared rename-context bundle for the import-disambiguation
-/// helpers. Bundling the three rename-state pieces in one struct
-/// keeps function signatures under clippy's argument-count
-/// threshold and makes the intent ("this is the rename state for
-/// the surrounding module emit") visible at the call site.
+/// helpers. Bundles the chunk-wide `LoweringPlan` with the legacy
+/// `occupied` BTreeSet + `renames` BTreeMap that drive
+/// `IdentifierRenamer` (until the executor migration drops them).
+/// Keeps function signatures under clippy's argument-count
+/// threshold.
 pub(super) struct RenameContext<'a> {
+    pub(super) plan: &'a mut LoweringPlan,
     pub(super) occupied: &'a mut BTreeSet<String>,
     pub(super) renames: &'a mut BTreeMap<String, String>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
@@ -53,6 +56,7 @@ pub(super) fn cross_module_imports_for_plan(
             continue;
         };
         let resolved = disambiguate_import_locals_via_plan(
+            ctx.plan,
             &bindings,
             ctx.occupied,
             ctx.renames,
@@ -93,6 +97,7 @@ pub(super) fn residual_entry_imports_for_moved_body(
         return Ok(Vec::new());
     }
     let resolved = disambiguate_residual_entry_import_locals_via_plan(
+        ctx.plan,
         &imports,
         ctx.occupied,
         ctx.renames,

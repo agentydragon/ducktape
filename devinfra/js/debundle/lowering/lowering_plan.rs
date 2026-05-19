@@ -199,6 +199,18 @@ impl LoweringPlan {
         id
     }
 
+    /// Add names to a scope's occupied pool after construction —
+    /// for late-discovered bindings (e.g. names declared inside
+    /// function bodies that the chunk-level seed didn't capture).
+    /// Used to keep the shared plan in sync as `lower_chunk`
+    /// expands its `occupied` working set across phases.
+    pub fn extend_occupied(&mut self, scope: Scope, names: impl IntoIterator<Item = Atom>) {
+        let entry = self.occupied.entry(scope).or_default();
+        for name in names {
+            entry.insert(name);
+        }
+    }
+
     pub fn modules(&self) -> &[ModuleId] {
         &self.modules
     }

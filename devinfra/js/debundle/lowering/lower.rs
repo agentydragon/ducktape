@@ -4,13 +4,17 @@
 //! level orchestration that wraps this lives in mod.rs's
 //! `materialize_logical_chunk`.
 
-use super::chunk_renames::{disambiguate_import_locals_via_plan, validate_chunk_renames_via_plan};
+use super::chunk_renames::{
+    disambiguate_import_locals_via_plan, new_chunk_plan, submit_chunk_renames,
+};
+use super::lowering_plan::Scope;
 use super::util::{
     collect_local_binding_names, collect_occupied_local_names, import_decl_for_plan,
     preserve_export_specifier_names, relative_source, remaining_item_after_selection,
 };
 use super::*;
 use crate::time_phase;
+use swc_atoms::Atom;
 
 pub(super) struct LoweredChunk {
     pub(super) files: Vec<JsFile>,
@@ -164,26 +168,34 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
-    // Phase 5 of the plan pipeline: chunk_renames body-level
-    // validation runs through `LoweringPlan` rather than the
-    // hand-rolled `occupied`/`renamed_away` loop that used to live
-    // here. Plan submission enforces identifier validity, target
-    // collision against body locals, and duplicate-target conflicts
-    // — the same rules the old loop enforced, but routed through
-    // the unified plan API. The AST mutation itself still runs
-    // through `IdentifierRenamer` below; the executor migration
-    // lands later (Phase 7).
-    let mut body_renames = validate_chunk_renames_via_plan(
-        &entry_body,
+    // Centralized chunk-wide LoweringPlan: every rename
+    // contributor in `lower_chunk` submits here so cross-contributor
+    // collisions (chunk_renames vs. import-disambiguation vs.
+    // residual-entry imports) are caught by one validation pass.
+    let mut chunk_plan = new_chunk_plan(&entry_body);
+    // Phase 5: chunk_renames body-level validation runs through
+    // the shared plan. Identifier validity, target-vs-body-local
+    // collisions, and duplicate-target conflicts are all enforced
+    // by `plan.submit`. AST mutation still runs through
+    // `IdentifierRenamer` below — the executor migration lands
+    // after the naturalizer (Phase 6) is also on the plan.
+    let mut body_renames = submit_chunk_renames(
+        &mut chunk_plan,
         chunk_renames,
         binding_assignment,
         chunk_top_level_mark,
     )?;
-    // Reserve chunk-rename targets in `occupied` so the
-    // import-disambiguation pass below can't mint a fresh local
-    // that collides with one of them.
+    // Reserve chunk-rename targets in the legacy `occupied`
+    // BTreeSet so the legacy `IdentifierRenamer` consumers see
+    // the same name pool. (The chunk plan already saw these via
+    // submission.)
     occupied.extend(body_renames.values().cloned());
-    occupied.extend(collect_local_binding_names(&entry_body));
+    let nested_locals = collect_local_binding_names(&entry_body);
+    chunk_plan.extend_occupied(
+        Scope::Chunk,
+        nested_locals.iter().map(|s| Atom::from(s.as_str())),
+    );
+    occupied.extend(nested_locals);
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {
             continue;
@@ -206,6 +218,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         }
         let mut emit_renames = BTreeMap::<String, String>::new();
         let resolved = disambiguate_import_locals_via_plan(
+            &mut chunk_plan,
             &live_bindings,
             &mut occupied,
             &mut emit_renames,
@@ -384,8 +397,27 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         });
         let mut module_import_renames = BTreeMap::<String, String>::new();
         let mut module_import_locals = collect_local_binding_names(&body);
+        // Per-moved-module plan: each emitted module body is a
+        // separate ES-module scope, so its import-disambiguation
+        // operates on its own name pool — sharing the chunk_plan
+        // would surface false-positive cross-module collisions on
+        // bindings that two different moved modules independently
+        // import.
+        let mut module_plan = super::lowering_plan::LoweringPlan::new(
+            ModuleId::logical(0),
+            Vec::new(),
+            std::iter::once((
+                Scope::Chunk,
+                module_import_locals
+                    .iter()
+                    .map(|s| Atom::from(s.as_str()))
+                    .collect(),
+            ))
+            .collect(),
+        );
         let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
             let mut ctx = super::imports_cross::RenameContext {
+                plan: &mut module_plan,
                 occupied: &mut module_import_locals,
                 renames: &mut module_import_renames,
                 chunk_top_level_mark,
@@ -399,6 +431,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         })?;
         let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
             let mut ctx = super::imports_cross::RenameContext {
+                plan: &mut module_plan,
                 occupied: &mut module_import_locals,
                 renames: &mut module_import_renames,
                 chunk_top_level_mark,
