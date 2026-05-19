@@ -296,19 +296,106 @@ cash_balance_frame = (cashflow_log
 
 #### `asset_change_log` — every change to an asset position
 
+Capital gains across asset classes (SP500, crypto, PE, property) are
+**all the same shape** with different `asset_kind` discriminators and
+different tax treatments. Today the engine has three parallel lists of
+sale-action records (`sp500_sale_action_records`,
+`crypto_sale_action_records`, `private_equity_sale_action_records`)
+plus the property sale's gain columns on `disposition`, plus separate
+matrices per asset class for the gain aggregates. They're all the same
+shape: one event per (rollout, month, asset) realizing a
+`proceeds − basis = gain` quantity that flows into the year's tax
+computation. Unify them into one append-only event log:
+
 | column              | type | example                                                                              |
 | ------------------- | ---- | ------------------------------------------------------------------------------------ |
 | `rollout_index`     | i64  | 5                                                                                    |
 | `month_index`       | i64  | 42                                                                                   |
 | `actor_id`          | str  | `"owner"` — owning agent of the asset                                                |
 | `asset_id`          | str  | `"sp500_brokerage"`, `"pe_holding_1"`                                                |
-| `asset_kind`        | str  | `GENERIC_SP500`, `CRYPTO`, `PRIVATE_EQUITY`                                          |
+| `asset_kind`        | str  | `GENERIC_SP500`, `CRYPTO`, `PRIVATE_EQUITY`, `PROPERTY`                              |
 | `delta_units`       | f64  | −12.5 (sold) or +3.4 (bought)                                                        |
 | `delta_basis_usd`   | f64  | −5000 (sold) or +1700 (bought)                                                       |
 | `cash_proceeds_usd` | f64  | +5247 (sale) or −1700 (purchase)                                                     |
-| `taxable_gain_usd`  | f64  | +247                                                                                 |
+| `taxable_gain_usd`  | f64  | +247 (proceeds − basis; negative for losses; 0 for purchases)                        |
+| `tax_treatment`     | str? | `LONG_TERM_CAPITAL`, `SHORT_TERM_CAPITAL`, `DEPRECIATION_RECAPTURE_1250`, null       |
 | `cause_kind`        | str  | `OBLIGATION_SALE`, `LIQUIDITY_SALE`, `SCHEDULED_ACQUISITION`, `INITIAL_DEPOSIT`, ... |
 | `cause_id`          | str  | linked event ID                                                                      |
+
+**Property sales emit two rows**, one per tax treatment. The federal
+§1250 depreciation recapture caps at the 25% recapture rate while the
+appreciation portion is `LONG_TERM_CAPITAL` — they belong to different
+treatment buckets even though both come from the same disposition
+event. Splitting at the event-log level means the tax computation
+filters by `tax_treatment` without needing to know about §1250's
+quirks per asset class.
+
+**Year-end tax is a group-by on the event log**, not a sum of separate
+per-asset-class matrices:
+
+```python
+def year_taxable_amounts(events: pl.DataFrame, year: int) -> dict[str, np.ndarray]:
+    year_events = events.filter(pl.col("month_index").floordiv(12) == year)
+    return {
+        treatment: (
+            year_events.filter(pl.col("tax_treatment") == treatment)
+                .group_by("rollout_index")
+                .agg(pl.col("taxable_gain_usd").sum())
+                .sort("rollout_index")["taxable_gain_usd"].to_numpy()
+        )
+        for treatment in ("LONG_TERM_CAPITAL", "DEPRECIATION_RECAPTURE_1250", "SHORT_TERM_CAPITAL")
+    }
+```
+
+`federal_income_tax_due_usd` and `california_income_tax_due_usd` then
+take those bucket sums — they don't know or care that the gains came
+from four different asset classes. Today's
+`annual_sale_tax_allocation` constructs the same buckets implicitly by
+summing per-asset-class matrices; the unified log makes the bucketing
+explicit and removes the parallel structures.
+
+**The bug this fixes.** Today
+`generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis` at
+`scenario_engine.py:1955` **overwrites** the matrix from
+within-month-policy-chain locals only. Property-cost obligation
+settlement happens earlier in the same iteration, sells SP500 to fund
+the obligation, and appends to `sp500_sale_action_records` — but
+never updates `sp500_sale` / `sp500_basis` (those reset to zero at
+`:1820`). Result: a property-cost-driven SP500 sale with a real gain
+leaves the gain matrix at zero, and `annual_sale_tax_allocation`
+reports zero SP500 tax for the month. The unified-log shape derives
+`generic_sp500_sale_gain` (and any other per-asset-class gain matrix
+downstream consumers still want) by filter+group_by on the events,
+which automatically picks up every sale regardless of which code path
+triggered it.
+
+**What consolidates / goes away:**
+
+- `sp500_sale_action_records`, `crypto_sale_action_records`,
+  `private_equity_sale_action_records` (parallel lists) →
+  one `asset_change_log` frame.
+- `generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis` and
+  any other imperative per-asset-class gain matrices →
+  derived views: `.filter(asset_kind == X).group_by("rollout_index",
+"month_index").agg(sum(taxable_gain_usd))`.
+- `disposition.column("taxable_property_capital_gain_usd")` and
+  `disposition.column("depreciation_recapture_usd")` (precomputed
+  property-side columns) → derived views over `asset_change_log`
+  filtered to property rows by `tax_treatment` bucket.
+- The `_tax_share_for_sale_action` helper's `source_taxable_income`
+  denominator is replaced by the events-frame group-by sum so it
+  always matches the action's numerator regardless of which code
+  path triggered the sale.
+
+**Implementation ordering note.** The `taxable_gain_usd` for a sale
+event is `proceeds − basis_sold` for the units that left the position.
+Computing that requires knowing the basis attribution at sale time —
+average cost, lot-by-lot FIFO, or whatever the asset class uses today.
+The current per-asset-class action-record builders already do this
+work; the migration is to emit a row in the unified log rather than
+appending to a per-asset-class list. The `LotDisposition` lot-level
+detail can either stay as a parallel structure (it's a fine-grained
+event already) or be derived from the same source.
 
 #### `obligations_log` — every obligation accrual + settlement
 
@@ -937,6 +1024,37 @@ chain used for property-cost obligations. Delete
 This is the biggest behavioral change. Needs careful test
 preservation: snapshot tests on `Obligation` tuples for tax kinds,
 order of operations between estimated and annual tax true-up.
+
+**Sequencing constraint.** Phase 4 wiring (TaxActor observing
+per-month taxable events) depends on the unified `asset_change_log`
+landing first. Today's
+`generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis`
+overwrite at `scenario_engine.py:1955` misses property-cost-driven
+SP500 sales' gains (they only flow through `sp500_sale_action_records`,
+which the within-month-policy-chain locals don't touch); the same
+shape risk exists for crypto and PE on the post-loop sale paths. The
+TaxActor needs a single source of truth for per-month gains
+regardless of which code path triggered the sale, which is exactly
+what the unified `asset_change_log` provides. Land that first:
+
+1. **Phase 4a — unify the sale-event logs.** Replace the three
+   per-asset-class action-record lists with a single
+   `asset_change_log` frame keyed by `asset_kind` + `tax_treatment`.
+   Property sale emits two rows (LONG_TERM_CAPITAL +
+   DEPRECIATION_RECAPTURE_1250). Delete the per-month gain matrix
+   overwrites; derive them as filter+group_by views on the events
+   frame. Fixes the property-cost-driven SP500-gain bug as a side
+   effect. Behavior change: previously untaxed property-cost-driven
+   SP500 sales now correctly land in the year's tax. Tests likely
+   to flag this; the bug-fix-on-purpose framing is the right
+   defense.
+2. **Phase 4b — TaxActor wiring.** Insert TaxActor observation +
+   obligation emission inside the main loop, reading the per-month
+   gain buckets from the unified events frame. Delete the post-loop
+   `_settle_required_cash_obligations` calls for estimated_tax and
+   annual_tax. Keep the other post-loop kinds (partner_contribution,
+   special_assessment, outside_rent) for now — each can become its
+   own actor later but isn't blocking.
 
 ### Phase 5: derive everything
 
