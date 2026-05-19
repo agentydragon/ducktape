@@ -6,10 +6,11 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use spec::{
-    AnonymousStatement, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule,
-    MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity, PartialSwapMark,
-    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
-    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
+    AnonymousStatement, ChunkAnalysisOptions, ChunkRenames, EmitBrowserHarnessConfig,
+    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
+    MemberPurity, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
+    WrapperShape,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -37,6 +38,12 @@ struct AuthoringConfig {
     /// `TransformSpec`; declaring it in the authoring config keeps
     /// the policy next to the modules tree it governs.
     unassigned_mode: BTreeMap<String, UnassignedMode>,
+    /// Per-chunk opt-ins for conditionally-correct analyses (see
+    /// `devinfra/js/debundle/AGENTS.md` → "Conditionally-correct
+    /// optimizations"). Default empty — each chunk uses the
+    /// strictly-conservative analysis path unless it opts in here.
+    #[serde(default)]
+    chunk_analysis_options: BTreeMap<String, ChunkAnalysisOptions>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -125,6 +132,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         logical_modules: logical_modules_map(module_sources)?,
         chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
         unassigned_mode: config.unassigned_mode,
+        chunk_analysis_options: config.chunk_analysis_options,
         swap_vendor_chunks: SwapVendorChunksConfig {
             output_manifest_path: Some(layout.vendor_manifest_path.clone()),
             output_wrapper_dir: Some(layout.vendor_wrapper_root.clone()),

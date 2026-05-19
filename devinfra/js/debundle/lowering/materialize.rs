@@ -28,6 +28,7 @@ pub(super) struct MaterializeLogicalChunkInputs<'a> {
     pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
+    pub(super) chunk_analysis_options: &'a BTreeMap<String, ChunkAnalysisOptions>,
     pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) report_out_dir: Option<&'a Path>,
@@ -53,6 +54,7 @@ pub(super) fn materialize_logical_chunk(
         logical_modules,
         chunk_renames,
         unassigned_mode,
+        chunk_analysis_options,
         file,
         target_dir,
         report_out_dir,
@@ -464,8 +466,13 @@ pub(super) fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
+        let owner_graph_options = OwnerGraphOptions {
+            dataflow_aware_s_chain: chunk_analysis_options
+                .get(chunk_id)
+                .is_some_and(|opts| opts.dataflow_aware_s_chain),
+        };
         let precomputed = time_phase!(timings, "compute_owner_graph_and_units", {
-            compute_owner_graph_and_units(&analysis.facts)
+            compute_owner_graph_and_units_with(&analysis.facts, owner_graph_options)
         });
         if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
             time_phase!(timings, "synthesize_mini_factor_plans", {

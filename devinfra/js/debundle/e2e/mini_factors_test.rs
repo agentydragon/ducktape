@@ -23,6 +23,7 @@ fn catchall_keeps_unclaimed_bindings_in_residual() {
         chunk_renames: None,
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_catchall_file(None),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -48,6 +49,7 @@ fn mini_factors_synthesizes_one_module_per_unclaimed_unit() {
         chunk_renames: None,
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_mini_factors(),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);

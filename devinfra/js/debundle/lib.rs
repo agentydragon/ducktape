@@ -31,6 +31,7 @@ mod validation;
 
 pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
+    compute_owner_graph_and_units_with,
 };
 pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
@@ -39,12 +40,12 @@ pub use factor_assembly::{
 };
 pub use factorize::build_factorize_report;
 pub use facts::{
-    AnalysisHints, ChunkFactAnalysis, KnownEffect, StatementFacts, StatementKind, analyze_chunk,
-    find_top_level_await,
+    AnalysisHints, ChunkFactAnalysis, EffectCell, KnownEffect, StatementEffectSummary,
+    StatementFacts, StatementKind, analyze_chunk, find_top_level_await,
 };
 pub use graph::{
-    DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerId, OwnerNode,
-    build_module_quotient, build_owner_graph,
+    DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerGraphOptions, OwnerId,
+    OwnerNode, build_module_quotient, build_owner_graph, build_owner_graph_with,
 };
 pub use ids::{
     BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,

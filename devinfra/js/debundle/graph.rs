@@ -4,12 +4,29 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
 
+use crate::facts::EffectCell;
 use crate::partition::Partition;
 use crate::purity::Purity;
 use crate::{
     BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
     StatementOrdinal,
 };
+
+/// Per-chunk owner-graph build options. Each field defaults to the
+/// strictly-conservative behavior; opt-ins enable conditionally-correct
+/// inferences that hold only when the input satisfies a checkable
+/// precondition (see `devinfra/js/debundle/AGENTS.md` →
+/// "Conditionally-correct optimizations"). The materializer reads
+/// these from the per-chunk spec entry in
+/// `TransformSpec::chunk_analysis_options`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OwnerGraphOptions {
+    /// Emit the side-effect ordering chain using per-statement
+    /// (writes, reads) summaries instead of the adjacent-impure
+    /// transitive reduction. See the S-chain block in
+    /// `build_owner_graph_with` and `dataflow_audit.md`.
+    pub dataflow_aware_s_chain: bool,
+}
 
 /// One reason an edge `(from, to)` exists, with the source
 /// statement ordinal that produced it. This is the single source of
@@ -293,7 +310,16 @@ impl ModuleQuotient {
 /// construction: no module assignment, no quotient. Module-level
 /// dependencies are derived later by [`build_module_quotient`]
 /// given a [`Partition`] mapping owners to destination modules.
+///
+/// Uses default (strictly-conservative) [`OwnerGraphOptions`]. Call
+/// [`build_owner_graph_with`] when the chunk spec opts into
+/// conditionally-correct refinements.
 pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
+    build_owner_graph_with(facts, OwnerGraphOptions::default())
+}
+
+/// Like [`build_owner_graph`] but takes per-chunk [`OwnerGraphOptions`].
+pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptions) -> OwnerGraph {
     let mut binding_table = BindingTable::default();
     let mut binding_owner = Vec::<Option<OwnerId>>::new();
     let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
@@ -451,31 +477,7 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
     // dynamic dispatch are conservatively unmodelled.
     promote_at_init_calls(facts, &binding_table, &binding_owner, &mut raw_edges);
 
-    // Side-effect ordering edges (`S` per DESIGN.md "Module dep
-    // graphs"). At owner level, record the source-order chain over
-    // side-effecting owners: every later side-effecting owner
-    // depends on the immediately previous side-effecting owner.
-    // This is the transitive reduction of the total order. It
-    // preserves reachability and SCCs while avoiding an O(n^2)
-    // owner-edge explosion in Tana-scale chunks.
-    //
-    // `purity` is computed by `classify_expr_purity` so
-    // pure literal initializers (`const X = 42`,
-    // `const X = { a: 1 }`, function/class declarations without
-    // observable static init) don't contribute to S. Without
-    // that precision the cross-module S graph would be dense
-    // enough to reject realistic specs for trivially pure const
-    // sequences.
-    let mut previous_side_effect_owner: Option<OwnerId> = None;
-    for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
-        let from = OwnerId(stmt.ordinal.0);
-        if let Some(to) = previous_side_effect_owner
-            && from != to
-        {
-            raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
-        }
-        previous_side_effect_owner = Some(from);
-    }
+    emit_s_chain(facts, options, &mut raw_edges);
 
     // Sort + assign stable `OwnerEdgeId` indices, then build CSR
     // adjacency in one pass.
@@ -515,6 +517,94 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
         edges,
         out_edges,
         in_edges,
+    }
+}
+
+/// Side-effect ordering edges (`S` per DESIGN.md "Module dep graphs").
+/// At owner level, links impure top-level statements so any realizable
+/// schedule preserves their observable order.
+///
+/// Two emission modes selected by [`OwnerGraphOptions`]:
+///
+/// - **Strict chain** (default): every later impure statement gets one
+///   incoming `Sequenced` edge from the immediately previous impure
+///   statement. Transitive reduction of the total order; soundest path.
+/// - **Dataflow-aware** (`dataflow_aware_s_chain = true`): emit
+///   `Sequenced(curr → prev)` only when `curr` reads or writes a cell
+///   `prev` wrote (last-writer-precedes-reader). Statements that fail
+///   the `dataflow_summarizable` check (dynamic globalThis key, `with`,
+///   direct `eval`, `Function(...)` constructor, `defineProperty` on
+///   globals, `Proxy` on globals) fall back to the strict edge against
+///   every prior impure owner. See `dataflow_audit.md` for the
+///   precondition this relaxation requires.
+///
+/// `purity` is computed upstream (`classify_expr_purity`) so pure
+/// literal initializers (`const X = 42`, `const X = { a: 1 }`,
+/// function/class declarations without observable static init) don't
+/// contribute to S. Without that precision the cross-module S graph
+/// would be dense enough to reject realistic specs for trivially pure
+/// const sequences.
+fn emit_s_chain(
+    facts: &[StatementFacts],
+    options: OwnerGraphOptions,
+    raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
+) {
+    if !options.dataflow_aware_s_chain {
+        let mut prev: Option<OwnerId> = None;
+        for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
+            let from = OwnerId(stmt.ordinal.0);
+            if let Some(to) = prev
+                && from != to
+            {
+                raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
+            }
+            prev = Some(from);
+        }
+        return;
+    }
+
+    // Dataflow-aware emission: last-writer-precedes-reader-or-writer.
+    // For each impure `curr`, emit an incoming Sequenced edge from the
+    // most recent prior impure owner that wrote any cell in
+    // `curr.reads ∪ curr.writes`. Statements with
+    // `dataflow_summarizable = false` are treated as touching every
+    // cell — they get edges to every prior impure owner and become a
+    // barrier for subsequent statements.
+    let mut last_writer: BTreeMap<EffectCell, OwnerId> = BTreeMap::new();
+    let mut prior_impure_owners: Vec<OwnerId> = Vec::new();
+    let mut opaque_barrier: Option<OwnerId> = None;
+    for stmt in facts.iter().filter(|s| !s.purity.is_pure()) {
+        let from = OwnerId(stmt.ordinal.0);
+        let mut targets: BTreeSet<OwnerId> = BTreeSet::new();
+        if stmt.effects.dataflow_summarizable {
+            for cell in stmt.effects.reads.iter().chain(stmt.effects.writes.iter()) {
+                if let Some(&to) = last_writer.get(cell) {
+                    targets.insert(to);
+                }
+            }
+            // Non-summarizable prior statements are barriers: any later
+            // summarizable statement still depends on them, since we
+            // don't know what cells they touched.
+            if let Some(barrier) = opaque_barrier {
+                targets.insert(barrier);
+            }
+        } else {
+            // This statement can't be summarized: treat it as reading
+            // and writing every cell. Depend on every prior impure
+            // owner, and become the new opaque barrier so later
+            // summarizable statements depend on us too.
+            targets.extend(prior_impure_owners.iter().copied());
+            opaque_barrier = Some(from);
+        }
+        for to in targets {
+            if from != to {
+                raw_edges.push((from, to, EdgeReason::sequenced(stmt.ordinal)));
+            }
+        }
+        for cell in &stmt.effects.writes {
+            last_writer.insert(cell.clone(), from);
+        }
+        prior_impure_owners.push(from);
     }
 }
 

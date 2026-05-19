@@ -97,6 +97,8 @@ struct TransformSpecFixture<'a> {
     chunk_renames: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     unassigned_mode: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    chunk_analysis_options: BTreeMap<String, Value>,
     materialize_logical_modules: MaterializeLogicalModulesFixture<'a>,
     write_js_tree: WriteJsTreeFixture<'a>,
 }
@@ -194,6 +196,11 @@ pub struct FixtureOpts<'a> {
     /// [`unassigned_mode_catchall_file`], or
     /// [`unassigned_mode_mini_factors`] to build typical bodies.
     pub unassigned_mode: Value,
+    /// Opt into the dataflow-aware S-chain emission in `graph.rs` for
+    /// this chunk. Default `false` — leaves the strictly-conservative
+    /// adjacent-impure chain. Tests that exercise the relaxation set
+    /// this `true`.
+    pub dataflow_aware_s_chain: bool,
     pub extra_files: &'a [(&'a str, &'a str)],
 }
 
@@ -211,8 +218,17 @@ impl<'a> FixtureOpts<'a> {
             chunk_renames: None,
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
+            dataflow_aware_s_chain: false,
             extra_files: &[],
         }
+    }
+
+    /// Enable the dataflow-aware S-chain emission for this chunk. Used
+    /// by tests that pin the relaxation; production specs opt in via
+    /// `chunk_analysis_options:` in YAML.
+    pub fn with_dataflow_aware_s_chain(mut self) -> Self {
+        self.dataflow_aware_s_chain = true;
+        self
     }
 }
 
@@ -545,6 +561,14 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
     let mut unassigned_mode = BTreeMap::new();
     unassigned_mode.insert(chunk_id.to_string(), opts.unassigned_mode.clone());
 
+    let mut chunk_analysis_options = BTreeMap::new();
+    if opts.dataflow_aware_s_chain {
+        chunk_analysis_options.insert(
+            chunk_id.to_string(),
+            serde_json::json!({ "dataflow_aware_s_chain": true }),
+        );
+    }
+
     TransformSpecFixture {
         inputs: TransformInputsFixture {
             input_root: &setup.snapshot_root,
@@ -553,6 +577,7 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
         logical_modules,
         chunk_renames,
         unassigned_mode,
+        chunk_analysis_options,
         materialize_logical_modules: MaterializeLogicalModulesFixture {
             prune_other_chunks: false,
             report_out_dir: &setup.report_root,

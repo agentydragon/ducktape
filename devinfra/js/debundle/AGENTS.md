@@ -290,6 +290,31 @@ This rule applies to every static analysis the validator runs —
 purity classification, side-effect graph construction, top-level-
 await detection, dependency-graph cycles, etc.
 
+### Conditionally-correct optimizations
+
+Soundness does **not** require every inference to hold for arbitrary JS.
+An inference may be **conditionally correct** — sound only when the
+input satisfies a checkable precondition — so long as the implementation:
+
+1. Checks the precondition on the specific statements / chunks it would
+   fire on, and
+2. Falls back to the strictly-conservative path (the one already known
+   sound) when the precondition fails.
+
+Example: dataflow-aware S-chain emission (`graph.rs`). Per-statement
+write/read summaries assume the statement contains no `with`, no direct
+`eval`, no computed-key `globalThis` access, no `Function`-constructor,
+etc. — constructs that would invalidate static reasoning about which
+cells the statement touches. Each impure statement carries a
+`dataflow_summarizable` bit; statements that fail the check fall back
+to the unconditional adjacent-impure S-edge.
+
+This is deliberate: the real input (the Tana RE bundle in
+`gaffer-private`, props/frontend, etc.) is well-behaved and admits
+precise reasoning even though generic JS does not. Document each such
+optimization with (a) the precondition it requires, (b) where the
+check lives, and (c) the fallback path.
+
 ### Pure-call whitelist soundness
 
 The purity classifier's `PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`,

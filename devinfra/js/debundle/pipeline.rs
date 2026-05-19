@@ -366,6 +366,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     &spec.logical_modules,
                     &spec.chunk_renames,
                     &spec.unassigned_mode,
+                    &spec.chunk_analysis_options,
                     MaterializeLogicalModulesOptions {
                         chunk_ids: materialise_chunk_ids,
                         file,
@@ -939,6 +940,7 @@ mod tests {
             logical_modules: BTreeMap::new(),
             chunk_renames: BTreeMap::new(),
             unassigned_mode: BTreeMap::new(),
+            chunk_analysis_options: BTreeMap::new(),
             swap_vendor_chunks: SwapVendorChunksConfig::default(),
             materialize_logical_modules: MaterializeLogicalModulesConfig::default(),
             write_js_tree: None,

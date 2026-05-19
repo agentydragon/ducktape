@@ -66,6 +66,7 @@ export { a, b, c };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_catchall_file(None),
+        dataflow_aware_s_chain: false,
         extra_files: &[(
             "static/app/vendor.js",
             "export function makePure(arg) { return arg; }\n",
@@ -122,6 +123,7 @@ export { a, b, c };
             })),
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
+            dataflow_aware_s_chain: false,
             extra_files: &[(
                 "static/app/vendor.js",
                 "export function makePure(arg) { return arg; }\n",
@@ -164,6 +166,7 @@ export { a, b, c };
             })),
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
+            dataflow_aware_s_chain: false,
             extra_files: &[(
                 "static/app/vendor.js",
                 "export function makePure(arg) { return arg; }\n",

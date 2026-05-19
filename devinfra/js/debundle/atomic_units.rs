@@ -26,7 +26,7 @@ use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
 
 use crate::facts::StatementFacts;
-use crate::graph::{DepKind, OwnerGraph, OwnerId, build_owner_graph};
+use crate::graph::{DepKind, OwnerGraph, OwnerGraphOptions, OwnerId, build_owner_graph_with};
 
 /// One atomic factor unit: a set of owners that any valid
 /// factorization must keep co-located, plus the `DepKind`s of the
@@ -51,9 +51,21 @@ pub struct OwnerGraphAndUnits {
 }
 
 /// Build an owner graph from chunk facts and immediately compute its
-/// atomic units. Convenience for call sites that need both.
+/// atomic units. Convenience for call sites that need both. Uses the
+/// default (strictly-conservative) [`OwnerGraphOptions`] — call
+/// [`compute_owner_graph_and_units_with`] when the chunk spec opts
+/// into conditionally-correct refinements.
 pub fn compute_owner_graph_and_units(facts: &[StatementFacts]) -> OwnerGraphAndUnits {
-    let owner_graph = build_owner_graph(facts);
+    compute_owner_graph_and_units_with(facts, OwnerGraphOptions::default())
+}
+
+/// Like [`compute_owner_graph_and_units`] but takes per-chunk
+/// [`OwnerGraphOptions`].
+pub fn compute_owner_graph_and_units_with(
+    facts: &[StatementFacts],
+    options: OwnerGraphOptions,
+) -> OwnerGraphAndUnits {
+    let owner_graph = build_owner_graph_with(facts, options);
     let atomic_units = compute_atomic_units(&owner_graph);
     OwnerGraphAndUnits {
         owner_graph,

@@ -69,8 +69,40 @@ pub struct StatementFacts {
     /// don't appear as direct callees of the outer function — they
     /// don't fire when the outer function is invoked synchronously.
     pub first_order_body_calls: BTreeSet<BindingName>,
+    /// Per-statement (writes, reads) summary used by the
+    /// dataflow-aware S-chain emission in `graph.rs`. Tracks the
+    /// outer-observable cells the statement touches at-init:
+    /// binding cells (declared / rebound / read) and static-key
+    /// `globalThis.<prop>` cells. See `dataflow_audit.md` for the
+    /// soundness precondition; `effects.dataflow_summarizable=false`
+    /// means the statement contains a shape we can't statically
+    /// summarize (dynamic `globalThis[<expr>]`, `with`, direct
+    /// `eval`, `Function(...)` constructor, etc.) and downstream
+    /// passes must treat it as touching every cell.
+    pub effects: StatementEffectSummary,
     pub purity: Purity,
     pub kind: StatementKind,
+}
+
+/// One outer-observable storage location a statement can read or
+/// write. `EffectCell::Binding(name)` covers identifier reads
+/// (`Foo` or `Foo.bar` triggers a read of `Foo`) and rebind writes;
+/// `EffectCell::GlobalProp(key)` covers static-key writes/reads on
+/// `globalThis` (`globalThis.tag = ...` is `GlobalProp("tag")`).
+/// Dynamic-keyed accesses (`globalThis[expr]`) are deliberately not
+/// representable here — statements containing them are marked
+/// non-summarizable.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum EffectCell {
+    Binding(BindingName),
+    GlobalProp(String),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StatementEffectSummary {
+    pub writes: BTreeSet<EffectCell>,
+    pub reads: BTreeSet<EffectCell>,
+    pub dataflow_summarizable: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -388,6 +420,8 @@ fn analyze_item(
     item.visit_with(&mut writes);
     let mut calls = CallCollector::default();
     item.visit_with(&mut calls);
+    let mut effects_collector = EffectSummaryCollector::new();
+    item.visit_with(&mut effects_collector);
     let local_effects = collect_local_effects(item, &hints.known_effects);
     let purity = item_purity(
         item,
@@ -397,6 +431,28 @@ fn analyze_item(
         graph,
         !local_effects.is_empty(),
     );
+    let mut effects_writes = BTreeSet::<EffectCell>::new();
+    for name in &declared {
+        effects_writes.insert(EffectCell::Binding(name.clone()));
+    }
+    for name in &writes.at_init {
+        effects_writes.insert(EffectCell::Binding(name.clone()));
+    }
+    for key in &effects_collector.global_writes {
+        effects_writes.insert(EffectCell::GlobalProp(key.clone()));
+    }
+    let mut effects_reads = BTreeSet::<EffectCell>::new();
+    for name in &at_init.names {
+        effects_reads.insert(EffectCell::Binding(name.clone()));
+    }
+    for key in &effects_collector.global_reads {
+        effects_reads.insert(EffectCell::GlobalProp(key.clone()));
+    }
+    let effects = StatementEffectSummary {
+        writes: effects_writes,
+        reads: effects_reads,
+        dataflow_summarizable: effects_collector.summarizable,
+    };
     StatementFacts {
         ordinal,
         source_location: None,
@@ -411,6 +467,7 @@ fn analyze_item(
         at_init_calls: calls.at_init,
         body_calls: calls.lazy,
         first_order_body_calls: calls.first_order_lazy,
+        effects,
         purity,
         kind,
     }
@@ -1014,6 +1071,192 @@ impl Visit for CallCollector {
     fn visit_class_member(&mut self, member: &ClassMember) {
         lazy_visit_class_member(self, member);
     }
+}
+
+/// Visitor that collects the per-statement (writes, reads) summary
+/// driving the dataflow-aware S-chain emission in `graph.rs`. Walks
+/// at-init scopes only (function/arrow/method/getter/setter/class-body
+/// scopes are lazy and don't contribute) and tracks:
+///
+/// - static-key `globalThis.<key>` writes / reads
+/// - bail-out shapes that defeat static dataflow tracking: `with`,
+///   direct `eval(...)`, `Function(...)` / `new Function(...)`,
+///   computed-key `globalThis[<expr>]`, `Object.defineProperty(<global>,
+///   ...)`, `new Proxy(<global>, ...)`.
+///
+/// When a bail-out shape fires at-init, `dataflow_summarizable` flips
+/// to `false`. The S-chain emission must then treat the statement as
+/// touching every cell and fall back to the unconditional edge.
+///
+/// Binding-level reads / writes are not re-collected here — the
+/// existing `AtInitReadCollector` / `BindingWriteCollector` already
+/// produce `eager_reads` / `eager_rebinds` / `declared`, which
+/// `analyze_item` folds into the final [`StatementEffectSummary`].
+#[derive(Default)]
+struct EffectSummaryCollector {
+    global_writes: BTreeSet<String>,
+    global_reads: BTreeSet<String>,
+    summarizable: bool,
+    lazy_depth: u32,
+    past_await: bool,
+}
+
+impl EffectSummaryCollector {
+    fn new() -> Self {
+        Self {
+            summarizable: true,
+            ..Self::default()
+        }
+    }
+
+    fn bail(&mut self) {
+        self.summarizable = false;
+    }
+
+    fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
+        if !is_global_this_expr(&member.obj) {
+            return;
+        }
+        let key = match &member.prop {
+            MemberProp::Ident(ident) => Some(ident.sym.to_string()),
+            MemberProp::Computed(ComputedPropName { expr, .. }) => match strip_parens(expr) {
+                Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().into_owned()),
+                _ => {
+                    self.bail();
+                    return;
+                }
+            },
+            MemberProp::PrivateName(_) => None,
+        };
+        if let Some(key) = key {
+            if is_write {
+                self.global_writes.insert(key);
+            } else {
+                self.global_reads.insert(key);
+            }
+        }
+    }
+}
+
+impl LazyBoundary for EffectSummaryCollector {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+}
+
+impl Visit for EffectSummaryCollector {
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    fn visit_export_all(&mut self, _node: &ExportAll) {}
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        node.visit_children_with(self);
+        self.past_await = true;
+    }
+
+    fn visit_with_stmt(&mut self, node: &WithStmt) {
+        if self.lazy_depth == 0 {
+            self.bail();
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if self.lazy_depth == 0
+            && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
+        {
+            self.record_global_prop(member, /*is_write=*/ true);
+        }
+        node.left.visit_with(self);
+        node.right.visit_with(self);
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if self.lazy_depth == 0 {
+            self.record_global_prop(node, /*is_write=*/ false);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if self.lazy_depth == 0 {
+            if let Callee::Expr(expr) = &node.callee
+                && let Expr::Ident(ident) = strip_parens(expr)
+            {
+                match ident.sym.as_ref() {
+                    "eval" | "Function" => self.bail(),
+                    _ => {}
+                }
+            }
+            if let Callee::Expr(expr) = &node.callee
+                && let Expr::Member(member) = strip_parens(expr)
+                && let MemberProp::Ident(prop) = &member.prop
+                && prop.sym.as_ref() == "defineProperty"
+                && matches!(
+                    strip_parens(&member.obj),
+                    Expr::Ident(i) if matches!(i.sym.as_ref(), "Object" | "Reflect")
+                )
+                && node
+                    .args
+                    .first()
+                    .is_some_and(|a| is_global_this_expr(&a.expr))
+            {
+                self.bail();
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &NewExpr) {
+        if self.lazy_depth == 0
+            && let Expr::Ident(ident) = strip_parens(&node.callee)
+        {
+            match ident.sym.as_ref() {
+                "Function" => self.bail(),
+                "Proxy" => {
+                    let proxies_global = node
+                        .args
+                        .as_ref()
+                        .and_then(|args| args.first())
+                        .is_some_and(|a| is_global_this_expr(&a.expr));
+                    if proxies_global {
+                        self.bail();
+                    }
+                }
+                _ => {}
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, node: &Function) {
+        lazy_visit_function(self, node);
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        lazy_visit_arrow_expr(self, node);
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        lazy_visit_method_prop(self, node);
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        lazy_visit_getter_prop(self, node);
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        lazy_visit_setter_prop(self, node);
+    }
+    fn visit_class(&mut self, node: &Class) {
+        lazy_visit_class(self, node);
+    }
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        lazy_visit_class_member(self, member);
+    }
+}
+
+fn is_global_this_expr(expr: &Expr) -> bool {
+    matches!(strip_parens(expr), Expr::Ident(i) if i.sym.as_ref() == "globalThis")
 }
 
 fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {

@@ -14,8 +14,8 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, ChunkFactorization, DepKind,
     KnownEffect, LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId,
-    OwnerGraphAndUnits, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
-    RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units,
+    OwnerGraphAndUnits, OwnerGraphOptions, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
+    RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units_with,
     render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
 };
 use artifact::{
@@ -28,7 +28,8 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{
-    BindingSourceKind, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
+    BindingSourceKind, ChunkAnalysisOptions, ChunkRenames, LogicalModule, MemberEffect,
+    MemberPurity, UnassignedMode,
 };
 
 mod anonymous;
@@ -209,6 +210,7 @@ pub fn materialize_logical_modules(
     logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
     chunk_renames: &BTreeMap<String, ChunkRenames>,
     unassigned_mode: &BTreeMap<String, UnassignedMode>,
+    chunk_analysis_options: &BTreeMap<String, ChunkAnalysisOptions>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     if options.chunk_ids.is_empty() {
@@ -255,6 +257,7 @@ pub fn materialize_logical_modules(
                         logical_modules,
                         chunk_renames,
                         unassigned_mode,
+                        chunk_analysis_options,
                         file: options.file.as_deref(),
                         target_dir: &target_dir,
                         report_out_dir: report_out_dir.as_deref(),

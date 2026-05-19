@@ -62,6 +62,7 @@ export { x };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -105,6 +106,7 @@ export { x };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
+        dataflow_aware_s_chain: false,
         extra_files: &[(
             "static/vendor/entry.js",
             r#"export const x = "dep-x";
@@ -156,6 +158,7 @@ export { helper, run };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
     let fixture = run_fixture(opts);
@@ -221,6 +224,7 @@ export { run };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
 
@@ -272,6 +276,7 @@ export { alpha, bravo, charlie, delta };
         })),
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
+        dataflow_aware_s_chain: false,
         extra_files: &[],
     };
 
