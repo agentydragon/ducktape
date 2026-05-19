@@ -163,3 +163,92 @@ export { T, bootstrap, init };
     ));
     assert_entry_output(&fixture, "ready\n");
 }
+
+#[test]
+fn early_entry_importer_does_not_pull_scc_in_wrong_order() {
+    // ★ RED test: minimal reproduction of the Tana
+    // `tanaLogger` TDZ.
+    //
+    // Setup mirrors the production failure (gaffer-private's
+    // `static/index-DI2GynTv` chunk):
+    //
+    //   - `mod_logger` declares a `let T = …` with at-init
+    //     value. Other modules read T via their imports.
+    //   - `mod_cycle_back` imports `mod_init` (creates a
+    //     non-constraining lazy back-edge — the analogue of
+    //     `app/offline_mode/state` importing init_state for
+    //     `getOfflineModeState`).
+    //   - `mod_logger` imports `mod_cycle_back` (analogue of
+    //     `tana_logger` importing `app/offline_mode/state` for
+    //     `offlineModeState` used lazily in a method body).
+    //   - `mod_init` imports `mod_logger` for T (constraining
+    //     eager_use). It also has a top-level anonymous statement
+    //     that calls a function decl (in residual / entry) that
+    //     reads T transitively. This mirrors init_state's
+    //     bootstrap try/catch calling `gR` which calls
+    //     `startBootProgressTracking` which reads `tanaLogger`.
+    //   - `mod_early` is what `entry` imports FIRST (before
+    //     entry's other imports reach mod_init/mod_logger/etc).
+    //     mod_early imports `mod_logger` so DFS recurses into
+    //     `mod_logger` via mod_early's chain — bringing
+    //     `mod_logger` into "evaluating" state via a path that
+    //     bypasses Lemma 2's planned ordering.
+    //
+    // Ducktape's at-init promotion sees `mod_init → mod_logger
+    // (eager_use T)` as a constraining edge and accepts the
+    // spec (no constraining SCC, no Rule 2 violation).
+    // But at runtime, ESM's DFS enters `mod_logger` via
+    // mod_early before `mod_init` is visited. The cycle
+    // `mod_logger → mod_cycle_back → mod_init → mod_logger`
+    // means `mod_init.body` runs while `mod_logger.body` is
+    // mid-evaluation. The init reads T → TDZ.
+    //
+    // After the fix, ducktape should either reject this shape
+    // OR emit the right import structure so ESM DFS visits
+    // `mod_logger` before `mod_init.body` runs.
+    // The 4-module cycle shape (matches /tmp/esm_cycle_test repro
+    // that reproduces the Tana TDZ exactly).
+    //
+    // The source has cross-references that, after peeling, yield:
+    //   - mod_early imports T from mod_logger
+    //   - mod_logger references `middleHelper` (lazy) → imports mod_middle
+    //   - mod_middle references `initData` (lazy) → imports mod_init
+    //   - mod_init reads T at-init via `const init = readT()` where
+    //     readT is a residual function → mod_init imports entry
+    //
+    // ESM DFS from entry:
+    //   entry → mod_early (line 1) → mod_logger →
+    //     mod_logger.body needs to run.
+    //     mod_logger imports mod_middle.
+    //     DFS → mod_middle → DFS into mod_init.
+    //     mod_init has `const init = readT()` at top. readT in entry
+    //     (hoisted). init = T. But mod_logger.body hasn't run yet!
+    //     T is in TDZ → ReferenceError.
+    let mut opts = FixtureOpts::new(
+        r#"const T = "ready";
+function readT() { return T; }
+function disableDevMode() { return T; }
+const init = readT();
+function middleHelper() { return init + "-mid"; }
+function loggerReader() { return middleHelper(); }
+console.log(init);
+export { T, readT, init, disableDevMode, middleHelper, loggerReader };
+"#,
+        vec![
+            // mod_early imports `T` (drags mod_logger into DFS first).
+            logical_module("mod_early", &[Member::new("disableDevMode")]),
+            // mod_logger declares T. References middleHelper (lazy).
+            logical_module(
+                "mod_logger",
+                &[Member::new("T"), Member::new("loggerReader")],
+            ),
+            // mod_middle owns middleHelper. References init (lazy).
+            logical_module("mod_middle", &[Member::new("middleHelper")]),
+            // mod_init owns init. At-init reads T via residual readT.
+            logical_module("mod_init", &[Member::new("init")]),
+        ],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    assert_entry_output(&fixture, "ready\n");
+}
