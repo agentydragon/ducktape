@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,6 +31,31 @@ py_library(
 filegroup(
     name = "jurisdiction_data",
     srcs = glob(["data/jurisdictions/*.yaml"]),
+)
+
+filegroup(
+    name = "location_data",
+    srcs = glob(["data/locations/*.yaml"]),
+)
+
+py_library(
+    name = "locations_py",
+    srcs = ["locations.py"],
+    data = [":location_data"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "locations_test",
+    srcs = ["locations_test.py"],
+    deps = [
+        ":locations_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(
@@ -142,6 +167,39 @@ py_test(
         ":scenario_py",
         ":simulate_py",
         ":state_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "bench_scenario_py",
+    srcs = ["bench_scenario.py"],
+    deps = [
+        ":market_py",
+        ":scenario_py",
+    ],
+)
+
+py_binary(
+    name = "bench",
+    srcs = ["bench.py"],
+    main_module = "augur.sim.bench",
+    deps = [
+        ":bench_scenario_py",
+        ":simulate_py",
+    ],
+)
+
+py_test(
+    name = "bench_test",
+    srcs = ["bench_test.py"],
+    deps = [
+        ":bench_scenario_py",
+        ":market_py",
+        ":scenario_py",
+        ":simulate_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

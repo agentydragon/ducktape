@@ -1,0 +1,20 @@
+# San Francisco, CA — agent residence location data.
+#
+# At spike 1 the location record is mostly forward-looking: the
+# housing layer (L8 + L12-13, deferred) consumes the property-tax
+# rate and special-assessment surcharges to model owner-occupied
+# real estate. For spike-1 simulations the only field used is
+# `jurisdiction_ids`, which scopes the agent's tax filings to
+# federal + CA.
+location_id: san_francisco
+display_name: "San Francisco, CA"
+jurisdiction_ids:
+  - federal_us
+  - california
+# Property tax rate (proposition-13 capped at 1% of assessed
+# value, plus city-level surcharges of ~0.18%). Unused at spike 1.
+annual_property_tax_rate: 0.01180
+# Special-assessment surcharges (bonds + parcel taxes) per assessed
+# dollar. Unused at spike 1; present so the schema is forward-
+# compatible with the housing layer.
+annual_special_assessment_rate: 0.0

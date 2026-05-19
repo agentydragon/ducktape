@@ -1037,13 +1037,13 @@ def test_explicit_sale_price_overrides_market() -> None:
 
 
 def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
-    """L9 — Alice has $1k cash, a $5k/month spend, and 100 units of
+    """L9 — Alice has $1k cash, a $5k/month spend, and 200 units of
     VTI at $100/unit market price. The floor-triggered sale policy
     has floor $0 + replenish buffer $0: any deficit triggers asset
     sale. At month 0, cash falls to -$4k after spending; the policy
-    sells $4k of VTI (40 units) to bring cash back to $0. Spends
-    repeat each month; the policy keeps selling until 100 units
-    are exhausted."""
+    sells $4k of VTI (40 units) to bring cash back to $0. The lot
+    is large enough to cover all three months of spend, so cash
+    stays at the floor through end-of-horizon."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -1056,7 +1056,7 @@ def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
                 agent_id="alice",
                 asset_id="vti",
                 purchase_month_index=-1,
-                quantity=100.0,
+                quantity=200.0,
                 cost_basis_per_unit_usd=50.0,
             )
         ],
