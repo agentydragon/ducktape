@@ -77,7 +77,6 @@ from augur.core.scenario_set import (
     MarketObservation,
     MonthlySpendPolicy,
     Obligation,
-    ObligationStatus,
     ObligationType,
     OccupancyMode,
     PartnerEquityAccrualPolicy,
@@ -300,7 +299,7 @@ class ScenarioRunArrays:
             .group_by("rollout_index")
             .agg(
                 first_failed_obligation_month_index=pl.col("month_index").min(),
-                failed_obligation_count=pl.col("obligation_id").count(),
+                failed_obligation_count=pl.col("obligation_type").count(),
                 unpaid_obligation_usd=pl.col("unpaid_amount_usd").sum(),
             )
             .collect()
@@ -1521,6 +1520,28 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         ),
     )
 
+    # One accumulator per property-cost obligation kind, lives across the
+    # whole month loop. Per-month settlement writes `(rollouts,)` slices
+    # into the accumulator's `(rollouts, months)` matrices; emit melts to
+    # row-blocks once at end-of-loop.
+    property_cost_obligation_accumulators: tuple[_ObligationFundingAccumulator, ...] = tuple(
+        _ObligationFundingAccumulator.new(
+            obligation_kind=kind,
+            creditor_id=creditor_id,
+            source_policy_id=policy_id,
+            actor_id=primary_owner_actor_id,
+            cash_source_account_id=(
+                primary_owner_funding_sources.cash_source_account.account_id
+                if primary_owner_funding_sources.cash_source_account is not None
+                else None
+            ),
+            rollout_count=rollout_count,
+            month_index=month_index,
+            amount_due_usd=due,
+        )
+        for due, kind, creditor_id, policy_id in property_cost_obligation_specs
+    )
+
     for month in range(month_count):
         current_cash = current_cash + disposition.column("net_property_sale_cash_flow_usd")[:, month]
         if month > 0:
@@ -1543,7 +1564,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
             remaining_crypto_quantity_by_month[:, month] = remaining_crypto_quantity
             remaining_crypto_basis_by_month[:, month] = remaining_crypto_basis
-            for due, kind, creditor_id, policy_id in property_cost_obligation_specs:
+            for spec, accumulator in zip(
+                property_cost_obligation_specs, property_cost_obligation_accumulators, strict=True
+            ):
+                due, kind, creditor_id, policy_id = spec
                 if not np.any(due[:, month] > 0):
                     continue
                 _settle_required_cash_obligation_at_month_position(
@@ -1567,8 +1591,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     crypto_sale_usd=crypto_sale_usd,
                     crypto_sale_basis_usd=crypto_sale_basis_usd,
                     checking_floor_shortfall_usd=checking_floor_shortfall,
-                    obligations=obligations,
-                    funding_decisions=funding_decisions,
+                    accumulator=accumulator,
                     accounting=accounting,
                     sp500_sale_action_records=sp500_sale_action_records,
                     crypto_sale_action_records=crypto_sale_action_records,
@@ -1810,6 +1833,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         private_equity_sale_usd_by_month[:, month] = private_equity_sale_month
         remaining_private_equity_units_by_month[:, month] = remaining_private_equity_units
         remaining_private_equity_basis_by_month[:, month] = remaining_private_equity_basis
+
+    # Property-cost obligation accumulators emit their row-blocks once the
+    # month loop has finished writing per-month decisions into their matrices.
+    for accumulator in property_cost_obligation_accumulators:
+        accumulator.emit_obligations(obligations)
+        accumulator.emit_funding_decisions(funding_decisions)
 
     property_tax_for_tax_allocation = property_cash_flow.column("property_tax_usd") * property_live_mask
     net_rental_taxable_income = (
@@ -3987,6 +4016,18 @@ def _settle_required_cash_obligations(
 ) -> None:
     resolved_actor_id = actor_id if actor_id is not None else _primary_owner_actor_id(scenario)
     sources = _ObligationFundingSources.for_actor(scenario, actor_id=resolved_actor_id)
+    accumulator = _ObligationFundingAccumulator.new(
+        obligation_kind=obligation_kind,
+        creditor_id=creditor_id,
+        source_policy_id=source_policy_id,
+        actor_id=resolved_actor_id,
+        cash_source_account_id=(
+            sources.cash_source_account.account_id if sources.cash_source_account is not None else None
+        ),
+        rollout_count=int(obligation_amount_usd.shape[0]),
+        month_index=month_index,
+        amount_due_usd=obligation_amount_usd,
+    )
     for month_position, due_month_index in enumerate(month_index.tolist()):
         if not np.any(obligation_amount_usd[:, month_position] > 0):
             continue
@@ -4011,13 +4052,296 @@ def _settle_required_cash_obligations(
             crypto_sale_usd=crypto_sale_usd,
             crypto_sale_basis_usd=crypto_sale_basis_usd,
             checking_floor_shortfall_usd=checking_floor_shortfall_usd,
-            obligations=obligations,
-            funding_decisions=funding_decisions,
+            accumulator=accumulator,
             accounting=accounting,
             sp500_sale_action_records=sp500_sale_action_records,
             crypto_sale_action_records=crypto_sale_action_records,
             pe_state=pe_state,
         )
+    accumulator.emit_obligations(obligations)
+    accumulator.emit_funding_decisions(funding_decisions)
+
+
+@dataclass
+class _SaleDecisionMatrices:
+    """Per-`(policy_step, asset_type)` slot inside one
+    `_ObligationFundingAccumulator`. Constants (`policy_id`,
+    `policy_sequence_index`, `source_*`) are scalar; per-rollout-per-month
+    numbers live in `(rollouts, months)` matrices that the per-month
+    inner-loop writes by month-position slice."""
+
+    decision_type: FundingDecisionType
+    policy_id: str
+    policy_sequence_index: int
+    source_type: FundingSourceType
+    source_asset_id: str | None
+    source_asset_type: AssetType | None
+    source_account_id: str | None
+    source_account_type: AccountType | None
+    requested_sale_usd: np.ndarray
+    funded_cash_usd: np.ndarray
+    shortfall_usd: np.ndarray
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        rollout_count: int,
+        months_plus_one: int,
+        decision_type: FundingDecisionType,
+        policy_id: str,
+        policy_sequence_index: int,
+        source_type: FundingSourceType,
+        source_asset_id: str | None,
+        source_asset_type: AssetType | None,
+        source_account_id: str | None = None,
+        source_account_type: AccountType | None = None,
+    ) -> _SaleDecisionMatrices:
+        zeros = lambda: np.zeros((rollout_count, months_plus_one), dtype=np.float64)  # noqa: E731
+        return cls(
+            decision_type=decision_type,
+            policy_id=policy_id,
+            policy_sequence_index=policy_sequence_index,
+            source_type=source_type,
+            source_asset_id=source_asset_id,
+            source_asset_type=source_asset_type,
+            source_account_id=source_account_id,
+            source_account_type=source_account_type,
+            requested_sale_usd=zeros(),
+            funded_cash_usd=zeros(),
+            shortfall_usd=zeros(),
+        )
+
+
+@dataclass
+class _ObligationFundingAccumulator:
+    """Per-`_settle_required_cash_obligations` call state.
+
+    The outer per-month loop is sequential, but every settlement op
+    inside it is `(rollouts,)` numpy-vectorized — `paid_from_cash =
+    np.minimum(np.maximum(0.0, cash[:, m]), due)`, etc. The legacy
+    recording layer broke that vectorization by dispatching into Python
+    list comprehensions per `(month, kind, recorder)` to build
+    `obligation_id` f-strings and dict-of-columns blocks for
+    `StreamFrameBuilder.extend(...)`.
+
+    This accumulator preserves the rollout-vectorization through the
+    recording layer: per-month writes from
+    `_settle_required_cash_obligation_at_month_position` slice
+    `(rollouts,)` vectors into `(rollouts, months)` matrices on this
+    object, and a single `emit_*` pass at end-of-call melts each matrix
+    family into one `StreamFrameBuilder.extend(...)` per
+    `(kind, decision_type, [policy_step])` triple. `obligation_id` /
+    `status` are derived at materialize time on the leaner schemas
+    (`event_streams.OBLIGATION_LIFECYCLE_SCHEMA` /
+    `FUNDING_DECISION_SCHEMA`)."""
+
+    obligation_kind: _ObligationKind
+    creditor_id: str
+    source_policy_id: str
+    actor_id: str
+    cash_source_account_id: str | None
+    month_index_array: np.ndarray
+    amount_due_usd: np.ndarray
+    amount_paid_usd: np.ndarray
+    cash_available_usd: np.ndarray
+    cash_funded_usd: np.ndarray
+    sale_decisions: dict[tuple[int, AssetType], _SaleDecisionMatrices]
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        obligation_kind: _ObligationKind,
+        creditor_id: str,
+        source_policy_id: str,
+        actor_id: str,
+        cash_source_account_id: str | None,
+        rollout_count: int,
+        month_index: np.ndarray,
+        amount_due_usd: np.ndarray,
+    ) -> _ObligationFundingAccumulator:
+        months_plus_one = int(month_index.size)
+        zeros = lambda: np.zeros((rollout_count, months_plus_one), dtype=np.float64)  # noqa: E731
+        return cls(
+            obligation_kind=obligation_kind,
+            creditor_id=creditor_id,
+            source_policy_id=source_policy_id,
+            actor_id=actor_id,
+            cash_source_account_id=cash_source_account_id,
+            month_index_array=month_index,
+            amount_due_usd=amount_due_usd,
+            amount_paid_usd=zeros(),
+            cash_available_usd=zeros(),
+            cash_funded_usd=zeros(),
+            sale_decisions={},
+        )
+
+    @property
+    def unpaid_amount_usd(self) -> np.ndarray:
+        return np.maximum(0.0, self.amount_due_usd - self.amount_paid_usd)
+
+    def record_cash_decision(self, *, month_position: int, available_cash: np.ndarray, funded_cash: np.ndarray) -> None:
+        self.cash_available_usd[:, month_position] = available_cash
+        self.cash_funded_usd[:, month_position] = funded_cash
+
+    def record_sale_decision(
+        self,
+        *,
+        month_position: int,
+        policy_step_index: int,
+        asset_type: AssetType,
+        decision_type: FundingDecisionType,
+        policy_id: str,
+        source_type: FundingSourceType,
+        source_asset_id: str | None,
+        source_asset_type: AssetType | None,
+        requested_sale: np.ndarray,
+        funded_cash: np.ndarray,
+        shortfall: np.ndarray,
+        source_account_id: str | None = None,
+        source_account_type: AccountType | None = None,
+    ) -> None:
+        key = (policy_step_index, asset_type)
+        slot = self.sale_decisions.get(key)
+        if slot is None:
+            slot = _SaleDecisionMatrices.new(
+                rollout_count=self.amount_due_usd.shape[0],
+                months_plus_one=self.amount_due_usd.shape[1],
+                decision_type=decision_type,
+                policy_id=policy_id,
+                policy_sequence_index=policy_step_index,
+                source_type=source_type,
+                source_asset_id=source_asset_id,
+                source_asset_type=source_asset_type,
+                source_account_id=source_account_id,
+                source_account_type=source_account_type,
+            )
+            self.sale_decisions[key] = slot
+        slot.requested_sale_usd[:, month_position] = requested_sale
+        slot.funded_cash_usd[:, month_position] = funded_cash
+        slot.shortfall_usd[:, month_position] = shortfall
+
+    def record_settlement(self, *, month_position: int, amount_paid: np.ndarray) -> None:
+        self.amount_paid_usd[:, month_position] = amount_paid
+
+    def emit_obligations(self, builder: event_streams.StreamFrameBuilder) -> None:
+        mask = self.amount_due_usd > 0
+        if not mask.any():
+            return
+        rollout_axis, month_axis = np.nonzero(mask)
+        size = int(rollout_axis.size)
+        unpaid = np.maximum(0.0, self.amount_due_usd - self.amount_paid_usd)
+        builder.extend(
+            {
+                "rollout_index": rollout_axis.astype(np.int64),
+                "month_index": self.month_index_array[month_axis].astype(np.int64),
+                "obligation_type": [self.obligation_kind.obligation_type.value] * size,
+                "actor_id": [self.actor_id] * size,
+                "creditor_id": [self.creditor_id] * size,
+                "due_month_index": self.month_index_array[month_axis].astype(np.int64),
+                "amount_due_usd": self.amount_due_usd[rollout_axis, month_axis],
+                "amount_paid_usd": self.amount_paid_usd[rollout_axis, month_axis],
+                "unpaid_amount_usd": unpaid[rollout_axis, month_axis],
+                "source_policy_id": [self.source_policy_id] * size,
+                "required": np.full(size, self.obligation_kind.required, dtype=np.bool_),
+            }
+        )
+
+    def emit_funding_decisions(self, builder: event_streams.StreamFrameBuilder) -> None:
+        unpaid = np.maximum(0.0, self.amount_due_usd - self.amount_paid_usd)
+        cash_shortfall = np.maximum(0.0, self.amount_due_usd - self.cash_funded_usd)
+        # Cash decisions: one row per (rollout, month) where the kind ever had
+        # a non-zero amount due. Mirrors the legacy
+        # `_record_obligation_cash_funding_decisions` mask.
+        cash_mask = self.amount_due_usd > 0
+        if cash_mask.any():
+            rollout_axis, month_axis = np.nonzero(cash_mask)
+            size = int(rollout_axis.size)
+            zeros = np.zeros(size, dtype=np.float64)
+            builder.extend(
+                {
+                    "rollout_index": rollout_axis.astype(np.int64),
+                    "month_index": self.month_index_array[month_axis].astype(np.int64),
+                    "obligation_type": [self.obligation_kind.obligation_type.value] * size,
+                    "decision_type": [FundingDecisionType.USE_CASH.value] * size,
+                    "actor_id": [self.actor_id] * size,
+                    "policy_id": [None] * size,
+                    "policy_sequence_index": [None] * size,
+                    "source_type": [FundingSourceType.CASH_ACCOUNT.value] * size,
+                    "source_account_id": [self.cash_source_account_id] * size,
+                    "source_account_type": [AccountType.CHECKING.value] * size,
+                    "source_asset_id": [None] * size,
+                    "source_asset_type": [None] * size,
+                    "available_cash_usd": self.cash_available_usd[rollout_axis, month_axis],
+                    "requested_cash_usd": self.amount_due_usd[rollout_axis, month_axis],
+                    "requested_sale_usd": zeros,
+                    "funded_cash_usd": self.cash_funded_usd[rollout_axis, month_axis],
+                    "shortfall_usd": cash_shortfall[rollout_axis, month_axis],
+                }
+            )
+        # Sale decisions: one row per (rollout, month, policy_step, asset_type)
+        # where the step's requested_sale or shortfall is non-zero.
+        for slot in self.sale_decisions.values():
+            mask = (slot.requested_sale_usd > 0) | (slot.shortfall_usd > 0)
+            if not mask.any():
+                continue
+            rollout_axis, month_axis = np.nonzero(mask)
+            size = int(rollout_axis.size)
+            zeros = np.zeros(size, dtype=np.float64)
+            builder.extend(
+                {
+                    "rollout_index": rollout_axis.astype(np.int64),
+                    "month_index": self.month_index_array[month_axis].astype(np.int64),
+                    "obligation_type": [self.obligation_kind.obligation_type.value] * size,
+                    "decision_type": [slot.decision_type.value] * size,
+                    "actor_id": [self.actor_id] * size,
+                    "policy_id": [slot.policy_id] * size,
+                    "policy_sequence_index": np.full(size, slot.policy_sequence_index, dtype=np.int64),
+                    "source_type": [slot.source_type.value] * size,
+                    "source_account_id": [slot.source_account_id] * size,
+                    "source_account_type": [
+                        None if slot.source_account_type is None else slot.source_account_type.value
+                    ]
+                    * size,
+                    "source_asset_id": [slot.source_asset_id] * size,
+                    "source_asset_type": [None if slot.source_asset_type is None else slot.source_asset_type.value]
+                    * size,
+                    "available_cash_usd": zeros,
+                    "requested_cash_usd": self.amount_due_usd[rollout_axis, month_axis],
+                    "requested_sale_usd": slot.requested_sale_usd[rollout_axis, month_axis],
+                    "funded_cash_usd": slot.funded_cash_usd[rollout_axis, month_axis],
+                    "shortfall_usd": slot.shortfall_usd[rollout_axis, month_axis],
+                }
+            )
+        # Unfunded decisions: one row per (rollout, month) where settlement
+        # left an unpaid balance. Mirrors `_record_unfunded_obligation_decisions`.
+        unfunded_mask = unpaid > 0
+        if unfunded_mask.any():
+            rollout_axis, month_axis = np.nonzero(unfunded_mask)
+            size = int(rollout_axis.size)
+            zeros = np.zeros(size, dtype=np.float64)
+            builder.extend(
+                {
+                    "rollout_index": rollout_axis.astype(np.int64),
+                    "month_index": self.month_index_array[month_axis].astype(np.int64),
+                    "obligation_type": [self.obligation_kind.obligation_type.value] * size,
+                    "decision_type": [FundingDecisionType.UNFUNDED.value] * size,
+                    "actor_id": [self.actor_id] * size,
+                    "policy_id": [None] * size,
+                    "policy_sequence_index": [None] * size,
+                    "source_type": [FundingSourceType.UNFUNDED.value] * size,
+                    "source_account_id": [None] * size,
+                    "source_account_type": [None] * size,
+                    "source_asset_id": [None] * size,
+                    "source_asset_type": [None] * size,
+                    "available_cash_usd": zeros,
+                    "requested_cash_usd": self.amount_due_usd[rollout_axis, month_axis],
+                    "requested_sale_usd": zeros,
+                    "funded_cash_usd": zeros,
+                    "shortfall_usd": unpaid[rollout_axis, month_axis],
+                }
+            )
 
 
 @dataclass
@@ -4108,8 +4432,7 @@ def _settle_required_cash_obligation_at_month_position(
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
-    obligations: event_streams.StreamFrameBuilder,
-    funding_decisions: event_streams.StreamFrameBuilder,
+    accumulator: _ObligationFundingAccumulator,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -4120,22 +4443,17 @@ def _settle_required_cash_obligation_at_month_position(
     Mutates `cash_usd` (and the units/basis/sale tracking matrices) in place from
     `month_position` forward — callers that drive this per-month inside the engine's
     month loop must ensure the matrices already carry the start-of-month state at
-    `month_position`. The settlement records its trace rows (obligation,
-    settlement_result, funding_decision, failure_event) for this month.
+    `month_position`. Per-month settlement and funding-decision deltas are
+    written into the `accumulator` `(rollouts, months)` matrices; the caller
+    melts them into the global `obligations` / `funding_decisions` builders at
+    end-of-call.
     """
     obligation_type = obligation_kind.obligation_type
     due = obligation_amount_usd
     paid_from_cash = np.minimum(np.maximum(0.0, cash_usd[:, month_position]), due)
     remaining_due = np.maximum(0.0, due - paid_from_cash)
-    _record_obligation_cash_funding_decisions(
-        funding_decisions,
-        obligation_type=obligation_type,
-        actor_id=actor_id,
-        month_index=due_month_index,
-        obligation_amount_usd=due,
-        available_cash_usd=cash_usd[:, month_position],
-        funded_cash_usd=paid_from_cash,
-        source_account=sources.cash_source_account,
+    accumulator.record_cash_decision(
+        month_position=month_position, available_cash=cash_usd[:, month_position], funded_cash=paid_from_cash
     )
 
     for policy_step in policy_steps:
@@ -4179,17 +4497,20 @@ def _settle_required_cash_obligation_at_month_position(
                 checking_floor_shortfall_usd[:, month_position] = np.maximum(
                     checking_floor_shortfall_usd[:, month_position], remaining_due
                 )
-                _record_obligation_sale_funding_decisions(
-                    funding_decisions,
-                    obligation_type=obligation_type,
-                    actor_id=actor_id,
-                    month_index=due_month_index,
-                    policy_step=application.policy_step,
-                    obligation_amount_usd=due,
-                    requested_sale_usd=application.instruction.requested_amount_usd,
-                    funded_cash_usd=application.funded_cash_usd,
-                    shortfall_usd=application.shortfall_usd,
-                    source_asset=sources.sp500_source_asset,
+                accumulator.record_sale_decision(
+                    month_position=month_position,
+                    policy_step_index=application.policy_step.sequence_index,
+                    asset_type=AssetType.GENERIC_SP500_STOCK,
+                    decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
+                    policy_id=application.policy_step.policy.policy_id,
+                    source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
+                    source_asset_id=(
+                        sources.sp500_source_asset.asset_id if sources.sp500_source_asset is not None else None
+                    ),
+                    source_asset_type=AssetType.GENERIC_SP500_STOCK,
+                    requested_sale=application.instruction.requested_amount_usd,
+                    funded_cash=application.funded_cash_usd,
+                    shortfall=application.shortfall_usd,
                 )
                 sp500_sale_action_records.append(
                     Sp500SaleActionRecord(
@@ -4250,18 +4571,22 @@ def _settle_required_cash_obligation_at_month_position(
                 checking_floor_shortfall_usd[:, month_position] = np.maximum(
                     checking_floor_shortfall_usd[:, month_position], remaining_due
                 )
-                _record_obligation_crypto_sale_funding_decisions(
-                    funding_decisions,
-                    obligation_type=obligation_type,
-                    actor_id=actor_id,
-                    month_index=due_month_index,
-                    policy_step=policy_step,
-                    obligation_amount_usd=due,
-                    requested_sale_usd=crypto_application.instruction.requested_amount_usd,
-                    funded_cash_usd=crypto_application.funded_cash_usd,
-                    shortfall_usd=crypto_application.shortfall_usd,
+                accumulator.record_sale_decision(
+                    month_position=month_position,
+                    policy_step_index=policy_step.sequence_index,
+                    asset_type=AssetType.CRYPTO,
+                    decision_type=FundingDecisionType.SELL_CRYPTO,
+                    policy_id=policy.policy_id,
+                    source_type=FundingSourceType.CRYPTO_ASSET,
                     source_asset_id=sources.crypto_source_id,
+                    source_asset_type=AssetType.CRYPTO,
                     source_account_id=sources.crypto_source_account_id,
+                    source_account_type=(
+                        AccountType.CRYPTO_EXCHANGE if sources.crypto_source_account_id is not None else None
+                    ),
+                    requested_sale=crypto_application.instruction.requested_amount_usd,
+                    funded_cash=crypto_application.funded_cash_usd,
+                    shortfall=crypto_application.shortfall_usd,
                 )
                 crypto_sale_action_records.append(
                     CryptoSaleActionRecord(
@@ -4346,17 +4671,18 @@ def _settle_required_cash_obligation_at_month_position(
                 checking_floor_shortfall_usd[:, month_position] = np.maximum(
                     checking_floor_shortfall_usd[:, month_position], remaining_due
                 )
-                _record_obligation_pe_sale_funding_decisions(
-                    funding_decisions,
-                    obligation_type=obligation_type,
-                    actor_id=actor_id,
-                    month_index=due_month_index,
-                    policy_step=policy_step,
-                    obligation_amount_usd=due,
-                    requested_sale_usd=pe_application.instruction.requested_amount_usd,
-                    funded_cash_usd=pe_application.funded_cash_usd,
-                    shortfall_usd=pe_application.shortfall_usd,
+                accumulator.record_sale_decision(
+                    month_position=month_position,
+                    policy_step_index=policy_step.sequence_index,
+                    asset_type=AssetType.PRIVATE_EQUITY,
+                    decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
+                    policy_id=policy.policy_id,
+                    source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
                     source_asset_id=sources.pe_source_holding_id,
+                    source_asset_type=AssetType.PRIVATE_EQUITY,
+                    requested_sale=pe_application.instruction.requested_amount_usd,
+                    funded_cash=pe_application.funded_cash_usd,
+                    shortfall=pe_application.shortfall_usd,
                 )
                 # Mirror PrivateEquitySaleApplication shape for the existing
                 # journal-entry/lot-disposition/effect recorder.
@@ -4398,7 +4724,6 @@ def _settle_required_cash_obligation_at_month_position(
                 )
 
     amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
-    unpaid = np.maximum(0.0, due - amount_paid)
     cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
     _record_obligation_accrual_and_settlement_entries(
         accounting,
@@ -4410,26 +4735,7 @@ def _settle_required_cash_obligation_at_month_position(
         due_usd=due,
         amount_paid_usd=amount_paid,
     )
-    _record_unfunded_obligation_decisions(
-        funding_decisions,
-        obligation_type=obligation_type,
-        actor_id=actor_id,
-        month_index=due_month_index,
-        obligation_amount_usd=due,
-        unpaid_amount_usd=unpaid,
-    )
-    _record_obligation_settlement_rows(
-        obligations,
-        obligation_type=obligation_type,
-        actor_id=actor_id,
-        creditor_id=creditor_id,
-        source_policy_id=source_policy_id,
-        month_index=due_month_index,
-        amount_due_usd=due,
-        amount_paid_usd=amount_paid,
-        unpaid_amount_usd=unpaid,
-        required=obligation_kind.required,
-    )
+    accumulator.record_settlement(month_position=month_position, amount_paid=amount_paid)
 
 
 def _record_obligation_accrual_and_settlement_entries(
@@ -4738,306 +5044,6 @@ def _apply_crypto_checking_floor_obligation_funding_policy(
         remaining_quantity=sale_application.remaining_quantity,
         remaining_basis_usd=sale_application.remaining_basis_usd,
     )
-
-
-def _funding_decision_block(
-    *,
-    rollouts: np.ndarray,
-    obligation_type: ObligationType,
-    month_index: int,
-    decision_type: FundingDecisionType,
-    actor_id: str,
-    available_cash_usd: np.ndarray,
-    requested_cash_usd: np.ndarray,
-    requested_sale_usd: np.ndarray,
-    funded_cash_usd: np.ndarray,
-    shortfall_usd: np.ndarray,
-    policy_id: str | None = None,
-    policy_sequence_index: int | None = None,
-    source_type: FundingSourceType | None = None,
-    source_account_id: str | None = None,
-    source_account_type: AccountType | None = None,
-    source_asset_id: str | None = None,
-    source_asset_type: AssetType | None = None,
-) -> dict[str, Any]:
-    """Build the dict-of-columns a `FundingDecision` row-block needs.
-
-    All recorders below feed `funding_decisions.extend(_funding_decision_block(...))`
-    so the column-set is single-source-of-truth and matches
-    `event_streams.FUNDING_DECISION_SCHEMA` exactly."""
-
-    size = int(rollouts.size)
-    return {
-        "rollout_index": rollouts.astype(np.int64),
-        "month_index": np.full(size, month_index, dtype=np.int64),
-        "obligation_id": [
-            _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in rollouts
-        ],
-        "decision_type": [decision_type.value] * size,
-        "actor_id": [actor_id] * size,
-        "policy_id": [policy_id] * size,
-        "policy_sequence_index": [policy_sequence_index] * size,
-        "source_type": [None if source_type is None else source_type.value] * size,
-        "source_account_id": [source_account_id] * size,
-        "source_account_type": [None if source_account_type is None else source_account_type.value] * size,
-        "source_asset_id": [source_asset_id] * size,
-        "source_asset_type": [None if source_asset_type is None else source_asset_type.value] * size,
-        "available_cash_usd": available_cash_usd[rollouts].astype(np.float64),
-        "requested_cash_usd": requested_cash_usd[rollouts].astype(np.float64),
-        "requested_sale_usd": requested_sale_usd[rollouts].astype(np.float64),
-        "funded_cash_usd": funded_cash_usd[rollouts].astype(np.float64),
-        "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
-    }
-
-
-def _record_obligation_cash_funding_decisions(
-    funding_decisions: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    month_index: int,
-    obligation_amount_usd: np.ndarray,
-    available_cash_usd: np.ndarray,
-    funded_cash_usd: np.ndarray,
-    source_account: AccountBalance | None,
-) -> None:
-    mask = obligation_amount_usd > 0
-    if not mask.any():
-        return
-    rollouts = np.nonzero(mask)[0].astype(np.int64)
-    shortfall = np.maximum(0.0, obligation_amount_usd - funded_cash_usd)
-    funding_decisions.extend(
-        _funding_decision_block(
-            rollouts=rollouts,
-            obligation_type=obligation_type,
-            month_index=month_index,
-            decision_type=FundingDecisionType.USE_CASH,
-            actor_id=actor_id,
-            available_cash_usd=available_cash_usd,
-            requested_cash_usd=obligation_amount_usd,
-            requested_sale_usd=np.zeros_like(obligation_amount_usd),
-            funded_cash_usd=funded_cash_usd,
-            shortfall_usd=shortfall,
-            source_type=FundingSourceType.CASH_ACCOUNT,
-            source_account_id=source_account.account_id if source_account is not None else None,
-            source_account_type=AccountType.CHECKING,
-        )
-    )
-
-
-def _record_obligation_sale_funding_decisions(
-    funding_decisions: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    month_index: int,
-    policy_step: ActorPolicyStep[Policy],
-    obligation_amount_usd: np.ndarray,
-    requested_sale_usd: np.ndarray,
-    funded_cash_usd: np.ndarray,
-    shortfall_usd: np.ndarray,
-    source_asset: GenericSp500StockPosition | None,
-) -> None:
-    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
-    if not mask.any():
-        return
-    rollouts = np.nonzero(mask)[0].astype(np.int64)
-    funding_decisions.extend(
-        _funding_decision_block(
-            rollouts=rollouts,
-            obligation_type=obligation_type,
-            month_index=month_index,
-            decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
-            actor_id=actor_id,
-            available_cash_usd=np.zeros_like(obligation_amount_usd),
-            requested_cash_usd=obligation_amount_usd,
-            requested_sale_usd=requested_sale_usd,
-            funded_cash_usd=funded_cash_usd,
-            shortfall_usd=shortfall_usd,
-            policy_id=policy_step.policy.policy_id,
-            policy_sequence_index=policy_step.sequence_index,
-            source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
-            source_asset_id=source_asset.asset_id if source_asset is not None else None,
-            source_asset_type=AssetType.GENERIC_SP500_STOCK,
-        )
-    )
-
-
-def _record_obligation_crypto_sale_funding_decisions(
-    funding_decisions: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    month_index: int,
-    policy_step: ActorPolicyStep[Policy],
-    obligation_amount_usd: np.ndarray,
-    requested_sale_usd: np.ndarray,
-    funded_cash_usd: np.ndarray,
-    shortfall_usd: np.ndarray,
-    source_asset_id: str,
-    source_account_id: str | None,
-) -> None:
-    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
-    if not mask.any():
-        return
-    rollouts = np.nonzero(mask)[0].astype(np.int64)
-    funding_decisions.extend(
-        _funding_decision_block(
-            rollouts=rollouts,
-            obligation_type=obligation_type,
-            month_index=month_index,
-            decision_type=FundingDecisionType.SELL_CRYPTO,
-            actor_id=actor_id,
-            available_cash_usd=np.zeros_like(obligation_amount_usd),
-            requested_cash_usd=obligation_amount_usd,
-            requested_sale_usd=requested_sale_usd,
-            funded_cash_usd=funded_cash_usd,
-            shortfall_usd=shortfall_usd,
-            policy_id=policy_step.policy.policy_id,
-            policy_sequence_index=policy_step.sequence_index,
-            source_type=FundingSourceType.CRYPTO_ASSET,
-            source_account_id=source_account_id,
-            source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
-            source_asset_id=source_asset_id,
-            source_asset_type=AssetType.CRYPTO,
-        )
-    )
-
-
-def _record_obligation_pe_sale_funding_decisions(
-    funding_decisions: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    month_index: int,
-    policy_step: ActorPolicyStep[Policy],
-    obligation_amount_usd: np.ndarray,
-    requested_sale_usd: np.ndarray,
-    funded_cash_usd: np.ndarray,
-    shortfall_usd: np.ndarray,
-    source_asset_id: str,
-) -> None:
-    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
-    if not mask.any():
-        return
-    rollouts = np.nonzero(mask)[0].astype(np.int64)
-    funding_decisions.extend(
-        _funding_decision_block(
-            rollouts=rollouts,
-            obligation_type=obligation_type,
-            month_index=month_index,
-            decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
-            actor_id=actor_id,
-            available_cash_usd=np.zeros_like(obligation_amount_usd),
-            requested_cash_usd=obligation_amount_usd,
-            requested_sale_usd=requested_sale_usd,
-            funded_cash_usd=funded_cash_usd,
-            shortfall_usd=shortfall_usd,
-            policy_id=policy_step.policy.policy_id,
-            policy_sequence_index=policy_step.sequence_index,
-            source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
-            source_asset_id=source_asset_id,
-            source_asset_type=AssetType.PRIVATE_EQUITY,
-        )
-    )
-
-
-def _record_unfunded_obligation_decisions(
-    funding_decisions: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    month_index: int,
-    obligation_amount_usd: np.ndarray,
-    unpaid_amount_usd: np.ndarray,
-) -> None:
-    mask = unpaid_amount_usd > 0
-    if not mask.any():
-        return
-    rollouts = np.nonzero(mask)[0].astype(np.int64)
-    funding_decisions.extend(
-        _funding_decision_block(
-            rollouts=rollouts,
-            obligation_type=obligation_type,
-            month_index=month_index,
-            decision_type=FundingDecisionType.UNFUNDED,
-            actor_id=actor_id,
-            available_cash_usd=np.zeros_like(obligation_amount_usd),
-            requested_cash_usd=obligation_amount_usd,
-            requested_sale_usd=np.zeros_like(obligation_amount_usd),
-            funded_cash_usd=np.zeros_like(obligation_amount_usd),
-            shortfall_usd=unpaid_amount_usd,
-            source_type=FundingSourceType.UNFUNDED,
-        )
-    )
-
-
-def _record_obligation_settlement_rows(
-    obligations: event_streams.StreamFrameBuilder,
-    *,
-    obligation_type: ObligationType,
-    actor_id: str,
-    creditor_id: str,
-    source_policy_id: str,
-    month_index: int,
-    amount_due_usd: np.ndarray,
-    amount_paid_usd: np.ndarray,
-    unpaid_amount_usd: np.ndarray,
-    required: bool = True,
-) -> None:
-    # One column-block per recorder call covering every rollout with a
-    # non-zero obligation due. Per-row allocation inside a per-rollout loop
-    # was a measured +54% bench regression (a2c3009 followup); the
-    # vectorized form clears that.
-    nonzero_mask = amount_due_usd > 0
-    if not nonzero_mask.any():
-        return
-    nonzero_rollouts = np.nonzero(nonzero_mask)[0].astype(np.int64)
-    nonzero_due = amount_due_usd[nonzero_rollouts].astype(np.float64)
-    nonzero_paid = amount_paid_usd[nonzero_rollouts].astype(np.float64)
-    nonzero_unpaid = unpaid_amount_usd[nonzero_rollouts].astype(np.float64)
-    obligation_ids = [
-        _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in nonzero_rollouts
-    ]
-    obligations.extend(
-        {
-            "rollout_index": nonzero_rollouts,
-            "month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
-            "obligation_id": obligation_ids,
-            "obligation_type": [obligation_type.value] * nonzero_rollouts.size,
-            "actor_id": [actor_id] * nonzero_rollouts.size,
-            "creditor_id": [creditor_id] * nonzero_rollouts.size,
-            "due_month_index": np.full(nonzero_rollouts.size, month_index, dtype=np.int64),
-            "amount_due_usd": nonzero_due,
-            "amount_paid_usd": nonzero_paid,
-            "unpaid_amount_usd": nonzero_unpaid,
-            "status": _vectorized_status_strings(nonzero_due, nonzero_unpaid),
-            "source_policy_id": [source_policy_id] * nonzero_rollouts.size,
-            "required": np.full(nonzero_rollouts.size, required, dtype=np.bool_),
-        }
-    )
-
-
-def _vectorized_status_strings(amount_due_usd: np.ndarray, unpaid_amount_usd: np.ndarray) -> list[str]:
-    # `ObligationStatus.value == SettlementStatus.value` for the three states
-    # (paid / partially_paid / unpaid), so one string column serves both
-    # Pydantic surfaces. Implementation mirrors `_obligation_status`.
-    out: list[str] = []
-    paid = ObligationStatus.PAID.value
-    partial = ObligationStatus.PARTIALLY_PAID.value
-    unpaid_status = ObligationStatus.UNPAID.value
-    for due, unpaid in zip(amount_due_usd.tolist(), unpaid_amount_usd.tolist(), strict=True):
-        if unpaid <= 0:
-            out.append(paid)
-        elif unpaid >= due:
-            out.append(unpaid_status)
-        else:
-            out.append(partial)
-    return out
-
-
-def _obligation_id(obligation_type: ObligationType, *, rollout_index: int, month_index: int) -> str:
-    return f"{obligation_type.value}:rollout:{rollout_index}:month:{month_index}"
 
 
 def _property_cash_flow_arrays(

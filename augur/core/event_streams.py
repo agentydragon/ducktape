@@ -213,7 +213,6 @@ def join_trajectory_identity(df: pl.DataFrame, identity_df: pl.DataFrame) -> pl.
 OBLIGATION_LIFECYCLE_SCHEMA: dict[str, pl.DataType] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
-    "obligation_id": pl.String,
     "obligation_type": pl.String,
     "actor_id": pl.String,
     "creditor_id": pl.String,
@@ -221,27 +220,47 @@ OBLIGATION_LIFECYCLE_SCHEMA: dict[str, pl.DataType] = {
     "amount_due_usd": pl.Float64,
     "amount_paid_usd": pl.Float64,
     "unpaid_amount_usd": pl.Float64,
-    "status": pl.String,
     "source_policy_id": pl.String,
     "required": pl.Boolean,
 }
 
-_OBLIGATION_LIFECYCLE_SORT_KEY: tuple[str, ...] = ("month_index", "rollout_index", "obligation_type", "obligation_id")
+# `obligation_id` is derived from `(obligation_type, rollout_index, month_index)`
+# and `status` is derived from `(amount_due_usd, unpaid_amount_usd)`. Both are
+# constructed only when callers materialize the Pydantic surface, not stored
+# per-row -- that kept ~16k per-row f-string + status-string constructions per
+# bench scenario out of the hot path.
+_OBLIGATION_ID_EXPR: pl.Expr = pl.format(
+    "{}:rollout:{}:month:{}", pl.col("obligation_type"), pl.col("rollout_index"), pl.col("month_index")
+).alias("obligation_id")
+
+_OBLIGATION_STATUS_EXPR: pl.Expr = (
+    pl.when(pl.col("unpaid_amount_usd") <= 0)
+    .then(pl.lit("paid"))
+    .when(pl.col("unpaid_amount_usd") >= pl.col("amount_due_usd"))
+    .then(pl.lit("unpaid"))
+    .otherwise(pl.lit("partially_paid"))
+    .alias("status")
+)
 
 
 def sort_obligation_lifecycle(df: pl.DataFrame) -> pl.DataFrame:
     """Polars equivalent of `_sorted_obligations` / `_sorted_settlement_results`
-    over the legacy Pydantic lists. `_sorted_failure_events` uses
+    over the legacy Pydantic lists. The legacy key was
+    `(month, rollout, obligation_type, obligation_id)`; `obligation_id` is
+    `{obligation_type}:rollout:{rollout}:month:{month}`, so within any
+    `(month, rollout, obligation_type)` triple the id is unique and the id
+    tiebreaker collapses. `_sorted_failure_events` uses
     `(month, rollout, failure_event_type, failure_event_id)` but
     `failure_event_type` is single-valued and `failure_event_id` sorts
-    lex-equivalent to `obligation_id`, so this same key reproduces it on
+    lex-equivalent to `obligation_id`, so the same key reproduces it on
     the filtered subset."""
 
-    return df.sort(list(_OBLIGATION_LIFECYCLE_SORT_KEY))
+    return df.sort(["month_index", "rollout_index", "obligation_type"])
 
 
 def materialize_obligations(df: pl.DataFrame) -> Iterator[Obligation]:
-    for row in df.iter_rows(named=True):
+    augmented = df.with_columns(_OBLIGATION_ID_EXPR, _OBLIGATION_STATUS_EXPR)
+    for row in augmented.iter_rows(named=True):
         yield Obligation(
             rollout_index=int(row["rollout_index"]),
             month_index=int(row["month_index"]),
@@ -263,7 +282,8 @@ def materialize_obligations(df: pl.DataFrame) -> Iterator[Obligation]:
 
 
 def materialize_settlement_results(df: pl.DataFrame) -> Iterator[SettlementResult]:
-    for row in df.iter_rows(named=True):
+    augmented = df.with_columns(_OBLIGATION_ID_EXPR, _OBLIGATION_STATUS_EXPR)
+    for row in augmented.iter_rows(named=True):
         yield SettlementResult(
             rollout_index=int(row["rollout_index"]),
             month_index=int(row["month_index"]),
@@ -293,7 +313,7 @@ def materialize_settlement_results(df: pl.DataFrame) -> Iterator[SettlementResul
 FUNDING_DECISION_SCHEMA: dict[str, pl.DataType] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
-    "obligation_id": pl.String,
+    "obligation_type": pl.String,
     "decision_type": pl.String,
     "actor_id": pl.String,
     "policy_id": pl.String,
@@ -313,16 +333,20 @@ FUNDING_DECISION_SCHEMA: dict[str, pl.DataType] = {
 
 def sort_funding_decisions(df: pl.DataFrame) -> pl.DataFrame:
     """Polars equivalent of `_sorted_funding_decisions` over the Pydantic list.
-    `policy_sequence_index = None` sorted as `-1` and `policy_id = None`
-    sorted as empty string in the legacy code, so we fill-null those columns
-    into transient sort keys."""
+    Legacy tuple key: `(month, rollout, fillna(policy_sequence_index, -1),
+    decision_type, fillna(policy_id, ""), obligation_id)`. The `obligation_id`
+    tiebreaker only ever distinguishes rows with the same
+    `(month, rollout, policy_sequence_index, decision_type, policy_id)` — and
+    those only differ by `obligation_type` (the id is
+    `{type}:rollout:{r}:month:{m}`), so we can substitute `obligation_type`
+    and avoid materializing the id at sort time."""
 
     return (
         df.with_columns(
             pl.col("policy_sequence_index").fill_null(-1).alias("_sort_seq"),
             pl.col("policy_id").fill_null("").alias("_sort_pid"),
         )
-        .sort(["month_index", "rollout_index", "_sort_seq", "decision_type", "_sort_pid", "obligation_id"])
+        .sort(["month_index", "rollout_index", "_sort_seq", "decision_type", "_sort_pid", "obligation_type"])
         .drop(["_sort_seq", "_sort_pid"])
     )
 
@@ -335,7 +359,8 @@ def _row_optional_enum(row: dict[str, Any], column: str, enum_cls: type) -> Any:
 
 
 def materialize_funding_decisions(df: pl.DataFrame) -> Iterator[FundingDecision]:
-    for row in df.iter_rows(named=True):
+    augmented = df.with_columns(_OBLIGATION_ID_EXPR)
+    for row in augmented.iter_rows(named=True):
         yield FundingDecision(
             rollout_index=int(row["rollout_index"]),
             month_index=int(row["month_index"]),
@@ -1090,17 +1115,22 @@ def _build_partner_contribution_decision(row: dict[str, Any]) -> PartnerContribu
 def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:
     """`df` is the full obligation lifecycle frame; we filter to the failed
     rows (`unpaid_amount_usd > 0 & required`) inside this function so callers
-    don't have to keep two frames around."""
+    don't have to keep two frames around. `obligation_id` /
+    `failure_event_id` are derived from `(obligation_type, rollout, month)`
+    at materialize time via polars expressions."""
 
-    failed = df.filter((pl.col("unpaid_amount_usd") > 0) & pl.col("required"))
+    failed = (
+        df.filter((pl.col("unpaid_amount_usd") > 0) & pl.col("required"))
+        .with_columns(_OBLIGATION_ID_EXPR)
+        .with_columns((pl.col("obligation_id") + ":failure").alias("failure_event_id"))
+    )
     for row in failed.iter_rows(named=True):
-        obligation_id = row["obligation_id"]
         yield FailureEvent(
             rollout_index=int(row["rollout_index"]),
             month_index=int(row["month_index"]),
-            failure_event_id=f"{obligation_id}:failure",
+            failure_event_id=row["failure_event_id"],
             failure_event_type=FailureEventType.UNSETTLED_OBLIGATION,
-            obligation_id=obligation_id,
+            obligation_id=row["obligation_id"],
             actor_id=row["actor_id"],
             unpaid_amount_usd=float(row["unpaid_amount_usd"]),
             path_set_id=row.get("path_set_id"),
