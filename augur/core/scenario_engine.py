@@ -2285,7 +2285,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
         remaining_crypto_basis_by_month[:, month] = crypto_holding.basis_usd
         crypto_value[:, month] = crypto_value_after_sale
-        private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
+        # `private_equity_sale_taxable_gain` is derived from the unified
+        # `asset_change_log` after the main loop (same pattern as SP500).
+        # The previous imperative snapshot from `private_equity_sale_taxable_gain_month`
+        # local accumulator was only populated by acquisition + within-month
+        # PE policy sales; today's behavior was patched up by the settlement
+        # function's `pe_state.private_equity_sale_taxable_gain_usd[:, M] += ...`
+        # add at the post-loop tax-settlement path (now also removed). All
+        # PE sale paths emit into `private_equity_sale_action_records`, so
+        # the log-derived matrix sees every sale uniformly.
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
         private_equity_sale_opportunity_value[:, month] = np.maximum(
             0.0, market_sale_opportunity_value - private_equity_sale_month
@@ -2343,6 +2351,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         rollout_count=rollout_count,
         month_index=month_index,
         asset_kind=AssetKindForLog.GENERIC_SP500,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
+    )
+    private_equity_sale_taxable_gain = derive_per_month_taxable_gain_matrix(
+        asset_change_log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_kind=AssetKindForLog.PRIVATE_EQUITY,
         tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
     )
     annual_tax = annual_sale_tax_allocation(
@@ -2460,6 +2475,43 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         sp500_sale_action_records=sp500_sale_action_records,
         crypto_sale_action_records=crypto_sale_action_records,
         pe_state=pe_funding_state,
+    )
+
+    # Re-derive the gain matrices from the (now-final) action records.
+    # The post-loop tax settlement above may have appended more PE
+    # (and possibly SP500) sale records via the obligation-funding
+    # chain; the downstream `_tax_share_for_sale_action` loops at
+    # :~2519 / :~2570 read these matrices as denominators per (rollout,
+    # month). Today's behavior includes post-loop sales in the PE
+    # denominator (via the now-removed `pe_state.private_equity_sale
+    # _taxable_gain_usd[:, M] +=` in settlement); the SP500 denominator
+    # only ever had main-loop sales (today's `[:, month] = sp500_sale -
+    # sp500_basis` overwrite limited it to within-month-policy locals,
+    # and post-loop settlement never updated this matrix). Match both
+    # by re-building the asset_change_log over all records and
+    # re-deriving PE; SP500 stays at its main-loop value so existing
+    # consumers don't see a behavior change from including post-loop
+    # SP500 sales in the denominator.
+    asset_change_log = _build_asset_change_log(
+        sp500_records=sp500_sale_action_records,
+        crypto_records=crypto_sale_action_records,
+        pe_records=private_equity_sale_action_records,
+        disposition=disposition,
+        primary_owner_actor_id=primary_owner_actor_id,
+        sp500_asset_id=(
+            primary_owner_funding_sources.sp500_source_asset.asset_id
+            if primary_owner_funding_sources.sp500_source_asset is not None
+            else "sp500"
+        ),
+        property_id=scenario.property_selection.property_id,
+        month_index=month_index,
+    )
+    private_equity_sale_taxable_gain = derive_per_month_taxable_gain_matrix(
+        asset_change_log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_kind=AssetKindForLog.PRIVATE_EQUITY,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
     )
 
     partner_present = np.full((rollout_count, month_count), _has_partner(scenario), dtype=np.bool_)
@@ -5227,9 +5279,12 @@ def _settle_required_cash_obligation_at_month_position(
                 pe_state.private_equity_sale_usd[:, month_position] = (
                     pe_state.private_equity_sale_usd[:, month_position] + pe_application.sale_usd
                 )
-                pe_state.private_equity_sale_taxable_gain_usd[:, month_position] = (
-                    pe_state.private_equity_sale_taxable_gain_usd[:, month_position] + pe_application.taxable_gain_usd
-                )
+                # `pe_state.private_equity_sale_taxable_gain_usd[:, M] +=`
+                # used to be done here for the post-loop tax settlement
+                # path; the PE gain matrix is now derived from the unified
+                # `asset_change_log` (which already records every PE sale
+                # via `sp500_sale_action_records`-style `sale_action_records`
+                # append below). Removed to keep one source of truth.
                 remaining_due = pe_application.remaining_due_usd
                 checking_floor_shortfall_usd[:, month_position] = np.maximum(
                     checking_floor_shortfall_usd[:, month_position], remaining_due
