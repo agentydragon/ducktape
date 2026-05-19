@@ -56,14 +56,167 @@ These are non-negotiable shapes. Every scenario below assumes them.
   stored one way. Asset units / basis is one thing. Tax owed is one
   thing. There is no "the engine has it as A, the wire has it as B,
   the summary derives it as C from the log".
+- **No hardcoded asset classes; generic templates instead.** The
+  engine does not mention `sp500`, `crypto`, `private_equity` by name
+  in its logic. It defines a small set of **asset templates** that
+  capture _behavior_ (e.g. "capital-gains-eligible holding with a
+  market price path and a cost basis", "depreciable real-property with
+  §1250 treatment", "loan principal with an amortization schedule
+  and a counterparty"). A scenario configures any number of concrete
+  asset positions, each pointing at a template and supplying the
+  template's parameters (display name, market-path provider, holding-
+  period rule, …). Two stocks named `"foo"` and `"bar"` and a crypto
+  named `"baz"` all share the same code path through the engine —
+  three positions with the same template id flow through the same
+  gain calculator. Adding a new named position is configuration, not
+  engine code, unless it needs a genuinely new behavior template.
+- **DRY rule routing.** Every rule the law (or the user) imposes on
+  N things is implemented **once**, and the N things route through
+  that one implementation by declaring which behavior they participate
+  in. Long-term capital gain treatment is one bracket walk that
+  consumes the sum of LTCG-eligible realized gains across all assets
+  marked LTCG-eligible; it is not a per-asset-class function called N
+  times. The same applies to deduction caps, withholding rules,
+  obligation settlement chains, depreciation schedules, accrual
+  cadences. If the spec changes the SALT cap or the LTCG threshold,
+  exactly one place changes.
+- **Vectorized hot path.** Performance is a requirement, not an
+  afterthought. The per-month step runs as polars expressions / numpy
+  ufuncs / equivalent bulk-vectorized ops over the rollout dimension.
+  Python-level per-rollout work in the hot loop is a bug. Where a
+  rule is naturally expressed as a join+group-by+window across a
+  long-form frame (e.g. "this year's LTCG bucket is the sum of
+  taxable_gain across all LTCG-eligible asset_change_log rows grouped
+  by (rollout, year)"), that's the implementation — not a Python loop
+  over rollouts that re-derives the same thing. The choice of
+  numpy / polars / pytorch / something else per piece is whatever
+  best vectorizes the operation; the constraint is "no per-rollout
+  Python in the hot path", not the library.
 
 Everything below builds on these.
+
+## Asset templates and rule routing
+
+The engine defines a small fixed set of behavior templates. Concrete
+asset positions, liabilities, and obligation streams in a scenario
+each point at one template and carry the template-required
+parameters. Rules (tax math, depreciation, deductibility,
+settlement) are implemented once per template and consume **every**
+position that points at that template.
+
+The templates below are the target set; the exact list firms up as
+implementation proceeds, but the principle is fixed: every rule
+applies to a template, not to a name.
+
+- **Capital-gains-eligible holding.** Carries units, cost basis, a
+  market unit-price path (per-rollout per-month from the market
+  model), and a holding-period rule for distinguishing short-term
+  vs long-term. Sales realize gain (`proceeds − basis_consumed`)
+  classified by holding period; the gain feeds the LTCG or
+  ordinary-income tax computation per the per-jurisdiction rules.
+  Covers everything one would call a stock-like or crypto-like or
+  ETF-like or single-issuer-position: scenarios configure as many
+  named positions as needed (e.g. `"sp500_etf"`, `"individual_aapl"`,
+  `"bitcoin"`, `"ethereum"`) and the engine treats them uniformly.
+- **Depreciable real-property holding.** Capital-gains-eligible plus
+  a depreciation schedule, an §1250 recapture rule on sale, a SALT-
+  cap-eligible property-tax stream, and a qualified-residence
+  interest seam (when the property is the agent's primary residence).
+  One template per legal treatment (e.g. owner-occupied vs rental);
+  multiple properties of the same legal treatment in one scenario
+  are multiple rows on the same template.
+- **Amortizing loan.** Carries outstanding principal, an
+  amortization schedule, an interest rate, two counterparties
+  (borrower agent and lender agent), and an interest-deductibility
+  flag (e.g. qualified-residence interest is deductible up to the
+  principal cap; investment-property interest follows different
+  rules; an intra-family personal loan typically isn't deductible).
+  One implementation covers mortgages, intra-family loans, and any
+  other inter-agent fixed-payment debt. Multiple loans in one
+  scenario route through the same monthly-payment + principal-vs-
+  interest split + counterparty cash-flow code.
+- **Tax-liability instrument.** Federal income tax + CA income tax
+  for each (rollout, agent or tax-household, year) — accrued at
+  year-end based on the year's ordinary income + capital gains +
+  deductions, settled via the IRS quarterly-estimated + year-end
+  schedule. One template, parameterized by jurisdiction (federal vs
+  CA) and filing status. Adding another state means adding another
+  parameter set, not new code.
+- **Recurring obligation.** A fixed-amount fixed-cadence cash demand
+  (HOA dues, insurance premium, special assessment, outside rent,
+  monthly spend allowance, recurring transfer). Settles each due
+  month against the obligated agent's cash via the agent's
+  configured funding chain. One template, configured N times per
+  scenario.
+- **Income stream.** A recurring or scheduled cash inflow with a
+  tax-classification label (W-2 ordinary, K-1 ordinary, rental
+  income net of expenses, etc.). The cash arrives, the label feeds
+  the year's tax computation, and the same income-classification
+  enum is what the tax template's rules dispatch on — no
+  W-2-specific code path separate from a K-1-specific one when the
+  treatment is the same.
+
+Rules attached to templates (what runs over them, exactly once):
+
+- **Year-tax computation** consumes the year's aggregated ordinary
+  income (sum across income streams marked ordinary) + the year's
+  LTCG bucket (sum across capital-gains-eligible holdings'
+  long-term sales) + the year's STCG bucket (short-term sales,
+  routed into ordinary) + the year's depreciation recapture (from
+  §1250-marked property sales) + deduction inputs (property tax,
+  qualified-residence interest, SALT cap, standard deduction). It
+  is one function per jurisdiction, taking aggregated inputs;
+  per-asset-class versions are forbidden.
+- **Per-month tax allocation** spreads the year's tax back to the
+  months that produced taxable events, proportionally to each
+  event's share of the year's taxable income. One function,
+  consumes the per-month realized-gain stream regardless of which
+  template produced each entry.
+- **Quarterly estimated tax + safe harbor** is one function consuming
+  the year's running income totals and the prior-year actual tax.
+  Federal and CA each have their own parameters, same code.
+- **Capital-gains classification** (long-term vs short-term) is one
+  function consuming holding period across every capital-gains-
+  eligible row. No per-asset-class duplicate.
+- **Obligation funding chain** (when an agent is short of cash to
+  settle a required obligation) is one function consuming the
+  agent's configured chain of capital-gains-eligible positions in
+  preference order. Sells happen against the same code path
+  regardless of whether the position is stock-like or crypto-like.
+- **Depreciation accrual** is one function consuming every
+  depreciable-property-marked row's schedule + month. The engine
+  doesn't have a separate "residential" and "rental" depreciation
+  implementation — it has one, parameterized.
+
+Concretely on the existing engine's smell: the current
+`scenario_engine.py` has separate `sp500_*`, `crypto_*`, and
+`private_equity_*` matrices, separate sale-record lists per asset
+class, separate `_record_sp500_sale_*` / `_record_crypto_sale_*` /
+`_record_private_equity_sale_*` recorders, and separate
+`generic_sp500_sale_tax_usd` / `crypto_sale_tax_usd` /
+`private_equity_sale_tax_usd` output columns. The new engine has
+**one** `asset_holding_frame` keyed by `(rollout, agent, asset_id)`
+with a `template_id` column, **one** sale recorder that consumes
+rows of any template, **one** taxable-gain aggregator that filters by
+the template's tax-treatment column. Adding a 4th capital-gains-
+eligible asset class is a config change.
 
 ## Scenarios — bottom up
 
 Each scenario adds one new capability. The simulator must handle all
 of them; the order is the order in which the implementation should
 acquire support, not a runtime classification.
+
+**Notation note on asset names.** Names like `"sp500"`, `"btc"`,
+`"alice_aapl"`, `"primary_residence"`, `"rental_unit_2"` appearing
+below are **scenario-level configured identifiers**, not strings the
+engine recognizes. They identify positions; what the engine does
+with each position is determined by the template the position points
+at (see [Asset templates and rule routing](#asset-templates-and-rule-routing)).
+Replacing `"sp500"` with `"global_equities"` in a scenario is a
+display-name change; the engine doesn't notice. Two scenarios with
+ten differently-named stock-like positions each route through the
+same capital-gains-eligible-holding code path.
 
 ### Layer 1: Just transfers
 
@@ -173,12 +326,21 @@ Alice sells \$5000 of stock in month 3, another \$5000 in month 9.
 Each sale realizes gain proportional to the basis-per-unit at that
 month. The order is preserved on the transaction log.
 
-#### S4.5 — Multiple asset classes.
+#### S4.5 — Many positions, all going through one code path.
 
-Alice owns SP500, BTC, and a private-equity position with a
-configured liquidity regime. Each holds its own units + basis, each
-has its own market price path. Holdings and balances scale row-wise
-in the output, not by adding columns.
+Alice owns ten differently-named positions in a single scenario:
+say `"sp500_etf"`, `"intl_etf"`, `"bond_etf"`, `"bitcoin"`,
+`"ethereum"`, plus five individual stocks named `"position_001"`
+through `"position_005"`. Each is configured at the scenario level
+with its own market price path; eight point at the standard
+capital-gains-eligible-holding template (LTCG-after-1y / STCG-
+otherwise); two point at a "no-LTCG-discount" variant for an
+illustrative jurisdiction where everything is ordinary income. The
+engine does NOT have ten separate per-position code paths — every
+position runs through the same template-driven code, with the
+position's template-id routing it to the right rules.
+
+Adding an 11th position is a scenario edit, not an engine edit.
 
 ### Layer 5: Market integration
 
@@ -221,13 +383,15 @@ already.
 
 #### S6.2 — Multiple gain sources in one year combine.
 
-Alice realizes \$10000 from SP500 (long-term), \$3000 from BTC
-(long-term), and \$5000 from a private-equity sale (long-term). All
-fold into the same long-term-capital-gain bucket for federal tax
-purposes, which is summed once and taxed once at federal LTCG rates.
-California treats LTCG as ordinary income — the same gains feed CA's
-ordinary-income computation. The simulator does not compute tax on
-SP500 sales separately, double-count, or miss a source.
+Alice realizes \$10000 from `"sp500_etf"` (long-term), \$3000 from
+`"bitcoin"` (long-term), and \$5000 from `"alice_private_equity"`
+(long-term). All three positions point at capital-gains-eligible-
+holding templates marked LTCG-on-this-sale; the year-tax math sums
+their realized gains into **one** LTCG bucket and walks the federal
+LTCG bracket **once**. California treats LTCG as ordinary income —
+the same summed gains feed CA's ordinary-income bracket walk, also
+once. There is no per-position-class tax computation; adding a 4th
+LTCG-eligible position adds a row to the bucket, not a code path.
 
 #### S6.3 — Short-term gain is ordinary income.
 
@@ -245,10 +409,9 @@ the following year. Each quarterly amount is sized to satisfy the
 safe-harbor rule: total quarterly payments cover the lesser of
 (actual current-year tax) or (a fraction of prior-year tax —
 typically 100% but 110% above the high-income threshold). For year
-zero (no prior-year tax data) the simulator's behavior is
-deterministic and documented; reasonable choices include "no
-quarterly payments emit, year-end true-up covers the full year" or
-"user supplies a prior-year-tax knob".
+zero of the simulation, the prior-year tax value comes from the
+scenario's tax-profile configuration (see [Resolved decisions](#resolved-decisions));
+the engine does not synthesize one.
 
 The simulator must:
 
@@ -341,15 +504,18 @@ amount). The transaction log records both halves. Alice's checking
 cash drops by the full payment. Bank Bob's cash rises by the full
 payment.
 
-#### S8.3 — Bank Bob's interest income is taxable.
+#### S8.3 — Bank Bob's interest income is recorded but not taxed.
 
-Bank Bob earns ordinary income on each month's interest portion.
-If Bank Bob is modeled as a tax-paying agent (i.e. it has a filing
-status and tax profile), then year-end federal + CA tax on that
-income is computed and accrued on Bank Bob's books. If Bank Bob is
-modeled as a non-tax-paying entity (e.g. an institutional lender out
-of scope for tax), the income is still recorded — it's a contract
-parameter, not a tax-profile parameter — but no tax accrues.
+Bank Bob earns interest income on each month's interest portion of
+Alice's payment. The transaction lands on Bank Bob's books — the
+cash inflow + the income classification are recorded for symmetry
+and for auditability — but Bank Bob is marked as a non-tax-paying
+agent (see [Resolved decisions](#resolved-decisions)), so no
+year-tax accrual fires on Bank Bob and Bank Bob has no tax-payable
+liability. For the simulation's purposes Bank Bob is a money sink:
+its cash balance is allowed to grow without bound and never matters
+to any decision. Mortgage origination treats Bank Bob's cash
+availability as unconditional.
 
 #### S8.4 — Mortgage interest is deductible for Alice.
 
@@ -481,10 +647,12 @@ months):
 - **Per-rollout per-month per-agent state**: cash balances by
   account, asset holdings (units + basis + current market value) by
   asset, liability balances (principal + monthly interest accrued +
-  monthly principal paid) by liability. Long-form, one row per
-  (rollout, month, agent, entity-id). The cardinality of agents,
-  accounts, assets, liabilities goes into row count, not into the
-  schema.
+  monthly principal paid) by liability — addressable for any
+  `(rollout, month, agent, entity-id)` tuple. Long-form vs wide-form
+  is an implementation choice; the constraint is that any concrete
+  query (one rollout's full state at month M, one agent's net worth
+  series across months, an asset's units across rollouts) is
+  cheap and obvious to express.
 - **Transaction log**: every transaction recorded chronologically with
   (rollout, month, kind, parties, amounts, cause-id). Causes link
   back to the policy or obligation that produced the transaction.
@@ -526,10 +694,40 @@ they are not maintained alongside as separate state.
 - **Behavioral / regret modeling.** Agents follow their configured
   policies deterministically.
 
+## Resolved decisions
+
+- **Lenders are agents for bookkeeping, not for tax.** The lender
+  side of an inter-agent loan (e.g. "Bank Bob" in S8) is a
+  first-class agent for the purpose of double-entry bookkeeping —
+  the loan principal sits on the lender's books as a receivable
+  asset, monthly interest income lands on the lender's books, and
+  cash flows are recorded symmetrically — but the lender's books
+  are a **sink**: no tax accrual fires on the lender, and the
+  lender is assumed to have unbounded cash for the purpose of
+  origination. The lender's "net worth" / "income" outputs may be
+  computed (they fall out of the same machinery) but are not the
+  point of the simulation. Bank Bob's interest income does NOT
+  generate a tax-liability instrument; the year-tax computation
+  template just doesn't apply to lender-flagged agents.
+
+  Modeling consequence: agents carry a `tax_payer` flag (or a
+  filing-status field whose value is "n/a — not a tax payer" /
+  similar). The year-tax template runs only over agents with a
+  configured tax profile.
+
+- **Year-zero estimated tax: prior-year value is scenario
+  configuration.** When the safe-harbor rule kicks in for year 0
+  of a simulation, the simulator uses a `prior_year_tax_usd` value
+  that the scenario supplies as part of the agent's (or tax
+  household's) tax profile. No engine-side fallback (no estimate
+  from the configured ordinary income, no "skip quarterlies in year
+  0"). If the scenario does not configure it, the engine raises at
+  scenario-validation time — the user has to make the call.
+
 ## Open questions
 
-These are unresolved and need a decision before the relevant layer
-lands. They aren't blocking the earlier layers.
+These are still unresolved and need a decision before the relevant
+layer lands. They aren't blocking the earlier layers.
 
 - **Tax household scope.** Tax computation today is single-agent.
   Joint filers with separate cash accounts but a single tax return —
@@ -537,23 +735,12 @@ lands. They aren't blocking the earlier layers.
   abstraction that aggregates one or more agents? Either works; the
   decision affects how filing status, joint deductions, and combined
   brackets are modeled.
-- **Bank Bob's existence model.** The mortgage scenarios above
-  describe the lender as another agent in the same simulation. An
-  alternative is to model lenders as "contract counterparties"
-  without their own balance sheet, since simulating a bank's balance
-  sheet is usually not what the user wants. The decision affects how
-  many agents typical scenarios carry and whether lenders pay tax.
-- **Year-zero quarterly estimated tax.** With no prior-year tax data,
-  several behaviors are defensible: (a) no quarterlies fire and the
-  year-end true-up covers the full year, (b) the user supplies a
-  `prior_year_tax_usd` knob, (c) the simulator estimates from the
-  scenario's configured ordinary income. The current legacy engine
-  picked (a) + (b); the new implementation should commit to a default
-  explicitly.
 - **Agent-to-agent gifting tax treatment.** S1.2 establishes that
   transfers can carry an income classification. Gift tax,
   exclusions, lifetime exemption — out of scope here, or modeled?
 - **Inter-agent loans beyond mortgages.** S8 describes one specific
   contract type. Should the simulator support arbitrary inter-agent
   loans (e.g. partner equity loans, intra-family lending), or is
-  mortgage the only template?
+  mortgage the only template? The amortizing-loan template above
+  is written to cover both; whether scenarios actually configure
+  non-mortgage instances is the open question.
