@@ -660,14 +660,13 @@ rules separately.
 
 #### S7.4 — Filing status.
 
-Single or head-of-household. Each filing status pins different
-bracket boundaries, standard deduction amounts, and threshold
-values (NIIT, safe-harbor high-income). The simulator carries the
-filing status per tax-paying agent and looks up the right tables.
-
-(Married-filing-jointly and married-filing-separately are
-out of scope — see [Non-goals](#non-goals). A scenario representing
-a couple files each agent as single.)
+Single only at this stage. The infrastructure carries filing status
+per tax-paying agent and looks up the right tables (bracket
+boundaries, standard deduction, threshold values like NIIT and
+safe-harbor high-income), so adding head-of-household / MFJ / MFS
+later is a matter of dropping in the corresponding rows in the
+jurisdiction YAML and (for MFJ/MFS) wiring two agents to a shared
+return — see [Non-goals](#non-goals).
 
 #### S7.5 — Combined ordinary + capital scenario.
 
@@ -1159,14 +1158,14 @@ they are not maintained alongside as separate state.
   mark-to-market price.
 - **Behavioral / regret modeling.** Agents follow their configured
   policies deterministically.
-- **Joint filing (MFJ / MFS).** The tax-paying-agent unit covers
-  single-filer scenarios. Married-filing-jointly and married-
-  filing-separately are not modeled. Filing-status values exist
-  (filer agents pick single or head-of-household, per S7.4), but
-  the joint-return wiring — two agents sharing one tax return,
-  combined brackets, MFJ standard deduction — is out of scope.
-  If a scenario wants to model a couple, both agents file as
-  single (or HoH where applicable).
+- **Filing statuses beyond single (HoH / MFJ / MFS).** The tax-
+  paying-agent unit covers single-filer scenarios. Head-of-
+  household, married-filing-jointly, and married-filing-separately
+  are out of scope. The filing-status field on the tax profile is
+  retained as `"single"` only; HoH brackets and the MFJ joint-
+  return wiring (two agents sharing one return, combined brackets,
+  MFJ standard deduction) come later. If a scenario wants to model
+  a couple in the meantime, both agents file as single.
 
 ## Resolved decisions
 

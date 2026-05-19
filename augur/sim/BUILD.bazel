@@ -158,15 +158,27 @@ py_library(
     ],
 )
 
+py_library(
+    name = "replay_py",
+    srcs = ["replay.py"],
+    deps = [
+        ":apply_py",
+        ":run_py",
+        ":scenario_py",
+        ":simulate_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
 py_test(
     name = "simulate_test",
     srcs = ["simulate_test.py"],
     deps = [
-        ":apply_py",
         ":market_py",
+        ":replay_py",
         ":scenario_py",
         ":simulate_py",
-        ":state_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

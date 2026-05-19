@@ -665,7 +665,8 @@ refactoring L1's transfer.
    year-tax computation; capital-gains classification rule.
    `tax_year_breakdown_log`.
 7. **L7** — ordinary-income aggregation; SALT-cap interaction;
-   itemized vs standard deduction; filing status (single + HoH).
+   itemized vs standard deduction; filing status (single only;
+   HoH / MFJ / MFS deferred).
 8. **L8** — `liabilities` frame; `amortizing_loan` template;
    mortgage origination / payment / payoff transactions; Bank Bob
    as non-tax-paying agent.

@@ -12,8 +12,8 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.sim.apply import apply_events
 from augur.sim.market import DeterministicPath, GeometricBrownianPath, MarketBundle
+from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
     FloorTriggeredSalePolicy,
@@ -25,7 +25,7 @@ from augur.sim.scenario import (
     ScheduledTransfer,
     TaxProfile,
 )
-from augur.sim.simulate import _initial_state, simulate
+from augur.sim.simulate import simulate
 
 
 def _alice_bob_scenario() -> Scenario:
@@ -79,23 +79,13 @@ def test_alice_gives_bob_five_dollars_one_rollout() -> None:
 
 
 def test_apply_events_is_only_mutation_replays_from_log() -> None:
-    """Replay invariant: re-applying the event log to the initial
-    state from scratch produces the same final cross-section as the
-    incrementally-maintained one. If apply_events ever drifts from
-    the log this test catches it."""
+    """Smoke test for the replay-invariant helper on the L1 baseline
+    scenario. The helper checks every state frame the engine touches;
+    most scenario tests below also invoke it after their assertions to
+    extend the invariant coverage cheaply."""
     scenario = _alice_bob_scenario()
-    rollout_count = 1
-    result = simulate(scenario, rollout_count=rollout_count)
-
-    final_incremental = result.cash_balances.filter(pl.col("month_index") == int(scenario.horizon_months)).sort(
-        ["rollout_index", "agent_id", "account_id"]
-    )
-
-    # Re-derive: apply the entire event log to a fresh initial state.
-    initial = _initial_state(scenario, rollout_count)
-    from_log = apply_events(initial, result.events_log).cash_balances.sort(["rollout_index", "agent_id", "account_id"])
-
-    assert from_log.equals(final_incremental.drop("month_index"))
+    result = simulate(scenario, rollout_count=1)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
@@ -303,6 +293,7 @@ def test_combined_one_off_and_recurring() -> None:
         .item()
     )
     assert alice_final == 15000.0
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
@@ -370,6 +361,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     assert disp["units_sold"] == 30.0
     assert disp["cost_basis_consumed_usd"] == 2400.0
     assert disp["proceeds_usd"] == 3600.0
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
@@ -458,9 +450,8 @@ def test_asset_sale_scales_across_rollouts() -> None:
 
 
 def test_lot_disposition_replay_invariant() -> None:
-    """Replaying the event log from the initial state must
-    reproduce the incremental end-state — for both cash and lots.
-    This catches drift between `apply_events` and the live loop."""
+    """Replay invariant on an L4-style scenario with lot dispositions.
+    Exercises the cap-gains YTD bucket path through the helper."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=50.0)],
@@ -488,23 +479,8 @@ def test_lot_disposition_replay_invariant() -> None:
         horizon_months=2,
     )
     rollout_count = 3
-
     result = simulate(scenario, rollout_count=rollout_count)
-
-    initial = _initial_state(scenario, rollout_count)
-    replayed = apply_events(initial, result.events_log)
-
-    final_cash = (
-        result.cash_balances.filter(pl.col("month_index") == 2)
-        .drop("month_index")
-        .sort(["rollout_index", "agent_id", "account_id"])
-    )
-    final_lots = (
-        result.asset_lots.filter(pl.col("month_index") == 2).drop("month_index").sort(["rollout_index", "lot_id"])
-    )
-
-    assert replayed.cash_balances.sort(["rollout_index", "agent_id", "account_id"]).equals(final_cash)
-    assert replayed.asset_lots.sort(["rollout_index", "lot_id"]).equals(final_lots)
+    assert_replay_invariant_holds(scenario, result, rollout_count=rollout_count)
 
 
 def test_fifo_sale_crossing_two_lots() -> None:
@@ -582,6 +558,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
         .item()
         == 24000.0
     )
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_fifo_holding_period_classification_per_disposition() -> None:
@@ -887,6 +864,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
     assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=1e-6)
     assert ytd_values[12] == 0.0
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule() -> None:
@@ -968,6 +946,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
     assert row["gain_usd"] == pytest.approx(20_000.0, abs=1e-6)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_no_tax_profile_means_no_year_end_accrual() -> None:
@@ -1059,6 +1038,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
         .item()
     )
     assert irs_end_cash == pytest.approx(52_292.59, abs=0.02)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
@@ -1124,6 +1104,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 11
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_explicit_sale_price_overrides_market() -> None:
@@ -1226,6 +1207,7 @@ def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
         .item()
     )
     assert end_cash == pytest.approx(0.0, abs=1e-6)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_rollout_marked_failed_when_assets_exhausted() -> None:
@@ -1280,6 +1262,7 @@ def test_rollout_marked_failed_when_assets_exhausted() -> None:
     status_row = result.rollout_status.row(0, named=True)
     assert status_row["status"] == "failed_insufficient_cash"
     assert status_row["failed_month"] == 0
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 if __name__ == "__main__":
