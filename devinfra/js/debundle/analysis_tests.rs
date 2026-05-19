@@ -171,6 +171,22 @@ mod tests {
         );
     }
 
+    /// A binding rebind inside a class method body sits at depth 1
+    /// (the method's function body is the immediate body, just like
+    /// a bare `function f() { ... }`). Must show up in
+    /// `first_order_lazy_rebinds` so the owner-graph emits a
+    /// constraining `LazyRebind` edge for it.
+    #[test]
+    fn first_order_lazy_rebind_in_class_method_body() {
+        let module = parse("let counter = 0; class C { bump(b) { counter = b; } }");
+        let facts = analyze_facts(&module);
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("counter")]));
+        assert_eq!(
+            facts[1].first_order_lazy_rebinds,
+            BTreeSet::from([test_id("counter")])
+        );
+    }
+
     /// A binding rebind inside a nested closure (depth ≥ 2) shows
     /// up in `lazy_rebinds` but NOT in `first_order_lazy_rebinds`
     /// — invoking the outer function synchronously only stashes

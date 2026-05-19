@@ -1060,7 +1060,11 @@ fn lazy_visit_arrow_expr<V: LazyBoundary>(v: &mut V, node: &ArrowExpr) {
 
 fn lazy_visit_method_prop<V: LazyBoundary>(v: &mut V, node: &MethodProp) {
     node.key.visit_with(v);
-    v.descend_lazy(|s| node.function.visit_with(s));
+    // `node.function.visit_with` dispatches to `visit_function`, which
+    // already calls `descend_lazy` via `lazy_visit_function`. No outer
+    // descend here — the method body must land at lazy_depth 1, the
+    // same as a bare `function f() { ... }`.
+    node.function.visit_with(v);
 }
 
 fn lazy_visit_getter_prop<V: LazyBoundary>(v: &mut V, node: &GetterProp) {
@@ -1089,11 +1093,19 @@ fn lazy_visit_class<V: LazyBoundary>(v: &mut V, node: &Class) {
 fn lazy_visit_class_member<V: LazyBoundary>(v: &mut V, member: &ClassMember) {
     visit_eager_member_parts(v, member);
     match member {
+        // `method.function.visit_with` dispatches to `visit_function`,
+        // which already calls `descend_lazy` via `lazy_visit_function`.
+        // No outer descend here — a method body must land at
+        // lazy_depth 1, the same as a bare `function f() { ... }`,
+        // so rebinds in the immediate body show up in
+        // `first_order_lazy_rebinds` and the owner-graph emits the
+        // constraining `LazyRebind` edge that catches cross-module
+        // writes to imported bindings (ESM rejects at runtime).
         ClassMember::Method(method) => {
-            v.descend_lazy(|s| method.function.visit_with(s));
+            method.function.visit_with(v);
         }
         ClassMember::PrivateMethod(method) => {
-            v.descend_lazy(|s| method.function.visit_with(s));
+            method.function.visit_with(v);
         }
         ClassMember::Constructor(ctor) => {
             v.descend_lazy(|s| ctor.visit_children_with(s));
