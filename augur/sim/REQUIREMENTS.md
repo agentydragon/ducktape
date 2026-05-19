@@ -24,6 +24,26 @@ Outputs: a per-month time series of every agent's full balance sheet
 in every rollout, plus an append-only ledger of every transaction
 that produced those balances.
 
+## Scope
+
+The simulator targets **federal US tax law + California tax law**.
+The only tax jurisdictions that need to ship are `federal_us` and
+`california`. The only locations that need to ship are a small set
+of California Bay Area places (e.g. San Francisco, San Mateo, Palo
+Alto, Oakland, Sunnyvale) — they differ from each other in property-
+tax rate (county assessor + Prop 13 + Mello-Roos), in city-level
+real-estate transfer tax (SF in particular has a graduated transfer
+tax), and in HOA / special-assessment defaults, so locations stay a
+configurable thing even within California.
+
+The architecture is described in terms of jurisdictions and
+locations as configurable records (see [Locations and tax
+jurisdictions](#locations-and-tax-jurisdictions)) so that adding a
+new state, city, or country is a parameter-record addition with no
+engine change required. That's a design-quality property, not a
+roadmap commitment — no scenarios exercising non-CA jurisdictions
+need to ship, and no scenario crossing state lines is in scope.
+
 ## Foundational principles
 
 These are non-negotiable shapes. Every scenario below assumes them.
@@ -162,12 +182,14 @@ applies to a template, not to a name.
   scenario route through the same monthly-payment + principal-vs-
   interest split + counterparty cash-flow code.
 - **Tax-liability instrument.** Federal income tax + CA income tax
-  for each (rollout, agent or tax-household, year) — accrued at
-  year-end based on the year's ordinary income + capital gains +
-  deductions, settled via the IRS quarterly-estimated + year-end
-  schedule. One template, parameterized by jurisdiction (federal vs
-  CA) and filing status. Adding another state means adding another
-  parameter set, not new code.
+  for each (rollout, agent, year) — accrued at year-end based on
+  the year's ordinary income + capital gains + deductions, settled
+  via the IRS quarterly-estimated + year-end schedule. One
+  template, parameterized by jurisdiction and filing status; runs
+  once for `federal_us` and once for `california` per (agent, year)
+  under the shipping scope. The structure permits adding another
+  jurisdiction by parameter record only; no other jurisdiction is
+  in scope.
 - **Recurring obligation.** A fixed-amount fixed-cadence cash demand
   (HOA dues, insurance premium, special assessment, outside rent,
   monthly spend allowance, recurring transfer). Settles each due
@@ -240,36 +262,43 @@ via two configurable concepts wired into the templates above:
   residence interest cap, depreciation schedule (e.g. 27.5-year
   residential rental), §1250 recapture rate, §121 primary-residence
   exclusion amount, deductibility rules — whatever varies between
-  jurisdictions. Federal-US is one jurisdiction; California is
-  another; New York is another; a hypothetical foreign jurisdiction
-  is another. The tax-liability-instrument template **runs once
-  per applicable jurisdiction per (agent, year)**, taking the
-  jurisdiction's parameter set as input. Adding another state is
-  adding another parameter set, not new code.
+  jurisdictions. The shipping jurisdiction set is exactly two:
+  `federal_us` and `california` (see [Scope](#scope)). The tax-
+  liability-instrument template **runs once per applicable
+  jurisdiction per (agent, year)**, taking the jurisdiction's
+  parameter set as input — so it runs twice per (agent, year) under
+  the shipping scope. The structure exists so that another
+  jurisdiction is a parameter-record addition with no engine
+  change; no other jurisdiction needs to ship.
 
-- **Location.** A named place (e.g. `"san_francisco_ca"`,
-  `"manhattan_ny"`, `"austin_tx"`) carrying:
+- **Location.** A named place (e.g. `"san_francisco"`, `"san_mateo"`,
+  `"palo_alto"`, `"oakland"`, `"sunnyvale"`) carrying:
   - the ordered list of tax jurisdictions that apply to property
-    or income at that location (federal-US + california for SF;
-    federal-US + new-york-state + nyc-municipal for Manhattan;
-    federal-US + texas for Austin),
-  - the property tax rate (or a more elaborate formula),
-  - the transfer-tax rate that lands on sale-side closing costs,
+    or income at that location. Under the shipping scope every
+    location is in California, so every location's jurisdiction
+    list is `[federal_us, california]` (possibly with a city-
+    level row for local transfer tax / Mello-Roos).
+  - the property tax rate (county assessor + Prop 13 base + any
+    Mello-Roos or parcel-tax surcharges; one rate or a more
+    elaborate formula per location).
+  - the transfer-tax rate that lands on sale-side closing costs
+    (SF has a graduated city-level transfer tax; San Mateo
+    County's is different; Santa Clara's is different again).
   - any other location-specific parameters scenarios need (e.g.
-    rent-control rules, special-assessment defaults, location-
-    specific deduction caps).
+    HOA / special-assessment defaults, rent-control rules where
+    they apply).
 
   A scenario declares the location of each property and of each
   agent's residence. Property tax on property X uses X's location's
-  rate. Agent A's income tax uses the jurisdictions of A's
-  residence-location. **One agent owning two properties in
-  different locations** is routine: each property's carrying
-  costs and sale-side transfer tax follow its own location's
-  rates; aggregate deductions (e.g. SALT) sum across all the
-  agent's properties subject to the federal cap. The engine does
-  not need a multi-location code path — the per-property and
-  per-agent location parameters route into the same per-template
-  rule.
+  rate; agent A's income tax uses A's residence-location's
+  jurisdictions (`[federal_us, california]` under the shipping
+  scope). **One agent owning two Bay Area properties** in different
+  cities is routine: each property's carrying costs and sale-side
+  transfer tax follow its own location's rates; aggregate
+  deductions (e.g. SALT) sum across all the agent's properties
+  subject to the federal cap. The engine does not need a
+  multi-location code path — the per-property and per-agent
+  location parameters route into the same per-template rule.
 
 This DRYs out "renting properties in different places" exactly the
 same way the asset-template structure DRYs out asset classes:
@@ -810,7 +839,7 @@ recovery is not failure.
 
 #### S12.1 — Buy a house with a mortgage.
 
-Alice buys a house in `"san_francisco_ca"` at month 0. Purchase
+Alice buys a house in `"san_francisco"` at month 0. Purchase
 price \$500k. Buy-side closing costs \$5k (configurable per-location
 percentage or absolute amount). Down payment \$100k from Alice's
 cash. Bank Bob originates a 30-year fixed mortgage at 6% for the
@@ -821,7 +850,7 @@ Per S8.1's bookkeeping: Alice's checking debits \$105k (down + buy
 closing). Closing costs roll into the property's **adjusted basis**
 (not deductible) → the depreciable-real-property-holding instance
 records `adjusted_basis = $505k`. Mortgage originates simultaneously.
-The location is `"san_francisco_ca"`; the property tax rate, transfer
+The location is `"san_francisco"`; the property tax rate, transfer
 tax (sell side), and applicable tax jurisdictions are pulled from
 that location's config.
 
@@ -951,18 +980,21 @@ deductible for federal personal income tax (rent paid by a non-
 business individual isn't a deduction). The simulator records it on
 the transaction log and decrements cash; no tax effect.
 
-#### S13.5 — Multiple properties at different locations.
+#### S13.5 — Multiple Bay Area properties at different locations.
 
 Alice owns two properties: a primary residence in
-`"san_francisco_ca"` and a rental in `"austin_tx"`. Each carries its
-own location's property-tax rate, transfer-tax rate, and applicable
-tax jurisdictions. The SF property's income (none — primary
-residence) and sale gain run through federal + CA; the Austin
-property's rental income and sale gain run through federal + TX
-(which has no state income tax). At year-end, Alice's federal
-itemized SALT deduction sums property tax paid across **both**
-properties subject to the federal \$10k cap. The simulator must
-not double-count, drop a property, or hard-code the count.
+`"san_francisco"` and a rental in `"palo_alto"`. Both are in
+California, so both run through `[federal_us, california]` for
+income tax — but each location carries its own property-tax rate
+(SF County assessor's Prop-13 base vs Santa Clara County's; any
+Mello-Roos on the Palo Alto property; SF's city-level real-estate
+transfer tax on sale of the SF property vs Santa Clara County's
+on sale of the Palo Alto property). The simulator routes property
+tax and transfer tax by `location_id`. At year-end, Alice's
+federal itemized SALT deduction sums property tax paid across
+**both** properties subject to the federal \$10k cap. The
+simulator must not double-count, drop a property, or hard-code
+the count.
 
 #### S13.6 — Occupancy mode switching over a multi-year timeline.
 
