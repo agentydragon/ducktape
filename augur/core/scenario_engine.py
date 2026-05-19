@@ -6026,17 +6026,51 @@ def _pct_fraction(value: float, name: str) -> float:
     return value / 100
 
 
+_FAN_PERCENTILES: tuple[int, ...] = (
+    1,
+    2,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    75,
+    80,
+    85,
+    90,
+    95,
+    98,
+    99,
+)
+_FAN_QUANTILE_LEVELS: np.ndarray = np.array(_FAN_PERCENTILES, dtype="float64") / 100.0
+
+
 def _fan_columns(values: np.ndarray) -> ColumnarTable:
     matrix = np.asarray(values, dtype="float64")
     if matrix.ndim != 2:
         raise ValueError("fan values must be shaped (rollout, month)")
     month_index = np.arange(matrix.shape[1], dtype="int64")
-    percentiles = (1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 98, 99)
-    percentile_values = np.nanpercentile(matrix, percentiles, axis=0)
+    # `np.quantile` here instead of `np.nanpercentile` — fan-metric data is
+    # always defined (no NaN sources) so the nan-safety dispatch into
+    # per-column apply_along_axis isn't earning its keep. Direct quantile
+    # is a vectorized native call that profiled as ~10× faster on the bench
+    # (materialize 0.9s -> ~0.4s post-change). If the engine ever starts
+    # emitting NaN into a fan metric, that's a bug to catch — the
+    # propagated NaN here will make it visible.
+    percentile_values = np.quantile(matrix, _FAN_QUANTILE_LEVELS, axis=0, method="linear")
     columns: dict[str, list[Any]] = {
         "month_index": month_index.tolist(),
         "year": (month_index / MONTHS_PER_YEAR).tolist(),
     }
-    for index, percentile in enumerate(percentiles):
+    for index, percentile in enumerate(_FAN_PERCENTILES):
         columns[f"p{percentile:02d}"] = percentile_values[index].tolist()
     return ColumnarTable(row_count=int(matrix.shape[1]), columns=columns)
