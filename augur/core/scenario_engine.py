@@ -1717,11 +1717,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         insurance_accrual_usd=insurance_obligation_due,
         maintenance_accrual_usd=maintenance_obligation_due,
     )
-    generic_sp500_value = np.zeros((rollout_count, month_count), dtype="float64")
+    # `generic_sp500_value` and `crypto_value` are derived post-loop from
+    # the snapshot `remaining_*_units_by_month` matrices × the market
+    # multipliers; not pre-allocated here.
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
-    crypto_value = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_usd = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_basis_usd = np.zeros((rollout_count, month_count), dtype="float64")
     remaining_crypto_quantity_by_month = np.zeros((rollout_count, month_count), dtype="float64")
@@ -2375,9 +2376,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                         ),
                     )
                 )
-        sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
         crypto_multiplier = crypto_value_multipliers[:, month]
-        crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
         # Mortgage + special-assessment + outside-rent obligations settle
         # BEFORE the tax block so that any property-cost-driven asset
@@ -2602,10 +2601,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             _partner_ctx.remaining_sp500_basis = _partner_settled.remaining_sp500_basis
             _partner_ctx.remaining_crypto_quantity = _partner_settled.remaining_crypto_quantity
             _partner_ctx.remaining_crypto_basis = _partner_settled.remaining_crypto_basis
-        # Recompute the per-asset values after any inline tax sales for
-        # the snapshot block below.
-        sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
-        crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
         # End-of-month snapshot. Rebuild `SimulationState` from the 1D
         # locals and use it as the source for the cash + SP500 + crypto
@@ -2618,7 +2613,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         sp500_holding = owner_agent.holding("sp500")
         remaining_sp500_units_by_month[:, month] = sp500_holding.units
         remaining_sp500_basis_by_month[:, month] = sp500_holding.basis_usd
-        generic_sp500_value[:, month] = sp500_value_after_sale
         # `generic_sp500_sale_gain` is derived from the unified
         # `asset_change_log` after the main loop (see _build_asset_change_log
         # call just before annual_sale_tax_allocation). The old imperative
@@ -2630,7 +2624,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         crypto_holding = owner_agent.holding("crypto")
         remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
         remaining_crypto_basis_by_month[:, month] = crypto_holding.basis_usd
-        crypto_value[:, month] = crypto_value_after_sale
         # `private_equity_sale_taxable_gain` is derived from the unified
         # `asset_change_log` after the main loop (same pattern as SP500).
         # The previous imperative snapshot from `private_equity_sale_taxable_gain_month`
@@ -2655,6 +2648,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     for accumulator in property_cost_obligation_accumulators:
         accumulator.emit_obligations(obligations)
         accumulator.emit_funding_decisions(funding_decisions)
+
+    # Per-month asset values are derived from (units × multiplier) at the
+    # end of each month, not maintained imperatively during the loop. The
+    # units matrices are snapshot-truth from the main loop's 1D locals;
+    # the multipliers come from the market bundle. This replaces the
+    # previous `generic_sp500_value[:, month] = sp500_value_after_sale`
+    # / `crypto_value[:, month] = crypto_value_after_sale` per-month writes.
+    generic_sp500_value = remaining_sp500_units_by_month * market_bundle.generic_sp500_multipliers
+    crypto_value = remaining_crypto_quantity_by_month * crypto_value_multipliers
 
     property_tax_for_tax_allocation = property_cash_flow.column("property_tax_usd") * property_live_mask
     net_rental_taxable_income = (
