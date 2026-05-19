@@ -275,6 +275,7 @@ py_library(
     srcs = ["scenario_engine.py"],
     deps = [
         ":accounting_tables_py",
+        ":action_log_py",
         ":annual_tax_py",
         ":event_streams_py",
         ":local_regulation_py",

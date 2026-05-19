@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
@@ -19,6 +20,12 @@ from augur.core.accounting import (
     TaxLot,
 )
 from augur.core.accounting_tables import AccountingTrace, AccountingTraceBuilder, validate_trace
+from augur.core.action_log import (
+    ASSET_CHANGE_LOG_SCHEMA,
+    AssetKindForLog,
+    TaxTreatment,
+    derive_per_month_taxable_gain_matrix,
+)
 from augur.core.annual_tax import AnnualSaleTaxAllocation, annual_sale_tax_allocation
 from augur.core.local_regulation import LocalRegulation
 from augur.core.market_bundle import MarketBundle
@@ -971,6 +978,320 @@ class PrivateEquitySaleActionRecord:
     sale_application: PrivateEquitySaleApplication
 
 
+def _asset_change_log_row_block(
+    *,
+    rollout_indices: np.ndarray,
+    month_indices: np.ndarray,
+    actor_ids: list[str],
+    asset_id: str,
+    asset_kind_value: str,
+    delta_units: np.ndarray,
+    delta_basis_usd: np.ndarray,
+    cash_proceeds_usd: np.ndarray,
+    taxable_gain_usd: np.ndarray,
+    tax_treatment_value: str | None,
+    cause_kind: str,
+    cause_ids: list[str],
+) -> pl.DataFrame:
+    """Construct one column-block frame matching `ASSET_CHANGE_LOG_SCHEMA`.
+
+    All arrays must be 1D with matching length; per-row scalar fields
+    (asset_id, asset_kind_value, tax_treatment_value, cause_kind) are
+    broadcast to that length."""
+    size = int(rollout_indices.size)
+    return pl.DataFrame(
+        {
+            "rollout_index": rollout_indices.astype(np.int64),
+            "month_index": month_indices.astype(np.int64),
+            "actor_id": actor_ids,
+            "asset_id": [asset_id] * size,
+            "asset_kind": [asset_kind_value] * size,
+            "delta_units": delta_units.astype(np.float64),
+            "delta_basis_usd": delta_basis_usd.astype(np.float64),
+            "cash_proceeds_usd": cash_proceeds_usd.astype(np.float64),
+            "taxable_gain_usd": taxable_gain_usd.astype(np.float64),
+            "tax_treatment": [tax_treatment_value] * size,
+            "cause_kind": [cause_kind] * size,
+            "cause_id": cause_ids,
+        },
+        schema=ASSET_CHANGE_LOG_SCHEMA,
+    )
+
+
+def _sp500_records_to_asset_change_block(
+    records: Sequence[Sp500SaleActionRecord], *, asset_id: str, primary_owner_actor_id: str
+) -> pl.DataFrame | None:
+    """Convert SP500 sale records (which carry amount_usd, basis_usd
+    per-rollout but no unit count) into an asset_change_log column
+    block. One row per (rollout, record) where the sale was active.
+    `delta_units` is zero because the records don't carry unit deltas."""
+    if not records:
+        return None
+    rollout_blocks: list[np.ndarray] = []
+    month_blocks: list[np.ndarray] = []
+    amount_blocks: list[np.ndarray] = []
+    basis_blocks: list[np.ndarray] = []
+    cause_ids: list[str] = []
+    for record in records:
+        amount = record.column("amount_usd")
+        basis = record.column("basis_usd")
+        active = (amount != 0.0) | (basis != 0.0)
+        active_idx = np.nonzero(active)[0]
+        if active_idx.size == 0:
+            continue
+        rollout_blocks.append(active_idx)
+        month_blocks.append(np.full(active_idx.size, record.month_index, dtype=np.int64))
+        amount_blocks.append(amount[active_idx])
+        basis_blocks.append(basis[active_idx])
+        cause_ids.extend([record.cause_id_prefix] * int(active_idx.size))
+    if not rollout_blocks:
+        return None
+    rollout_indices = np.concatenate(rollout_blocks)
+    month_indices = np.concatenate(month_blocks)
+    amounts = np.concatenate(amount_blocks)
+    basis = np.concatenate(basis_blocks)
+    size = int(rollout_indices.size)
+    return _asset_change_log_row_block(
+        rollout_indices=rollout_indices,
+        month_indices=month_indices,
+        actor_ids=[primary_owner_actor_id] * size,
+        asset_id=asset_id,
+        asset_kind_value=AssetKindForLog.GENERIC_SP500.value,
+        delta_units=np.zeros(size, dtype=np.float64),
+        delta_basis_usd=-basis,
+        cash_proceeds_usd=amounts,
+        taxable_gain_usd=amounts - basis,
+        tax_treatment_value=TaxTreatment.LONG_TERM_CAPITAL.value,
+        cause_kind="OBLIGATION_OR_POLICY_SALE",
+        cause_ids=cause_ids,
+    )
+
+
+def _crypto_records_to_asset_change_block(
+    records: Sequence[CryptoSaleActionRecord], *, primary_owner_actor_id: str
+) -> pl.DataFrame | None:
+    """Convert crypto sale records into an asset_change_log column
+    block. Crypto records carry quantity_sold per-rollout (unlike SP500),
+    so `delta_units` is populated."""
+    if not records:
+        return None
+    rollout_blocks: list[np.ndarray] = []
+    month_blocks: list[np.ndarray] = []
+    amount_blocks: list[np.ndarray] = []
+    basis_blocks: list[np.ndarray] = []
+    qty_blocks: list[np.ndarray] = []
+    cause_ids: list[str] = []
+    asset_ids: list[str] = []
+    for record in records:
+        amount = record.column("amount_usd")
+        basis = record.column("basis_usd")
+        quantity = record.column("quantity_sold")
+        active = (amount != 0.0) | (basis != 0.0) | (quantity != 0.0)
+        active_idx = np.nonzero(active)[0]
+        if active_idx.size == 0:
+            continue
+        rollout_blocks.append(active_idx)
+        month_blocks.append(np.full(active_idx.size, record.month_index, dtype=np.int64))
+        amount_blocks.append(amount[active_idx])
+        basis_blocks.append(basis[active_idx])
+        qty_blocks.append(quantity[active_idx])
+        cause_ids.extend([record.cause_id_prefix] * int(active_idx.size))
+        asset_ids.extend([record.source_asset_id] * int(active_idx.size))
+    if not rollout_blocks:
+        return None
+    rollout_indices = np.concatenate(rollout_blocks)
+    month_indices = np.concatenate(month_blocks)
+    amounts = np.concatenate(amount_blocks)
+    basis = np.concatenate(basis_blocks)
+    quantities = np.concatenate(qty_blocks)
+    size = int(rollout_indices.size)
+    # Crypto records carry varying asset_ids (per-symbol), so we can't use
+    # the simple broadcast helper — emit the asset_id column directly.
+    return pl.DataFrame(
+        {
+            "rollout_index": rollout_indices.astype(np.int64),
+            "month_index": month_indices.astype(np.int64),
+            "actor_id": [primary_owner_actor_id] * size,
+            "asset_id": asset_ids,
+            "asset_kind": [AssetKindForLog.CRYPTO.value] * size,
+            "delta_units": -quantities,
+            "delta_basis_usd": -basis,
+            "cash_proceeds_usd": amounts,
+            "taxable_gain_usd": amounts - basis,
+            "tax_treatment": [TaxTreatment.LONG_TERM_CAPITAL.value] * size,
+            "cause_kind": ["OBLIGATION_OR_POLICY_SALE"] * size,
+            "cause_id": cause_ids,
+        },
+        schema=ASSET_CHANGE_LOG_SCHEMA,
+    )
+
+
+def _pe_records_to_asset_change_block(
+    records: Sequence[PrivateEquitySaleActionRecord], *, primary_owner_actor_id: str
+) -> pl.DataFrame | None:
+    """Convert PE sale records into an asset_change_log column block.
+    PE records carry sold_units + basis_usd + sale_usd + taxable_gain_usd
+    on the sale_application."""
+    if not records:
+        return None
+    rollout_blocks: list[np.ndarray] = []
+    month_blocks: list[np.ndarray] = []
+    sale_blocks: list[np.ndarray] = []
+    basis_blocks: list[np.ndarray] = []
+    units_blocks: list[np.ndarray] = []
+    gain_blocks: list[np.ndarray] = []
+    cause_ids: list[str] = []
+    for record in records:
+        sale = record.sale_application.sale_usd
+        basis = record.sale_application.basis_usd
+        units = record.sale_application.sold_units
+        gain = record.sale_application.taxable_gain_usd
+        active = (sale != 0.0) | (basis != 0.0) | (units != 0.0)
+        active_idx = np.nonzero(active)[0]
+        if active_idx.size == 0:
+            continue
+        rollout_blocks.append(active_idx)
+        month_blocks.append(np.full(active_idx.size, record.month_index, dtype=np.int64))
+        sale_blocks.append(sale[active_idx])
+        basis_blocks.append(basis[active_idx])
+        units_blocks.append(units[active_idx])
+        gain_blocks.append(gain[active_idx])
+        # Use the instruction's policy_id as cause_id_prefix surrogate.
+        cause_ids.extend([record.instruction.policy_id] * int(active_idx.size))
+    if not rollout_blocks:
+        return None
+    rollout_indices = np.concatenate(rollout_blocks)
+    month_indices = np.concatenate(month_blocks)
+    sales = np.concatenate(sale_blocks)
+    basis = np.concatenate(basis_blocks)
+    units = np.concatenate(units_blocks)
+    gains = np.concatenate(gain_blocks)
+    size = int(rollout_indices.size)
+    return _asset_change_log_row_block(
+        rollout_indices=rollout_indices,
+        month_indices=month_indices,
+        actor_ids=[primary_owner_actor_id] * size,
+        asset_id="private_equity",
+        asset_kind_value=AssetKindForLog.PRIVATE_EQUITY.value,
+        delta_units=-units,
+        delta_basis_usd=-basis,
+        cash_proceeds_usd=sales,
+        taxable_gain_usd=gains,
+        tax_treatment_value=TaxTreatment.LONG_TERM_CAPITAL.value,
+        cause_kind="OBLIGATION_OR_POLICY_SALE",
+        cause_ids=cause_ids,
+    )
+
+
+def _property_disposition_to_asset_change_blocks(
+    *, disposition: PropertyDispositionArrays, month_index: np.ndarray, primary_owner_actor_id: str, property_id: str
+) -> list[pl.DataFrame]:
+    """Build property-sale rows for the asset_change_log. A property
+    sale generates TWO rows per (rollout, sale_month) — one for the
+    LONG_TERM_CAPITAL portion (taxable_property_capital_gain_usd) and
+    one for the DEPRECIATION_RECAPTURE_1250 portion. Different tax-rate
+    buckets even though they share the disposition event; downstream
+    `derive_per_month_taxable_gain_matrix(tax_treatment=...)` filters
+    to one bucket and sums without double-counting because the
+    other bucket's row has 0 in the unrelated column."""
+    if disposition.sale_month is None:
+        return []
+    sale_month_positions = np.nonzero(month_index == int(disposition.sale_month))[0]
+    if sale_month_positions.size == 0:
+        return []
+    sale_position = int(sale_month_positions[0])
+    cap_gain = disposition.column("taxable_property_capital_gain_usd")[:, sale_position]
+    recapture = disposition.column("depreciation_recapture_usd")[:, sale_position]
+    gross = disposition.column("property_sale_gross_usd")[:, sale_position]
+    debt_payoff = disposition.column("property_sale_debt_payoff_usd")[:, sale_position]
+    closing_cost = disposition.column("sale_closing_cost_usd")[:, sale_position]
+    net_proceeds = gross - closing_cost - debt_payoff
+    rollout_count = cap_gain.shape[0]
+    active = (cap_gain != 0.0) | (recapture != 0.0)
+    if not active.any():
+        return []
+    active_idx = np.nonzero(active)[0]
+    n = int(active_idx.size)
+    months = np.full(n, int(disposition.sale_month), dtype=np.int64)
+    # LT_CAPITAL row carries the units (the property itself, -1) and
+    # cash proceeds + basis change; recapture row only carries the
+    # taxable_gain_usd for its bucket. This prevents double-counting
+    # in any downstream sum-without-filter.
+    lt_row = _asset_change_log_row_block(
+        rollout_indices=active_idx,
+        month_indices=months,
+        actor_ids=[primary_owner_actor_id] * n,
+        asset_id=property_id,
+        asset_kind_value=AssetKindForLog.PROPERTY.value,
+        delta_units=np.full(n, -1.0, dtype=np.float64),
+        delta_basis_usd=np.zeros(n, dtype=np.float64),
+        cash_proceeds_usd=net_proceeds[active_idx],
+        taxable_gain_usd=cap_gain[active_idx],
+        tax_treatment_value=TaxTreatment.LONG_TERM_CAPITAL.value,
+        cause_kind="PROPERTY_SALE",
+        cause_ids=[f"property_sale:{property_id}"] * n,
+    )
+    recapture_row = _asset_change_log_row_block(
+        rollout_indices=active_idx,
+        month_indices=months,
+        actor_ids=[primary_owner_actor_id] * n,
+        asset_id=property_id,
+        asset_kind_value=AssetKindForLog.PROPERTY.value,
+        delta_units=np.zeros(n, dtype=np.float64),
+        delta_basis_usd=np.zeros(n, dtype=np.float64),
+        cash_proceeds_usd=np.zeros(n, dtype=np.float64),
+        taxable_gain_usd=recapture[active_idx],
+        tax_treatment_value=TaxTreatment.DEPRECIATION_RECAPTURE_1250.value,
+        cause_kind="PROPERTY_SALE",
+        cause_ids=[f"property_sale_recapture:{property_id}"] * n,
+    )
+    blocks: list[pl.DataFrame] = []
+    if rollout_count > 0:
+        blocks.append(lt_row)
+        blocks.append(recapture_row)
+    return blocks
+
+
+def _build_asset_change_log(
+    *,
+    sp500_records: Sequence[Sp500SaleActionRecord],
+    crypto_records: Sequence[CryptoSaleActionRecord],
+    pe_records: Sequence[PrivateEquitySaleActionRecord],
+    disposition: PropertyDispositionArrays,
+    primary_owner_actor_id: str,
+    sp500_asset_id: str,
+    property_id: str | None,
+    month_index: np.ndarray,
+) -> pl.DataFrame:
+    """Build the unified asset_change_log frame from today's per-asset-
+    class action-record lists plus the property sale's disposition columns.
+    See `ASSET_CHANGE_LOG_SCHEMA` for the row shape."""
+    blocks: list[pl.DataFrame] = []
+    sp500_block = _sp500_records_to_asset_change_block(
+        sp500_records, asset_id=sp500_asset_id, primary_owner_actor_id=primary_owner_actor_id
+    )
+    if sp500_block is not None:
+        blocks.append(sp500_block)
+    crypto_block = _crypto_records_to_asset_change_block(crypto_records, primary_owner_actor_id=primary_owner_actor_id)
+    if crypto_block is not None:
+        blocks.append(crypto_block)
+    pe_block = _pe_records_to_asset_change_block(pe_records, primary_owner_actor_id=primary_owner_actor_id)
+    if pe_block is not None:
+        blocks.append(pe_block)
+    if property_id is not None:
+        blocks.extend(
+            _property_disposition_to_asset_change_blocks(
+                disposition=disposition,
+                month_index=month_index,
+                primary_owner_actor_id=primary_owner_actor_id,
+                property_id=property_id,
+            )
+        )
+    if not blocks:
+        return pl.DataFrame(schema=ASSET_CHANGE_LOG_SCHEMA)
+    return pl.concat(blocks)
+
+
 @dataclass(frozen=True)
 class ObligationFundingPolicyApplication:
     policy_step: ActorPolicyStep[Policy]
@@ -1569,7 +1890,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
 
     # Agent-centric `SimulationState` maintained in parallel with the
-    # existing 1D locals + matrix snapshots (Phases 1–3b of the
+    # existing 1D locals + matrix snapshots (Phases 1-3b of the
     # state-vector refactor). State.agents[primary_owner_actor_id]
     # carries the owner's cash + holdings + liabilities + property
     # stake; partner-equity scenarios add a second AgentState entry
@@ -1952,7 +2273,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_sp500_units_by_month[:, month] = sp500_holding.units
         remaining_sp500_basis_by_month[:, month] = sp500_holding.basis_usd
         generic_sp500_value[:, month] = sp500_value_after_sale
-        generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
+        # `generic_sp500_sale_gain` is derived from the unified
+        # `asset_change_log` after the main loop (see _build_asset_change_log
+        # call just before annual_sale_tax_allocation). The old imperative
+        # overwrite `generic_sp500_sale_gain[:, month] = sp500_sale -
+        # sp500_basis` missed property-cost-driven sales' gains (those
+        # flow through `sp500_sale_action_records` rather than the
+        # within-month-policy locals).
         checking_floor_shortfall[:, month] = sp500_shortfall
         crypto_holding = owner_agent.holding("crypto")
         remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
@@ -1987,6 +2314,37 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         - mortgage_interest
         - disposition.column("property_depreciation_usd")
     ) * property_live_mask
+    # Build the unified capital-gain event log from the per-asset-class
+    # action-record lists + property disposition. All SP500/crypto/PE/
+    # property sales emit into this single frame; downstream
+    # `derive_per_month_taxable_gain_matrix(asset_kind=..., tax_treatment=...)`
+    # provides the per-month gain matrices that tax-allocation /
+    # tax-share consumers need. This replaces the previous imperative
+    # `generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis`
+    # overwrite at end-of-month, which missed property-cost-driven
+    # main-loop SP500 sales' gains (those only flowed through
+    # `sp500_sale_action_records`, never updating the gain matrix).
+    asset_change_log = _build_asset_change_log(
+        sp500_records=sp500_sale_action_records,
+        crypto_records=crypto_sale_action_records,
+        pe_records=private_equity_sale_action_records,
+        disposition=disposition,
+        primary_owner_actor_id=primary_owner_actor_id,
+        sp500_asset_id=(
+            primary_owner_funding_sources.sp500_source_asset.asset_id
+            if primary_owner_funding_sources.sp500_source_asset is not None
+            else "sp500"
+        ),
+        property_id=scenario.property_selection.property_id,
+        month_index=month_index,
+    )
+    generic_sp500_sale_gain = derive_per_month_taxable_gain_matrix(
+        asset_change_log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_kind=AssetKindForLog.GENERIC_SP500,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
+    )
     annual_tax = annual_sale_tax_allocation(
         scenario.tax_profile,
         month_index=month_index,
