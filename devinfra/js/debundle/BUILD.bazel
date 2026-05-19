@@ -403,6 +403,7 @@ rust_library(
         "lowering/imports_cross.rs",
         "lowering/imports_runtime.rs",
         "lowering/lower.rs",
+        "lowering/lowering_execute.rs",
         "lowering/lowering_plan.rs",
         "lowering/materialize.rs",
         "lowering/mod.rs",
@@ -429,6 +430,7 @@ rust_library(
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_transforms_base",
         "@crates//:swc_ecma_visit",
     ],
 )
