@@ -108,16 +108,23 @@ The templates below are the target set; the exact list firms up as
 implementation proceeds, but the principle is fixed: every rule
 applies to a template, not to a name.
 
-- **Capital-gains-eligible holding.** Carries units, cost basis, a
-  market unit-price path (per-rollout per-month from the market
-  model), and a holding-period rule for distinguishing short-term
-  vs long-term. Sales realize gain (`proceeds − basis_consumed`)
-  classified by holding period; the gain feeds the LTCG or
-  ordinary-income tax computation per the per-jurisdiction rules.
-  Covers everything one would call a stock-like or crypto-like or
-  ETF-like or single-issuer-position: scenarios configure as many
-  named positions as needed (e.g. `"sp500_etf"`, `"individual_aapl"`,
-  `"bitcoin"`, `"ethereum"`) and the engine treats them uniformly.
+- **Capital-gains-eligible holding.** A named position composed of
+  one or more **tax lots**, where each lot has its own units, cost
+  basis, and acquisition date. The position carries a market
+  unit-price path (per-rollout per-month from the market model) and
+  a cost-basis method (FIFO / LIFO / HIFO / specific-id / average
+  cost) that determines which lots a sale consumes. Sales realize
+  per-lot gain (`(units_sold × price) − units_sold × per_unit_basis`);
+  each consumed lot's gain is classified short-term or long-term
+  based on its own acquisition date vs the sale date; per-lot gains
+  flow into the LTCG or ordinary-income tax buckets accordingly.
+  Buying more of the same position adds a new lot (or extends an
+  existing lot, in the average-cost case). Covers everything one
+  would call a stock-like, crypto-like, ETF-like, or single-issuer
+  position. Scenarios configure as many named positions as needed
+  (e.g. `"sp500_etf"`, `"individual_aapl"`, `"bitcoin"`, `"ethereum"`)
+  and the engine treats them uniformly — the lot structure lives
+  inside the template, not as a per-asset-class concept.
 - **Depreciable real-property holding.** Capital-gains-eligible plus
   a depreciation schedule, an §1250 recapture rule on sale, a SALT-
   cap-eligible property-tax stream, and a qualified-residence
@@ -320,13 +327,68 @@ The simulator must:
 - Make the gain available to the tax computation (Layer 6) without
   the policy code having to know anything about tax.
 
-#### S4.4 — Multiple sales in different months, partial lots.
+#### S4.4 — Multiple lots of the same position.
 
-Alice sells \$5000 of stock in month 3, another \$5000 in month 9.
-Each sale realizes gain proportional to the basis-per-unit at that
-month. The order is preserved on the transaction log.
+Alice buys 100 shares of `"sp500_etf"` at \$100/share in month 0
+(\$10000 basis, acquired month 0). She buys 50 more shares of the
+same position at \$150/share in month 6 (\$7500 basis, acquired
+month 6). After month 6 she holds 150 shares in one position with
+two distinct tax lots: one of 100 shares cost basis \$10000 acquired
+month 0, and one of 50 shares cost basis \$7500 acquired month 6.
+Total basis \$17500. The simulator must keep the per-lot identity
+intact across months — these are not collapsed into an aggregate
+"150 shares, \$17500 basis" representation unless the position's
+configured cost-basis method is average-cost.
 
-#### S4.5 — Many positions, all going through one code path.
+#### S4.5 — Sale within a single lot (FIFO default).
+
+Same setup as S4.4. The position is configured for FIFO basis. In
+month 8, with the lot-0 price at \$120 and the lot-6 price at \$120,
+Alice sells 75 shares. FIFO consumes 75 of the 100 shares from the
+month-0 lot: 75 shares × \$100/share basis = \$7500 basis consumed,
+\$9000 proceeds, \$1500 realized gain. The month-0 lot has 25
+shares left (\$2500 basis); the month-6 lot is untouched (50 shares,
+\$7500 basis). Total basis remaining = \$10000.
+
+#### S4.6 — Sale crossing two lots, mixed holding periods.
+
+Alice buys 100 shares in month 0 at \$100/share. Buys 50 more in
+month 13 at \$120/share. Price in month 14 is \$130/share. Alice
+sells 120 shares in month 14 (price \$130).
+
+FIFO consumes:
+
+- 100 shares from the month-0 lot. Held 14 months → long-term.
+  Proceeds \$13000, basis \$10000, **long-term capital gain \$3000**.
+- 20 shares from the month-13 lot. Held 1 month → short-term.
+  Proceeds \$2600, basis \$2400, **short-term capital gain \$200**.
+
+The year-tax computation must route these into different buckets:
+the \$3000 long-term gain feeds the LTCG bracket walk; the \$200
+short-term gain feeds the ordinary-income bracket walk. The
+simulator does NOT merge them into a single "\$3200 capital gain"
+and apply one rate.
+
+#### S4.7 — Lot selection at sale (specific-id / HIFO).
+
+Same setup as S4.6 but the position is configured for HIFO
+(highest-in-first-out) basis selection. The month-13 lot has higher
+basis-per-unit (\$120) than month-0 (\$100), so HIFO consumes
+month-13 first:
+
+- 50 shares from month-13. Held 1 month → short-term.
+  Proceeds \$6500, basis \$6000, **short-term gain \$500**.
+- 70 shares from month-0. Held 14 months → long-term.
+  Proceeds \$9100, basis \$7000, **long-term gain \$2100**.
+
+Total realized gain (\$2600) differs from S4.6's FIFO total
+(\$3200) because different lots are consumed. The simulator
+correctly routes whichever lots the configured method selects.
+The same code path covers FIFO, LIFO, HIFO, specific-identification,
+and average-cost — the difference is which lots are picked, not how
+the gain is computed once they're picked.
+
+#### S4.8 — Many positions, all going through one code path.
 
 Alice owns ten differently-named positions in a single scenario:
 say `"sp500_etf"`, `"intl_etf"`, `"bond_etf"`, `"bitcoin"`,
@@ -335,10 +397,12 @@ through `"position_005"`. Each is configured at the scenario level
 with its own market price path; eight point at the standard
 capital-gains-eligible-holding template (LTCG-after-1y / STCG-
 otherwise); two point at a "no-LTCG-discount" variant for an
-illustrative jurisdiction where everything is ordinary income. The
-engine does NOT have ten separate per-position code paths — every
-position runs through the same template-driven code, with the
-position's template-id routing it to the right rules.
+illustrative jurisdiction where everything is ordinary income. Each
+position carries its own lots (see S4.4-S4.7) under its own
+configured cost-basis method. The engine does NOT have ten separate
+per-position code paths — every position runs through the same
+template-driven code, with the position's template-id routing it
+to the right rules.
 
 Adding an 11th position is a scenario edit, not an engine edit.
 
@@ -425,10 +489,12 @@ The simulator must:
 
 #### S6.5 — Net investment income tax.
 
-Above the federal MAGI threshold (today \$200k single / \$250k MFJ),
-an additional 3.8% NIIT applies to investment income. The simulator
-applies it correctly — including the cap at `min(NII, MAGI − threshold)`
-— and folds it into the year's federal tax.
+Above the federal MAGI threshold (today \$200k single / \$200k head-
+of-household), an additional 3.8% NIIT applies to investment income.
+The simulator applies it correctly — including the cap at
+`min(NII, MAGI − threshold)` — and folds it into the year's federal
+tax. Thresholds are filing-status-keyed; MFJ thresholds aren't
+relevant because MFJ is out of scope.
 
 ### Layer 7: Ordinary income taxation, US + CA
 
@@ -461,12 +527,14 @@ rules separately.
 
 #### S7.4 — Filing status.
 
-Single, married filing jointly, married filing separately, head of
-household. Each filing status pins different bracket boundaries,
-standard deduction amounts, and threshold values (NIIT, safe-harbor
-high-income). The simulator carries the filing status per agent
-(or per tax-household — see open question below) and looks up the
-right tables.
+Single or head-of-household. Each filing status pins different
+bracket boundaries, standard deduction amounts, and threshold
+values (NIIT, safe-harbor high-income). The simulator carries the
+filing status per tax-paying agent and looks up the right tables.
+
+(Married-filing-jointly and married-filing-separately are
+out of scope — see [Non-goals](#non-goals). A scenario representing
+a couple files each agent as single.)
 
 #### S7.5 — Combined ordinary + capital scenario.
 
@@ -693,6 +761,14 @@ they are not maintained alongside as separate state.
   mark-to-market price.
 - **Behavioral / regret modeling.** Agents follow their configured
   policies deterministically.
+- **Joint filing (MFJ / MFS).** The tax-paying-agent unit covers
+  single-filer scenarios. Married-filing-jointly and married-
+  filing-separately are not modeled. Filing-status values exist
+  (filer agents pick single or head-of-household, per S7.4), but
+  the joint-return wiring — two agents sharing one tax return,
+  combined brackets, MFJ standard deduction — is out of scope.
+  If a scenario wants to model a couple, both agents file as
+  single (or HoH where applicable).
 
 ## Resolved decisions
 
@@ -780,17 +856,6 @@ the design that's worth examining before shipping.
 These are still unresolved and need a decision before the relevant
 layer lands. They aren't blocking the earlier layers.
 
-- **Tax household scope.** A "tax-paying agent" is the unit of tax
-  computation as established above. Joint filers — two people who
-  share a single tax return but possibly maintain separate cash
-  accounts and holdings — is a separate question on top: is a
-  married-filing-jointly couple modeled as one tax-paying agent
-  whose holdings span the joint estate, or as two cash-account-
-  owning agents that get joined at tax time into a tax-household
-  abstraction? The first is simpler; the second is closer to how
-  real joint filing works. Decision affects how MFJ filing status
-  and the joint standard deduction are wired but does not block
-  any single-filer scenario.
 - **Agent-to-agent gifting tax treatment.** S1.2 establishes that
   transfers can carry an income classification. Gift tax,
   exclusions, lifetime exemption — out of scope here, or modeled?
