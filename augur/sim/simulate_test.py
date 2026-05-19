@@ -819,8 +819,8 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     and writes one tax_liability row per jurisdiction.
 
     Federal: $200,000 - $14,600 = $185,400 taxable.
-      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 84825
-      = 1160.00 + 4266.00 + 11742.50 + 20358.00 = 37526.50
+      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 84875
+      = 1160.00 + 4266.00 + 11742.50 + 20370.00 = 37538.50
     California: $200,000 - $5,363 = $194,637 taxable.
       1% × 10412 + 2% × 14272 + 4% × 14275 + 6% × 15122 + 8% × 14269
       + 9.3% × 126287 = 104.12 + 285.44 + 571.00 + 907.32 + 1141.52
@@ -866,7 +866,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     accruals = result.events_log.tax_accruals.sort("jurisdiction_id")
     assert accruals.height == 2
     accruals_by_jurisdiction = {row["jurisdiction_id"]: row for row in accruals.iter_rows(named=True)}
-    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37526.50, abs=0.01)
+    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37538.50, abs=0.01)
     assert accruals_by_jurisdiction["california"]["amount_usd"] == pytest.approx(14754.09, abs=0.02)
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
@@ -876,13 +876,16 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     end_liabilities = result.tax_liabilities.filter(pl.col("month_index") == 12).sort("jurisdiction_id")
     assert end_liabilities.height == 2
     assert end_liabilities.get_column("amount_owed_usd").to_list()[0] == pytest.approx(14754.09, abs=0.02)
-    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37526.50, abs=0.01)
+    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37538.50, abs=0.01)
 
-    # YTD ordinary income peaks at $200000 at month 11, resets to 0
-    # at month 12 after the year-end accrual fires.
+    # YTD reflects accumulated income across the year; the year-end
+    # reset at month 11 (visible at month_index 12) drops it back
+    # to 0. At month_index 11 (post-month-10) Alice has had 11
+    # paychecks.
     ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
-    assert ytd_alice.get_column("ordinary_income_usd").to_list()[-2] == pytest.approx(200_000.0, abs=1e-6)
-    assert ytd_alice.get_column("ordinary_income_usd").to_list()[-1] == 0.0
+    ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
+    assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=1e-6)
+    assert ytd_values[12] == 0.0
 
 
 def test_no_tax_profile_means_no_year_end_accrual() -> None:
