@@ -20,6 +20,14 @@ use crate::{ModuleId, OwnerGraph, OwnerId};
 #[derive(Debug, Clone)]
 pub struct Partition {
     of: Vec<ModuleId>,
+    /// The chunk's residual logical module — where unassigned owners
+    /// default to, and which the materializer emits as the chunk's
+    /// runtime entry. Realizability uses this to identify the ESM
+    /// DFS root: any cycle in `I` that contains `residual` with a
+    /// constraining edge whose target is `residual` is unsound,
+    /// because ESM post-order DFS evaluates `residual` LAST and the
+    /// reading module sees `residual`'s bindings in TDZ.
+    residual: ModuleId,
 }
 
 impl Partition {
@@ -32,7 +40,15 @@ impl Partition {
     pub fn new(owner_graph: &OwnerGraph, default_destination: ModuleId) -> Self {
         Self {
             of: vec![default_destination; owner_graph.nodes.len()],
+            residual: default_destination,
         }
+    }
+
+    /// The chunk's residual module — the ESM DFS root for the
+    /// emitted entry. Equal to the `default_destination` the
+    /// partition was constructed with.
+    pub fn residual(&self) -> ModuleId {
+        self.residual
     }
 
     /// Build a partition that assigns each owner the module of any

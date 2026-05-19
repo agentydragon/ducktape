@@ -876,11 +876,40 @@ impl Visit for StatementFactsCollector {
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     // Export specifiers (`export { X }`, `export * from ...`) don't
-    // fire reads at module-init: ESM links them lazily when consumers
-    // import. Counting them as at-init reads invents spurious `R`/`I`
-    // edges. `export var X = ...` / `export class X {}` etc. route
-    // through `ExportDecl` and are still visited.
-    fn visit_named_export(&mut self, _node: &NamedExport) {}
+    // fire at-init reads: ESM resolves the binding when a consumer's
+    // `import` references it. But the materializer's routing layer
+    // treats a re-exported binding's destination as a lazy
+    // dependency: if the binding moves to a different module, the
+    // emitter inserts `import { X } from <new home>` at the top of
+    // this chunk's entry to keep the export surface intact. The
+    // realizability primitive's I-graph cycle check needs to see
+    // that materializer-induced lazy import edge, so record each
+    // `orig` Ident as a LAZY read (placed directly into `lazy_reads`,
+    // bypassing `record_read`'s lazy-depth bucketing — these reads
+    // are semantically deferred regardless of where the export
+    // specifier sits syntactically). Not added to
+    // `first_order_lazy_reads`: re-exports aren't reachable through
+    // at-init call promotion, so excluding them from that subset
+    // prevents the promotion pass from inventing spurious eager
+    // edges for re-exported bindings.
+    //
+    // `export { X } from "./foo"` (with `src.is_some()`) is a
+    // different shape: the binding lives in `./foo`, not in this
+    // chunk; the `import`-side dep is captured by the import-decl
+    // path, not via specifier reads here.
+    fn visit_named_export(&mut self, node: &NamedExport) {
+        if node.src.is_some() {
+            return;
+        }
+        for specifier in &node.specifiers {
+            let ExportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            if let ModuleExportName::Ident(ident) = &named.orig {
+                self.lazy_reads.insert(ident.to_id());
+            }
+        }
+    }
     fn visit_export_all(&mut self, _node: &ExportAll) {}
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {

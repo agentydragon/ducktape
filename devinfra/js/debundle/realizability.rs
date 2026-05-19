@@ -102,12 +102,22 @@ pub fn check_realizability(
 ) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict::default();
 
-    // Per-pair constraining owner-edge ids. Sequenced edges are
-    // deduped per (from, to) — multiple sequenced reasons between the
-    // same module pair represent the same ordering constraint and
-    // would over-weight evidence if counted separately. (Matches
-    // `build_module_quotient`'s sequenced-edge dedup.)
+    // Two parallel adjacency tables:
+    //   - `constraining_adj`: only `EagerUse` + `Sequenced` (+
+    //     `LocalEffect`) edges, deduped sequenced-per-pair. The
+    //     evidence carrier — SCCs here are *the* clause-3 violation.
+    //   - `i_adj`: every cross-module edge in the I-graph, including
+    //     `LazyUse`. SCCs here catch the asymmetric-cycle shape
+    //     `(at-init forward, lazy back)` whose constraining-only
+    //     subgraph is acyclic but whose ESM evaluation still TDZs.
+    //
+    // Sequenced edges are deduped per (from, to) — multiple sequenced
+    // reasons between the same module pair represent the same
+    // ordering constraint and would over-weight evidence if counted
+    // separately. (Matches `build_module_quotient`'s sequenced-edge
+    // dedup.)
     let mut constraining_adj: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
+    let mut i_adj: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
     let mut seen_sequenced_pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
 
     for edge in &owner_graph.edges {
@@ -130,6 +140,8 @@ pub fn check_realizability(
             });
             continue;
         }
+        // Every non-rebind cross-module edge participates in I.
+        i_adj.entry((from, to)).or_default().push(edge.id);
         if !edge.reason.constrains_init_order() {
             continue;
         }
@@ -142,20 +154,38 @@ pub fn check_realizability(
             .push(edge.id);
     }
 
-    if constraining_adj.is_empty() {
+    if i_adj.is_empty() {
         return verdict;
     }
 
-    // Run Tarjan over the constraining-edge quotient.
-    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    // Run Tarjan twice:
+    //   1. Over the constraining-edge subgraph — the historical
+    //      relaxed clause-3 rule. Catches **mutual** constraining
+    //      cycles (both sides eager-read each other; no source order
+    //      can satisfy both).
+    //   2. Over the full I-graph (constraining + lazy), then filter
+    //      to SCCs that **contain the residual module and a
+    //      constraining edge whose target IS residual**. Catches the
+    //      `(at-init forward, lazy back)` shape where one cycle
+    //      member at-init reads from residual while residual lazily
+    //      re-imports from the member. ESM's DFS starts at the
+    //      chunk's runtime entry (= residual), so residual evaluates
+    //      LAST in post-order — every other cycle member runs first
+    //      and reads residual's class/const/let bindings in TDZ.
+    //
+    //      Asymmetric I-cycles where the constraining edge target
+    //      is a non-residual module DO satisfy Lemma 2: the
+    //      materializer's `source_import_position` puts the cycle
+    //      dependent first in residual's import list, ESM DFS unwinds
+    //      via the dependency, eval order respects the constraint.
+    //      Those stay realizable.
+    let residual = partition.residual();
+    let mut con_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for &(from, to) in constraining_adj.keys() {
-        graph.add_edge(from, to, ());
+        con_graph.add_edge(from, to, ());
     }
-    for scc in tarjan_scc(&graph) {
-        // Single-vertex SCCs without a self-loop don't represent a
-        // multi-module cycle. (A constraining intra-module edge would
-        // not appear in the quotient adjacency at all; we skip
-        // `from == to` above.)
+    let mut reported: BTreeSet<BTreeSet<ModuleId>> = BTreeSet::new();
+    for scc in tarjan_scc(&con_graph) {
         if scc.len() < 2 {
             continue;
         }
@@ -165,6 +195,40 @@ pub fn check_realizability(
             if modules.contains(from) && modules.contains(to) {
                 owner_edges.extend_from_slice(edges);
             }
+        }
+        owner_edges.sort();
+        reported.insert(modules.clone());
+        verdict.unrealizable_sccs.push(UnrealizableScc {
+            modules,
+            constraining_owner_edges: owner_edges,
+        });
+    }
+
+    let mut i_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    for &(from, to) in i_adj.keys() {
+        i_graph.add_edge(from, to, ());
+    }
+    for scc in tarjan_scc(&i_graph) {
+        if scc.len() < 2 {
+            continue;
+        }
+        let modules: BTreeSet<ModuleId> = scc.iter().copied().collect();
+        if !modules.contains(&residual) {
+            continue;
+        }
+        // Collect only the constraining edges into residual within
+        // this SCC. If any exist, the cycle's TDZ shape is real.
+        let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
+        for ((from, to), edges) in &constraining_adj {
+            if *to == residual && modules.contains(from) {
+                owner_edges.extend_from_slice(edges);
+            }
+        }
+        if owner_edges.is_empty() {
+            continue;
+        }
+        if reported.contains(&modules) {
+            continue;
         }
         owner_edges.sort();
         verdict.unrealizable_sccs.push(UnrealizableScc {

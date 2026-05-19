@@ -75,23 +75,21 @@
 //!
 //! ## Expected outcomes
 //!
-//! - **Today (RED)**: pipeline accepts the spec; Node throws
+//! - **Today**: pipeline accepts the spec; Node throws
 //!   `ReferenceError: Cannot access 'Backend' before initialization`
-//!   when running the emitted entry. `assert_entry_output`
-//!   panics on the non-zero exit.
-//! - **After the fix**: either the gate rejects this shape
-//!   (constraining at-init edge `mod_logger → entry` should be
-//!   recognized as a TDZ hazard against the class declaration),
-//!   or the materializer's `source_import_position` for this
-//!   shape sequences things so ESM DFS evaluates entry first.
-//!   Either way: the emitted entry runs and prints `B`.
+//!   when running the emitted entry.
+//! - **After the fix (this PR)**: the realizability gate
+//!   recognizes the asymmetric-cycle shape `(at-init forward, lazy
+//!   back)` and rejects the spec. The materializer can't emit
+//!   working JS for this partition — ESM hoists all imports above
+//!   any statement, so re-sequencing `source_import_position` is
+//!   never going to put entry's `class Backend` declaration before
+//!   `mod_logger`'s `new Backend()`. The only sound outcome is
+//!   reject loudly so the spec author sees the conflict.
 
 use debundle_e2e_support::*;
 
-#[test]
-fn at_init_use_of_residual_class_does_not_tdz() {
-    let mut opts = FixtureOpts::new(
-        r#"class Backend { constructor() { this.tag = "B"; } }
+const FIXTURE_SOURCE: &str = r#"class Backend { constructor() { this.tag = "B"; } }
 let currentLogger;
 function setLogger(impl) {
     currentLogger = impl;
@@ -101,7 +99,11 @@ setLogger(new Backend());
 globalThis.__final = "done";
 console.log(globalThis.__tag, globalThis.__final);
 export { Backend, currentLogger, setLogger };
-"#,
+"#;
+
+fn opts_for_fixture() -> FixtureOpts<'static> {
+    let mut opts = FixtureOpts::new(
+        FIXTURE_SOURCE,
         vec![logical_module_with_anon(
             "mod_logger",
             &[Member::new("currentLogger"), Member::new("setLogger")],
@@ -110,6 +112,21 @@ export { Backend, currentLogger, setLogger };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     opts.dataflow_aware_s_chain = true;
-    let fixture = run_fixture(opts);
-    assert_entry_output(&fixture, "B done\n");
+    opts
+}
+
+#[test]
+fn at_init_use_of_residual_class_is_rejected_to_avoid_tdz() {
+    // Cycle: mod_logger → entry (EagerUse Backend, constraining)
+    // + entry → mod_logger (LazyUse currentLogger / setLogger via
+    // entry's re-export, captured because `visit_named_export`
+    // records the orig idents as lazy reads). The tightened
+    // realizability rule catches the asymmetric I-cycle: a
+    // multi-module SCC in I that contains a constraining edge is
+    // unrealizable. Pipeline rejects with a cycle report instead
+    // of emitting JS that would TDZ at runtime.
+    expect_rejection(
+        opts_for_fixture(),
+        &["unrealizable", "cycle", "tdz", "cannot access"],
+    );
 }
