@@ -4,11 +4,10 @@
 //! level orchestration that wraps this lives in mod.rs's
 //! `materialize_logical_chunk`.
 
-use super::chunk_renames::validate_chunk_renames_via_plan;
+use super::chunk_renames::{disambiguate_import_locals_via_plan, validate_chunk_renames_via_plan};
 use super::util::{
-    collect_local_binding_names, collect_occupied_local_names, disambiguate_import_locals,
-    import_decl_for_plan, preserve_export_specifier_names, relative_source,
-    remaining_item_after_selection,
+    collect_local_binding_names, collect_occupied_local_names, import_decl_for_plan,
+    preserve_export_specifier_names, relative_source, remaining_item_after_selection,
 };
 use super::*;
 use crate::time_phase;
@@ -206,7 +205,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             continue;
         }
         let mut emit_renames = BTreeMap::<String, String>::new();
-        let resolved = disambiguate_import_locals(&live_bindings, &mut occupied, &mut emit_renames);
+        let resolved = disambiguate_import_locals_via_plan(
+            &live_bindings,
+            &mut occupied,
+            &mut emit_renames,
+            chunk_top_level_mark,
+        )?;
         // A rename only propagates to consumer-body references when the
         // moved decl actually belongs to this plan. Plans that listed a
         // binding without owning the decl emit a dangling import; the
