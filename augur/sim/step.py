@@ -21,17 +21,20 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.events import ASSET_PURCHASE_EVENT_SCHEMA, LOT_DISPOSITION_EVENT_SCHEMA, TRANSFER_EVENT_SCHEMA, EventLog
+from augur.sim.market import MarketContext
 from augur.sim.scenario import RecurringTransfer, Scenario, ScheduledAssetSale, ScheduledTransfer
 from augur.sim.state import StateCrossSection
 
 
-def step_emit_events(*, state: StateCrossSection, scenario: Scenario, month: int, rollout_count: int) -> EventLog:
+def step_emit_events(
+    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int, rollout_count: int
+) -> EventLog:
     """Return the events to apply at this month. Pure: does not
     mutate `state`."""
     return EventLog(
         transfers=_emit_transfers(scenario, month, rollout_count),
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
-        lot_dispositions=_emit_lot_dispositions(state, scenario, month),
+        lot_dispositions=_emit_lot_dispositions(state, scenario, market, month),
     )
 
 
@@ -69,27 +72,31 @@ def _transfer_block_per_rollout(
     )
 
 
-def _emit_lot_dispositions(state: StateCrossSection, scenario: Scenario, month: int) -> pl.DataFrame:
+def _emit_lot_dispositions(
+    state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int
+) -> pl.DataFrame:
     """Emit `LotDisposition` rows for every scheduled asset sale at
     this month. Each sale is FIFO-resolved against the agent's
     current lots of the asset; the same resolution applies
     per-rollout via polars window functions over `rollout_index`.
 
-    At spike-1 step 4 part A scenarios have at most one sale per
-    `(agent, asset)` per month, so the resolution reads the current
-    `state.asset_lots` directly and emits its dispositions without
-    chaining."""
+    When the sale supplies an explicit `price_per_unit_usd` that
+    price applies uniformly across rollouts; otherwise the price
+    comes from the market bundle's per-rollout per-month curve."""
     sales = [s for s in scenario.scheduled_asset_sales if s.month == month]
     if not sales:
         return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
-    blocks = [_fifo_dispositions_for_sale(state, sale, month) for sale in sales]
+    prices_at_month = market.prices_at(month)
+    blocks = [_fifo_dispositions_for_sale(state, sale, prices_at_month, month) for sale in sales]
     blocks = [b for b in blocks if not b.is_empty()]
     if not blocks:
         return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
     return pl.concat(blocks).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
 
 
-def _fifo_dispositions_for_sale(state: StateCrossSection, sale: ScheduledAssetSale, month: int) -> pl.DataFrame:
+def _fifo_dispositions_for_sale(
+    state: StateCrossSection, sale: ScheduledAssetSale, prices_at_month: pl.DataFrame, month: int
+) -> pl.DataFrame:
     """Vectorized FIFO consumption of one sale across all rollouts.
 
     Within each rollout the lots of the matching `(agent_id,
@@ -97,7 +104,12 @@ def _fifo_dispositions_for_sale(state: StateCrossSection, sale: ScheduledAssetSa
     sale eats from the oldest forward. A lot's `units_sold` is
     `clip(sale.quantity - prev_cumulative_remaining, 0,
     remaining_quantity)`. The result is one disposition row per
-    consumed lot per rollout."""
+    consumed lot per rollout.
+
+    Pricing: if `sale.price_per_unit_usd` is set it's used as a
+    scalar; otherwise `prices_at_month` is joined by
+    `(rollout_index, asset_id)` so each rollout gets its own
+    market-derived price."""
     candidates = state.asset_lots.filter(
         (pl.col("agent_id") == sale.agent_id)
         & (pl.col("asset_id") == sale.asset_id)
@@ -105,7 +117,8 @@ def _fifo_dispositions_for_sale(state: StateCrossSection, sale: ScheduledAssetSa
     )
     if candidates.is_empty():
         return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
-    ordered = candidates.sort(["rollout_index", "purchase_month_index", "lot_id"])
+    priced = _attach_unit_price(candidates, sale, prices_at_month)
+    ordered = priced.sort(["rollout_index", "purchase_month_index", "lot_id"])
     with_cum = ordered.with_columns(
         _prev_cum_remaining=(
             pl.col("remaining_quantity").cum_sum().over("rollout_index") - pl.col("remaining_quantity")
@@ -125,6 +138,18 @@ def _fifo_dispositions_for_sale(state: StateCrossSection, sale: ScheduledAssetSa
         pl.lit(sale.cause_id, dtype=pl.Utf8()).alias("cause_id"),
         pl.col("_units_from_lot").alias("units_sold"),
         (pl.col("_units_from_lot") * pl.col("cost_basis_per_unit_usd")).alias("cost_basis_consumed_usd"),
-        (pl.col("_units_from_lot") * pl.lit(sale.price_per_unit_usd)).alias("proceeds_usd"),
+        (pl.col("_units_from_lot") * pl.col("_unit_price")).alias("proceeds_usd"),
         pl.lit(sale.proceeds_account_id, dtype=pl.Utf8()).alias("proceeds_account_id"),
     ).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+
+
+def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, prices_at_month: pl.DataFrame) -> pl.DataFrame:
+    """Add a `_unit_price` column to the candidate lots. Scalar
+    price (configured on the sale) is broadcast across rollouts;
+    market-derived price is joined per `(rollout_index, asset_id)`."""
+    if sale.price_per_unit_usd is not None:
+        return lots.with_columns(pl.lit(sale.price_per_unit_usd, dtype=pl.Float64()).alias("_unit_price"))
+    prices_for_asset = prices_at_month.filter(pl.col("asset_id") == sale.asset_id).rename(
+        {"price_per_unit_usd": "_unit_price"}
+    )
+    return lots.join(prices_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")

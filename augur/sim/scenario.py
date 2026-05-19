@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, PositiveInt
 
+from augur.sim.market import MarketBundle
+
 
 class Agent(BaseModel):
     """An agent in the simulation. Identified by a stable id used
@@ -88,20 +90,22 @@ class InitialLot(BaseModel):
 class ScheduledAssetSale(BaseModel):
     """Sell a configured quantity of an asset at a fixed month. The
     sale consumes from the agent's lots of that asset in FIFO order
-    by `purchase_month_index`. Proceeds = `quantity *
-    price_per_unit_usd` are credited to `proceeds_account_id`.
+    by `purchase_month_index`. Proceeds = `quantity * unit_price`
+    are credited to `proceeds_account_id`.
 
-    At spike-1 step 4 the price is configured directly; at L5 + L10
-    the market bundle supplies it from the per-rollout per-month
-    price path."""
+    `price_per_unit_usd` is optional: when supplied the sale uses
+    that price uniformly across rollouts (useful for deterministic
+    tests). When `None`, the per-rollout per-month price comes from
+    the scenario's `MarketBundle` — the canonical case once L5
+    market integration is in play."""
 
     month: int
     cause_id: str
     agent_id: str
     asset_id: str
     quantity: float
-    price_per_unit_usd: float
     proceeds_account_id: str
+    price_per_unit_usd: float | None = None
 
 
 class Scenario(BaseModel):
@@ -116,4 +120,5 @@ class Scenario(BaseModel):
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
+    market: MarketBundle = Field(default_factory=MarketBundle)
     horizon_months: PositiveInt

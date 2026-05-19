@@ -22,4 +22,5 @@ class SimulationRun:
 
     cash_balances: pl.DataFrame
     asset_lots: pl.DataFrame
+    market_prices: pl.DataFrame
     events_log: EventLog

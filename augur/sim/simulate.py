@@ -25,6 +25,7 @@ import polars as pl
 
 from augur.sim.apply import apply_events
 from augur.sim.events import EventLog
+from augur.sim.market import materialize_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.state import ASSET_LOT_SCHEMA, CASH_BALANCES_SCHEMA, StateCrossSection
@@ -35,17 +36,23 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
+    market = materialize_market(
+        scenario.market, rollout_count=rollout_count, horizon_months=int(scenario.horizon_months)
+    )
     state_t = _initial_state(scenario, rollout_count)
     cross_sections: list[StateCrossSection] = [state_t]
     events_by_month: list[EventLog] = []
     for month in range(int(scenario.horizon_months)):
-        events_t = step_emit_events(state=state_t, scenario=scenario, month=month, rollout_count=rollout_count)
+        events_t = step_emit_events(
+            state=state_t, scenario=scenario, market=market, month=month, rollout_count=rollout_count
+        )
         state_t = apply_events(state_t, events_t)
         cross_sections.append(state_t)
         events_by_month.append(events_t)
     return SimulationRun(
         cash_balances=_stack_cash_balances(cross_sections),
         asset_lots=_stack_asset_lots(cross_sections),
+        market_prices=market.prices,
         events_log=_concat_events(events_by_month),
     )
 

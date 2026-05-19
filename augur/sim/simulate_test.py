@@ -13,6 +13,7 @@ import pytest
 import pytest_bazel
 
 from augur.sim.apply import apply_events
+from augur.sim.market import DeterministicPath, GeometricBrownianPath, MarketBundle
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -701,6 +702,151 @@ def test_sales_of_two_different_assets_are_independent() -> None:
         .item()
         == 1350.0
     )
+
+
+def test_market_driven_sale_uses_deterministic_price_curve() -> None:
+    """L5 — when a ScheduledAssetSale omits `price_per_unit_usd`,
+    the engine reads the per-month price from the scenario's
+    MarketBundle. With a DeterministicPath the price is identical
+    across rollouts; the sale's proceeds reflect the configured
+    month-N price."""
+    horizon = 6
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-3,
+                quantity=10.0,
+                cost_basis_per_unit_usd=90.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=4,
+                cause_id="market_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=4.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        market=MarketBundle(
+            paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0])]
+        ),
+        horizon_months=horizon,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Sale at month 4 used the month-4 price of $150 → 4 × 150 = $600.
+    assert result.events_log.lot_dispositions.height == 1
+    disp = result.events_log.lot_dispositions.row(0, named=True)
+    assert disp["units_sold"] == 4.0
+    assert disp["proceeds_usd"] == 600.0
+
+    # Market prices on the run match the configured path.
+    vti = result.market_prices.filter(pl.col("asset_id") == "vti").sort("month_index")
+    assert vti.get_column("price_per_unit_usd").to_list() == [100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]
+
+
+def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None:
+    """L10.1 — GBM paths produce different per-rollout trajectories
+    (so sale proceeds differ across rollouts) but a fixed `rng_seed`
+    reproduces the same prices across runs."""
+    bundle = MarketBundle(
+        paths=[
+            GeometricBrownianPath(
+                asset_id="vti",
+                initial_price_usd=100.0,
+                monthly_log_return_mu=0.005,
+                monthly_log_return_sigma=0.05,
+                rng_seed=42,
+            )
+        ]
+    )
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=0,
+                quantity=5.0,
+                cost_basis_per_unit_usd=100.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=3,
+                cause_id="market_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=5.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        market=bundle,
+        horizon_months=6,
+    )
+
+    result_a = simulate(scenario, rollout_count=200)
+    result_b = simulate(scenario, rollout_count=200)
+
+    # Reproducibility: same seed → same prices across two runs.
+    assert result_a.market_prices.sort(["rollout_index", "month_index"]).equals(
+        result_b.market_prices.sort(["rollout_index", "month_index"])
+    )
+
+    # Divergence: distinct per-rollout proceeds — far more than one
+    # cluster, but bounded by the GBM variance. Loose check: at
+    # least 100 distinct cash balances across 200 rollouts.
+    cash_at_end = result_a.cash_balances.filter(
+        (pl.col("agent_id") == "alice") & (pl.col("month_index") == 6)
+    ).get_column("balance_usd")
+    assert cash_at_end.n_unique() > 100
+
+
+def test_explicit_sale_price_overrides_market() -> None:
+    """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
+    uses that scalar; market is ignored for that sale. This is the
+    test-fixture path used in L4 tests; still valid in the
+    market-aware engine."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="seed",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=0,
+                quantity=10.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="fixed_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=3.0,
+                price_per_unit_usd=99.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[10.0, 10.0])]),
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    assert result.events_log.lot_dispositions.get_column("proceeds_usd").item() == 3.0 * 99.0
 
 
 if __name__ == "__main__":
