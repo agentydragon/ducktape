@@ -58,7 +58,6 @@ from augur.core.provenance import policy_program_set_id, projection_trajectory_i
 from augur.core.scenario_set import (
     AccountBalance,
     AccountingDetail,
-    AccountingDetailType,
     AccountType,
     Acquisition,
     ActorRole,
@@ -92,7 +91,6 @@ from augur.core.scenario_set import (
     PrivateEquitySalePolicy,
     PrivateEquitySaleRule,
     PropertyPurchaseEvent,
-    PropertySaleBasisGainDetail,
     PublicMarket,
     RentalMode,
     ReportMetric,
@@ -107,7 +105,7 @@ from augur.core.scenario_set import (
     SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxFilingStatus,
-    TaxPaymentAllocationDetail,
+    TaxPaymentTiming,
     TaxProfile,
 )
 from augur.core.schemas import ColumnarTable
@@ -196,7 +194,8 @@ class ScenarioRunArrays:
     tax_lots: tuple[TaxLot, ...]
     lot_dispositions_frame: pl.DataFrame
     liabilities: tuple[LiabilityState, ...]
-    accounting_details: tuple[AccountingDetail, ...]
+    property_sale_basis_gain_details_frame: pl.DataFrame
+    tax_payment_allocation_details_frame: pl.DataFrame
     funding_decisions_frame: pl.DataFrame
     # Single root for the obligation lifecycle. Three Pydantic surfaces
     # (`obligations`, `settlement_results`, `failure_events`) materialize
@@ -218,6 +217,14 @@ class ScenarioRunArrays:
     @property
     def lot_dispositions(self) -> tuple[LotDisposition, ...]:
         return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def accounting_details(self) -> tuple[AccountingDetail, ...]:
+        return tuple(
+            event_streams.materialize_accounting_details(
+                self.property_sale_basis_gain_details_frame, self.tax_payment_allocation_details_frame
+            )
+        )
 
     @property
     def market_observations(self) -> tuple[MarketObservation, ...]:
@@ -1401,7 +1408,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     tax_lots: list[TaxLot] = []
     lot_dispositions = event_streams.StreamFrameBuilder(event_streams.LOT_DISPOSITION_SCHEMA)
     liabilities: list[LiabilityState] = []
-    accounting_details: list[AccountingDetail] = []
+    property_sale_basis_gain_details = event_streams.StreamFrameBuilder(
+        event_streams.PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA
+    )
+    tax_payment_allocation_details = event_streams.StreamFrameBuilder(
+        event_streams.TAX_PAYMENT_ALLOCATION_DETAIL_SCHEMA
+    )
     # One root accumulator for the entire obligation lifecycle. The
     # `obligations`, `settlement_results`, and `failure_events` Pydantic
     # surfaces are projection/filter views over this single frame at
@@ -1911,9 +1923,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         tax_usd=property_sale_tax,
         net_proceeds_usd=property_sale_net_proceeds,
     )
-    _record_property_sale_accounting_details(accounting_details, scenario=scenario, disposition=disposition)
+    _record_property_sale_accounting_details(
+        property_sale_basis_gain_details, scenario=scenario, disposition=disposition
+    )
     _record_tax_payment_allocation_details(
-        accounting_details,
+        tax_payment_allocation_details,
         scenario=scenario,
         month_index=month_index,
         annual_tax=annual_tax,
@@ -2391,80 +2405,69 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         partner_home_equity_claim_from_snapshot = partner_equity.column("home_equity_claim_usd")
         owner_home_equity_claim_from_snapshot = partner_equity.column("owner_home_equity_claim_usd")
     federal_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="federal_income_tax_usd",
     )
     california_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="california_income_tax_usd",
     )
     total_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="total_income_tax_usd",
     )
     rental_income_tax_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        tax_payment_allocation_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.TAX_PAYMENT_ALLOCATION,
         amount_field="rental_income_tax_usd",
     )
     property_sale_adjusted_basis_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="adjusted_basis_usd",
     )
     realized_property_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="realized_gain_usd",
     )
     property_sale_capital_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="capital_gain_usd",
     )
     property_sale_capital_gain_exclusion_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="capital_gain_exclusion_usd",
     )
     taxable_property_capital_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="taxable_capital_gain_usd",
     )
     taxable_property_gain_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="taxable_gain_usd",
     )
     depreciation_recapture_from_accounting = _accounting_detail_amount_matrix(
-        accounting_details,
+        property_sale_basis_gain_details,
         rollout_count=rollout_count,
         month_index=month_index,
-        detail_type=AccountingDetailType.PROPERTY_SALE_BASIS_GAIN,
         amount_field="depreciation_recapture_usd",
     )
     trace_identity_by_rollout = _trace_identity_by_rollout(scenario, market_bundle)
@@ -2561,8 +2564,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             event_streams.join_trajectory_identity(lot_dispositions.build(), trace_identity_frame)
         ),
         liabilities=_sorted_liabilities(liabilities),
-        accounting_details=_sorted_accounting_details(
-            _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
+        property_sale_basis_gain_details_frame=event_streams.sort_property_sale_basis_gain_details(
+            event_streams.join_trajectory_identity(property_sale_basis_gain_details.build(), trace_identity_frame)
+        ),
+        tax_payment_allocation_details_frame=event_streams.sort_tax_payment_allocation_details(
+            event_streams.join_trajectory_identity(tax_payment_allocation_details.build(), trace_identity_frame)
         ),
         funding_decisions_frame=event_streams.sort_funding_decisions(
             event_streams.join_trajectory_identity(funding_decisions.build(), trace_identity_frame)
@@ -2983,26 +2989,29 @@ def _mortgage_liability_id(property_id: str) -> str:
 
 
 def _accounting_detail_amount_matrix(
-    records: list[AccountingDetail],
-    *,
-    rollout_count: int,
-    month_index: np.ndarray,
-    detail_type: AccountingDetailType,
-    amount_field: str,
+    details: event_streams.StreamFrameBuilder, *, rollout_count: int, month_index: np.ndarray, amount_field: str
 ) -> np.ndarray:
+    """Project the in-progress accounting-detail builder into a
+    `(rollouts, months)` matrix of `amount_field` summed per
+    `(rollout_index, month_index)`. The builder is per-variant so the
+    legacy `detail_type` filter is implicit in which builder the caller
+    passes."""
+
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    frame = details.build()
+    if frame.height == 0:
+        return matrix
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for detail in records:
-        if detail.detail_type != detail_type:
-            continue
+    aggregated = (
+        frame.lazy().group_by(["rollout_index", "month_index"]).agg(amount=pl.col(amount_field).sum()).collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        month = int(row["month_index"])
         try:
-            month_position = month_position_by_index[detail.month_index]
+            month_position = month_position_by_index[month]
         except KeyError as exc:
-            raise ValueError(f"accounting detail has month outside result horizon: {detail.month_index}") from exc
-        amount = getattr(detail, amount_field)
-        if not isinstance(amount, int | float):
-            raise TypeError(f"accounting detail field {amount_field!r} is not numeric")
-        matrix[detail.rollout_index, month_position] += float(amount)
+            raise ValueError(f"accounting detail has month outside result horizon: {month}") from exc
+        matrix[int(row["rollout_index"]), month_position] += float(row["amount"])
     return matrix
 
 
@@ -3091,7 +3100,10 @@ def _record_property_sale_journal_entries(
 
 
 def _record_property_sale_accounting_details(
-    records: list[AccountingDetail], *, scenario: Scenario, disposition: PropertyDispositionArrays
+    property_sale_basis_gain_details: event_streams.StreamFrameBuilder,
+    *,
+    scenario: Scenario,
+    disposition: PropertyDispositionArrays,
 ) -> None:
     if disposition.sale_event is None or disposition.sale_month is None:
         return
@@ -3101,44 +3113,52 @@ def _record_property_sale_accounting_details(
         return
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
     month_position = disposition.sale_month
-    active_rollouts = np.nonzero(
-        (disposition.column("property_sale_gross_usd")[:, month_position] != 0)
-        | (disposition.column("realized_property_gain_usd")[:, month_position] != 0)
-        | (disposition.column("taxable_property_gain_usd")[:, month_position] != 0)
-    )[0]
-    records.extend(
-        PropertySaleBasisGainDetail(
-            rollout_index=int(rollout_index),
-            month_index=int(disposition.sale_month),
-            actor_id=actor_id,
-            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-            event_id=sale_event.event_id,
-            property_id=property_id,
-            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month_position]),
-            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month_position]),
-            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month_position]),
-            adjusted_basis_usd=float(
-                disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_position]
+    gross_col = disposition.column("property_sale_gross_usd")[:, month_position]
+    realized_col = disposition.column("realized_property_gain_usd")[:, month_position]
+    taxable_col = disposition.column("taxable_property_gain_usd")[:, month_position]
+    mask = (gross_col != 0) | (realized_col != 0) | (taxable_col != 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    property_sale_basis_gain_details.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, int(disposition.sale_month), dtype=np.int64),
+            "actor_id": [actor_id] * size,
+            "policy_id": [PROPERTY_SALE_SETTLEMENT_POLICY_ID] * size,
+            "event_id": [sale_event.event_id] * size,
+            "property_id": [property_id] * size,
+            "gross_sale_usd": gross_col[rollouts].astype(np.float64),
+            "selling_cost_usd": disposition.column("sale_closing_cost_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_position]),
-            depreciation_recapture_usd=float(
-                disposition.column("depreciation_recapture_usd")[rollout_index, month_position]
+            "debt_payoff_usd": disposition.column("property_sale_debt_payoff_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month_position]),
-            capital_gain_exclusion_usd=float(
-                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month_position]
+            "adjusted_basis_usd": disposition.column("property_sale_adjusted_basis_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "realized_gain_usd": realized_col[rollouts].astype(np.float64),
+            "depreciation_recapture_usd": disposition.column("depreciation_recapture_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "capital_gain_usd": disposition.column("property_sale_capital_gain_usd")[rollouts, month_position].astype(
+                np.float64
             ),
-            taxable_capital_gain_usd=float(
-                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month_position]
-            ),
-            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_position]),
-        )
-        for rollout_index in active_rollouts.tolist()
+            "capital_gain_exclusion_usd": disposition.column("property_sale_capital_gain_exclusion_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "taxable_capital_gain_usd": disposition.column("taxable_property_capital_gain_usd")[
+                rollouts, month_position
+            ].astype(np.float64),
+            "taxable_gain_usd": taxable_col[rollouts].astype(np.float64),
+        }
     )
 
 
 def _record_tax_payment_allocation_details(
-    records: list[AccountingDetail],
+    tax_payment_allocation_details: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     month_index: np.ndarray,
@@ -3160,32 +3180,45 @@ def _record_tax_payment_allocation_details(
     active_rollouts, active_month_positions = np.nonzero(
         (annual_tax.total_income_tax_usd != 0) | (total_taxable_income != 0)
     )
+    if active_rollouts.size == 0:
+        return
     actor_id = _primary_owner_actor_id(scenario)
-    for rollout_index, month_position in zip(active_rollouts.tolist(), active_month_positions.tolist(), strict=True):
-        records.append(
-            TaxPaymentAllocationDetail(
-                rollout_index=rollout_index,
-                month_index=int(month_index[month_position]),
-                actor_id=actor_id,
-                policy_id=ANNUAL_TAX_ACCOUNTING_POLICY_ID,
-                tax_year_index=int(month_index[month_position] // MONTHS_PER_YEAR),
-                federal_income_tax_usd=float(annual_tax.federal_income_tax_usd[rollout_index, month_position]),
-                california_income_tax_usd=float(annual_tax.california_income_tax_usd[rollout_index, month_position]),
-                total_income_tax_usd=float(annual_tax.total_income_tax_usd[rollout_index, month_position]),
-                property_sale_tax_usd=float(annual_tax.property_sale_tax_usd[rollout_index, month_position]),
-                generic_sp500_sale_tax_usd=float(annual_tax.generic_sp500_sale_tax_usd[rollout_index, month_position]),
-                private_equity_sale_tax_usd=float(
-                    annual_tax.private_equity_sale_tax_usd[rollout_index, month_position]
-                ),
-                rental_income_tax_usd=float(annual_tax.rental_income_tax_usd[rollout_index, month_position]),
-                property_depreciation_recapture_usd=float(property_recapture[rollout_index, month_position]),
-                taxable_property_capital_gain_usd=float(property_capital_gain[rollout_index, month_position]),
-                generic_sp500_taxable_gain_usd=float(sp500_capital_gain[rollout_index, month_position]),
-                private_equity_taxable_gain_usd=float(private_equity_capital_gain[rollout_index, month_position]),
-                net_rental_taxable_income_usd=float(rental_taxable[rollout_index, month_position]),
-                total_taxable_income_usd=float(total_taxable_income[rollout_index, month_position]),
-            )
-        )
+    rollouts = active_rollouts.astype(np.int64)
+    months = month_index[active_month_positions].astype(np.int64)
+    size = int(rollouts.size)
+    rollout_axis = active_rollouts
+    month_axis = active_month_positions
+    tax_payment_allocation_details.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": months,
+            "actor_id": [actor_id] * size,
+            "policy_id": [ANNUAL_TAX_ACCOUNTING_POLICY_ID] * size,
+            "event_id": [None] * size,
+            "property_id": [None] * size,
+            "tax_year_index": (months // MONTHS_PER_YEAR).astype(np.int64),
+            "payment_timing": [TaxPaymentTiming.YEAR_END.value] * size,
+            "federal_income_tax_usd": annual_tax.federal_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "california_income_tax_usd": annual_tax.california_income_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "total_income_tax_usd": annual_tax.total_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "property_sale_tax_usd": annual_tax.property_sale_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "generic_sp500_sale_tax_usd": annual_tax.generic_sp500_sale_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "private_equity_sale_tax_usd": annual_tax.private_equity_sale_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
+            "rental_income_tax_usd": annual_tax.rental_income_tax_usd[rollout_axis, month_axis].astype(np.float64),
+            "property_depreciation_recapture_usd": property_recapture[rollout_axis, month_axis].astype(np.float64),
+            "taxable_property_capital_gain_usd": property_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "generic_sp500_taxable_gain_usd": sp500_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "private_equity_taxable_gain_usd": private_equity_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "net_rental_taxable_income_usd": rental_taxable[rollout_axis, month_axis].astype(np.float64),
+            "total_taxable_income_usd": total_taxable_income[rollout_axis, month_axis].astype(np.float64),
+        }
+    )
 
 
 def _record_sp500_sale_journal_entries(
@@ -3327,23 +3360,6 @@ def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
 
 def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, ...]:
     return tuple(sorted(records, key=lambda liability: liability.liability_id))
-
-
-def _sorted_accounting_details(records: list[AccountingDetail]) -> tuple[AccountingDetail, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda detail: (
-                detail.month_index,
-                detail.rollout_index,
-                detail.detail_type,
-                detail.actor_id,
-                detail.policy_id or "",
-                detail.event_id or "",
-                detail.property_id or "",
-            ),
-        )
-    )
 
 
 def _record_property_sale_effects(

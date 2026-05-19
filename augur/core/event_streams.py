@@ -33,6 +33,10 @@ Migrated so far:
   `MarketPathObservation` — dense one-per-`(rollout, month)` from the
   `MarketBundle` multiplier matrices — and `PrivateEquitySaleOpportunityObservation`
   — sparse one-per-`(rollout, month, issuer)` from the opportunity recorders).
+* **Accounting details** (two roots) → `AccountingDetail` (union of
+  `PropertySaleBasisGainDetail` — one-per-rollout at the property-sale
+  month — and `TaxPaymentAllocationDetail` — one-per-rollout per tax-year
+  end).
 """
 
 from __future__ import annotations
@@ -45,6 +49,8 @@ import polars as pl
 
 from augur.core.accounting import LotAssetClass, LotDisposition
 from augur.core.scenario_set import (
+    AccountingDetail,
+    AccountingDetailType,
     AccountType,
     AssetType,
     FailureEvent,
@@ -59,8 +65,11 @@ from augur.core.scenario_set import (
     ObligationStatus,
     ObligationType,
     PrivateEquitySaleOpportunityObservation,
+    PropertySaleBasisGainDetail,
     SettlementResult,
     SettlementStatus,
+    TaxPaymentAllocationDetail,
+    TaxPaymentTiming,
 )
 
 
@@ -505,6 +514,170 @@ def _build_pe_opportunity_observation(row: dict[str, Any]) -> PrivateEquitySaleO
         opportunity_cause_id=row["opportunity_cause_id"],
         sale_opportunity_value_usd=float(row["sale_opportunity_value_usd"]),
         private_equity_value_before_sale_usd=float(row["private_equity_value_before_sale_usd"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+# -- accounting details --------------------------------------------------------
+#
+# Two roots; no field overlap. Legacy `_sorted_accounting_details` sorts by
+# `(month, rollout, detail_type, actor_id, policy_id or '', event_id or '',
+# property_id or '')`. With two frames merge-sorted at materialization the
+# `detail_type` portion is implicit (`property_sale_basis_gain` sorts
+# lexicographically before `tax_payment_allocation`); within each frame we
+# sort by the remaining sub-key.
+
+PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "actor_id": pl.String,
+    "policy_id": pl.String,
+    "event_id": pl.String,
+    "property_id": pl.String,
+    "gross_sale_usd": pl.Float64,
+    "selling_cost_usd": pl.Float64,
+    "debt_payoff_usd": pl.Float64,
+    "adjusted_basis_usd": pl.Float64,
+    "realized_gain_usd": pl.Float64,
+    "depreciation_recapture_usd": pl.Float64,
+    "capital_gain_usd": pl.Float64,
+    "capital_gain_exclusion_usd": pl.Float64,
+    "taxable_capital_gain_usd": pl.Float64,
+    "taxable_gain_usd": pl.Float64,
+}
+
+TAX_PAYMENT_ALLOCATION_DETAIL_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "actor_id": pl.String,
+    "policy_id": pl.String,
+    "event_id": pl.String,
+    "property_id": pl.String,
+    "tax_year_index": pl.Int64,
+    "payment_timing": pl.String,
+    "federal_income_tax_usd": pl.Float64,
+    "california_income_tax_usd": pl.Float64,
+    "total_income_tax_usd": pl.Float64,
+    "property_sale_tax_usd": pl.Float64,
+    "generic_sp500_sale_tax_usd": pl.Float64,
+    "private_equity_sale_tax_usd": pl.Float64,
+    "rental_income_tax_usd": pl.Float64,
+    "property_depreciation_recapture_usd": pl.Float64,
+    "taxable_property_capital_gain_usd": pl.Float64,
+    "generic_sp500_taxable_gain_usd": pl.Float64,
+    "private_equity_taxable_gain_usd": pl.Float64,
+    "net_rental_taxable_income_usd": pl.Float64,
+    "total_taxable_income_usd": pl.Float64,
+}
+
+
+def _sort_accounting_detail_subkey(df: pl.DataFrame) -> pl.DataFrame:
+    """Sort an accounting-detail frame on the post-detail_type sub-key:
+    `(month, rollout, actor_id, policy_id or '', event_id or '', property_id or '')`.
+
+    Polars treats `None < ''` by default but the legacy sort fills nulls with
+    `""` before comparing — we do the same via transient sort-key columns."""
+
+    return (
+        df.with_columns(
+            pl.col("policy_id").fill_null("").alias("_sort_pid"),
+            pl.col("event_id").fill_null("").alias("_sort_eid"),
+            pl.col("property_id").fill_null("").alias("_sort_propid"),
+        )
+        .sort(["month_index", "rollout_index", "actor_id", "_sort_pid", "_sort_eid", "_sort_propid"])
+        .drop(["_sort_pid", "_sort_eid", "_sort_propid"])
+    )
+
+
+def sort_property_sale_basis_gain_details(df: pl.DataFrame) -> pl.DataFrame:
+    return _sort_accounting_detail_subkey(df)
+
+
+def sort_tax_payment_allocation_details(df: pl.DataFrame) -> pl.DataFrame:
+    return _sort_accounting_detail_subkey(df)
+
+
+def materialize_accounting_details(
+    property_sale_frame: pl.DataFrame, tax_payment_frame: pl.DataFrame
+) -> Iterator[AccountingDetail]:
+    """Merge-sort the two variant frames in the canonical
+    `(month, rollout, detail_type, …)` order. At the same `(month, rollout)`
+    `property_sale_basis_gain` sorts before `tax_payment_allocation`
+    lexicographically."""
+
+    property_iter = iter(property_sale_frame.iter_rows(named=True))
+    tax_iter = iter(tax_payment_frame.iter_rows(named=True))
+    p_row = next(property_iter, None)
+    t_row = next(tax_iter, None)
+    while p_row is not None or t_row is not None:
+        if p_row is None:
+            yield _build_tax_payment_allocation_detail(t_row)
+            t_row = next(tax_iter, None)
+        elif t_row is None:
+            yield _build_property_sale_basis_gain_detail(p_row)
+            p_row = next(property_iter, None)
+        else:
+            p_key = (p_row["month_index"], p_row["rollout_index"], AccountingDetailType.PROPERTY_SALE_BASIS_GAIN.value)
+            t_key = (t_row["month_index"], t_row["rollout_index"], AccountingDetailType.TAX_PAYMENT_ALLOCATION.value)
+            if p_key <= t_key:
+                yield _build_property_sale_basis_gain_detail(p_row)
+                p_row = next(property_iter, None)
+            else:
+                yield _build_tax_payment_allocation_detail(t_row)
+                t_row = next(tax_iter, None)
+
+
+def _build_property_sale_basis_gain_detail(row: dict[str, Any]) -> PropertySaleBasisGainDetail:
+    return PropertySaleBasisGainDetail(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        event_id=row["event_id"],
+        property_id=row["property_id"],
+        gross_sale_usd=float(row["gross_sale_usd"]),
+        selling_cost_usd=float(row["selling_cost_usd"]),
+        debt_payoff_usd=float(row["debt_payoff_usd"]),
+        adjusted_basis_usd=float(row["adjusted_basis_usd"]),
+        realized_gain_usd=float(row["realized_gain_usd"]),
+        depreciation_recapture_usd=float(row["depreciation_recapture_usd"]),
+        capital_gain_usd=float(row["capital_gain_usd"]),
+        capital_gain_exclusion_usd=float(row["capital_gain_exclusion_usd"]),
+        taxable_capital_gain_usd=float(row["taxable_capital_gain_usd"]),
+        taxable_gain_usd=float(row["taxable_gain_usd"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_tax_payment_allocation_detail(row: dict[str, Any]) -> TaxPaymentAllocationDetail:
+    return TaxPaymentAllocationDetail(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        event_id=row["event_id"],
+        property_id=row["property_id"],
+        tax_year_index=int(row["tax_year_index"]),
+        payment_timing=TaxPaymentTiming(row["payment_timing"]),
+        federal_income_tax_usd=float(row["federal_income_tax_usd"]),
+        california_income_tax_usd=float(row["california_income_tax_usd"]),
+        total_income_tax_usd=float(row["total_income_tax_usd"]),
+        property_sale_tax_usd=float(row["property_sale_tax_usd"]),
+        generic_sp500_sale_tax_usd=float(row["generic_sp500_sale_tax_usd"]),
+        private_equity_sale_tax_usd=float(row["private_equity_sale_tax_usd"]),
+        rental_income_tax_usd=float(row["rental_income_tax_usd"]),
+        property_depreciation_recapture_usd=float(row["property_depreciation_recapture_usd"]),
+        taxable_property_capital_gain_usd=float(row["taxable_property_capital_gain_usd"]),
+        generic_sp500_taxable_gain_usd=float(row["generic_sp500_taxable_gain_usd"]),
+        private_equity_taxable_gain_usd=float(row["private_equity_taxable_gain_usd"]),
+        net_rental_taxable_income_usd=float(row["net_rental_taxable_income_usd"]),
+        total_taxable_income_usd=float(row["total_taxable_income_usd"]),
         path_set_id=row.get("path_set_id"),
         exogenous_path_id=row.get("exogenous_path_id"),
         scenario_input_id=row.get("scenario_input_id"),
