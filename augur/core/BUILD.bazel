@@ -193,6 +193,7 @@ py_library(
     srcs = ["simulation_state.py"],
     deps = [
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 
@@ -245,6 +246,7 @@ py_test(
     deps = [
         ":simulation_state_py",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )

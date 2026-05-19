@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 import numpy as np
+import polars as pl
 
 
 class AssetKind(StrEnum):
@@ -152,3 +153,293 @@ class SimulationState:
 
     def property(self, property_id: str) -> PropertyState:
         return self.properties[property_id]
+
+
+# --- Polars long-form working-state frames -------------------------------
+#
+# These schemas describe the same cross-section of state that the
+# `SimulationState` nested-dict tree above carries, but in long form
+# (one row per (rollout, entity-id) tuple). They are the canonical
+# representation under the state-vector simulation refactor: the
+# engine's per-month reads / writes operate against frames, every
+# operation is a polars expression over the `rollout_index` column,
+# and per-month decisions append directly to the matching persistent
+# log (`cashflow_log` / `asset_change_log` / `liability_log` / ...)
+# without an intermediate nested-dict materialization.
+#
+# Schemas drop the `month_index` column that the persistent log
+# carries — the frames here are the cross-section at one month
+# boundary, with the month carried on `SimulationStateFrames.month_position`.
+#
+# Today these are populated alongside the nested-dict view via
+# `SimulationStateFrames.from_nested(...)`; G1 of the refactor switches
+# the engine's read sites onto the frames and lets the nested-dict view
+# fall away.
+
+CASH_BALANCE_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
+    "account_id": pl.Utf8(),
+    "balance_usd": pl.Float64(),
+}
+
+ASSET_HOLDING_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
+    "asset_id": pl.Utf8(),
+    "asset_kind": pl.Utf8(),
+    "units": pl.Float64(),
+    "basis_usd": pl.Float64(),
+}
+
+LIABILITY_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
+    "liability_id": pl.Utf8(),
+    "liability_kind": pl.Utf8(),
+    # `property_id` is non-null only for liabilities secured against a
+    # property (mortgages); unsecured liabilities (tax_payable) carry
+    # null.
+    "property_id": pl.Utf8(),
+    "principal_usd": pl.Float64(),
+    "interest_accrued_this_month_usd": pl.Float64(),
+    "principal_paid_this_month_usd": pl.Float64(),
+}
+
+PROPERTY_STAKE_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
+    "property_id": pl.Utf8(),
+    "ownership_pct": pl.Float64(),
+    "contribution_used_usd": pl.Float64(),
+    "equity_ledger_usd": pl.Float64(),
+}
+
+PROPERTY_STATE_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "property_id": pl.Utf8(),
+    "live": pl.Float64(),
+    "value_usd": pl.Float64(),
+    "cumulative_depreciation_usd": pl.Float64(),
+}
+
+
+def _broadcast_rollouts(values: np.ndarray, expected_rollouts: int) -> np.ndarray:
+    if values.shape != (expected_rollouts,):
+        msg = f"expected shape ({expected_rollouts},), got {values.shape}"
+        raise ValueError(msg)
+    return values.astype(np.float64, copy=False)
+
+
+@dataclass(frozen=True)
+class SimulationStateFrames:
+    """Polars long-form view of `SimulationState` at one month boundary.
+
+    All frames are keyed by `rollout_index` (plus the natural entity-id
+    columns for each kind). Schemas match the persistent
+    `cashflow_log` / `asset_change_log` / `liability_log` / etc. shapes
+    minus the `month_index` column (the month boundary is carried on
+    `month_position` here). The engine's per-month operations are
+    polars expressions over these frames; per-month decisions append
+    directly to the matching persistent log.
+
+    G1 of the state-vector refactor (see
+    `augur/plans/state_vector_simulation_refactor.md`) migrates the
+    engine's read sites onto this representation."""
+
+    month_position: int
+    rollout_count: int
+    cash: pl.DataFrame
+    assets: pl.DataFrame
+    liabilities: pl.DataFrame
+    property_stakes: pl.DataFrame
+    properties: pl.DataFrame
+
+    @classmethod
+    def from_nested(cls, state: SimulationState, *, rollout_count: int) -> SimulationStateFrames:
+        """Build the polars long-form view from a nested-dict
+        `SimulationState`. Round-trippable with `to_nested(...)` for
+        single-actor / single-account scenarios — multi-leaf shapes
+        flatten to rows (no information loss).
+
+        `rollout_count` is required because empty agents produce empty
+        per-kind blocks and the row builders below need an explicit
+        per-rollout dimension."""
+        return cls(
+            month_position=state.month_position,
+            rollout_count=rollout_count,
+            cash=_build_cash_frame(state, rollout_count=rollout_count),
+            assets=_build_asset_frame(state, rollout_count=rollout_count),
+            liabilities=_build_liability_frame(state, rollout_count=rollout_count),
+            property_stakes=_build_property_stake_frame(state, rollout_count=rollout_count),
+            properties=_build_property_state_frame_cross_section(state, rollout_count=rollout_count),
+        )
+
+    def cash_balance(self, *, actor_id: str, account_id: str) -> pl.Series:
+        """Return the `(rollouts,)` cash balance series for one
+        `(actor_id, account_id)` pair. Rows are sorted by
+        `rollout_index` ascending so the returned series aligns with
+        the engine's numpy convention."""
+        return (
+            self.cash.filter((pl.col("actor_id") == actor_id) & (pl.col("account_id") == account_id))
+            .sort("rollout_index")
+            .get_column("balance_usd")
+        )
+
+
+def _build_cash_frame(state: SimulationState, *, rollout_count: int) -> pl.DataFrame:
+    rollout_axis: list[np.ndarray] = []
+    actor_ids: list[str] = []
+    account_ids: list[str] = []
+    balances: list[np.ndarray] = []
+    for actor_id, agent in state.agents.items():
+        for account_id, balance in agent.cash_by_account.items():
+            balance_1d = _broadcast_rollouts(balance, rollout_count)
+            rollout_axis.append(np.arange(rollout_count, dtype=np.int64))
+            actor_ids.extend([actor_id] * rollout_count)
+            account_ids.extend([account_id] * rollout_count)
+            balances.append(balance_1d)
+    if not rollout_axis:
+        return pl.DataFrame(schema=CASH_BALANCE_FRAME_SCHEMA)
+    return pl.DataFrame(
+        {
+            "rollout_index": np.concatenate(rollout_axis),
+            "actor_id": actor_ids,
+            "account_id": account_ids,
+            "balance_usd": np.concatenate(balances),
+        },
+        schema=CASH_BALANCE_FRAME_SCHEMA,
+    )
+
+
+def _build_asset_frame(state: SimulationState, *, rollout_count: int) -> pl.DataFrame:
+    rollout_axis: list[np.ndarray] = []
+    actor_ids: list[str] = []
+    asset_ids: list[str] = []
+    asset_kinds: list[str] = []
+    units: list[np.ndarray] = []
+    basis: list[np.ndarray] = []
+    for actor_id, agent in state.agents.items():
+        for asset_id, holding in agent.holdings.items():
+            units_1d = _broadcast_rollouts(holding.units, rollout_count)
+            basis_1d = _broadcast_rollouts(holding.basis_usd, rollout_count)
+            rollout_axis.append(np.arange(rollout_count, dtype=np.int64))
+            actor_ids.extend([actor_id] * rollout_count)
+            asset_ids.extend([asset_id] * rollout_count)
+            asset_kinds.extend([holding.asset_kind.value] * rollout_count)
+            units.append(units_1d)
+            basis.append(basis_1d)
+    if not rollout_axis:
+        return pl.DataFrame(schema=ASSET_HOLDING_FRAME_SCHEMA)
+    return pl.DataFrame(
+        {
+            "rollout_index": np.concatenate(rollout_axis),
+            "actor_id": actor_ids,
+            "asset_id": asset_ids,
+            "asset_kind": asset_kinds,
+            "units": np.concatenate(units),
+            "basis_usd": np.concatenate(basis),
+        },
+        schema=ASSET_HOLDING_FRAME_SCHEMA,
+    )
+
+
+def _build_liability_frame(state: SimulationState, *, rollout_count: int) -> pl.DataFrame:
+    rollout_axis: list[np.ndarray] = []
+    actor_ids: list[str] = []
+    liability_ids: list[str] = []
+    kinds: list[str] = []
+    property_ids: list[str | None] = []
+    principals: list[np.ndarray] = []
+    interest: list[np.ndarray] = []
+    principal_paid: list[np.ndarray] = []
+    for actor_id, agent in state.agents.items():
+        for liability_id, liab in agent.liabilities.items():
+            principal_1d = _broadcast_rollouts(liab.principal_usd, rollout_count)
+            interest_1d = _broadcast_rollouts(liab.interest_accrued_this_month_usd, rollout_count)
+            paid_1d = _broadcast_rollouts(liab.principal_paid_this_month_usd, rollout_count)
+            rollout_axis.append(np.arange(rollout_count, dtype=np.int64))
+            actor_ids.extend([actor_id] * rollout_count)
+            liability_ids.extend([liability_id] * rollout_count)
+            kinds.extend([liab.liability_kind.value] * rollout_count)
+            property_ids.extend([liab.property_id] * rollout_count)
+            principals.append(principal_1d)
+            interest.append(interest_1d)
+            principal_paid.append(paid_1d)
+    if not rollout_axis:
+        return pl.DataFrame(schema=LIABILITY_FRAME_SCHEMA)
+    return pl.DataFrame(
+        {
+            "rollout_index": np.concatenate(rollout_axis),
+            "actor_id": actor_ids,
+            "liability_id": liability_ids,
+            "liability_kind": kinds,
+            "property_id": property_ids,
+            "principal_usd": np.concatenate(principals),
+            "interest_accrued_this_month_usd": np.concatenate(interest),
+            "principal_paid_this_month_usd": np.concatenate(principal_paid),
+        },
+        schema=LIABILITY_FRAME_SCHEMA,
+    )
+
+
+def _build_property_stake_frame(state: SimulationState, *, rollout_count: int) -> pl.DataFrame:
+    rollout_axis: list[np.ndarray] = []
+    actor_ids: list[str] = []
+    property_ids: list[str] = []
+    ownership: list[np.ndarray] = []
+    contribution: list[np.ndarray] = []
+    equity: list[np.ndarray] = []
+    for actor_id, agent in state.agents.items():
+        for property_id, stake in agent.property_stakes.items():
+            ownership_1d = _broadcast_rollouts(stake.ownership_pct, rollout_count)
+            contribution_1d = _broadcast_rollouts(stake.contribution_used_usd, rollout_count)
+            equity_1d = _broadcast_rollouts(stake.equity_ledger_usd, rollout_count)
+            rollout_axis.append(np.arange(rollout_count, dtype=np.int64))
+            actor_ids.extend([actor_id] * rollout_count)
+            property_ids.extend([property_id] * rollout_count)
+            ownership.append(ownership_1d)
+            contribution.append(contribution_1d)
+            equity.append(equity_1d)
+    if not rollout_axis:
+        return pl.DataFrame(schema=PROPERTY_STAKE_FRAME_SCHEMA)
+    return pl.DataFrame(
+        {
+            "rollout_index": np.concatenate(rollout_axis),
+            "actor_id": actor_ids,
+            "property_id": property_ids,
+            "ownership_pct": np.concatenate(ownership),
+            "contribution_used_usd": np.concatenate(contribution),
+            "equity_ledger_usd": np.concatenate(equity),
+        },
+        schema=PROPERTY_STAKE_FRAME_SCHEMA,
+    )
+
+
+def _build_property_state_frame_cross_section(state: SimulationState, *, rollout_count: int) -> pl.DataFrame:
+    rollout_axis: list[np.ndarray] = []
+    property_ids: list[str] = []
+    live: list[np.ndarray] = []
+    value: list[np.ndarray] = []
+    depreciation: list[np.ndarray] = []
+    for property_id, prop in state.properties.items():
+        live_1d = _broadcast_rollouts(prop.live, rollout_count)
+        value_1d = _broadcast_rollouts(prop.value_usd, rollout_count)
+        depr_1d = _broadcast_rollouts(prop.cumulative_depreciation_usd, rollout_count)
+        rollout_axis.append(np.arange(rollout_count, dtype=np.int64))
+        property_ids.extend([property_id] * rollout_count)
+        live.append(live_1d)
+        value.append(value_1d)
+        depreciation.append(depr_1d)
+    if not rollout_axis:
+        return pl.DataFrame(schema=PROPERTY_STATE_FRAME_SCHEMA)
+    return pl.DataFrame(
+        {
+            "rollout_index": np.concatenate(rollout_axis),
+            "property_id": property_ids,
+            "live": np.concatenate(live),
+            "value_usd": np.concatenate(value),
+            "cumulative_depreciation_usd": np.concatenate(depreciation),
+        },
+        schema=PROPERTY_STATE_FRAME_SCHEMA,
+    )
