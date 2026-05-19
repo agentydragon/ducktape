@@ -34,7 +34,7 @@ through.
 | 4b   | NOT STARTED | `apply_moves` body-splitter that consumes `plan.move_index`, walks declarators per `Id`, splits multi-binding statements across destinations (mirrors today's `remaining_item_after_selection`) |
 | 4c   | NOT STARTED | Side-table rebuilds during execute (`runtime_imports`, `referenced_idents`, export tables, source-map fragments, cross-module binding indexes), all keyed on original `Id`                      |
 | 4d   | NOT STARTED | `LoweringOp { RewriteImportSpecifier, AddExport, ReorderHoists }` variants — added when their first contributor is migrated                                                                     |
-| 5    | NOT STARTED | Migrate `chunk_renames` consumer (`lowering/chunk_renames.rs` + the consumption in `lower.rs:167-209`) onto Plan submission + `apply_chunk_renames`; delete `body_renames` shim                 |
+| 5    | DONE        | `validate_chunk_renames_via_plan` replaces the inline validation loop in `lower.rs:167-238`; AST mutation still runs through `IdentifierRenamer` (executor migration follows Phase 7)           |
 | 6    | NOT STARTED | Migrate naturalizer `collect_*` funcs + `RenameAndShorthandNaturalizer` onto Plan; thread `Scope::Function(_)` through the execute visitor                                                      |
 | 7    | NOT STARTED | Migrate `disambiguate_import_locals` + `disambiguate_residual_entry_import_locals` onto Plan via `NamePolicy::MintOrSuffix` at `Priority::ImportInduced`                                        |
 | 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves into Phase A/B `MoveBinding` ops; retire the implicit `binding_assignment`-driven body splitting in favour of `apply_moves`               |

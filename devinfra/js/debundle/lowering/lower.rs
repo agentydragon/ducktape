@@ -4,9 +4,10 @@
 //! level orchestration that wraps this lives in mod.rs's
 //! `materialize_logical_chunk`.
 
+use super::chunk_renames::validate_chunk_renames_via_plan;
 use super::util::{
     collect_local_binding_names, collect_occupied_local_names, disambiguate_import_locals,
-    import_decl_for_plan, is_valid_js_identifier, preserve_export_specifier_names, relative_source,
+    import_decl_for_plan, preserve_export_specifier_names, relative_source,
     remaining_item_after_selection,
 };
 use super::*;
@@ -164,78 +165,25 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
-    let mut body_renames = BTreeMap::<String, String>::new();
-    // Seed body_renames with `chunk_renames` entries for bindings
-    // staying in entry's body (not claimed by any logical module).
-    // Bindings owned by a logical module take their rename from the
-    // module plan via the disambiguate-imports pass below;
-    // chunk_renames entries for those bindings are silently
-    // dropped here (the logical-module rename wins).
-    //
-    // Each accepted target name is reserved in `occupied` before the
-    // import-disambiguation pass runs, so a later cross-module
-    // import doesn't mint a fresh local that collides with one of
-    // the chunk_renames' targets. Conflicting targets (target name
-    // already taken by a body local that isn't being renamed away,
-    // or by another chunk_renames entry, or invalid as an
-    // identifier) bail rather than producing invalid JS silently.
-    let mut renamed_away = BTreeSet::<String>::new();
-    for binding in chunk_renames.keys() {
-        if binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark)) {
-            continue;
-        }
-        renamed_away.insert(binding.clone());
-    }
-    // Iterate `chunk_renames` (a `HashMap`) in sorted order so the
-    // collected error list and the `body_renames` insertion order
-    // are stable. Collect every violation rather than `bail!`ing on
-    // the first one so a spec author sees the full set in one
-    // round-trip; the "duplicate target" branch in particular only
-    // surfaces after `occupied.insert` returned false, so the
-    // earlier-rename whose target was duplicated is implied by the
-    // sort order.
-    let mut sorted_renames: Vec<(&String, &String)> = chunk_renames.iter().collect();
-    sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
-    let mut errors = Vec::<String>::new();
-    for (binding, export_name) in sorted_renames {
-        if binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark)) {
-            continue;
-        }
-        if !is_valid_js_identifier(export_name) {
-            errors.push(format!(
-                "chunk_renames target {export_name} for binding {binding} is not a valid JS identifier",
-            ));
-            continue;
-        }
-        if export_name != binding {
-            // A body local that's also being renamed away vacates
-            // its slot in `occupied` — it's safe to reuse. Anything
-            // else still in `occupied` would collide.
-            let target_already_taken =
-                occupied.contains(export_name) && !renamed_away.contains(export_name);
-            if target_already_taken {
-                errors.push(format!(
-                    "chunk_renames target {export_name} for binding {binding} collides with an existing top-level local",
-                ));
-                continue;
-            }
-        }
-        if !occupied.insert(export_name.clone()) && export_name != binding {
-            // `occupied.insert` returns false if already present;
-            // for the rename-to-self case (export_name == binding)
-            // that's expected. For any other case the target was
-            // already chosen by a previous chunk_renames entry —
-            // duplicate target.
-            errors.push(format!(
-                "chunk_renames target {export_name} for binding {binding} duplicates an earlier rename target",
-            ));
-            continue;
-        }
-        body_renames.insert(binding.clone(), export_name.clone());
-    }
-    if !errors.is_empty() {
-        bail!("invalid chunk_renames spec:\n  - {}", errors.join("\n  - "));
-    }
+    // Phase 5 of the plan pipeline: chunk_renames body-level
+    // validation runs through `LoweringPlan` rather than the
+    // hand-rolled `occupied`/`renamed_away` loop that used to live
+    // here. Plan submission enforces identifier validity, target
+    // collision against body locals, and duplicate-target conflicts
+    // — the same rules the old loop enforced, but routed through
+    // the unified plan API. The AST mutation itself still runs
+    // through `IdentifierRenamer` below; the executor migration
+    // lands later (Phase 7).
+    let mut body_renames = validate_chunk_renames_via_plan(
+        &entry_body,
+        chunk_renames,
+        binding_assignment,
+        chunk_top_level_mark,
+    )?;
+    // Reserve chunk-rename targets in `occupied` so the
+    // import-disambiguation pass below can't mint a fresh local
+    // that collides with one of them.
+    occupied.extend(body_renames.values().cloned());
     occupied.extend(collect_local_binding_names(&entry_body));
     for (module_index, plan) in module_plans.iter().enumerate() {
         if plan.bindings.is_empty() {

@@ -8,7 +8,7 @@
 //! scope tracking. Move application (Phase 4b) lives in a
 //! sibling pass that consumes `plan.move_index`.
 
-use swc_ecma_ast::{Ident, Module};
+use swc_ecma_ast::{Ident, Module, ModuleItem};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use super::lowering_plan::{CheckedPlan, Scope};
@@ -23,6 +23,17 @@ use super::lowering_plan::{CheckedPlan, Scope};
 pub fn apply_chunk_renames(module: &mut Module, plan: &CheckedPlan) {
     let mut v = ChunkRenameVisitor { plan };
     module.visit_mut_with(&mut v);
+}
+
+/// Same as [`apply_chunk_renames`] but operates on a slice of
+/// `ModuleItem`s — `lower.rs` carries the entry body as a
+/// `Vec<ModuleItem>` rather than a `Module`, and re-wrapping it
+/// just to apply renames is unnecessary work.
+pub fn apply_chunk_renames_to_items(items: &mut [ModuleItem], plan: &CheckedPlan) {
+    let mut v = ChunkRenameVisitor { plan };
+    for item in items.iter_mut() {
+        item.visit_mut_with(&mut v);
+    }
 }
 
 struct ChunkRenameVisitor<'a> {

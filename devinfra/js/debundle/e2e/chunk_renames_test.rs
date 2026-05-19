@@ -285,8 +285,16 @@ export { alpha, bravo, charlie, delta };
         &[
             "invalid chunk_renames spec",
             "not a valid JS identifier",
-            "collides with an existing top-level local",
-            "duplicates an earlier rename target",
+            // Phase 5 unified the legacy "collides with an existing
+            // top-level local" and "duplicates an earlier rename
+            // target" error wordings — both surface through the
+            // LoweringPlan submit path as "already taken in <scope>".
+            // Asserting the binding names show up keeps the
+            // "every violation surfaced in one round-trip" guarantee
+            // verifiable without locking in legacy wording.
+            "already taken",
+            "binding bravo → delta",
+            "binding delta → shared_target",
         ],
     );
 }
