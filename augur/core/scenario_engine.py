@@ -65,6 +65,7 @@ from augur.core.scenario_set import (
     CheckingFloorSellPublicStockPolicy,
     CryptoAssetPosition,
     Effect,
+    EffectType,
     FailureEvent,
     FinancingMode,
     FixedAmountPrivateEquitySaleRule,
@@ -97,12 +98,8 @@ from augur.core.scenario_set import (
     RolloutStatus,
     RolloutStatusType,
     Scenario,
-    SellCryptoEffect,
-    SellPrivateEquityEffect,
     SellPublicStockDecision,
-    SellSp500Effect,
     SettlementResult,
-    SettlePropertySaleEffect,
     SpecialAssessmentEvent,
     TaxFilingStatus,
     TaxPaymentTiming,
@@ -186,7 +183,10 @@ class ScenarioRunArrays:
     # via `metric_array(ReportMetric.X)` to get a `(rollouts, months+1)`
     # numpy view.
     numerics: pl.DataFrame
-    effects: tuple[Effect, ...]
+    sp500_effects_frame: pl.DataFrame
+    crypto_effects_frame: pl.DataFrame
+    private_equity_effects_frame: pl.DataFrame
+    settle_property_sale_effects_frame: pl.DataFrame
     policy_decisions: tuple[PolicyDecision, ...]
     market_path_observations_frame: pl.DataFrame
     pe_sale_opportunity_observations_frame: pl.DataFrame
@@ -217,6 +217,19 @@ class ScenarioRunArrays:
     @property
     def lot_dispositions(self) -> tuple[LotDisposition, ...]:
         return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def effects(self) -> tuple[Effect, ...]:
+        return tuple(
+            event_streams.materialize_effects(
+                {
+                    EffectType.SELL_SP500: self.sp500_effects_frame,
+                    EffectType.SELL_CRYPTO: self.crypto_effects_frame,
+                    EffectType.SELL_PRIVATE_EQUITY: self.private_equity_effects_frame,
+                    EffectType.SETTLE_PROPERTY_SALE: self.settle_property_sale_effects_frame,
+                }
+            )
+        )
 
     @property
     def accounting_details(self) -> tuple[AccountingDetail, ...]:
@@ -1398,7 +1411,16 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         np.full(rollout_count, initial_cash - down_payment, dtype="float64")
         - disposition.column("purchase_closing_cost_usd")[:, 0]
     )
-    effects: list[Effect] = []
+    effects: dict[EffectType, event_streams.StreamFrameBuilder] = {
+        EffectType.SELL_SP500: event_streams.StreamFrameBuilder(event_streams.SELL_SP500_EFFECT_SCHEMA),
+        EffectType.SELL_CRYPTO: event_streams.StreamFrameBuilder(event_streams.SELL_CRYPTO_EFFECT_SCHEMA),
+        EffectType.SELL_PRIVATE_EQUITY: event_streams.StreamFrameBuilder(
+            event_streams.SELL_PRIVATE_EQUITY_EFFECT_SCHEMA
+        ),
+        EffectType.SETTLE_PROPERTY_SALE: event_streams.StreamFrameBuilder(
+            event_streams.SETTLE_PROPERTY_SALE_EFFECT_SCHEMA
+        ),
+    }
     policy_decisions: list[PolicyDecision] = []
     market_path_observations_frame = _market_path_observations_frame(scenario, market_bundle)
     pe_sale_opportunity_observations = event_streams.StreamFrameBuilder(
@@ -2548,7 +2570,22 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         scenario_label=scenario.label,
         month_index=month_index,
         numerics=_build_numerics_frame(month_index, metric_arrays),
-        effects=_sorted_effects(_with_trajectory_identity(effects, trace_identity_by_rollout)),
+        sp500_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(effects[EffectType.SELL_SP500].build(), trace_identity_frame)
+        ),
+        crypto_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(effects[EffectType.SELL_CRYPTO].build(), trace_identity_frame)
+        ),
+        private_equity_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(
+                effects[EffectType.SELL_PRIVATE_EQUITY].build(), trace_identity_frame
+            )
+        ),
+        settle_property_sale_effects_frame=event_streams.sort_effects_variant_frame(
+            event_streams.join_trajectory_identity(
+                effects[EffectType.SETTLE_PROPERTY_SALE].build(), trace_identity_frame
+            )
+        ),
         policy_decisions=_sorted_policy_decisions(
             _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
         ),
@@ -3363,7 +3400,7 @@ def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, 
 
 
 def _record_property_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3381,45 +3418,54 @@ def _record_property_sale_effects(
     net_proceeds = (
         net_proceeds_usd if net_proceeds_usd is not None else disposition.column("property_sale_net_proceeds_usd")
     )
-    active = (
-        (disposition.column("property_sale_gross_usd")[:, month] != 0)
-        | (disposition.column("sale_closing_cost_usd")[:, month] != 0)
-        | (disposition.column("property_sale_debt_payoff_usd")[:, month] != 0)
-        | (sale_tax[:, month] != 0)
-        | (net_proceeds[:, month] != 0)
-    )
+    gross = disposition.column("property_sale_gross_usd")[:, month]
+    selling_cost = disposition.column("sale_closing_cost_usd")[:, month]
+    debt_payoff = disposition.column("property_sale_debt_payoff_usd")[:, month]
+    tax_col = sale_tax[:, month]
+    net_proceeds_col = net_proceeds[:, month]
+    active = (gross != 0) | (selling_cost != 0) | (debt_payoff != 0) | (tax_col != 0) | (net_proceeds_col != 0)
+    if not active.any():
+        return
+    rollouts = np.nonzero(active)[0].astype(np.int64)
+    size = int(rollouts.size)
     actor_id = sale_event.actor_id or _primary_owner_actor_id(scenario)
-    effects.extend(
-        SettlePropertySaleEffect(
-            rollout_index=rollout_index,
-            month_index=month,
-            actor_id=actor_id,
-            policy_id=PROPERTY_SALE_SETTLEMENT_POLICY_ID,
-            event_id=sale_event.event_id,
-            property_id=property_id,
-            gross_sale_usd=float(disposition.column("property_sale_gross_usd")[rollout_index, month]),
-            selling_cost_usd=float(disposition.column("sale_closing_cost_usd")[rollout_index, month]),
-            debt_payoff_usd=float(disposition.column("property_sale_debt_payoff_usd")[rollout_index, month]),
-            adjusted_basis_usd=float(disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month]),
-            realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month]),
-            depreciation_recapture_usd=float(disposition.column("depreciation_recapture_usd")[rollout_index, month]),
-            capital_gain_usd=float(disposition.column("property_sale_capital_gain_usd")[rollout_index, month]),
-            capital_gain_exclusion_usd=float(
-                disposition.column("property_sale_capital_gain_exclusion_usd")[rollout_index, month]
+    effects[EffectType.SETTLE_PROPERTY_SALE].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month, dtype=np.int64),
+            "actor_id": [actor_id] * size,
+            "policy_id": [PROPERTY_SALE_SETTLEMENT_POLICY_ID] * size,
+            "event_id": [sale_event.event_id] * size,
+            "property_id": [property_id] * size,
+            "gross_sale_usd": gross[rollouts].astype(np.float64),
+            "selling_cost_usd": selling_cost[rollouts].astype(np.float64),
+            "debt_payoff_usd": debt_payoff[rollouts].astype(np.float64),
+            "adjusted_basis_usd": disposition.column("property_sale_adjusted_basis_usd")[rollouts, month].astype(
+                np.float64
             ),
-            taxable_capital_gain_usd=float(
-                disposition.column("taxable_property_capital_gain_usd")[rollout_index, month]
+            "realized_gain_usd": disposition.column("realized_property_gain_usd")[rollouts, month].astype(np.float64),
+            "depreciation_recapture_usd": disposition.column("depreciation_recapture_usd")[rollouts, month].astype(
+                np.float64
             ),
-            taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month]),
-            tax_usd=float(sale_tax[rollout_index, month]),
-            net_proceeds_usd=float(net_proceeds[rollout_index, month]),
-        )
-        for rollout_index in np.nonzero(active)[0].tolist()
+            "capital_gain_usd": disposition.column("property_sale_capital_gain_usd")[rollouts, month].astype(
+                np.float64
+            ),
+            "capital_gain_exclusion_usd": disposition.column("property_sale_capital_gain_exclusion_usd")[
+                rollouts, month
+            ].astype(np.float64),
+            "taxable_capital_gain_usd": disposition.column("taxable_property_capital_gain_usd")[rollouts, month].astype(
+                np.float64
+            ),
+            "taxable_gain_usd": disposition.column("taxable_property_gain_usd")[rollouts, month].astype(np.float64),
+            "tax_usd": tax_col[rollouts].astype(np.float64),
+            "net_proceeds_usd": net_proceeds_col[rollouts].astype(np.float64),
+            "proceeds_destination": [AccountType.CHECKING.value] * size,
+        }
     )
 
 
 def _record_sp500_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     policy: Policy,
@@ -3428,24 +3474,28 @@ def _record_sp500_sale_effects(
     tax_usd: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
-    for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        tax = float(tax_usd[rollout_index])
-        effects.append(
-            SellSp500Effect(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                amount_usd=amount,
-                after_tax_proceeds_usd=max(0.0, amount - tax),
-                basis_usd=basis,
-                gain_usd=amount - basis,
-                tax_usd=tax,
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
-        )
+    mask = (amount_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = amount_usd[rollouts].astype(np.float64)
+    bases = basis_usd[rollouts].astype(np.float64)
+    taxes = tax_usd[rollouts].astype(np.float64)
+    effects[EffectType.SELL_SP500].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [policy.actor_id] * size,
+            "policy_id": [policy.policy_id] * size,
+            "amount_usd": amounts,
+            "after_tax_proceeds_usd": np.maximum(0.0, amounts - taxes),
+            "basis_usd": bases,
+            "gain_usd": amounts - bases,
+            "tax_usd": taxes,
+            "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+        }
+    )
 
 
 def _record_crypto_sale_journal_entries(
@@ -3510,7 +3560,7 @@ def _record_crypto_sale_journal_entries(
 
 
 def _record_crypto_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     policy: Policy,
@@ -3521,53 +3571,70 @@ def _record_crypto_sale_effects(
     quantity_sold: np.ndarray,
     shortfall_usd: np.ndarray,
 ) -> None:
-    for rollout_index in np.nonzero((amount_usd > 0) | (shortfall_usd > 0))[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        effects.append(
-            SellCryptoEffect(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                source_asset_id=source_asset_id,
-                asset_symbol=asset_symbol,
-                amount_usd=amount,
-                quantity_sold=float(quantity_sold[rollout_index]),
-                basis_usd=basis,
-                gain_usd=amount - basis,
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
-        )
+    mask = (amount_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = amount_usd[rollouts].astype(np.float64)
+    bases = basis_usd[rollouts].astype(np.float64)
+    effects[EffectType.SELL_CRYPTO].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [policy.actor_id] * size,
+            "policy_id": [policy.policy_id] * size,
+            "source_asset_id": [source_asset_id] * size,
+            "asset_symbol": [asset_symbol] * size,
+            "amount_usd": amounts,
+            "quantity_sold": quantity_sold[rollouts].astype(np.float64),
+            "basis_usd": bases,
+            "gain_usd": amounts - bases,
+            "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+        }
+    )
 
 
 def _record_private_equity_sale_effects(
-    effects: list[Effect],
+    effects: dict[EffectType, event_streams.StreamFrameBuilder],
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
     sale_application: PrivateEquitySaleApplication,
     estimated_tax_usd: np.ndarray,
 ) -> None:
-    sale_tax = estimated_tax_usd
-    effects.extend(
-        SellPrivateEquityEffect(
-            rollout_index=rollout_index,
-            month_index=month_index,
-            actor_id=instruction.actor_id,
-            policy_id=instruction.policy_id,
-            opportunity_id=instruction.opportunity_id[rollout_index],
-            opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
-            amount_usd=float(sale_application.sale_usd[rollout_index]),
-            after_tax_proceeds_usd=float(np.maximum(0.0, sale_application.sale_usd - sale_tax)[rollout_index]),
-            basis_usd=float(sale_application.basis_usd[rollout_index]),
-            taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
-            estimated_tax_usd=float(sale_tax[rollout_index]),
-            units_sold=float(sale_application.sold_units[rollout_index]),
-            sold_fraction=float(sale_application.sold_fraction[rollout_index]),
-            proceeds_destination=instruction.proceeds_destination,
-        )
-        for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist()
+    mask = sale_application.sale_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    amounts = sale_application.sale_usd[rollouts].astype(np.float64)
+    taxes = estimated_tax_usd[rollouts].astype(np.float64)
+    after_tax = np.maximum(0.0, amounts - taxes)
+    proceeds_destination_value = (
+        instruction.proceeds_destination.value
+        if hasattr(instruction.proceeds_destination, "value")
+        else str(instruction.proceeds_destination)
+    )
+    effects[EffectType.SELL_PRIVATE_EQUITY].extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "actor_id": [instruction.actor_id] * size,
+            "policy_id": [instruction.policy_id] * size,
+            "event_id": [None] * size,
+            "event_type": [None] * size,
+            "opportunity_id": [instruction.opportunity_id[r] for r in rollouts],
+            "opportunity_cause_id": [str(instruction.opportunity_cause_id[r]) for r in rollouts],
+            "amount_usd": amounts,
+            "after_tax_proceeds_usd": after_tax,
+            "basis_usd": sale_application.basis_usd[rollouts].astype(np.float64),
+            "taxable_gain_usd": sale_application.taxable_gain_usd[rollouts].astype(np.float64),
+            "estimated_tax_usd": taxes,
+            "units_sold": sale_application.sold_units[rollouts].astype(np.float64),
+            "sold_fraction": sale_application.sold_fraction[rollouts].astype(np.float64),
+            "proceeds_destination": [proceeds_destination_value] * size,
+        }
     )
 
 
@@ -4924,10 +4991,6 @@ def _vectorized_status_strings(amount_due_usd: np.ndarray, unpaid_amount_usd: np
 
 def _obligation_id(obligation_type: ObligationType, *, rollout_index: int, month_index: int) -> str:
     return f"{obligation_type.value}:rollout:{rollout_index}:month:{month_index}"
-
-
-def _sorted_effects(effects: list[Effect]) -> tuple[Effect, ...]:
-    return tuple(sorted(effects, key=lambda effect: (effect.month_index, effect.rollout_index, effect.effect_type)))
 
 
 def _property_cash_flow_arrays(

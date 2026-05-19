@@ -37,10 +37,14 @@ Migrated so far:
   `PropertySaleBasisGainDetail` — one-per-rollout at the property-sale
   month — and `TaxPaymentAllocationDetail` — one-per-rollout per tax-year
   end).
+* **Effects** (four roots) → `Effect` (one frame per variant —
+  `SellSp500Effect`, `SellCryptoEffect`, `SellPrivateEquityEffect`,
+  `SettlePropertySaleEffect`).
 """
 
 from __future__ import annotations
 
+import heapq
 from collections.abc import Iterator, Mapping
 from typing import Any
 
@@ -53,6 +57,9 @@ from augur.core.scenario_set import (
     AccountingDetailType,
     AccountType,
     AssetType,
+    Effect,
+    EffectType,
+    EventType,
     FailureEvent,
     FailureEventType,
     FundingDecision,
@@ -66,8 +73,12 @@ from augur.core.scenario_set import (
     ObligationType,
     PrivateEquitySaleOpportunityObservation,
     PropertySaleBasisGainDetail,
+    SellCryptoEffect,
+    SellPrivateEquityEffect,
+    SellSp500Effect,
     SettlementResult,
     SettlementStatus,
+    SettlePropertySaleEffect,
     TaxPaymentAllocationDetail,
     TaxPaymentTiming,
 )
@@ -683,6 +694,212 @@ def _build_tax_payment_allocation_detail(row: dict[str, Any]) -> TaxPaymentAlloc
         scenario_input_id=row.get("scenario_input_id"),
         projection_trajectory_id=row.get("projection_trajectory_id"),
     )
+
+
+# -- effects -------------------------------------------------------------------
+#
+# Four roots, one per `EffectType` variant. The legacy
+# `_sorted_effects` sorts on `(month, rollout, effect_type)` — since
+# `effect_type` is constant inside each variant frame, we sort each
+# frame by `(month, rollout)` and merge-sort by the full key at
+# materialization time using `heapq.merge`.
+
+_EFFECT_BASE_COLUMNS: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "actor_id": pl.String,
+    "policy_id": pl.String,
+}
+
+SELL_SP500_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+    **_EFFECT_BASE_COLUMNS,
+    "amount_usd": pl.Float64,
+    "after_tax_proceeds_usd": pl.Float64,
+    "basis_usd": pl.Float64,
+    "gain_usd": pl.Float64,
+    "tax_usd": pl.Float64,
+    "shortfall_usd": pl.Float64,
+}
+
+SELL_CRYPTO_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+    **_EFFECT_BASE_COLUMNS,
+    "source_asset_id": pl.String,
+    "asset_symbol": pl.String,
+    "amount_usd": pl.Float64,
+    "quantity_sold": pl.Float64,
+    "basis_usd": pl.Float64,
+    "gain_usd": pl.Float64,
+    "shortfall_usd": pl.Float64,
+}
+
+SELL_PRIVATE_EQUITY_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+    **_EFFECT_BASE_COLUMNS,
+    "event_id": pl.String,
+    "event_type": pl.String,
+    "opportunity_id": pl.String,
+    "opportunity_cause_id": pl.String,
+    "amount_usd": pl.Float64,
+    "after_tax_proceeds_usd": pl.Float64,
+    "basis_usd": pl.Float64,
+    "taxable_gain_usd": pl.Float64,
+    "estimated_tax_usd": pl.Float64,
+    "units_sold": pl.Float64,
+    "sold_fraction": pl.Float64,
+    "proceeds_destination": pl.String,
+}
+
+SETTLE_PROPERTY_SALE_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+    **_EFFECT_BASE_COLUMNS,
+    "event_id": pl.String,
+    "property_id": pl.String,
+    "gross_sale_usd": pl.Float64,
+    "selling_cost_usd": pl.Float64,
+    "debt_payoff_usd": pl.Float64,
+    "adjusted_basis_usd": pl.Float64,
+    "realized_gain_usd": pl.Float64,
+    "depreciation_recapture_usd": pl.Float64,
+    "capital_gain_usd": pl.Float64,
+    "capital_gain_exclusion_usd": pl.Float64,
+    "taxable_capital_gain_usd": pl.Float64,
+    "taxable_gain_usd": pl.Float64,
+    "tax_usd": pl.Float64,
+    "net_proceeds_usd": pl.Float64,
+    "proceeds_destination": pl.String,
+}
+
+
+def sort_effects_variant_frame(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["month_index", "rollout_index"])
+
+
+def materialize_effects(frames: Mapping[EffectType, pl.DataFrame]) -> Iterator[Effect]:
+    """Merge-sort the four variant frames in canonical
+    `(month, rollout, effect_type)` lex order. Each variant frame is
+    pre-sorted by `(month, rollout)` so `heapq.merge` only needs the
+    composite key."""
+
+    builders: dict[EffectType, Any] = {
+        EffectType.SELL_SP500: _build_sell_sp500_effect,
+        EffectType.SELL_CRYPTO: _build_sell_crypto_effect,
+        EffectType.SELL_PRIVATE_EQUITY: _build_sell_private_equity_effect,
+        EffectType.SETTLE_PROPERTY_SALE: _build_settle_property_sale_effect,
+    }
+
+    def _stream(
+        effect_type: EffectType, frame: pl.DataFrame
+    ) -> Iterator[tuple[tuple[int, int, str], Any, dict[str, Any]]]:
+        builder = builders[effect_type]
+        type_value = effect_type.value
+        for row in frame.iter_rows(named=True):
+            yield ((row["month_index"], row["rollout_index"], type_value), builder, row)
+
+    iterators = [_stream(effect_type, frame) for effect_type, frame in frames.items()]
+    for _, builder, row in heapq.merge(*iterators, key=lambda x: x[0]):
+        yield builder(row)
+
+
+def _build_sell_sp500_effect(row: dict[str, Any]) -> SellSp500Effect:
+    return SellSp500Effect(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        amount_usd=float(row["amount_usd"]),
+        after_tax_proceeds_usd=float(row["after_tax_proceeds_usd"]),
+        basis_usd=float(row["basis_usd"]),
+        gain_usd=float(row["gain_usd"]),
+        tax_usd=float(row["tax_usd"]),
+        shortfall_usd=float(row["shortfall_usd"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_sell_crypto_effect(row: dict[str, Any]) -> SellCryptoEffect:
+    return SellCryptoEffect(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        source_asset_id=row["source_asset_id"],
+        asset_symbol=row["asset_symbol"],
+        amount_usd=float(row["amount_usd"]),
+        quantity_sold=float(row["quantity_sold"]),
+        basis_usd=float(row["basis_usd"]),
+        gain_usd=float(row["gain_usd"]),
+        shortfall_usd=float(row["shortfall_usd"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_sell_private_equity_effect(row: dict[str, Any]) -> SellPrivateEquityEffect:
+    event_type_value = row["event_type"]
+    return SellPrivateEquityEffect(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        event_id=row["event_id"],
+        event_type=EventType(event_type_value) if event_type_value is not None else None,
+        opportunity_id=row["opportunity_id"],
+        opportunity_cause_id=row["opportunity_cause_id"],
+        amount_usd=float(row["amount_usd"]),
+        after_tax_proceeds_usd=float(row["after_tax_proceeds_usd"]),
+        basis_usd=float(row["basis_usd"]),
+        taxable_gain_usd=float(row["taxable_gain_usd"]),
+        estimated_tax_usd=float(row["estimated_tax_usd"]),
+        units_sold=float(row["units_sold"]),
+        sold_fraction=float(row["sold_fraction"]),
+        proceeds_destination=_coerce_proceeds_destination(row["proceeds_destination"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_settle_property_sale_effect(row: dict[str, Any]) -> SettlePropertySaleEffect:
+    return SettlePropertySaleEffect(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        event_id=row["event_id"],
+        property_id=row["property_id"],
+        gross_sale_usd=float(row["gross_sale_usd"]),
+        selling_cost_usd=float(row["selling_cost_usd"]),
+        debt_payoff_usd=float(row["debt_payoff_usd"]),
+        adjusted_basis_usd=float(row["adjusted_basis_usd"]),
+        realized_gain_usd=float(row["realized_gain_usd"]),
+        depreciation_recapture_usd=float(row["depreciation_recapture_usd"]),
+        capital_gain_usd=float(row["capital_gain_usd"]),
+        capital_gain_exclusion_usd=float(row["capital_gain_exclusion_usd"]),
+        taxable_capital_gain_usd=float(row["taxable_capital_gain_usd"]),
+        taxable_gain_usd=float(row["taxable_gain_usd"]),
+        tax_usd=float(row["tax_usd"]),
+        net_proceeds_usd=float(row["net_proceeds_usd"]),
+        proceeds_destination=AccountType(row["proceeds_destination"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _coerce_proceeds_destination(value: str) -> AccountType | AssetType:
+    """`SellPrivateEquityEffect.proceeds_destination: AccountType | AssetType`.
+    We don't know at column-read time which enum it is, so try AccountType
+    first then fall through to AssetType."""
+
+    try:
+        return AccountType(value)
+    except ValueError:
+        return AssetType(value)
 
 
 def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:
