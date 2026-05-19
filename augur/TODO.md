@@ -95,14 +95,6 @@ teardown). Bench `simulate_set` dropped from 15.7 s → 3.4 s (-78%) at
 
 Followups still on the table:
 
-- [ ] **`MarketBundle` provider exposes the market-path frame directly.**
-      Today `scenario_engine._market_path_observations_frame` pulls the
-      multiplier matrices off the bundle and assembles a polars frame on
-      the engine side. The bundle already owns the array shape; a method
-      like `market_bundle.market_path_observations_frame(scenario)` lands
-      that responsibility on the right side of the boundary and removes
-      the engine-side glue. Separate concern from the perf refactor;
-      worth doing in a follow-up.
 - [ ] **Engine arithmetic → polars expressions** (the remaining
       `Refactor D` rollup item above). Independent track but reads
       naturally on the polars-backed `ScenarioRunArrays`.
