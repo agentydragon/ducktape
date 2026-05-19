@@ -103,9 +103,6 @@ Followups still on the table:
       that responsibility on the right side of the boundary and removes
       the engine-side glue. Separate concern from the perf refactor;
       worth doing in a follow-up.
-- [ ] **Migrate `tax_lots` and `liabilities` snapshots** if/when uniform
-      column-major shape becomes worth the diff. Both are end-of-run
-      static, not hot — left alone in this refactor.
 - [ ] **Engine arithmetic → polars expressions** (the remaining
       `Refactor D` rollup item above). Independent track but reads
       naturally on the polars-backed `ScenarioRunArrays`.
