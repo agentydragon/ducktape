@@ -23,8 +23,7 @@ use artifact::{
     ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
     ChunkTable, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody, SelectedModuleLowering,
     get_chunk_entry_path, join_module_path, manifest_relative_path, module_path_dirname,
-    module_path_from_path, normalize_module_path, normalize_relative_module_specifier,
-    relative_module_path,
+    module_path_from_path, normalize_module_path, relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 use spec::{

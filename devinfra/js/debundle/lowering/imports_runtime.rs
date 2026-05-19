@@ -86,17 +86,18 @@ pub(super) fn source_chunk_imports_for_moved_body(
             rel
         } else if info.src.starts_with('.') {
             // Relative specifier that didn't resolve through the chunk
-            // artifact (e.g. it points at an extra_files asset). Walk up
-            // to the chunk root then re-attach `info.src`. Naive string
-            // concatenation can yield non-canonical spellings like
-            // `".././foo.js"` when `info.src` itself starts with `./`,
-            // so normalize before emitting.
+            // artifact (e.g. it points at an extra_files asset). Walk
+            // up to the chunk root then re-attach `info.src`. Strip a
+            // leading `./` so concatenation produces a canonical path
+            // (`"../../foo.js"`) directly — Phase 10 retired the
+            // defensive `normalize_relative_module_specifier` call that
+            // previously cleaned `"../.././foo.js"` shapes.
             let depth = std::path::Path::new(dest_target_file)
                 .parent()
                 .map(|parent| parent.iter().count())
                 .unwrap_or(0);
-            let raw = format!("{}{}", "../".repeat(depth), info.src);
-            let mut rel = normalize_relative_module_specifier(&raw);
+            let cleaned_src = info.src.strip_prefix("./").unwrap_or(&info.src);
+            let mut rel = format!("{}{cleaned_src}", "../".repeat(depth));
             if !rel.starts_with('.') {
                 rel = format!("./{rel}");
             }
