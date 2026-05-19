@@ -1179,6 +1179,38 @@ All 19 augur/core tests green. Bench within tolerance.
   year. The per-month allocation logic still lives in
   `annual_sale_tax_allocation`; full G10 (move allocation into
   TaxActor, delete the helper) is still ahead.
+- **Partner contribution settlement moved inline (Wave 4.1, G7
+  completion).** Per-agreement `_PartnerSettlementContext` constructed
+  pre-loop carries the contributing actor's 1D state (cash, sp500,
+  crypto) + funding sources + obligation accumulator. The main month
+  loop iterates the contexts per iteration, settles each agreement's
+  due via `_settle_required_cash_obligation_at_month_position`, and
+  rebinds the 1D state on the context. The `_settle_partner_contribution
+  _obligations` post-loop helper is gone. The last post-loop
+  `_settle_required_cash_obligations(...)` caller has been removed.
+- **Dead `_settle_required_cash_obligations` helper deleted (Wave
+  4.2, G7 finish).** With every obligation now settling inline, the
+  post-loop sweep wrapper had no callers; it carried the suspicious
+  `[:, M+1:]` forward-write delta pattern flagged as the original
+  imperative-scratchpad anti-pattern. Both the function and the
+  pattern are gone from the engine's obligation path.
+- **Iteration order: property-cost before tax (Wave 4 correctness
+  fix).** The initial inline migration put mortgage / special /
+  outside_rent AFTER `TaxActor.observe_month` + the snapshot extends,
+  which silently dropped property-cost-driven asset sales' gains
+  from the year-tax accumulator AND `annual_sale_tax_allocation`.
+  The newly-added G8 regression test caught it (zero year tax on a
+  scenario where mortgage payments force $35k of all-gain SP500
+  sales). Reordered to settle property-cost obligations BEFORE the
+  tax block, so the snapshot + observe_month see all sales up to
+  the tax-settlement step.
+- **SP500 gain regression test (Wave 1.1, G8).** Pins the fix that
+  derives `generic_sp500_sale_gain` from the unified asset_change_log
+  instead of overwriting `[:, M]` at end-of-month. Asserts that
+  property-cost-driven SP500 sales (via
+  `CheckingFloorSellPublicStockPolicy` on a zero-basis position)
+  produce non-zero year tax matching the sum of
+  `GENERIC_SP500_SALE_TAX_USD`.
 
 ## Remaining gaps (enumerated)
 
