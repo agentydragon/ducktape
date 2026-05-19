@@ -99,26 +99,25 @@ estimates are calendar days of focused engineering, not wall-clock.
 `SimulationState` is rebuilt from the engine's 1D locals every iteration
 and consumed only by the end-of-month snapshot block. All other engine
 code reads the 1D locals (`current_cash`, `remaining_sp500_units`, …)
-directly. The intended end-state — every read goes through
-`state.agent(...).cash(...)` / `state.agent(...).holding(...)` (or the
-polars equivalent: filter the cash frame to `(actor_id, account_id)`
-for the current month) — is not there.
+directly. The intended end-state — every read goes through the
+working polars frames on `SimulationState` (filter to
+`(actor_id, account_id)` to get a one-row-per-rollout column of cash
+balances; same shape for holdings, liabilities, stakes) — is not
+there.
 
-**Leaf-storage decision lives here.** Today's scaffold in
-`simulation_state.py` is nested-dataclass-of-numpy. The incremental
-path is to land G1 in that shape and re-evaluate moving to long-form
-polars frames as a follow-up — or to switch to polars as part of G1
-if the read-site count is small enough to justify the upfront move.
-The polars shape lines up directly with the target persistent logs
-(no representation transition between working state and append-only
-log) and scales row-wise across agents/accounts/assets/properties
-where the nested-dict shape gets awkward. See
-[Single working state object](#single-working-state-object--vectorized-across-rollouts).
+**G1 also migrates the leaf storage** from the nested-dataclass-of-
+numpy scaffold in `simulation_state.py` to the polars long-form
+frames documented in [Single working state object](#single-working-state-object--polars-long-form-frames).
+This is the canonical shape; doing it incrementally (numpy first,
+polars later) means writing the engine's read sites twice. The
+polars shape lines up directly with the persistent logs (working
+state IS the cross-section of the log at month M), so the
+log-emission step collapses to `log.extend(decision_frame)`.
 
-**Effort:** 3 days (G1) plus 1 day to drop the locals once all reads
-are routed (G1b). If the polars shape is taken, add ~1 day for the
-representation switch. **Blocks:** dropping the 1D locals (the engine
-collapse that takes it under 400 LOC depends on this).
+**Effort:** 4 days (G1 — read-site migration to polars frames) plus 1
+day to drop the 1D locals once all reads are routed (G1b).
+**Blocks:** dropping the 1D locals (the engine collapse that takes it
+under 400 LOC depends on this).
 
 ### G2. Cash matrix not log-derived
 
@@ -213,12 +212,12 @@ Ordered by `(impact × tractability)` descending. Each row is one PR.
 | 3   | G7      | ½ d    | low  | Append-only cleanup; no behavior change.                                |
 | 4   | G4      | 2 d    | med  | Touches every journal-entry / effect recorder. Snapshot test gates it.  |
 | 5   | G2      | 2 d    | med  | Cashflow-log wire-up + parity check + drop maintained matrix.           |
-| 6   | G1+G1b  | 4 d    | high | State-as-truth + drop 1D locals. Biggest control-flow shift.            |
+| 6   | G1+G1b  | 5 d    | high | Migrate working state to polars long-form frames + drop 1D locals.      |
 | 7   | G3      | 4 d    | high | Policies-as-actions. Touches every policy.                              |
 | 8   | G8      | ½ d    | low  | Derive remaining matrices; gated on G2.                                 |
 | 9   | G9      | 1 d    | low  | Engine collapse + cleanup pass.                                         |
 
-Total: ~15–18 days, 9 PRs.
+Total: ~16–19 days, 9 PRs.
 
 The dependency structure is:
 
@@ -239,147 +238,148 @@ can land in parallel with G2 once G1 is in.
 
 The end-state the gaps above push toward.
 
-### Single working state object — vectorized across rollouts
+### Single working state object — polars long-form frames
 
-The rollout dimension is the bulk dimension. There is **one**
-`SimulationState` per month (not one per rollout); rollouts live
-**inside** the state, as a column. Every per-month operation — policy
-decisions, transitions, accruals — is a bulk vectorized operation
-over all rollouts at once, the same way today's
-`current_cash = current_cash + sale_usd` is a vectorized numpy add over
-all rollouts.
+The rollout dimension is the bulk dimension. The working state at one
+month boundary is held as a small number of **polars long-form
+frames** — one per state kind — each keyed by `(rollout_index, …)`
+with rollouts represented as rows. Every per-month operation — policy
+decisions, transitions, accruals — is a polars expression that
+vectorizes over the rollout column, the same way today's
+`current_cash + sale_usd` vectorizes over a `(rollouts,)` numpy array.
 
-There are two reasonable physical realizations of "state with
-`(rollouts,)` inside":
+Why polars, not nested-dataclass-of-numpy:
 
-1. **Nested-dataclass-of-numpy** — frozen dataclass tree
-   (`SimulationState → AgentState → AssetHolding`) where the leaves
-   are `(rollouts,)` numpy vectors. Policies do
-   `np.where(cash < floor, sale_amount, 0)`. This is the shape
-   `simulation_state.py` already scaffolds today.
-2. **Long-form polars frames** — one polars frame per state kind
-   (`cash_balance_frame`, `asset_holding_frame`, `liability_frame`)
-   filtered to the current month, with `rollout_index` as a key
-   column. Policies do
-   `frame.with_columns(sale_usd=pl.when(pl.col("cash") < floor)...)`
-   and the engine accumulates the per-month rows into the
-   append-only logs directly.
+- The persistent append-only logs (`cashflow_log`, `asset_change_log`,
+  `liability_log`, `obligations_log`, …) are **already** long-form
+  polars. Having the working state in the same shape collapses the
+  decision-emission step to "compute the new row(s), append to log" —
+  no nested-dict ↔ row materialization in between.
+- Multi-agent / multi-account / multi-asset / multi-property scales by
+  row count, not by widening the schema. The cost of supporting a
+  second agent or a second crypto symbol is zero schema-side; it's
+  just more rows on the same frames.
+- Joins, aggregations, group-bys are the natural shape of most
+  per-month operations (cash impact of all this month's decisions:
+  group decisions by `(rollout, account)`, sum `amount_delta_usd`,
+  join into cash frame, add). The dict-of-arrays shape forces these
+  into manual numpy reductions.
+- The non-goal — no Python loop over rollouts — holds: polars'
+  expression engine vectorizes over a column the same way numpy
+  vectorizes over a `(rollouts,)` array.
 
-**Polars is likely the better fit for the structural shape.** The
-target persistent frames (`cashflow_log`, `asset_change_log`, etc.)
-are already long-form polars — having the working state in the same
-representation means the decision-emission step is `state_frame.join(
-market_frame).with_columns(decision_cols)` followed by a direct
-append-to-log, with no nested-dict ↔ row materialization step in
-between. Multi-agent / multi-account / multi-asset (which today get
-awkward as nested dicts) scale naturally because cardinality goes
-into row count, not column count. And the engine's hot loops are
-month-by-month, not row-by-row, so polars' expression-engine overhead
-is amortized over `rollout_count`-sized batches.
+Numpy stays viable inside individual cells (a column's underlying
+storage is numpy; pulling a column to numpy, doing one ufunc, and
+putting it back is fine for hot-path arithmetic kernels). But the
+state-read / state-write **surface** is polars.
 
-**Numpy is a reasonable fallback for tight arithmetic kernels.** Where
-a step is a single `(rollouts,)` × `(rollouts,)` arithmetic op (e.g.
-mark-to-market `value = units * unit_price`), numpy ufuncs are
-slightly leaner than polars expressions; the engine can pull the
-column out, do the op, and put the column back. This isn't
-exclusive-or with polars; the leaf storage in the polars frames is
-already numpy under the hood.
-
-**Which one we standardize on is a Wave 1 decision.** G1 (state-as-
-truth) implies committing to one shape. The current scaffold in
-`simulation_state.py` is nested-dataclass-of-numpy, so the
-incremental path is to land G1 in that shape and then re-evaluate
-whether to migrate to polars long-form as a follow-up — or to switch
-representations as part of G1 itself if the polars shape is
-sufficiently clearly better. Either way, the **non-goal** below
-(no Python loop over rollouts) is invariant under both choices.
-
-What the state actually carries (irrespective of physical shape):
+The working frames at one month boundary:
 
 ```
-SimulationState (month_position = M):
-  agents: per (actor_id):
-    cash_by_account:    (account_id) → (rollouts,) balance
-    holdings:           (asset_id)   → (asset_kind, (rollouts,) units, (rollouts,) basis)
-    liabilities:        (liability_id) → (liability_kind, property_id?,
-                                          (rollouts,) principal,
-                                          (rollouts,) interest_accrued_this_month,
-                                          (rollouts,) principal_paid_this_month)
-    property_stakes:    (property_id) → ((rollouts,) ownership_pct,
-                                          (rollouts,) contribution_used,
-                                          (rollouts,) equity_ledger)
-  properties: per (property_id):
-                       ((rollouts,) live_flag, (rollouts,) value, (rollouts,) cumulative_depreciation)
+cash_balance_frame:    (rollout_index, actor_id, account_id, balance_usd)
+asset_holding_frame:   (rollout_index, actor_id, asset_id, asset_kind,
+                        units, basis_usd)
+liability_frame:       (rollout_index, actor_id, liability_id,
+                        liability_kind, property_id?, principal_usd,
+                        interest_accrued_this_month_usd,
+                        principal_paid_this_month_usd)
+property_stake_frame:  (rollout_index, actor_id, property_id,
+                        ownership_pct, contribution_used_usd,
+                        equity_ledger_usd)
+property_state_frame:  (rollout_index, property_id, live, value_usd,
+                        cumulative_depreciation_usd)
+rollout_status_frame:  (rollout_index, status, failure_month?)
 ```
 
-Policies, transitions, and decision logic operate on these vectors
-directly — whether `state.agent("owner").cash("checking")` returns a
-`(rollouts,)` numpy vector or
-`cash_frame.filter(pl.col("actor_id") == "owner", pl.col("account_id") == "checking")`
-returns a polars Series, the calling code stays bulk-vectorized.
+Same schemas as the persistent long-form frames (see [Append-only logs
+as source of truth](#append-only-logs-as-source-of-truth) below) —
+**the working frame at month M IS the cross-section of the persistent
+frame at month M, computed by running the cumulative balance up to
+M**. There's only one schema per state kind.
 
-Concretely, the same sale-policy expressed either way:
+`SimulationState` wraps these frames into a single typed bundle so
+read sites can use stable accessors:
 
 ```python
-# Numpy form
-def sell_when_under_floor_numpy(state, market, policy) -> SellDecision:
-    cash = state.agent(policy.actor_id).cash("checking")                # (rollouts,)
-    under_floor = cash < float(policy.floor_usd)                        # (rollouts,) bool
-    requested = np.where(under_floor, policy.sale_amount_usd, 0.0)      # (rollouts,)
-    sp500_value = state.agent(policy.actor_id).holding("sp500").value(market)  # (rollouts,)
-    sale_usd = np.minimum(requested, sp500_value)                       # (rollouts,)
-    return SellDecision(actor_id=policy.actor_id, asset_id="sp500", sale_usd=sale_usd, ...)
+@dataclass(frozen=True)
+class SimulationState:
+    month_position: int
+    cash:        pl.DataFrame   # cash_balance_frame, filtered to current month
+    assets:      pl.DataFrame   # asset_holding_frame ...
+    liabilities: pl.DataFrame   # liability_frame ...
+    stakes:      pl.DataFrame   # property_stake_frame ...
+    properties:  pl.DataFrame   # property_state_frame ...
+    rollouts:    pl.DataFrame   # rollout_status_frame ...
+```
 
-# Polars form
-def sell_when_under_floor_polars(state_frame, market_frame, policy) -> pl.DataFrame:
+Reads are polars filters/joins; writes are polars `with_columns` + new
+`SimulationState` (frames are cheap to clone — only the column
+references move, the underlying chunks are shared).
+
+A sale policy expressed against this shape:
+
+```python
+def sell_when_under_floor(state: SimulationState, market: MarketView, policy: SellPolicy) -> pl.DataFrame:
+    """Returns one decision row per rollout that wants to sell, with
+    schema (rollout_index, actor_id, asset_id, sale_usd)."""
     return (
-        state_frame.filter(pl.col("actor_id") == policy.actor_id, pl.col("account_id") == "checking")
-        .join(market_frame.filter(pl.col("asset_id") == "sp500"), on="rollout_index")
+        state.cash
+        .filter(pl.col("actor_id") == policy.actor_id, pl.col("account_id") == "checking")
+        .join(
+            state.assets.filter(pl.col("actor_id") == policy.actor_id, pl.col("asset_id") == "sp500"),
+            on="rollout_index",
+        )
+        .join(market.sp500_price_at(state.month_position), on="rollout_index")
+        .with_columns(sp500_value=pl.col("units") * pl.col("unit_price"))
         .with_columns(
-            requested=pl.when(pl.col("cash") < float(policy.floor_usd))
+            requested=pl.when(pl.col("balance_usd") < float(policy.floor_usd))
             .then(pl.lit(float(policy.sale_amount_usd)))
             .otherwise(pl.lit(0.0)),
         )
         .with_columns(sale_usd=pl.min_horizontal("requested", "sp500_value"))
-        .select(["rollout_index", "actor_id", "sale_usd"])
-        .with_columns(asset_id=pl.lit("sp500"))
+        .filter(pl.col("sale_usd") > 0)
+        .select(["rollout_index"])
+        .with_columns(
+            actor_id=pl.lit(policy.actor_id),
+            asset_id=pl.lit("sp500"),
+            sale_usd=pl.col("sale_usd"),
+        )
     )
 ```
 
-Both express the same bulk-vectorized decision; neither involves a
-Python loop over rollouts. Pick the shape that minimizes
-representation transitions across the per-month pipeline; today that's
-likely polars (since logs + persistent frames are already polars), but
-the call is a Wave 1 design decision, not a foregone conclusion.
+Bulk-vectorized over rollouts via polars' expression engine; no
+Python loop over rollouts; the output is already the
+`asset_change_log` row shape (modulo a few derived columns), so it
+appends directly to the log.
 
-Immutability is structural — a new `SimulationState` is constructed
-each step (whether that's a new frozen-dataclass tree or a new pair of
-polars frames). The rebuild is cheap because the leaves (numpy arrays
-or polars columns) are shared by reference — only the wrapping
-structure is new.
+Failed rollouts stay in the frames. `rollout_status_frame` carries the
+failure flag; every subsequent operation joins against it and masks
+out failed rollouts at materialize time. No structural removal.
 
-One entry per agent — owner-plus-partner adds a second agent, partner
-usually only carries `property_stakes`. Failed/inactive rollouts stay
-in the same vectors/rows; failure is a flag column, not a structural
-removal — operations continue to apply across all rollouts and the
-failed ones get masked at materialize time. This is mostly in place
-via `simulation_state.py`; G1 makes the engine actually _read_ from
-it instead of treating it as a write target.
+One entry per agent — owner-plus-partner adds rows with
+`actor_id="partner"` to whichever frames it participates in (usually
+only `property_stake_frame`). Adding a third agent, a second cash
+account, a second crypto symbol, a second property: all just more
+rows, same schemas.
+
+The scaffolding in `simulation_state.py` today is the
+nested-dataclass-of-numpy shape; G1 migrates it to polars long-form
+frames as the canonical working state.
 
 ### Order of operations within a month
 
 The intended pure-functional shape (G1 + G3 deliver this). `state` here
-is the **one** `SimulationState` for this month — rollouts live inside
-it as a column / array dimension. Every line in the function body is a
-bulk operation over that dimension (numpy ufunc or polars expression,
-per Wave 1 design decision); there is no `for rollout in ...` loop:
+is the **one** `SimulationState` for this month, holding polars
+long-form frames keyed by `rollout_index`. Every line in the function
+body is a polars expression over those frames; there is no
+`for rollout in ...` loop:
 
 ```python
 def step(state: SimulationState, market: MarketView, scheduled: ScheduledCashflows, month: int) -> SimulationStep:
-    """state in → (state', logs) out. Every op is bulk-vectorized over
-    the rollout dimension carried inside each leaf. The rollout
-    dimension is silent in this function body, the same way it's
-    silent in today's `current_cash + sale_usd`."""
+    """state in → (state', logs) out. Every op is a polars expression
+    over rollout-keyed frames. The rollout dimension is silent in this
+    function body, the same way it's silent in today's
+    `current_cash + sale_usd`."""
 
     # 1. Mark-to-market — refresh holding values and property values.
     state = mark_to_market(state, market)
@@ -519,23 +519,19 @@ green set on every PR.
 ## Non-goal: per-rollout objects
 
 `SimulationState` is one object **per month**, not one **per rollout**.
-If at any point during this refactor someone reaches for
-`for rollout in range(N): ...` or a `list[SimulationState]` indexed by
-rollout, that's a bug in the refactor — back out and find the
-vectorized formulation. The leaves carry the rollout dimension as a
-bulk axis (numpy `(rollouts,)` array or polars column with
-`rollout_index` as a key — see [Single working state object](#single-working-state-object--vectorized-across-rollouts)).
-Per-month operations are bulk vectorized over that axis the same way
+The rollout dimension lives inside it as the `rollout_index` column of
+the working polars frames. If at any point during this refactor
+someone reaches for `for rollout in range(N): ...` or a
+`list[SimulationState]` indexed by rollout, that's a bug in the
+refactor — back out and find the polars-expression formulation.
+Per-month operations are vectorized over `rollout_index` the same way
 today's `current_cash + sale_usd` is a numpy add over all rollouts.
-Polars is a candidate physical realization specifically because its
-expression engine vectorizes over a column the same way numpy
-vectorizes over a `(rollouts,)` array — the no-per-rollout-loop
-constraint holds in either choice.
+Polars' expression engine vectorizes over a column the same way numpy
+vectorizes over a `(rollouts,)` array.
 
-A failed rollout is not removed from the working state. Failure is a
-flag column carried alongside it — operations continue to run over all
-rollouts; failed ones get their downstream events masked at the
-materialize step.
+A failed rollout is not removed from the working frames. Failure is
+a row in `rollout_status_frame`; subsequent operations join against it
+and mask out failed rollouts at materialize time.
 
 ## Out of scope
 
