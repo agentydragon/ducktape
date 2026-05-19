@@ -8,8 +8,10 @@ import pytest_bazel
 
 from augur.core.action_log import (
     CASHFLOW_LOG_SCHEMA,
+    PROPERTY_STATE_SCHEMA,
     CashflowCause,
     build_cashflow_log_from_scheduled,
+    build_property_state_frame,
     derive_cash_matrix,
 )
 from augur.core.scheduled_cashflows import build_scheduled_cashflows
@@ -141,6 +143,25 @@ def test_derive_cash_matrix_empty_log_returns_initial_repeated() -> None:
         month_index=month_index,
     )
     np.testing.assert_array_equal(matrix, np.array([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]]))
+
+
+def test_build_property_state_frame_shapes_match_inputs() -> None:
+    rollout_count = 2
+    month_index = np.array([0, 1, 2], dtype=np.int64)
+    live = np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
+    value = np.array([[500_000.0, 510_000.0, 0.0], [500_000.0, 510_000.0, 520_000.0]])
+    depr = np.array([[0.0, 1000.0, 1000.0], [0.0, 1000.0, 2000.0]])
+
+    frame = build_property_state_frame(
+        property_id="home", month_index=month_index, live=live, value_usd=value, cumulative_depreciation_usd=depr
+    )
+    assert frame.schema == PROPERTY_STATE_SCHEMA
+    assert frame.height == rollout_count * month_index.size
+    assert frame["property_id"].unique().to_list() == ["home"]
+    sold_row = frame.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 2)).row(0, named=True)
+    assert sold_row["live"] == 0.0
+    assert sold_row["value_usd"] == 0.0
+    assert sold_row["cumulative_depreciation_usd"] == 1000.0
 
 
 if __name__ == "__main__":

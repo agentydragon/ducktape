@@ -18,6 +18,14 @@ Phase 2 of the refactor introduces:
     initial cash and downstream phases will assert parity then drop the
     matrix maintenance.
 
+This module also exposes `PROPERTY_STATE_SCHEMA` and
+`build_property_state_frame(...)` — the per-(rollout, month, property)
+long-form frame whose rows are *facts* about each property
+(live mask, value, cumulative depreciation), built once from the
+precomputed property matrices. Not a log (no events accumulate);
+included here because the rest of the long-form derived frames are
+also defined here.
+
 Asset-change and liability logs come in later phases.
 """
 
@@ -132,3 +140,51 @@ def derive_cash_matrix(
         deltas[int(row["rollout_index"]), position] = row["amount_delta_usd"]
     cumulative = np.cumsum(deltas, axis=1)
     return initial_balance_per_rollout[:, None] + cumulative
+
+
+PROPERTY_STATE_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "property_id": pl.Utf8(),
+    "live": pl.Float64(),
+    "value_usd": pl.Float64(),
+    "cumulative_depreciation_usd": pl.Float64(),
+}
+
+
+def build_property_state_frame(
+    *,
+    property_id: str,
+    month_index: np.ndarray,
+    live: np.ndarray,
+    value_usd: np.ndarray,
+    cumulative_depreciation_usd: np.ndarray,
+) -> pl.DataFrame:
+    """Build the long-form `property_state_frame` for one property.
+
+    Inputs are `(rollouts, months)` matrices precomputed by the engine
+    (`property_live_mask`, `property_value`, and
+    `disposition.column("cumulative_property_depreciation_usd")`); the
+    output has one row per `(rollout, month)` with the property facts
+    flattened to long form. Property facts are shared across all
+    agents — no `actor_id` keying."""
+    rollout_count, month_count = live.shape
+    if value_usd.shape != live.shape or cumulative_depreciation_usd.shape != live.shape:
+        msg = f"shape mismatch: live={live.shape}, value={value_usd.shape}, depr={cumulative_depreciation_usd.shape}"
+        raise ValueError(msg)
+    if month_index.size != month_count:
+        msg = f"month_index size {month_index.size} does not match matrix month axis {month_count}"
+        raise ValueError(msg)
+    rollout_axis = np.repeat(np.arange(rollout_count, dtype=np.int64), month_count)
+    month_axis = np.tile(month_index.astype(np.int64), rollout_count)
+    return pl.DataFrame(
+        {
+            "rollout_index": rollout_axis,
+            "month_index": month_axis,
+            "property_id": [property_id] * (rollout_count * month_count),
+            "live": live.reshape(-1),
+            "value_usd": value_usd.reshape(-1),
+            "cumulative_depreciation_usd": cumulative_depreciation_usd.reshape(-1),
+        },
+        schema=PROPERTY_STATE_SCHEMA,
+    )
