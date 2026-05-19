@@ -102,6 +102,7 @@ from augur.core.scenario_set import (
 )
 from augur.core.scheduled_cashflows import ScheduledCashflowKind, build_scheduled_cashflows
 from augur.core.schemas import ColumnarTable
+from augur.core.simulation_state import AssetHolding, AssetKind, SimulationState
 
 MONTHS_PER_YEAR = 12
 MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
@@ -1558,6 +1559,36 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         for due, kind, creditor_id, policy_id in property_cost_obligation_specs
     )
 
+    # Phase 1 of the state-vector simulation refactor: maintain
+    # `SimulationState` in parallel with the existing 1D locals + matrix
+    # snapshots. The state object isn't yet read by the engine — it's a
+    # scaffold proving the per-rollout-per-asset shape. The end-of-month
+    # snapshot block at :~1833 rebuilds it from the locals; future phases
+    # will make state the source of truth and drop the locals.
+    cash_account_id = (
+        primary_owner_funding_sources.cash_source_account.account_id
+        if primary_owner_funding_sources.cash_source_account is not None
+        else "checking"
+    )
+    state = SimulationState(
+        month_position=-1,
+        cash_by_account={cash_account_id: current_cash},
+        holdings={
+            "sp500": AssetHolding(
+                asset_id="sp500",
+                asset_kind=AssetKind.GENERIC_SP500,
+                units=remaining_sp500_units,
+                basis_usd=remaining_sp500_basis,
+            ),
+            "crypto": AssetHolding(
+                asset_id="crypto",
+                asset_kind=AssetKind.CRYPTO,
+                units=remaining_crypto_quantity,
+                basis_usd=remaining_crypto_basis,
+            ),
+        },
+    )
+
     for month in range(month_count):
         current_cash = current_cash + scheduled.amount_at(
             kind=ScheduledCashflowKind.PROPERTY_SALE_CASH_FLOW, month_position=month
@@ -1833,15 +1864,40 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         crypto_multiplier = crypto_value_multipliers[:, month]
         crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
-        cash[:, month] = current_cash
+        # End-of-month snapshot. Rebuild `SimulationState` from the 1D
+        # locals and use it as the source for the per-asset matrix columns
+        # that Phase 1 covers (cash + SP500 + crypto units/basis); the
+        # rest of the snapshot block still reads from locals until later
+        # phases bring more state into the object.
+        state = SimulationState(
+            month_position=month,
+            cash_by_account={cash_account_id: current_cash},
+            holdings={
+                "sp500": AssetHolding(
+                    asset_id="sp500",
+                    asset_kind=AssetKind.GENERIC_SP500,
+                    units=remaining_sp500_units,
+                    basis_usd=remaining_sp500_basis,
+                ),
+                "crypto": AssetHolding(
+                    asset_id="crypto",
+                    asset_kind=AssetKind.CRYPTO,
+                    units=remaining_crypto_quantity,
+                    basis_usd=remaining_crypto_basis,
+                ),
+            },
+        )
+        cash[:, month] = state.cash(cash_account_id)
+        sp500_holding = state.holding("sp500")
+        remaining_sp500_units_by_month[:, month] = sp500_holding.units
+        remaining_sp500_basis_by_month[:, month] = sp500_holding.basis_usd
         generic_sp500_value[:, month] = sp500_value_after_sale
-        remaining_sp500_units_by_month[:, month] = remaining_sp500_units
-        remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
         generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
         checking_floor_shortfall[:, month] = sp500_shortfall
+        crypto_holding = state.holding("crypto")
+        remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
+        remaining_crypto_basis_by_month[:, month] = crypto_holding.basis_usd
         crypto_value[:, month] = crypto_value_after_sale
-        remaining_crypto_quantity_by_month[:, month] = remaining_crypto_quantity
-        remaining_crypto_basis_by_month[:, month] = remaining_crypto_basis
         private_equity_sale_taxable_gain[:, month] = private_equity_sale_taxable_gain_month
         private_equity_sale_tax[:, month] = private_equity_sale_tax_month
         private_equity_sale_opportunity_value[:, month] = np.maximum(

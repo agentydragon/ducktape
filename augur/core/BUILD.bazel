@@ -189,6 +189,24 @@ py_library(
 )
 
 py_library(
+    name = "simulation_state_py",
+    srcs = ["simulation_state.py"],
+    deps = [
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "simulation_state_test",
+    srcs = ["simulation_state_test.py"],
+    deps = [
+        ":simulation_state_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "scheduled_cashflows_py",
     srcs = ["scheduled_cashflows.py"],
     deps = [
@@ -227,6 +245,7 @@ py_library(
         ":scenario_set_py",
         ":scheduled_cashflows_py",
         ":schemas_py",
+        ":simulation_state_py",
         "@pypi//numpy",
         "@pypi//polars",
     ],
