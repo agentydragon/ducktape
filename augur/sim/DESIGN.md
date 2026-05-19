@@ -13,6 +13,50 @@ liquidity + multi-jurisdiction-tax spec without retrofitting. If a
 later layer requires moving primitives around, that's a design bug
 to catch here.
 
+## Canonical log; derived state
+
+**The event log is the source of truth.** State at month M is, by
+definition, `apply_events(initial_state, all events at months ≤ M)`.
+The simulator maintains a per-month state representation as an
+incremental cache (so each step doesn't re-aggregate the full log
+from month 0), but that cache is by construction equal to what
+re-deriving from the log would produce. There is no "state value
+the engine tracks independently of any logged event".
+
+Practical consequences of this discipline:
+
+- Every state transition that's the result of "something happened"
+  is logged as an event. State doesn't move without an event.
+- Two kinds of state attributes get treated differently:
+  - **Event-sourced attributes** — anything that's the cumulative
+    result of events: cash balances, asset lot units + basis,
+    liability principal, occupancy mode, cumulative depreciation,
+    ownership tenure, primary-residence-use months, rollout status.
+    These are aggregations over the event log.
+  - **Market-derived attributes** — anything that's "what's the
+    current price / current value / current availability": asset
+    unit prices, property current market values, sellability
+    masks. These are per-month reads from the market bundle, not
+    on the log. They're recomputed each month rather than stored
+    long-term.
+- The `apply_events(state, events) → state'` function is the only
+  state-mutation primitive. It's called once per step and is the
+  single testable site where "this event changes state this way"
+  is enforced.
+- The replay invariant is a property: `state_at(M) ==
+  apply_events(initial_state, log.filter(month ≤ M))` for every M.
+  Easy to assert in tests; opt-in `--check-replay` flag asserts it
+  per-month at runtime. If it ever fails, the bug is in
+  `apply_events` and the fix is in one place.
+
+The legacy engine had state mutation interleaved with transaction
+recording in a way that made the two get out of sync over time —
+mortgage payments updated some matrices but not others, sale
+recorders wrote one shape and tax allocation read another, and the
+"what's actually happened" answer was scattered across five
+overlapping representations. This design says: there's one answer
+to "what happened" (the log), and state is its incremental view.
+
 ## Five data layers
 
 State / configuration in the simulator lives at five distinct
@@ -48,64 +92,81 @@ engine's "five overlapping representations" problem.
    the existing augur market bundle, adapted to template-id-keyed
    lookups.
 
-4. **Working state — the canonical state-over-time long-form
-   frames** (polars). Six frames, all keyed by `(rollout_index,
-   month_index)` plus the entity-id columns for each kind:
+4. **Event log — the canonical record of what happened** (polars,
+   append-only). Every state-changing happening in the simulation
+   appears here:
+   - `events_log` — every event chronologically: cash transfers,
+     asset purchases / sales, lot consumptions, mortgage payments
+     (with P+I split), obligation accruals + settlements, tax
+     accruals + payments, income arrivals, depreciation accruals,
+     property purchases / sales (composite, multiple atomic rows
+     sharing a `cause_id`), occupancy-mode changes, ownership
+     starts / ends, failures. See [Event taxonomy](#event-taxonomy)
+     below for the kinds.
+   - Per-event-kind projections that fall out at output time:
+     `transactions_log` (cash-bearing events), `lot_dispositions_log`
+     (one row per consumed lot per sale, projected from
+     asset-sale events), `obligations_lifecycle_log` (accrual +
+     settlement pairs grouped by obligation), `failure_events_log`
+     (failure events), `policy_decisions_log` (every policy
+     evaluation, including no-fire), `tax_year_breakdown_log`
+     (year-end snapshots of the year-tax computation per
+     jurisdiction).
+
+   All event-sourced state at month M is `apply_events(initial_
+   state, events_log.filter(month ≤ M))`. The log is what survives
+   if working-state-layer 5 is dropped.
+
+5. **Working state — the incremental materialization of layer 4**
+   (polars, six frames). The simulator's current view of the
+   world. Six long-form frames keyed by `(rollout_index,
+   month_index)` plus entity-id columns:
    - `cash_balances` — `(rollout, month, agent_id, account_id,
-     balance_usd)`
+     balance_usd)`. **Event-sourced** — cumulative cash deltas.
    - `asset_lots` — `(rollout, month, agent_id, position_id,
      lot_id, template_id, units, basis_usd, acquired_month,
-     cost_basis_method, sellability_mask_ref)`
+     cost_basis_method, sellability_mask_ref, current_unit_price_
+     usd, current_market_value_usd)`. **Mixed**: units + basis +
+     acquired_month are event-sourced; current_unit_price_usd and
+     current_market_value_usd are market-derived (refreshed each
+     month from the market bundle).
    - `liabilities` — `(rollout, month, agent_id, liability_id,
      template_id, counterparty_agent_id, principal_usd,
      interest_accrued_this_month_usd, principal_paid_this_month_
-     usd, deductibility_flag, …)`
+     usd, deductibility_flag, …)`. Event-sourced.
    - `property_state` — `(rollout, month, property_id, location_
-     id, occupancy_mode, current_market_value_usd, adjusted_
-     basis_usd, cumulative_depreciation_usd, primary_residence_
-     use_months_within_window, owned_since_month, …)`
+     id, occupancy_mode, adjusted_basis_usd, cumulative_
+     depreciation_usd, owned_since_month, current_market_value_
+     usd, …)`. Mixed: occupancy_mode + adjusted_basis_usd +
+     cumulative_depreciation_usd + owned_since_month are
+     event-sourced; current_market_value_usd is market-derived.
+     §121 use-clock + ownership-tenure-clock are derived on demand
+     from the occupancy-change event history (not stored).
    - `property_stakes` — `(rollout, month, agent_id, property_id,
-     ownership_pct, contribution_used_usd, equity_ledger_usd)`
-     — single-row-per-property for single-owner; multi-row for
-     partner-equity stretch.
+     ownership_pct, contribution_used_usd, equity_ledger_usd)`.
+     Event-sourced. Single-row-per-property for single-owner;
+     multi-row for partner-equity stretch.
    - `rollout_status` — `(rollout, month, status, failure_event_
-     id, failure_month)`
+     id, failure_month)`. Event-sourced.
 
-   These frames **grow forward** as the loop advances: at month M
-   the frames have rows for months `0..M`. The state at month M is
-   `frame.filter(month_index == M)`; the per-rollout net worth
-   trajectory at agent A is `frame.filter(agent_id == A).group_by
-   (rollout_index, month_index).agg(...)`. The state-over-time IS
-   the output — there is no separate "snapshot matrices" layer
-   built post-hoc.
+   These frames **grow forward** as the loop advances; at month M
+   they hold rows for months `0..M`. The state at month M is
+   `frame.filter(month_index == M)`. Per-rollout / per-agent
+   queries are polars filters / group-bys.
 
-5. **Append-only logs** (polars, accumulated). The ledger of what
-   happened:
-   - `transactions_log` — every transaction (transfer, sale, tax
-     payment, etc.) chronologically with cause-id linking back to
-     the policy or obligation that produced it.
-   - `obligations_lifecycle_log` — every obligation accrual +
-     settlement with amount_due, amount_paid, status.
-   - `lot_dispositions_log` — one row per consumed lot per sale:
-     `(rollout, month, agent_id, position_id, lot_id, units_sold,
-     proceeds_usd, basis_consumed_usd, realized_gain_usd, holding_
-     period_days, tax_classification)`.
-   - `failure_events_log` — every unfunded required obligation.
-   - `policy_decisions_log` — every decision a policy made or
-     considered (including "did not fire because condition not
-     met"), for diagnostics.
-   - `tax_year_breakdown_log` — per `(rollout, agent, year,
-     jurisdiction)` the income totals, deduction amounts, bracket
-     walks, NIIT calc, totals.
+   **The state-over-time IS an output of the simulation, but it
+   is the materialization of the event log + market reads**, not a
+   separately-maintained truth. If we ever needed to compress the
+   simulation's persistence footprint, the log + initial state +
+   market bundle is the complete record; everything else is
+   derivable.
 
 The boundary discipline: layer 1 is law-and-place data, edited
 when reality changes. Layer 2 is what the user wants to simulate.
-Layer 3 is exogenous market input. Layer 4 IS the simulation —
-state evolves forward. Layer 5 is the audit trail of how state
-got from its prior value to its current value. Nothing in layer 4
-is computed from layer 5 post-hoc (that's the legacy engine's
-smell); nothing in layer 5 is needed to compute layer 4 (forward
-loop only reads state).
+Layer 3 is exogenous market input. **Layer 4 is what happened;
+layer 5 is its per-month view plus market-derived attributes.**
+The forward loop appends to layer 4 and incrementally maintains
+layer 5; the replay invariant guarantees they stay aligned.
 
 ## The forward loop
 
@@ -114,25 +175,38 @@ state_t = StateCrossSection.initial(scenario, market, rollout_count)
 append(state_t → state_frames at month 0)
 
 for month in range(horizon_months):
-    step_result = step(
+    # Step produces events for this month. Pure: no state mutation
+    # happens inside step(); state_t is read-only.
+    events_t = step_emit_events(
         state=state_t,
         market=market.at(month),
         jurisdictions=jurisdiction_set,
         scenario=scenario,
         month=month,
     )
-    state_t = step_result.next_state          # state at month+1
+
+    # Apply events to advance event-sourced state. Single mutation
+    # point. apply_events is the ONLY function that writes the
+    # event-sourced columns of state.
+    state_t_event_sourced = apply_events(state_t.event_sourced, events_t)
+
+    # Refresh market-derived attributes from the next month's
+    # market reads. Not part of apply_events because these aren't
+    # caused by events — they're per-month market lookups.
+    state_t = compose_state(
+        event_sourced=state_t_event_sourced,
+        market_derived=market.derive_at(state_t_event_sourced, month + 1),
+    )
+
     append(state_t → state_frames at month+1)
-    extend(step_result.transactions → transactions_log)
-    extend(step_result.obligations → obligations_lifecycle_log)
-    extend(step_result.lot_dispositions → lot_dispositions_log)
-    extend(step_result.failure_events → failure_events_log)
-    extend(step_result.policy_decisions → policy_decisions_log)
-    extend(step_result.tax_year_breakdown → tax_year_breakdown_log)
+    extend(events_t → events_log)
 
 return SimulationRun(
     state_frames=concat_state_frames(...),
-    logs=concat_logs(...),
+    events_log=concat(events_log),
+    # Per-event-kind projections (lot dispositions, obligations
+    # lifecycle, failures, policy decisions, tax breakdowns) are
+    # filters over events_log assembled at output time.
 )
 ```
 
@@ -142,188 +216,249 @@ step body — `state_t` is "the rollouts at one fixed month"); the
 loop tags it with `month_index = M` when appending to the
 forward-growing frames.
 
-## The step function — six phases
+**Replay invariant** (asserted in tests; opt-in `--check-replay`
+flag asserts it per-month at runtime):
 
-`step(state, market, jurisdictions, scenario, month) → StepResult`.
+```
+state_t.event_sourced ==
+    apply_events(
+        initial_state.event_sourced,
+        events_log.filter(month_index ≤ t),
+    )
+```
+
+If this ever fails, the bug is in `apply_events` (the only place
+that writes event-sourced state) and the fix is in one place.
+
+## The step function — five phases of event emission
+
+`step_emit_events(state, market, jurisdictions, scenario, month) →
+events_for_month`. The step is a **pure function**: it reads
+`state` (the per-month cross-section, including market-derived
+attributes refreshed at the prior iteration's end) and returns a
+batch of events for this month. It does not mutate state. The
+loop's `apply_events(state, events)` step is the single mutation
+point.
+
 Phases run in this fixed order. Each phase is one or more polars
 expressions over the rollout column; no Python iteration over
-rollouts; each phase produces transaction rows + an updated state
-cross-section.
+rollouts; each phase **appends rows to the within-step event
+buffer**. Phases later in the order can read events emitted by
+earlier phases via that buffer + a virtual "what state would be
+if we applied buffered events so far" projection (a thin wrapper
+over `apply_events` that doesn't commit). This lets phase 3 see
+the obligation accruals from phase 2 without phases having to
+share state mutation.
 
-1. **Mark-to-market.** Refresh asset unit prices and property
-   values from this month's market path. Pure read; no
-   transactions. Updates `asset_lots.unit_price_usd` (derived
-   column) and `property_state.current_market_value_usd`. Also
-   refreshes `asset_lots.sellability_at_this_month` from the
-   per-position sellability_mask_ref.
+1. **Scheduled events.** Apply scenario-scheduled events whose
+   month equals this month. Each emits one or more event rows:
+   - Property purchase event → emits a property-purchase composite
+     event (cash debit for down + buy closing, property creation,
+     mortgage origination).
+   - Property sale event → emits a property-sale composite event
+     (proceeds calc, mortgage payoff, net to seller, property
+     retirement, lot dispositions).
+   - Occupancy-mode switch → emits an occupancy-change event.
+   - Income arrival → emits an income event.
+   - Recurring-obligation accruals due this month → each emits an
+     obligation-accrual event (property tax, HOA, insurance,
+     maintenance, special assessment if due, mortgage payment,
+     monthly spend, outside rent).
+   - Tax-obligation accruals at marker months → each emits a
+     tax-accrual event per (agent, jurisdiction). Quarterly
+     estimated at Apr 15 / Jun 15 / Sep 15 / Jan 15 of next year;
+     year-end true-up at Dec.
 
-2. **Scheduled events.** Apply scenario-scheduled events whose
-   month equals this month:
-   - Property purchase event: instantiate a property_state row,
-     transfer down-payment + buy-closing-costs from agent cash,
-     originate the associated mortgage liability (a new
-     liabilities row).
-   - Property sale event: compute proceeds (current value − sale
-     closing costs), pay off any outstanding secured mortgage to
-     the counterparty agent's cash, transfer net proceeds to
-     seller, retire the property_state and liability rows (mark
-     `occupancy_mode = sold`), record the realized gain on the
-     lot-dispositions log.
-   - Occupancy-mode switch (primary → rental, rental → primary,
-     etc.): flip the property_state.occupancy_mode flag at this
-     month, which starts / stops depreciation accrual in phase 5
-     and starts / stops the rental-income stream in phase 3.
-   - Income arrival: W-2 paychecks, rental rent (per the
-     property's rental policy), classified for tax purposes.
-   - Recurring-obligation accruals due this month: property tax,
-     HOA, insurance, maintenance, special assessment if due,
-     mortgage payment, monthly spend, outside rent. Each accrues
-     an obligations_lifecycle row with status `accrued`.
-   - Tax-obligation accruals at marker months: quarterly
-     estimated tax (Apr 15, Jun 15, Sep 15, Jan 15 of next year)
-     based on safe-harbor of prior-year tax; year-end true-up at
-     Dec of each tax year based on the year's actual tax minus
-     estimated paid so far. Per-agent per-jurisdiction.
+2. **Settle required obligations.** For every accrued-but-unpaid
+   required obligation (read from the within-step buffer + the
+   prior month's still-open obligations), emit a settlement
+   event:
+   1. Pay from the agent's checking cash if sufficient → emits
+      an obligation-settlement event with cash side.
+   2. If short, walk the agent's funding chain. For each sale
+      step, emit an asset-sale event (consumes lots per the
+      position's cost-basis method) → cash side credits the
+      obligation. Stop selling as soon as the obligation is
+      funded.
+   3. If still short after the chain, emit a failure event for
+      the obligation + a rollout-status-change event flipping
+      the rollout to `failed` for this month.
 
-3. **Settle required obligations.** For every obligation row with
-   status `accrued` and required `true` (mortgage, property tax,
-   HOA, insurance, maintenance, tax — recurring and one-off —
-   special assessment, outside rent, partner contribution if in
-   scope), settle:
-   1. Pay from the agent's checking cash if sufficient.
-   2. If short, walk the agent's funding chain (sell from
-      configured asset-position preference order). Each sale
-      consumes lots per the position's cost-basis method, emits
-      lot-disposition rows, updates asset_lots units/basis, and
-      credits the agent's cash. Stop selling as soon as the
-      obligation is funded.
-   3. If still short after the chain, emit a failure_events row
-      and flip the rollout's status to `failed` for this month
-      (which persists for subsequent months until a configured
-      recovery, see S11.3 — phase 3 of a later month succeeds
-      and the status flips back to `active`).
-
-   Settlement order within phase 3 is fixed per agent: tax →
+   Settlement order within phase 2 is fixed per agent: tax →
    mortgage → property carrying costs → outside rent → partner
-   contribution → monthly spend. This is the existing engine's
-   priority and not currently parameterized; document it.
+   contribution → monthly spend.
 
-4. **Discretionary policies.** Each agent's configured policies
-   evaluate against the post-settlement state:
-   - Floor-triggered sale ("if checking < $X, sell $Y of position
-     Z"): a polars expression that masks the rollouts where the
-     condition holds and produces sale transactions for the masked
-     subset.
-   - Reinvest-excess ("if checking > $X, buy $Y of position Z").
-   - Any other configured policy.
+3. **Discretionary policies.** Each agent's configured policies
+   evaluate against the buffer's running view:
+   - Floor-triggered sale → emits asset-sale events for the
+     rollouts where the condition holds.
+   - Reinvest-excess → emits asset-purchase events.
+   - Other configured policies → emit appropriate events.
 
-   Each policy emits a policy_decisions row for every rollout
-   (whether or not it fired); the rows that fired also produce
-   transactions.
+   Each policy also emits a policy-decision diagnostic row
+   (whether or not it fired) for the policy_decisions projection.
 
-5. **End-of-month accruals.** State-only updates that don't move
-   cash:
-   - Depreciation tick on every property in `rental` occupancy
-     mode: `cumulative_depreciation_usd += monthly_depreciation
-     = building_portion_of_basis / (27.5 * 12)` per the
-     jurisdiction's residential-rental schedule.
-   - Mortgage liability principal-balance roll: next-month's
-     principal balance computed from this month's amortization
-     (already captured in the mortgage-payment transaction at
-     phase 3; this is just the forward-projection bookkeeping if
-     anything is needed).
-   - §121 use clock tick: `primary_residence_use_months_within_
-     window` increments by 1 for properties currently in
-     `primary_residence` mode; decrements the oldest month
-     falling off the 60-month window. (Or computed on demand at
-     sale; see decision below.)
-   - Asset lot ages increment by 1 (or derived on demand from
-     `acquired_month` vs current month at sale time — same
-     answer, derived-on-demand is simpler).
+4. **End-of-month accruals.** Emit non-cash state-changing
+   events:
+   - Depreciation accrual on every property in `rental`
+     occupancy mode → emits a depreciation-accrual event
+     `(rollout, month, property_id, monthly_depreciation_amount)`.
+     The jurisdiction's residential-rental schedule supplies the
+     denominator.
+   - Mortgage interest accrual / amortization tick is already
+     captured by the mortgage-payment event at phase 1; no
+     additional event needed.
+   - Clock-style state (§121 use clock, ownership tenure, asset
+     lot age) is **not** stored on state and **not** emitted as
+     events — it's derived on demand at sale time from the
+     occupancy-change event history (for §121) or from
+     `acquired_month` vs current month (for lot age). This
+     drops a category of "tick" events from the log and
+     simplifies state.
 
-6. **Construct next state cross-section.** Assemble all the
-   updates above into the `state_{M+1}` cross-section. Append-
-   ready for the loop's frame-extension step.
+5. **Rollout-status check.** If any required obligation in this
+   month went unfunded (failure event emitted in phase 2), the
+   rollout-status-change event was already emitted there. This
+   phase exists for any cross-phase status reconciliation (e.g.,
+   if a previously-failed rollout completed a settlement this
+   month, emit a rollout-status-change reverting to `active`).
 
-The returned `StepResult` carries:
-- `next_state`: the new cross-section.
-- `transactions`: all transactions produced this month (one row
-  per transaction, schema below).
-- `obligations`: every accrued / settled / unpaid obligation row
-  for this month.
-- `lot_dispositions`: rows for any sales this month.
-- `failure_events`: rows for any unfunded required obligations.
-- `policy_decisions`: rows for every policy evaluation this month.
-- `tax_year_breakdown`: rows when the year-end tax computation
-  fires (December of each year + scenario horizon end).
+The returned `events_for_month` is the union of all phase event
+buffers, in emission order. Each event row carries `(rollout,
+month, kind, cause_id, ...kind-specific columns)`. The loop's
+`apply_events(state_t, events_for_month)` consumes this and
+produces the event-sourced part of `state_{t+1}`.
 
-## Transaction taxonomy
+Per-event-kind projections (transactions, lot dispositions,
+obligation lifecycle, failures, policy decisions, tax
+breakdowns) are filters / joins / group-bys over `events_log`
+assembled at output time. They are not separately tracked
+alongside the log.
 
-Every state mutation goes through one of a small set of
-transaction kinds. Discriminated union; balance-checked at
-construction; each row on the `transactions_log` carries the kind
-plus the kind-specific columns.
+## Event taxonomy
 
-Cash-side balance invariant: every transaction's `Σ(agent_cash_
-delta_usd) == 0` (money moves between agents and the sink-agent
-representation of an external counterparty; see lender note in
-REQUIREMENTS.md).
+Every state-changing happening in the simulation appears as one
+or more events on the `events_log`. Discriminated union; each row
+carries `kind` + `cause_id` + kind-specific columns.
 
-Transaction kinds (the full set; not every kind is needed at
-every layer):
+The single per-step buffer is the union of all events emitted
+this month. `apply_events(state, events)` is the only function
+that mutates event-sourced state; it dispatches on `kind` to
+update the relevant frame.
+
+**Cash-side balance invariant**: for events that move cash,
+`Σ(agent_cash_delta_usd) == 0` across the agents the event
+touches. For events that aren't cash transactions (occupancy
+mode change, depreciation accrual, rollout status change), no
+cash invariant applies — they update non-cash state.
+
+Event kinds (the full set; not every kind is needed at every
+layer):
+
+**Cash-bearing (transactions):**
 
 - **Transfer** — cash moves between two agents' accounts. The
-  primitive that S1.1 uses. May carry an income classification on
-  the receiving side.
+  primitive that S1.1 uses. May carry an income classification
+  on the receiving side.
+- **Income arrival** — recurring cash inflow with a
+  tax-classification label (W-2 ordinary, rental income, etc.).
+  Practically a Transfer from a market-sink agent.
 - **Asset purchase** — cash leaves an agent's account, a new lot
-  appears on the asset_lots frame for that agent. (For market
-  purchases; the counterparty is the market sink.)
-- **Asset sale** — units of one or more lots are consumed (per the
-  position's cost-basis method); cash arrives. Realized gain is
-  derived from the lot dispositions, not carried separately on
-  the transaction itself.
-- **Property purchase** — composite: cash leaves (down payment +
-  buy closing), property_state row appears, mortgage liability
-  originates (linked to a separate Transfer-like cash-flow between
-  the lender's cash and the purchaser's cash for the loan principal,
-  which immediately routes back out as part of the down + balance
-  going to seller).
-- **Property sale** — composite: closing cost out, mortgage payoff
-  out, net proceeds to seller, property_state retires.
+  appears on the asset_lots frame. Counterparty is the market
+  sink (for market buys) or another agent (for inter-agent
+  transfers of an asset, if we ever model that).
+- **Asset sale** — units of one or more lots are consumed (per
+  the position's cost-basis method); cash arrives. The lot
+  consumption is part of the event; the realized gain falls
+  out of (proceeds − basis_consumed).
 - **Mortgage payment** — composite: borrower's cash out (P+I);
   lender's cash in; borrower's mortgage liability principal
-  decreases by P; the I portion is recorded for the borrower's
-  qualified-residence-interest-paid tally and the lender's
-  interest-income tally (lender is not-tax-paying per scope, but
-  the row is recorded for symmetry).
-- **Obligation settlement** — composite of "cash out + obligation
-  status flips to `paid`". When the obligation is a recurring
-  charge like property tax that has no specific counterparty
-  agent, the cash exits to a designated sink representing the
-  external counterparty (taxing authority, HOA, insurance
-  company). The sink is not modeled beyond being the recipient of
-  the funds.
-- **Tax accrual** — non-cash: a TAX_PAYABLE liability appears on
-  the agent's books at year-end; an offsetting tax-expense
-  classification is recorded for that year. Net effect: the
-  agent's net worth shows the tax liability accrued but not paid.
-- **Tax payment** — quarterly estimated payment or year-end
+  decreases by P. The I portion is captured as a column on the
+  event for the borrower's qualified-residence-interest tally
+  and the lender's interest-income tally (lender is
+  not-tax-paying per scope; the row exists for symmetry).
+- **Obligation settlement** — cash out from the obligated agent;
+  cash in to either a counterparty agent (intra-sim) or a sink
+  (taxing authority, HOA, insurance company); marks the
+  obligation as paid. If only partially funded, the obligation
+  remains open with `unpaid_amount_usd > 0` and a failure event
+  fires separately.
+- **Tax payment** — special-case obligation settlement against
+  the tax-payable liability. Quarterly estimated or year-end
   true-up. Cash out, tax_payable balance decreases.
-- **Income arrival** — recurring cash inflow with a tax-
-  classification label (W-2 ordinary, rental income, etc.).
-- **Depreciation accrual** — non-cash: property's `cumulative_
-  depreciation_usd` increases; the year's tally for the property's
-  owner accumulates for net-rental-income computation. Not on the
-  transactions log proper (it's not a cash event) but recorded
-  for audit.
+- **Property purchase / sale (composite)** — produces multiple
+  atomic events sharing a `cause_id`: a cash debit for down +
+  buy closing, an asset-purchase-equivalent (the property
+  appears on `property_state`), a mortgage-origination event
+  for the liability side. Property sale: closing cost out,
+  mortgage payoff (a Mortgage payment event that fully pays the
+  remaining balance), net proceeds to seller (a Transfer to the
+  seller's cash), and a property retirement.
 
-The "composite" transactions (Property purchase / sale, Mortgage
-payment, etc.) produce multiple rows on the transactions_log —
-one row per atomic balance-checked cash/asset movement, all
-sharing a `cause_id` linking them as one logical event. The
-materialize step can group by cause_id to produce a coarse-grained
-view (e.g., "this is one mortgage payment with these P+I splits")
-when the user wants that.
+**Non-cash state mutations:**
+
+- **Obligation accrual** — an obligation comes into being for
+  this month (a property tax bill is due, a tax-payment marker
+  fires, the mortgage's monthly payment is due). Adds a row to
+  the (open obligations view, derivable from log) and feeds
+  phase 2's settlement.
+- **Tax accrual** — at year-end, a TAX_PAYABLE liability appears
+  on the agent's books for the year's actual tax minus already-
+  paid estimated. Subsequent tax-payment events settle it.
+- **Depreciation accrual** — property's `cumulative_
+  depreciation_usd` increases by `monthly_depreciation_amount`.
+  Year-end tax computation reads the year's sum.
+- **Occupancy-mode change** — property's `occupancy_mode` flips
+  from one value to another at this month. Drives whether
+  depreciation accrues, whether rental-income arrives, whether
+  the §121 use clock is ticking. The §121 use clock and ownership
+  tenure are derived on demand from the chronological sequence
+  of these events — they're not stored on state.
+- **Mortgage origination** — a new amortizing-loan liability
+  comes into being for a borrower with a counterparty lender.
+  Cash side (loan principal → borrower cash) is recorded as part
+  of the property-purchase composite or as a standalone Transfer
+  if origination is standalone.
+- **Failure event** — a required obligation went unfunded after
+  the funding chain ran. Row carries `(rollout, month,
+  obligation_id, obligation_type, amount_due, amount_paid,
+  shortfall, attempted_funding_sources)`.
+- **Rollout-status change** — `rollout_status` flips from
+  `active` to `failed` (or back). Event-sourced; the
+  `rollout_status` frame is the per-month materialization.
+- **Policy decision (diagnostic)** — every policy evaluation
+  for every rollout, including no-fires. Doesn't change
+  event-sourced state directly (the asset-sale / asset-purchase
+  events the policy emitted do that), but is on the log for
+  diagnostics. The `policy_decisions_log` projection filters
+  for these.
+- **Tax-year breakdown (diagnostic)** — at each year-end, a
+  snapshot of the year-tax computation: per `(rollout, agent,
+  year, jurisdiction)` the income totals, deduction amounts,
+  bracket walks, NIIT, totals. Doesn't itself drive state
+  (the tax accrual + tax payment events do that), but is a
+  first-class diagnostic on the log.
+
+Composite events (Property purchase / sale, Mortgage origination
++ down-payment in one logical purchase, etc.) emit multiple
+atomic event rows sharing a `cause_id`. Each atomic row is
+balance-checked on its own. The materialize step can
+`group_by(cause_id)` to produce a coarse-grained "one mortgage
+payment with P+I split" view when the user wants that.
+
+The `apply_events` function dispatches on event `kind` to update
+the right frame:
+- Cash-bearing events → update `cash_balances`.
+- Asset purchase / sale → update `asset_lots`.
+- Mortgage payment / origination → update `liabilities`.
+- Property purchase / sale → update `property_state` (+ the
+  cash + asset + liability rows that fall out).
+- Occupancy-mode change / depreciation accrual → update
+  `property_state`.
+- Rollout-status change → update `rollout_status`.
+- Tax accrual → update `liabilities` (tax_payable row).
+- Failure event / policy decision / tax-year breakdown →
+  diagnostic only, no state mutation.
 
 ## Templates, jurisdictions, locations as data
 
