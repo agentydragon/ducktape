@@ -24,18 +24,18 @@ through.
 
 ## Status
 
-| Step | Status      | Notes                                                      |
-| ---- | ----------- | ---------------------------------------------------------- |
-| 1    | NOT STARTED | Inventory contributors and consumers (Phase 1 below)       |
-| 2    | NOT STARTED | Define `LoweringOp` algebra + `LoweringPlan` builder       |
-| 3    | NOT STARTED | Implement `seal()` → `CheckedPlan` with conflict diagnosis |
-| 4    | NOT STARTED | Single-pass `execute()` driving AST + side-table updates   |
-| 5    | NOT STARTED | Migrate `chunk_renames` consumer onto plan; delete shim    |
-| 6    | NOT STARTED | Migrate naturalizer collect-funcs onto plan                |
-| 7    | NOT STARTED | Migrate `disambiguate_import_locals` onto plan             |
-| 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves      |
-| 9    | NOT STARTED | Retire `plan_module_reference_needs` reverse-lookup        |
-| 10   | NOT STARTED | Retire `normalize_relative_module_specifier` defensive use |
+| Step | Status      | Notes                                                                                              |
+| ---- | ----------- | -------------------------------------------------------------------------------------------------- |
+| 1    | DONE        | Inventory contributors and consumers — captured in "Inventory before starting" section below       |
+| 2    | DONE        | `LoweringOp` + `LoweringPlan` + submit/readback API in `lowering/lowering_plan.rs` (13 unit tests) |
+| 3    | NOT STARTED | Flesh out `seal()` → `CheckedPlan` with cross-op + realizability checks                            |
+| 4    | NOT STARTED | Single-pass `execute()` driving AST + side-table updates                                           |
+| 5    | NOT STARTED | Migrate `chunk_renames` consumer onto plan; delete shim                                            |
+| 6    | NOT STARTED | Migrate naturalizer collect-funcs onto plan                                                        |
+| 7    | NOT STARTED | Migrate `disambiguate_import_locals` onto plan                                                     |
+| 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves                                              |
+| 9    | NOT STARTED | Retire `plan_module_reference_needs` reverse-lookup                                                |
+| 10   | NOT STARTED | Retire `normalize_relative_module_specifier` defensive use                                         |
 
 ## Problem shape
 
