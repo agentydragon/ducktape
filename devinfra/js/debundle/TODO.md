@@ -320,31 +320,6 @@ propKeyA` and `collect_naturalization_renames_from_function` says
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
 
-## Rename `schedule.json` artifact to `factorization.json`
-
-PR #1655 / #1657 renamed the `Schedule` type to `ChunkFactorization`
-(+ split off `ChunkAnalysis`) and cleaned up doc / code references,
-but the on-disk per-chunk validation report
-`<reports>/<chunk_id>/schedule.json` still uses the old name. The
-file is read by gaffer-private's `tana-peel` skills + the
-`AGENT_MODULE_PEEL_GUIDE.md` runbook (find-globs for
-`schedule.json`), so renaming requires a coordinated change:
-
-- **ducktape** side: rename the write filename in
-  `lowering/materialize.rs` (the `write_chunk_report_json(...)`
-  call and the materializer's atomic-unit-conflict error message),
-  the `e2e/realizability_test.rs` fixture path, and the
-  `facts.rs` doc-comment that points at the file.
-- **gaffer-private** side: update the `find` invocations in
-  `tana/re/web/spec/AGENT_MODULE_PEEL_GUIDE.md`, the
-  `.claude/skills/tana-peel/SKILL.md` runbook, and
-  `.claude/skills/tana-peel/tooling.md` reference.
-
-Land both sides in lock-step (or in a release-pin-aware order)
-so an in-flight Tana peel doesn't suddenly miss the file. Adds
-to the broader Tana peel coordination tracked in
-`gaffer-private/tana/re/web/`.
-
 <!--
 The "Migrate BindingName = String → swc's hygiene-preserving Id"
 entry that used to live here was done by the Id migration PR.

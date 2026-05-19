@@ -510,7 +510,7 @@ export { a1, a2, b1 };
     assert!(
         rejected
             .report_root
-            .join("static/app/schedule.json")
+            .join("static/app/factorization.json")
             .exists(),
         "schedule report should be written alongside owner graph",
     );

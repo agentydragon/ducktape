@@ -191,7 +191,7 @@ pub enum StatementKind {
 /// body, if any. Returns the source-order ordinal of the offending
 /// statement (in the post-comma-list-split view that
 /// `analyze_chunk` uses, so reports align with statement indices
-/// in `<chunk_id>/schedule.json`).
+/// in `<chunk_id>/factorization.json`).
 ///
 /// "Top-level" excludes function/method/arrow/getter/setter
 /// bodies and class instance-field initializers — those are lazy
