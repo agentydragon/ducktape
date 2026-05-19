@@ -24,18 +24,22 @@ through.
 
 ## Status
 
-| Step | Status      | Notes                                                                                              |
-| ---- | ----------- | -------------------------------------------------------------------------------------------------- |
-| 1    | DONE        | Inventory contributors and consumers — captured in "Inventory before starting" section below       |
-| 2    | DONE        | `LoweringOp` + `LoweringPlan` + submit/readback API in `lowering/lowering_plan.rs` (13 unit tests) |
-| 3    | IN PROGRESS | `seal()` cross-op coherence check landed; realizability gate deferred (needs `OwnerGraph` access)  |
-| 4    | IN PROGRESS | `apply_chunk_renames` (4a) lands in `lowering/lowering_execute.rs`; move application (4b) deferred |
-| 5    | NOT STARTED | Migrate `chunk_renames` consumer onto plan; delete shim                                            |
-| 6    | NOT STARTED | Migrate naturalizer collect-funcs onto plan                                                        |
-| 7    | NOT STARTED | Migrate `disambiguate_import_locals` onto plan                                                     |
-| 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves                                              |
-| 9    | NOT STARTED | Retire `plan_module_reference_needs` reverse-lookup                                                |
-| 10   | NOT STARTED | Retire `normalize_relative_module_specifier` defensive use                                         |
+| Step | Status      | Notes                                                                                                                                                                                           |
+| ---- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | DONE        | Inventory contributors and consumers — captured in "Inventory before starting" section below                                                                                                    |
+| 2    | DONE        | `LoweringOp { Rename, MoveBinding }` + `LoweringPlan` + submit/readback API in `lowering/lowering_plan.rs` (13 unit tests)                                                                      |
+| 3a   | DONE        | `seal()` cross-op rename/move coherence check (4 unit tests)                                                                                                                                    |
+| 3b   | NOT STARTED | Plumb `OwnerGraph` + initial `Partition` into `LoweringPlan::new`; build post-execute partition at seal time; call `realizability::check_realizability` and surface its rejection               |
+| 4a   | DONE        | `apply_chunk_renames` VisitMut in `lowering/lowering_execute.rs` (4 unit tests; handles `Scope::Chunk` only — scope-aware rename application lands with Phase 6)                                |
+| 4b   | NOT STARTED | `apply_moves` body-splitter that consumes `plan.move_index`, walks declarators per `Id`, splits multi-binding statements across destinations (mirrors today's `remaining_item_after_selection`) |
+| 4c   | NOT STARTED | Side-table rebuilds during execute (`runtime_imports`, `referenced_idents`, export tables, source-map fragments, cross-module binding indexes), all keyed on original `Id`                      |
+| 4d   | NOT STARTED | `LoweringOp { RewriteImportSpecifier, AddExport, ReorderHoists }` variants — added when their first contributor is migrated                                                                     |
+| 5    | NOT STARTED | Migrate `chunk_renames` consumer (`lowering/chunk_renames.rs` + the consumption in `lower.rs:167-209`) onto Plan submission + `apply_chunk_renames`; delete `body_renames` shim                 |
+| 6    | NOT STARTED | Migrate naturalizer `collect_*` funcs + `RenameAndShorthandNaturalizer` onto Plan; thread `Scope::Function(_)` through the execute visitor                                                      |
+| 7    | NOT STARTED | Migrate `disambiguate_import_locals` + `disambiguate_residual_entry_import_locals` onto Plan via `NamePolicy::MintOrSuffix` at `Priority::ImportInduced`                                        |
+| 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves into Phase A/B `MoveBinding` ops; retire the implicit `binding_assignment`-driven body splitting in favour of `apply_moves`               |
+| 9    | NOT STARTED | Retire `plan_module_reference_needs` reverse-lookup (#1631 fix) — dead once renames + runtime imports share one final mapping                                                                   |
+| 10   | NOT STARTED | Retire `normalize_relative_module_specifier` defensive use (#1627 fix); the helper can stay as a path utility but the call site in module-specifier rewriting drops it                          |
 
 ## Problem shape
 
