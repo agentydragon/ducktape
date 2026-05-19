@@ -1586,6 +1586,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 units=remaining_crypto_quantity,
                 basis_usd=remaining_crypto_basis,
             ),
+            "private_equity": AssetHolding(
+                asset_id="private_equity",
+                asset_kind=AssetKind.PRIVATE_EQUITY,
+                units=remaining_private_equity_units,
+                basis_usd=remaining_private_equity_basis,
+            ),
         },
     )
 
@@ -1885,6 +1891,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     units=remaining_crypto_quantity,
                     basis_usd=remaining_crypto_basis,
                 ),
+                "private_equity": AssetHolding(
+                    asset_id="private_equity",
+                    asset_kind=AssetKind.PRIVATE_EQUITY,
+                    units=remaining_private_equity_units,
+                    basis_usd=remaining_private_equity_basis,
+                ),
             },
         )
         cash[:, month] = state.cash(cash_account_id)
@@ -1905,8 +1917,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
         private_equity_value[:, month] = private_equity_value_before_sale - private_equity_sale_month
         private_equity_sale_usd_by_month[:, month] = private_equity_sale_month
-        remaining_private_equity_units_by_month[:, month] = remaining_private_equity_units
-        remaining_private_equity_basis_by_month[:, month] = remaining_private_equity_basis
+        pe_holding = state.holding("private_equity")
+        remaining_private_equity_units_by_month[:, month] = pe_holding.units
+        remaining_private_equity_basis_by_month[:, month] = pe_holding.basis_usd
 
     # Property-cost obligation accumulators emit their row-blocks once the
     # month loop has finished writing per-month decisions into their matrices.
