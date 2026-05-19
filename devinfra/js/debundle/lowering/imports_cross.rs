@@ -43,6 +43,55 @@ pub(super) fn cross_module_imports_for_plan(
         .collect()
 }
 
+/// Emit `import "./<provider>.js";` (side-effect-only, no specifiers)
+/// for each phantom provider. The phantom imports surface ducktape's
+/// at-init promotion constraints as real ESM imports so the linker's
+/// DFS visits the providers as dependencies of this module — needed
+/// because the actual bindings being read live in residual function
+/// decls (e.g. `gR(iA)` → `startBootProgressTracking()` → reads
+/// `tanaLogger`), so the per-module emit path never adds an explicit
+/// import for `tanaLogger` in `init_state.js` on its own.
+///
+/// Sorted by linker_position so the resulting import order matches
+/// `cross_module_imports_for_plan`. Side-effect imports are emitted
+/// FIRST among module imports so the linker visits them before any
+/// downstream `import { … } from "./entry.js"` (which would otherwise
+/// short-circuit when entry is on the DFS stack, leaving the phantom
+/// targets unvisited).
+pub(super) fn phantom_side_effect_imports(
+    from_file: &str,
+    phantom_providers: BTreeSet<usize>,
+    factorization: &ChunkFactorization,
+) -> Vec<ModuleItem> {
+    let mut providers: Vec<usize> = phantom_providers.into_iter().collect();
+    providers.sort_by_key(|&idx| {
+        factorization
+            .linker_position(ModuleId(LogicalModuleIndex(idx)))
+            .unwrap_or(usize::MAX)
+    });
+    providers
+        .into_iter()
+        .filter_map(|provider_index| {
+            let provider = factorization
+                .analysis
+                .logical_module(LogicalModuleIndex(provider_index))?;
+            let source = super::util::relative_source(from_file, &provider.target_file);
+            Some(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+                span: DUMMY_SP,
+                specifiers: Vec::new(),
+                src: Box::new(Str {
+                    span: DUMMY_SP,
+                    value: source.into(),
+                    raw: None,
+                }),
+                type_only: false,
+                with: None,
+                phase: ImportPhase::Evaluation,
+            })))
+        })
+        .collect()
+}
+
 pub(super) fn residual_entry_imports_for_moved_body(
     module_id: &str,
     entry_file: &str,

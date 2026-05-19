@@ -223,15 +223,19 @@ type StatementFactsInput = crate::StatementFacts;
 /// traversal needs to evaluate (deepest leaf first).
 fn compute_linker_order(
     dep_graph: &ModuleQuotient,
-    logical_modules: &[LogicalModule],
+    _logical_modules: &[LogicalModule],
 ) -> Vec<ModuleId> {
+    // Only modules that participate in a CONSTRAINING edge end up in
+    // linker_order. Modules with only `LazyUse` edges (or no edges at
+    // all) have no init-order constraint and are left out, so
+    // `linker_position_by_module.get(m)` returns `None` for them.
+    // `compute_source_import_order`'s `None`-handling sorts them
+    // AFTER constraining members within their SCC — preserving
+    // Lemma 2's "dependent first" within the constraining subgraph
+    // without letting lazy-only members displace the dependent. See
+    // <accepted_spec_runs_under_node_test::early_entry_importer_…>
+    // for the runtime TDZ that motivated this change.
     let mut graph = DiGraphMap::<ModuleId, ()>::new();
-    // Add every module the factorization knows about so the order
-    // covers them even if they have no dep-graph edges (singleton
-    // leaves still need a deterministic position for emit ordering).
-    for idx in 0..logical_modules.len() {
-        graph.add_node(ModuleId(LogicalModuleIndex(idx)));
-    }
     for (from, to, weight) in dep_graph.all_edges() {
         if !weight.constrains_init_order() {
             continue;
@@ -310,19 +314,26 @@ fn compute_source_import_order(
         let b_rank = b_scc
             .and_then(|i| scc_rank.get(i).copied())
             .unwrap_or(usize::MAX);
-        let a_pos = linker_position_by_module
-            .get(a)
-            .copied()
-            .unwrap_or(usize::MAX);
-        let b_pos = linker_position_by_module
-            .get(b)
-            .copied()
-            .unwrap_or(usize::MAX);
-        // (SCC rank ASC, intra-SCC linker_position DESC). DESC
-        // reverses within each SCC; the rank ASC keeps SCCs
-        // dependency-first relative to each other. For singleton
-        // SCCs, the DESC reverse is a no-op (only one member).
-        a_rank.cmp(&b_rank).then_with(|| b_pos.cmp(&a_pos))
+        let a_pos = linker_position_by_module.get(a).copied();
+        let b_pos = linker_position_by_module.get(b).copied();
+        // (SCC rank ASC, intra-SCC linker_position DESC). DESC reverses
+        // within each SCC so the cycle dependent (highest linker_position
+        // = last in linker_order = the dependent) comes first in entry's
+        // source; the rank ASC keeps SCCs dependency-first relative to
+        // each other.
+        //
+        // Members with NO `linker_position` (not in the constraining-edge
+        // graph — only reachable via `LazyUse`) must come LAST within
+        // their SCC. Otherwise they'd displace the constraining dependent
+        // from first position, and ESM's DFS would enter the SCC via
+        // them, bypassing Lemma 2's planned post-order. See
+        // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
+            (Some(a), Some(b)) => b.cmp(&a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        })
     });
     nodes
 }

@@ -98,19 +98,19 @@ impl EdgeReason {
         }
     }
 
-    pub(crate) fn is_eager_use(&self) -> bool {
+    pub fn is_eager_use(&self) -> bool {
         self.kind == DepKind::EagerUse
     }
-    pub(crate) fn is_rebind(&self) -> bool {
+    pub fn is_rebind(&self) -> bool {
         matches!(self.kind, DepKind::EagerRebind | DepKind::LazyRebind)
     }
-    pub(crate) fn is_sequenced(&self) -> bool {
+    pub fn is_sequenced(&self) -> bool {
         self.kind == DepKind::Sequenced
     }
     /// Every kind except `LazyUse` constrains realizability.
     /// Stated as exclusion so adding a new `DepKind` variant
     /// forces an explicit decision here.
-    pub(crate) fn constrains_init_order(&self) -> bool {
+    pub fn constrains_init_order(&self) -> bool {
         self.kind != DepKind::LazyUse
     }
 }

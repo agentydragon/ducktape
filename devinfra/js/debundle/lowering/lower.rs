@@ -416,6 +416,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             residual_entry_imports,
             missing_residual_exports,
             runtime_reimports,
+            phantom_side_effect_providers,
         } = time_phase!(timings, "module.plan_references", {
             plan_module_reference_needs(
                 index,
@@ -439,6 +440,20 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 factorization,
                 &mut module_import_locals,
                 &mut module_import_renames,
+            )
+        });
+        // Phantom side-effect imports surface at-init-promotion-derived
+        // constraining edges as real ESM imports so the linker's DFS
+        // visits the provider modules as dependencies. Prepended so
+        // they sort before residual-entry and runtime re-imports, all
+        // of which would short-circuit the cycle when the residual is
+        // mid-evaluation. See `phantom_side_effect_imports` and
+        // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+        let phantom_imports = time_phase!(timings, "module.build_phantom_imports", {
+            phantom_side_effect_imports(
+                &plan.target_file,
+                phantom_side_effect_providers,
+                factorization,
             )
         });
         let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
@@ -477,8 +492,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         })?;
         module_imports.append(&mut residual_entry_imports);
         module_imports.append(&mut runtime_reimports);
-        module_imports.append(&mut body);
-        body = module_imports;
+        // Phantom side-effect imports go FIRST in the emitted module
+        // so the linker DFS-recurses into the providers before the
+        // residual/entry import (which would short-circuit when the
+        // residual is mid-evaluation).
+        let mut combined = phantom_imports;
+        combined.append(&mut module_imports);
+        combined.append(&mut body);
+        body = combined;
         // Apply chunk_renames to the assembled module body so that
         // import-specifier aliases and references in the moved code
         // both pick up the spec's rename. Without this, residual

@@ -27,6 +27,15 @@ pub(super) struct ModuleReferenceNeeds<'a> {
     pub(super) residual_entry_imports: BTreeMap<String, EntryExport>,
     pub(super) missing_residual_exports: BTreeSet<String>,
     pub(super) runtime_reimports: BTreeMap<String, &'a RuntimeImportInfo>,
+    /// Side-effect-only providers: modules this module has a constraining
+    /// edge to (via at-init call promotion) but whose bindings aren't
+    /// directly referenced in this module's body. Without an explicit
+    /// ESM `import "./<provider>.js";` here, ESM DFS wouldn't see the
+    /// dependency and would evaluate this module's body before the
+    /// provider's body — a runtime TDZ on any of the provider's
+    /// declared bindings the call chain transitively reads. See
+    /// `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+    pub(super) phantom_side_effect_providers: BTreeSet<usize>,
 }
 
 pub(super) type SourceImportResolutionKey = (String, String, String);
@@ -217,5 +226,48 @@ pub(super) fn plan_module_reference_needs<'a>(
             needs.runtime_reimports.insert(name_str.to_string(), info);
         }
     }
+
+    // Phantom side-effect providers (Lemma 2's emit-side fix):
+    //
+    // Walk this module's owners' outgoing constraining edges in the
+    // owner graph. Any target module not already in
+    // `cross_module_imports_by_provider` (and not residual) needs a
+    // side-effect-only ESM import so the linker visits it as a
+    // dependency. Without this, at-init promotion records the
+    // constraint at the ducktape level but ESM doesn't see it (the
+    // actual `import` for the read target lives in the residual
+    // function decl's home, not in this module), so DFS might evaluate
+    // this module's body before the provider's.
+    //
+    // Skip residual: it's entry, the root of every chunk's import
+    // tree. Adding a side-effect import of entry from a peeled module
+    // is redundant — entry is always reachable.
+    let module_id = ModuleId(LogicalModuleIndex(module_index));
+    let residual = factorization.partition.residual();
+    let owner_graph = &factorization.analysis.owner_graph;
+    for (owner_id, owner_module) in factorization.partition.iter() {
+        if owner_module != module_id {
+            continue;
+        }
+        for &edge_id in owner_graph.out_edges_of(owner_id) {
+            let edge = &owner_graph.edges[edge_id.0];
+            if !edge.reason.constrains_init_order() {
+                continue;
+            }
+            let target_module = factorization.partition.of(edge.to);
+            if target_module == module_id || target_module == residual {
+                continue;
+            }
+            let ModuleId(LogicalModuleIndex(target_index)) = target_module;
+            if needs
+                .cross_module_imports_by_provider
+                .contains_key(&target_index)
+            {
+                continue;
+            }
+            needs.phantom_side_effect_providers.insert(target_index);
+        }
+    }
+
     needs
 }
