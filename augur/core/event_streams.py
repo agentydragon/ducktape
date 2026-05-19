@@ -29,6 +29,10 @@ Migrated so far:
   policy tries cash, then sells SP500, then crypto, etc.).
 * **Lot dispositions** (root) → `LotDisposition` (one row per tax-lot
   consumption during a sale event).
+* **Market observations** (two roots) → `MarketObservation` (union of
+  `MarketPathObservation` — dense one-per-`(rollout, month)` from the
+  `MarketBundle` multiplier matrices — and `PrivateEquitySaleOpportunityObservation`
+  — sparse one-per-`(rollout, month, issuer)` from the opportunity recorders).
 """
 
 from __future__ import annotations
@@ -36,6 +40,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from typing import Any
 
+import numpy as np
 import polars as pl
 
 from augur.core.accounting import LotAssetClass, LotDisposition
@@ -47,9 +52,13 @@ from augur.core.scenario_set import (
     FundingDecision,
     FundingDecisionType,
     FundingSourceType,
+    MarketObservation,
+    MarketObservationType,
+    MarketPathObservation,
     Obligation,
     ObligationStatus,
     ObligationType,
+    PrivateEquitySaleOpportunityObservation,
     SettlementResult,
     SettlementStatus,
 )
@@ -347,6 +356,160 @@ def materialize_lot_dispositions(df: pl.DataFrame) -> Iterator[LotDisposition]:
             scenario_input_id=row.get("scenario_input_id"),
             projection_trajectory_id=row.get("projection_trajectory_id"),
         )
+
+
+# -- market observations -------------------------------------------------------
+#
+# Two roots: a dense `(rollouts × months)` path frame from the `MarketBundle`
+# multiplier matrices, and a sparse opportunity frame for per-issuer tender
+# events. The unified `materialize_market_observations` merges them in the
+# canonical `(month, rollout, observation_type)` order — `market_path` sorts
+# before `private_equity_sale_opportunity` lexicographically.
+
+MARKET_PATH_OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "location_id": pl.String,
+    "inflation_multiplier": pl.Float64,
+    "sp500_multiplier": pl.Float64,
+    "private_equity_value_multiplier": pl.Float64,
+    "home_value_multiplier": pl.Float64,
+    "rent_multiplier": pl.Float64,
+    "mortgage_30y_rate_pct": pl.Float64,
+    "private_equity_sale_opportunity_event": pl.Boolean,
+}
+
+PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "source_asset_id": pl.String,
+    "opportunity_id": pl.String,
+    "opportunity_cause_id": pl.String,
+    "sale_opportunity_value_usd": pl.Float64,
+    "private_equity_value_before_sale_usd": pl.Float64,
+}
+
+
+def build_market_path_observations_frame(
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    month_index: np.ndarray,
+    location_id: str | None,
+    inflation_multipliers: np.ndarray,
+    sp500_multipliers: np.ndarray,
+    pe_value_multipliers: np.ndarray,
+    home_value_multipliers: np.ndarray,
+    rent_multipliers: np.ndarray,
+    mortgage_30y_rate_pct: np.ndarray,
+    pe_sale_opportunity_mask: np.ndarray,
+) -> pl.DataFrame:
+    """Build the dense `(rollouts × (months+1))` market-path frame in one
+    shot from the bundle's multiplier matrices, replacing the legacy
+    per-cell Pydantic loop in `_market_path_observations` that constructed
+    `rollouts × (months+1)` `MarketPathObservation` instances at scenario
+    start."""
+
+    months = horizon_months + 1
+    rollout_axis, month_axis = np.indices((rollout_count, months), sparse=False)
+    rollout_col = rollout_axis.ravel().astype(np.int64)
+    month_col = month_index[month_axis.ravel()].astype(np.int64)
+    return pl.DataFrame(
+        {
+            "rollout_index": rollout_col,
+            "month_index": month_col,
+            "location_id": [location_id] * rollout_col.size,
+            "inflation_multiplier": inflation_multipliers.ravel().astype(np.float64),
+            "sp500_multiplier": sp500_multipliers.ravel().astype(np.float64),
+            "private_equity_value_multiplier": pe_value_multipliers.ravel().astype(np.float64),
+            "home_value_multiplier": home_value_multipliers.ravel().astype(np.float64),
+            "rent_multiplier": rent_multipliers.ravel().astype(np.float64),
+            "mortgage_30y_rate_pct": mortgage_30y_rate_pct.ravel().astype(np.float64),
+            "private_equity_sale_opportunity_event": pe_sale_opportunity_mask.ravel().astype(np.bool_),
+        },
+        schema=MARKET_PATH_OBSERVATION_SCHEMA,
+    )
+
+
+def sort_market_path_observations(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["month_index", "rollout_index"])
+
+
+def sort_pe_sale_opportunity_observations(df: pl.DataFrame) -> pl.DataFrame:
+    # Within the same (month, rollout, observation_type) the legacy code's
+    # tuple key has no further tiebreaker. Stable sort preserves the
+    # recording order from the per-issuer recorder, which is what callers
+    # see today.
+    return df.sort(["month_index", "rollout_index"])
+
+
+def materialize_market_observations(
+    market_path_frame: pl.DataFrame, opportunity_frame: pl.DataFrame
+) -> Iterator[MarketObservation]:
+    """Merge the two market-observation frames in the canonical
+    `(month, rollout, observation_type)` lex order — at the same
+    `(month, rollout)` the `market_path` observation comes first because
+    `"market_path" < "private_equity_sale_opportunity"` lexicographically."""
+
+    path_iter = iter(market_path_frame.iter_rows(named=True))
+    opp_iter = iter(opportunity_frame.iter_rows(named=True))
+    path_row = next(path_iter, None)
+    opp_row = next(opp_iter, None)
+    while path_row is not None or opp_row is not None:
+        if path_row is None:
+            yield _build_pe_opportunity_observation(opp_row)
+            opp_row = next(opp_iter, None)
+        elif opp_row is None:
+            yield _build_market_path_observation(path_row)
+            path_row = next(path_iter, None)
+        else:
+            path_key = (path_row["month_index"], path_row["rollout_index"], MarketObservationType.MARKET_PATH.value)
+            opp_key = (
+                opp_row["month_index"],
+                opp_row["rollout_index"],
+                MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY.value,
+            )
+            if path_key <= opp_key:
+                yield _build_market_path_observation(path_row)
+                path_row = next(path_iter, None)
+            else:
+                yield _build_pe_opportunity_observation(opp_row)
+                opp_row = next(opp_iter, None)
+
+
+def _build_market_path_observation(row: dict[str, Any]) -> MarketPathObservation:
+    return MarketPathObservation(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        location_id=row["location_id"],
+        inflation_multiplier=float(row["inflation_multiplier"]),
+        sp500_multiplier=float(row["sp500_multiplier"]),
+        private_equity_value_multiplier=float(row["private_equity_value_multiplier"]),
+        home_value_multiplier=float(row["home_value_multiplier"]),
+        rent_multiplier=float(row["rent_multiplier"]),
+        mortgage_30y_rate_pct=float(row["mortgage_30y_rate_pct"]),
+        private_equity_sale_opportunity_event=bool(row["private_equity_sale_opportunity_event"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_pe_opportunity_observation(row: dict[str, Any]) -> PrivateEquitySaleOpportunityObservation:
+    return PrivateEquitySaleOpportunityObservation(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        source_asset_id=row["source_asset_id"],
+        opportunity_id=row["opportunity_id"],
+        opportunity_cause_id=row["opportunity_cause_id"],
+        sale_opportunity_value_usd=float(row["sale_opportunity_value_usd"]),
+        private_equity_value_before_sale_usd=float(row["private_equity_value_before_sale_usd"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
 
 
 def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:

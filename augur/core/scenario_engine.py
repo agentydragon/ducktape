@@ -76,7 +76,6 @@ from augur.core.scenario_set import (
     LiquidityEventOnly,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketObservation,
-    MarketPathObservation,
     MonthlySpendDecision,
     MonthlySpendPolicy,
     Obligation,
@@ -90,7 +89,6 @@ from augur.core.scenario_set import (
     PrivateEquityPosition,
     PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
-    PrivateEquitySaleOpportunityObservation,
     PrivateEquitySalePolicy,
     PrivateEquitySaleRule,
     PropertyPurchaseEvent,
@@ -192,7 +190,8 @@ class ScenarioRunArrays:
     numerics: pl.DataFrame
     effects: tuple[Effect, ...]
     policy_decisions: tuple[PolicyDecision, ...]
-    market_observations: tuple[MarketObservation, ...]
+    market_path_observations_frame: pl.DataFrame
+    pe_sale_opportunity_observations_frame: pl.DataFrame
     accounting_trace: AccountingTrace
     tax_lots: tuple[TaxLot, ...]
     lot_dispositions_frame: pl.DataFrame
@@ -219,6 +218,14 @@ class ScenarioRunArrays:
     @property
     def lot_dispositions(self) -> tuple[LotDisposition, ...]:
         return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def market_observations(self) -> tuple[MarketObservation, ...]:
+        return tuple(
+            event_streams.materialize_market_observations(
+                self.market_path_observations_frame, self.pe_sale_opportunity_observations_frame
+            )
+        )
 
     @property
     def settlement_results(self) -> tuple[SettlementResult, ...]:
@@ -1386,7 +1393,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
     effects: list[Effect] = []
     policy_decisions: list[PolicyDecision] = []
-    market_observations: list[MarketObservation] = list(_market_path_observations(scenario, market_bundle))
+    market_path_observations_frame = _market_path_observations_frame(scenario, market_bundle)
+    pe_sale_opportunity_observations = event_streams.StreamFrameBuilder(
+        event_streams.PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA
+    )
     accounting = AccountingTraceBuilder()
     tax_lots: list[TaxLot] = []
     lot_dispositions = event_streams.StreamFrameBuilder(event_streams.LOT_DISPOSITION_SCHEMA)
@@ -1587,7 +1597,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             source_holding_id=private_equity_source_holding_id,
         )
         _record_per_issuer_sale_opportunity_observations(
-            market_observations,
+            pe_sale_opportunity_observations,
             scenario=scenario,
             market_bundle=market_bundle,
             month=month,
@@ -2539,8 +2549,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         policy_decisions=_sorted_policy_decisions(
             _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
         ),
-        market_observations=_sorted_market_observations(
-            _with_trajectory_identity(market_observations, trace_identity_by_rollout)
+        market_path_observations_frame=event_streams.sort_market_path_observations(
+            event_streams.join_trajectory_identity(market_path_observations_frame, trace_identity_frame)
+        ),
+        pe_sale_opportunity_observations_frame=event_streams.sort_pe_sale_opportunity_observations(
+            event_streams.join_trajectory_identity(pe_sale_opportunity_observations.build(), trace_identity_frame)
         ),
         accounting_trace=accounting_trace.with_trajectory_identity(trace_identity_by_rollout).sorted_canonical(),
         tax_lots=_sorted_tax_lots(tax_lots),
@@ -2589,11 +2602,13 @@ def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int
     return record.model_copy(update=identity_by_rollout[int(record.rollout_index)])
 
 
-def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -> tuple[MarketObservation, ...]:
-    # With explicit location keys, each scenario surfaces only the path for its
-    # declared location. Scenarios with no `location_id` (no property selection)
-    # emit `1.0` for the home/rent multipliers — the bundle has no path for an
-    # absent location to read.
+def _market_path_observations_frame(scenario: Scenario, market_bundle: MarketBundle) -> pl.DataFrame:
+    """Build the dense market-path frame in one shot from the bundle's
+    multiplier matrices. Replaces the legacy
+    `rollouts × (months+1)` per-cell `MarketPathObservation` Pydantic loop
+    that ran at scenario start (~11k Pydantic constructions for the bench
+    workload alone)."""
+
     shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
     if scenario.location_id is None:
         home_multiplier = np.ones(shape, dtype="float64")
@@ -2601,11 +2616,6 @@ def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -
     else:
         home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
         rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
-    # MarketPathObservation carries a single PE multiplier and a single
-    # sale-opportunity event flag per (rollout, month). With explicit per-issuer
-    # keying we surface the first issuer's path; per-issuer values are emitted
-    # separately via `PrivateEquitySaleOpportunityObservation`. Scenarios with no
-    # PE positions get the all-ones / no-tender stub.
     pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
     if not pe_issuer_keys:
         pe_value_multipliers = np.ones(shape, dtype="float64")
@@ -2613,58 +2623,50 @@ def _market_path_observations(scenario: Scenario, market_bundle: MarketBundle) -
     else:
         pe_value_multipliers = market_bundle.private_equity_value_multiplier(pe_issuer_keys[0])
         pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(pe_issuer_keys[0])
-    observations: list[MarketObservation] = []
-    rollout_indexes, month_positions = np.indices(
-        (market_bundle.rollout_count, market_bundle.horizon_months + 1), sparse=False
+    return event_streams.build_market_path_observations_frame(
+        rollout_count=market_bundle.rollout_count,
+        horizon_months=market_bundle.horizon_months,
+        month_index=market_bundle.month_index,
+        location_id=scenario.location_id,
+        inflation_multipliers=market_bundle.inflation_multipliers,
+        sp500_multipliers=market_bundle.generic_sp500_multipliers,
+        pe_value_multipliers=pe_value_multipliers,
+        home_value_multipliers=home_multiplier,
+        rent_multipliers=rent_multiplier,
+        mortgage_30y_rate_pct=market_bundle.mortgage_30y_rate_pct,
+        pe_sale_opportunity_mask=pe_sale_mask,
     )
-    for rollout_index, month_position in zip(
-        rollout_indexes.ravel().tolist(), month_positions.ravel().tolist(), strict=True
-    ):
-        observations.append(
-            MarketPathObservation(
-                rollout_index=rollout_index,
-                month_index=int(market_bundle.month_index[month_position]),
-                location_id=scenario.location_id,
-                inflation_multiplier=float(market_bundle.inflation_multipliers[rollout_index, month_position]),
-                sp500_multiplier=float(market_bundle.generic_sp500_multipliers[rollout_index, month_position]),
-                private_equity_value_multiplier=float(pe_value_multipliers[rollout_index, month_position]),
-                home_value_multiplier=float(home_multiplier[rollout_index, month_position]),
-                rent_multiplier=float(rent_multiplier[rollout_index, month_position]),
-                mortgage_30y_rate_pct=float(market_bundle.mortgage_30y_rate_pct[rollout_index, month_position]),
-                private_equity_sale_opportunity_event=bool(pe_sale_mask[rollout_index, month_position]),
-            )
-        )
-    return tuple(observations)
 
 
 def _record_private_equity_sale_opportunity_observations(
-    records: list[MarketObservation],
+    pe_sale_opportunity_observations: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     source_asset_id: str,
     opportunity: PrivateEquitySaleOpportunityBatch,
 ) -> None:
-    active_rollouts = np.nonzero(opportunity.sale_opportunity_mask)[0].tolist()
-    records.extend(
-        (
-            PrivateEquitySaleOpportunityObservation(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                source_asset_id=source_asset_id,
-                opportunity_id=str(opportunity.opportunity_id[rollout_index]),
-                opportunity_cause_id=str(opportunity.opportunity_cause_id[rollout_index]),
-                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
-                private_equity_value_before_sale_usd=float(
-                    opportunity.private_equity_value_before_sale_usd[rollout_index]
-                ),
-            )
-        )
-        for rollout_index in active_rollouts
+    mask = opportunity.sale_opportunity_mask
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    pe_sale_opportunity_observations.extend(
+        {
+            "rollout_index": rollouts,
+            "month_index": np.full(size, month_index, dtype=np.int64),
+            "source_asset_id": [source_asset_id] * size,
+            "opportunity_id": [str(opportunity.opportunity_id[r]) for r in rollouts],
+            "opportunity_cause_id": [str(opportunity.opportunity_cause_id[r]) for r in rollouts],
+            "sale_opportunity_value_usd": opportunity.sale_opportunity_value_usd[rollouts].astype(np.float64),
+            "private_equity_value_before_sale_usd": opportunity.private_equity_value_before_sale_usd[rollouts].astype(
+                np.float64
+            ),
+        }
     )
 
 
 def _record_per_issuer_sale_opportunity_observations(
-    records: list[MarketObservation],
+    pe_sale_opportunity_observations: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     market_bundle: MarketBundle,
@@ -2686,7 +2688,7 @@ def _record_per_issuer_sale_opportunity_observations(
     issuer_keys = _private_equity_issuer_routing_keys(scenario)
     if len(issuer_keys) <= 1:
         _record_private_equity_sale_opportunity_observations(
-            records,
+            pe_sale_opportunity_observations,
             month_index=month_index,
             source_asset_id=aggregate_source_asset_id,
             opportunity=aggregate_opportunity,
@@ -2740,7 +2742,10 @@ def _record_per_issuer_sale_opportunity_observations(
             source_holding_id=issuer_key,
         )
         _record_private_equity_sale_opportunity_observations(
-            records, month_index=month_index, source_asset_id=issuer_key, opportunity=issuer_opportunity
+            pe_sale_opportunity_observations,
+            month_index=month_index,
+            source_asset_id=issuer_key,
+            opportunity=issuer_opportunity,
         )
 
 
@@ -3312,15 +3317,6 @@ def _sorted_policy_decisions(records: list[PolicyDecision]) -> tuple[PolicyDecis
                 decision.decision_type,
                 decision.policy_id,
             ),
-        )
-    )
-
-
-def _sorted_market_observations(records: list[MarketObservation]) -> tuple[MarketObservation, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda observation: (observation.month_index, observation.rollout_index, observation.observation_type),
         )
     )
 
