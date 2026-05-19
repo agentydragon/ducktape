@@ -100,6 +100,7 @@ from augur.core.scenario_set import (
     TaxPaymentTiming,
     TaxProfile,
 )
+from augur.core.scheduled_cashflows import ScheduledCashflowKind, build_scheduled_cashflows
 from augur.core.schemas import ColumnarTable
 
 MONTHS_PER_YEAR = 12
@@ -1377,6 +1378,21 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         insurance_usd=property_cash_flow.column("insurance_usd") * property_live_mask,
         maintenance_usd=property_cash_flow.column("maintenance_usd") * property_live_mask,
     )
+    # Pre-computed per-month inputs that don't depend on policy decisions —
+    # the engine's main month loop reads these via `scheduled.amount_at(...)`.
+    # Phase 0 of the state-vector simulation refactor; see
+    # `augur/plans/state_vector_simulation_refactor.md`.
+    scheduled = build_scheduled_cashflows(
+        rollout_count=rollout_count,
+        month_index=month_index,
+        property_net_cash_flow_usd=net_property_cash_flow,
+        property_sale_cash_flow_usd=disposition.column("net_property_sale_cash_flow_usd"),
+        partner_contribution_used_usd=partner_equity.column("contribution_used_usd"),
+        property_tax_accrual_usd=property_tax_obligation_due,
+        hoa_accrual_usd=hoa_obligation_due,
+        insurance_accrual_usd=insurance_obligation_due,
+        maintenance_accrual_usd=maintenance_obligation_due,
+    )
     generic_sp500_value = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
     generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
@@ -1543,12 +1559,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     )
 
     for month in range(month_count):
-        current_cash = current_cash + disposition.column("net_property_sale_cash_flow_usd")[:, month]
+        current_cash = current_cash + scheduled.amount_at(
+            kind=ScheduledCashflowKind.PROPERTY_SALE_CASH_FLOW, month_position=month
+        )
         if month > 0:
             current_cash = (
                 current_cash
-                + net_property_cash_flow[:, month]
-                + partner_equity.column("contribution_used_usd")[:, month]
+                + scheduled.amount_at(kind=ScheduledCashflowKind.PROPERTY_NET_CASH_FLOW, month_position=month)
+                + scheduled.amount_at(kind=ScheduledCashflowKind.PARTNER_CONTRIBUTION_USED, month_position=month)
             )
         # Settle property-cost obligations for this month BEFORE within-month
         # policies run. This keeps within-month policy decisions (which depend on
