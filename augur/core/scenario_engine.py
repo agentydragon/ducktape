@@ -1721,7 +1721,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # the snapshot `remaining_*_units_by_month` matrices × the market
     # multipliers; not pre-allocated here.
     generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
-    generic_sp500_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
+    # `generic_sp500_sale_tax`, `private_equity_sale_taxable_gain`, and
+    # `private_equity_sale_tax` are reassigned post-loop from the
+    # derived gain matrix / `annual_sale_tax_allocation` output; no
+    # pre-allocation needed here.
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_usd = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_basis_usd = np.zeros((rollout_count, month_count), dtype="float64")
@@ -1729,8 +1732,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     remaining_crypto_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_value = np.zeros((rollout_count, month_count), dtype="float64")
     private_equity_sale_opportunity_value = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_sale_taxable_gain = np.zeros((rollout_count, month_count), dtype="float64")
-    private_equity_sale_tax = np.zeros((rollout_count, month_count), dtype="float64")
     cash = np.zeros((rollout_count, month_count), dtype="float64")
     remaining_sp500_units_by_month = np.zeros((rollout_count, month_count), dtype="float64")
     remaining_sp500_basis_by_month = np.zeros((rollout_count, month_count), dtype="float64")
@@ -1998,7 +1999,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         remaining_units_by_month=remaining_private_equity_units_by_month,
         remaining_basis_by_month=remaining_private_equity_basis_by_month,
         private_equity_sale_usd=private_equity_sale_usd_by_month,
-        private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
         pe_value_multipliers=pe_value_multipliers,
         initial_private_equity=initial_private_equity,
         source_holding_id=private_equity_source_holding_id,
@@ -2181,7 +2181,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         # accounting value reduction, but cash proceeds use
         # `units × cash_per_unit_usd` as the contract specifies.
         acquisition_sale_month = np.zeros(rollout_count, dtype="float64")
-        acquisition_taxable_gain_month = np.zeros(rollout_count, dtype="float64")
         if isinstance(pe_liquidity_regime, Acquisition) and month == int(pe_liquidity_regime.event_month):
             acquisition_proceeds = remaining_private_equity_units * float(pe_liquidity_regime.cash_per_unit_usd)
             acquisition_basis = remaining_private_equity_basis.copy()
@@ -2227,7 +2226,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             remaining_private_equity_basis = acquisition_application.remaining_basis_usd
             remaining_private_equity_units = acquisition_application.remaining_units
             acquisition_sale_month = acquisition_proceeds
-            acquisition_taxable_gain_month = acquisition_taxable_gain
             # Override pre-sale value to match cash proceeds for accounting
             # parity: the PE value debit and cash credit settle to zero.
             private_equity_value_before_sale = acquisition_proceeds
@@ -2252,8 +2250,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
         market_sale_opportunity_value = market_opportunity.sale_opportunity_value_usd
         private_equity_sale_month = acquisition_sale_month.copy()
-        private_equity_sale_taxable_gain_month = acquisition_taxable_gain_month.copy()
-        private_equity_sale_tax_month = np.zeros(rollout_count, dtype="float64")
         sp500_multiplier = market_bundle.generic_sp500_multipliers[:, month]
         sp500_sale = np.zeros(rollout_count, dtype="float64")
         sp500_basis = np.zeros(rollout_count, dtype="float64")
@@ -2332,9 +2328,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 remaining_private_equity_basis = sale_application.remaining_basis_usd
                 remaining_private_equity_units = sale_application.remaining_units
                 private_equity_sale_month = private_equity_sale_month + sale_application.sale_usd
-                private_equity_sale_taxable_gain_month = (
-                    private_equity_sale_taxable_gain_month + sale_application.taxable_gain_usd
-                )
                 continue
             if isinstance(policy, CheckingFloorSellPublicStockPolicy):
                 sp500_sale_instruction = checking_floor_sell_public_stock_instruction(
@@ -2624,16 +2617,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         crypto_holding = owner_agent.holding("crypto")
         remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
         remaining_crypto_basis_by_month[:, month] = crypto_holding.basis_usd
-        # `private_equity_sale_taxable_gain` is derived from the unified
-        # `asset_change_log` after the main loop (same pattern as SP500).
-        # The previous imperative snapshot from `private_equity_sale_taxable_gain_month`
-        # local accumulator was only populated by acquisition + within-month
-        # PE policy sales; today's behavior was patched up by the settlement
-        # function's `pe_state.private_equity_sale_taxable_gain_usd[:, M] += ...`
-        # add at the post-loop tax-settlement path (now also removed). All
-        # PE sale paths emit into `private_equity_sale_action_records`, so
-        # the log-derived matrix sees every sale uniformly.
-        private_equity_sale_tax[:, month] = private_equity_sale_tax_month
+        # `private_equity_sale_taxable_gain` is derived post-loop from
+        # the unified `asset_change_log`; `private_equity_sale_tax` is
+        # assigned from `annual_sale_tax_allocation` output. No
+        # per-iteration writes needed here.
         private_equity_sale_opportunity_value[:, month] = np.maximum(
             0.0, market_sale_opportunity_value - private_equity_sale_month
         )
@@ -4901,7 +4888,6 @@ class _PrivateEquityFundingState:
     remaining_units_by_month: np.ndarray
     remaining_basis_by_month: np.ndarray
     private_equity_sale_usd: np.ndarray
-    private_equity_sale_taxable_gain_usd: np.ndarray
     pe_value_multipliers: np.ndarray
     initial_private_equity: float
     source_holding_id: str
