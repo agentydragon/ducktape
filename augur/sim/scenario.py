@@ -42,12 +42,39 @@ class ScheduledTransfer(BaseModel):
     amount_usd: float
 
 
+class RecurringTransfer(BaseModel):
+    """A cash transfer that fires every month within a window. The
+    canonical use is a recurring paycheck (income arriving monthly)
+    or recurring rent / utilities (a fixed monthly cost). The engine
+    emits one Transfer event per active month per rollout — the
+    same amount across rollouts at spike 1.
+
+    `start_month` is inclusive. `end_month` is inclusive when
+    supplied; when `None`, the transfer fires through the scenario's
+    horizon end. The `cause_id` is reused on every emitted event row
+    so a user can group_by it to see "every paycheck Alice
+    received"."""
+
+    start_month: int
+    end_month: int | None = None
+    cause_id: str
+    from_agent_id: str
+    from_account_id: str
+    to_agent_id: str
+    to_account_id: str
+    amount_usd: float
+
+    def is_active_at(self, month: int) -> bool:
+        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
 class Scenario(BaseModel):
     """Spike-1 simulation scenario. Carries the minimum to run
-    a multi-rollout simulation over a fixed horizon with a list of
-    scheduled transfers."""
+    a multi-rollout simulation over a fixed horizon with both
+    scheduled and recurring transfers."""
 
     agents: list[Agent]
     initial_cash: list[InitialAccountBalance]
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
+    recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     horizon_months: PositiveInt

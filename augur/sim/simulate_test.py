@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 
 from augur.sim.apply import apply_events
-from augur.sim.scenario import Agent, InitialAccountBalance, Scenario, ScheduledTransfer
+from augur.sim.scenario import Agent, InitialAccountBalance, RecurringTransfer, Scenario, ScheduledTransfer
 from augur.sim.simulate import _initial_state, simulate
 
 
@@ -108,6 +108,142 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
 def test_rejects_zero_rollout_count() -> None:
     with pytest.raises(ValueError, match="rollout_count"):
         simulate(_alice_bob_scenario(), rollout_count=0)
+
+
+def test_recurring_paycheck_accrues_monthly() -> None:
+    """Alice receives a $3000 paycheck every month from a payroll
+    sink for 12 months. Starting cash $1000; ending cash
+    $1000 + 12 × $3000 = $37000. One Transfer event per month on
+    the log."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=3000.0,
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    alice_final = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert alice_final == 1000.0 + 12 * 3000.0
+
+    # Conservation: payroll sink goes negative by the same amount.
+    payroll_final = (
+        result.cash_balances.filter((pl.col("agent_id") == "payroll") & (pl.col("month_index") == 12))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert payroll_final == -12 * 3000.0
+
+    # 12 paycheck events on the log (one per month).
+    assert result.events_log.transfers.height == 12
+    assert set(result.events_log.transfers.get_column("month_index").to_list()) == set(range(12))
+    assert set(result.events_log.transfers.get_column("cause_id").unique().to_list()) == {"alice_paycheck"}
+
+
+def test_recurring_transfer_bounded_by_end_month() -> None:
+    """Recurring transfer with end_month=4 fires months 0-4
+    (inclusive), then stops. Asserts the end_month bound is
+    honored — no events at month 5+."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="sink")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="sink", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=4,
+                cause_id="bounded_pay",
+                from_agent_id="sink",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=100.0,
+            )
+        ],
+        horizon_months=10,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    assert result.events_log.transfers.height == 5  # months 0..4
+
+    # Alice's balance plateaus at 500.0 from month 5 onward.
+    balances = (
+        result.cash_balances.filter(pl.col("agent_id") == "alice")
+        .sort("month_index")
+        .get_column("balance_usd")
+        .to_list()
+    )
+    assert balances == [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
+
+
+def test_combined_one_off_and_recurring() -> None:
+    """A scenario with both a recurring monthly paycheck and a
+    one-off bonus transfer at month 5. Both fire through the same
+    Transfer event path; the log shows both. Tests that the step
+    emits both kinds in one call."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="employer")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_paycheck",
+                from_agent_id="employer",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=1000.0,
+            )
+        ],
+        scheduled_transfers=[
+            ScheduledTransfer(
+                month=5,
+                cause_id="alice_bonus",
+                from_agent_id="employer",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=5000.0,
+            )
+        ],
+        horizon_months=10,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # 10 paycheck events + 1 bonus = 11.
+    assert result.events_log.transfers.height == 11
+
+    # Alice at end-of-horizon: 10 × $1000 paychecks + $5000 bonus = $15000.
+    alice_final = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 10))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert alice_final == 15000.0
 
 
 if __name__ == "__main__":
