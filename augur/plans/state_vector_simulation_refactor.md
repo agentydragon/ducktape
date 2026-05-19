@@ -468,26 +468,105 @@ mortgage liabilities. Removes `_PrivateEquityFundingState` (folded
 into `SimulationState.holdings`). Removes the property-state matrix
 soup.
 
-#### Phase 3b: detailed design (properties + mortgage liabilities)
+#### Phase 3b: agent-centric SimulationState restructure
 
-After mapping property and mortgage state in
-`scenario_engine.py`, the key finding is that **almost all
-property-related and mortgage-related per-`(rollout, month)` state is
-already precomputed and static during the main month loop**. There is
-very little _mutable working state_ for the engine to thread through
-the loop — the matrices fall out of scenario-level inputs +
-amortization math + the disposition (sale-month) calculation, and
-then get read but not written inside the loop. The Phase 3 plan's
-"property-state matrix soup" framing is right that the matrices are
-scattered; less right that they're "scratchpad". They're a
-precomputed schedule.
+**The structural insight.** Properties exist as shared real-world
+objects; each agent (actor) has its own cash accounts, asset
+holdings, debts, and a _stake_ in each property. Today the engine
+flattens this into a single-actor view with a top-level
+`PartnerEquityArrays` frame bolted on. The cleaner shape:
 
-What this means for `SimulationState`: properties and liabilities
-join the state object as **views into the precomputed per-month data
-at `month_position`**, not as accumulators the engine mutates inside
-the loop. Same `(rollouts,)`-vector shape as cash and holdings; the
-only difference is the data source (precomputed matrix slice rather
-than a 1D local accumulating across iterations).
+```python
+@dataclass(frozen=True)
+class SimulationState:
+    """Working state at one month boundary. `agents` is keyed by
+    actor_id; `properties` is keyed by property_id and holds the
+    shared facts about each property (value, depreciation taken,
+    live mask). All per-agent / per-property numerics are
+    `(rollouts,)` vectors sliced at this month_position."""
+
+    month_position: int
+    agents: dict[str, AgentState]            # by actor_id
+    properties: dict[str, PropertyState]     # by property_id
+
+@dataclass(frozen=True)
+class AgentState:
+    actor_id: str
+    cash_by_account: dict[str, np.ndarray]   # accounts owned by this agent
+    holdings: dict[str, AssetHolding]        # SP500 / crypto / PE this agent owns
+    liabilities: dict[str, LiabilityState]   # debts this agent owes
+    property_stakes: dict[str, PropertyStake] # this agent's stake in each property
+
+@dataclass(frozen=True)
+class PropertyState:
+    """Per-property facts shared across all agents."""
+    property_id: str
+    live: np.ndarray                         # (rollouts,) — 1.0 alive, 0.0 post-sale
+    value_usd: np.ndarray                    # current mark-to-market
+    cumulative_depreciation_usd: np.ndarray  # cumulative through this month
+
+@dataclass(frozen=True)
+class PropertyStake:
+    """One agent's relationship to one property at the current month."""
+    property_id: str
+    ownership_pct: np.ndarray                # (rollouts,) — this agent's %
+    contribution_used_usd: np.ndarray        # cumulative contribution
+    equity_ledger_usd: np.ndarray            # current ledger value
+    # (additional fields read off PartnerEquityAgreementArrays
+    # as we land them — see "Partner-equity fold-in" below)
+
+@dataclass(frozen=True)
+class LiabilityState:
+    """A debt owed by an agent. `property_id` is set when the
+    liability is secured against a property (mortgages); None for
+    unsecured liabilities (tax_payable, ...)."""
+    liability_id: str                        # e.g. "mortgage:property_1"
+    liability_kind: LiabilityKind            # MORTGAGE | TAX_PAYABLE
+    property_id: str | None                  # secured-against link, None if unsecured
+    principal_usd: np.ndarray                # current outstanding balance
+    interest_accrued_this_month_usd: np.ndarray
+    principal_paid_this_month_usd: np.ndarray
+
+
+class LiabilityKind(StrEnum):
+    MORTGAGE = "mortgage"
+    TAX_PAYABLE = "tax_payable"   # seam for Phase 4 — not populated by 3b
+```
+
+**Why agent-centric.** Owner-managed scenarios have one actor; the
+agent dict has one entry and call sites read
+`state.agents[primary_owner_actor_id].cash("checking")`. Owner-plus-
+partner scenarios have two agents; the owner holds cash + holdings
+
+- liabilities + a stake in the property, the partner holds just a
+  stake. Cash, holdings, and liabilities never split across agents —
+  they belong to one. Properties never split across agents — they
+  exist as a shared world-fact. Partner equity is exactly the stake
+  relationship, which fits naturally on `AgentState.property_stakes`
+  rather than as a top-level frame.
+
+**Mortgages live on the borrowing agent.** A mortgage is a personal
+debt secured by a property; conceptually it's owed by the entity
+holding the title (today's engine: the primary owner). So
+`agents[primary_owner].liabilities["mortgage:property_1"]` carries
+the principal/interest, and the `property_id` field on
+`LiabilityState` records which property it's secured against. The
+property-stake's `equity_ledger_usd` already nets the secured debt
+to give equity; the secured-debt link is recorded but not double-
+counted.
+
+**Identifiers.**
+
+- `actor_id` — already a stable scenario-level string for each
+  actor (today: `primary_owner_actor_id`; partner scenarios add the
+  partner's actor_id).
+- `property_id` — scalar `scenario.property_selection.property_id`
+  (engine is single-property today). Dict keying is forward-
+  compatible.
+- `liability_id` — `f"mortgage:{property_id}"` for mortgages; same
+  scheme today.
+- Cash account_id — today `"checking"` for the primary owner; same
+  scheme as Phase 1.
 
 **Where the data lives today** (file:line on `scenario_engine.py`):
 
@@ -495,170 +574,134 @@ than a 1D local accumulating across iterations).
   `(rollouts, months+1)` `float64`, all built once at init in
   `_amortization_arrays()` (`:5674-5703`). Masked by
   `property_live_mask` post-sale. Read at `:1356-1357`,
-  `:1375-1376`, `:1939-1950`, `:2184-2185`. Never written inside the
-  month loop.
-- `property_value` — `(rollouts, months+1)` `float64`, computed from
-  the property value path + sale event (`:5660`,
+  `:1375-1376`, `:1939-1950`, `:2184-2185`. Never written inside
+  the loop.
+- `property_value` — `(rollouts, months+1)` `float64`, computed
+  from the property value path + sale event (`:5660`,
   `_property_and_mortgage_arrays`). Read at `:1618`, `:1938`.
-- `property_live_mask` — `(rollouts, months+1)` `float64` mask
-  (1.0 alive, 0.0 post-sale). Built once at `:1352-1355` from
-  `disposition.sale_month`. Multiplied into property-cost / mortgage
-  values to zero them post-sale.
-- `PropertyDispositionArrays.numerics` — polars frame with 16 columns
-  for purchase costs, depreciation, sale proceeds, debt payoff, net
-  sale cash flow. Built once before the month loop in
-  `property_disposition_arrays(...)`. Read via
-  `disposition.column(...)`.
-- `PropertyCashFlowArrays.numerics` — polars frame with 10 columns
-  (rental income, taxes, hoa, insurance, maintenance, net operating
-  cash flow). Built once at `:1332-1339` via
-  `_property_cash_flow_arrays()`. Read inside the loop but only as
-  inputs to `ScheduledCashflows` and the property-cost obligation
-  pipeline (both already framed). Never written.
+- `property_live_mask` — `(rollouts, months+1)` `float64` (1.0
+  alive, 0.0 post-sale). Built once at `:1352-1355` from
+  `disposition.sale_month`.
+- `PropertyDispositionArrays.numerics` — polars frame with 16
+  columns (purchase costs, depreciation, sale proceeds, debt
+  payoff, net sale cash flow). Built once before the loop. Read
+  via `disposition.column(...)`. Includes a
+  `depreciation_taken_usd` column we slice for
+  `cumulative_depreciation_usd`.
 - `PartnerEquityArrays.numerics` — polars frame with 15 columns
   (contributions, principal credit, equity ledger, ownership %).
-  Built once at `:1369-1381`; the only in-loop mutation is one
-  `replace()` call at `:1965` inside
-  `_settle_partner_equity_on_property_sale(...)` that produces a new
-  instance reflecting post-sale partner state. Read at `:1391`,
-  `:2060`, `:2173-2174`.
+  Built once at `:1369-1381`; one in-loop `replace()` at `:1965`
+  inside `_settle_partner_equity_on_property_sale(...)` produces a
+  new instance reflecting post-sale partner state. Read at
+  `:1391`, `:2060`, `:2173-2174`.
 
-**Identifiers — engine is single-property today.** The scenario carries
-a scalar `property_selection.property_id: str | None`, and the
-mortgage liability ID is `f"mortgage:{property_id}"`. There is no
-per-rollout property variation and no list-of-properties construct.
-`SimulationState.properties` is therefore a `dict[property_id, …]`
-with `0` entries (no property) or `1` entry (the one property);
-keying it by `property_id` keeps the shape future-proof without
-forcing multi-property changes now.
+**Partner-equity fold-in.** `PartnerEquityArrays` already carries
+the per-(rollout, month) data for every stake field; Phase 3b
+slices its columns at `month_position` to populate each
+`PropertyStake`. The one in-loop `replace()` at `:1965` (post-sale
+ledger reset) means at the iteration boundary right after the sale
+month, the stake reflects the post-sale state — Phase 3b just
+reads from `PartnerEquityArrays` at slice time, so the rebind
+automatically flows through.
 
-**Shape of `SimulationState.properties[id]` and
-`.liabilities[id]`:**
+For a single-actor (owner-only) scenario, the owner still has a
+`PropertyStake` with `ownership_pct = 1.0` everywhere. This keeps
+ownership math uniform across single- and multi-actor scenarios.
 
-```python
-@dataclass(frozen=True)
-class PropertyState:
-    """View of one property's per-rollout state at the current
-    month boundary. All numeric fields are `(rollouts,)` vectors
-    sliced from the precomputed property matrices at
-    `month_position`."""
-
-    property_id: str
-    live: np.ndarray              # (rollouts,) float — 1.0 alive, 0.0 post-sale
-    value_usd: np.ndarray         # current mark-to-market value
-    cumulative_depreciation_usd: np.ndarray
-    # The disposition columns we care to expose at the month boundary
-    # (the rest stay accessible via the existing PropertyDispositionArrays
-    # frame, which downstream phases will fold in).
-
-@dataclass(frozen=True)
-class LiabilityState:
-    """View of one liability's per-rollout balance at the current
-    month boundary."""
-
-    liability_id: str             # e.g. "mortgage:property_1"
-    liability_kind: LiabilityKind # MORTGAGE | TAX_PAYABLE
-    principal_usd: np.ndarray     # current outstanding balance
-    interest_accrued_this_month_usd: np.ndarray
-    principal_paid_this_month_usd: np.ndarray
-
-
-class LiabilityKind(StrEnum):
-    MORTGAGE = "mortgage"
-    TAX_PAYABLE = "tax_payable"  # future — once Phase 4 lands
-```
-
-`SimulationState` grows two fields:
+**Construction in the engine.** Phase 3b replaces both `state =
+SimulationState(...)` sites with the agent-centric form. The Phase
+1/3a `cash_by_account` and `holdings` move _inside_
+`AgentState(actor_id=primary_owner_actor_id, ...)`:
 
 ```python
-@dataclass(frozen=True)
-class SimulationState:
-    month_position: int
-    cash_by_account: dict[str, np.ndarray]
-    holdings: dict[str, AssetHolding]
-    properties: dict[str, PropertyState]   # NEW in Phase 3b
-    liabilities: dict[str, LiabilityState] # NEW in Phase 3b
+state = SimulationState(
+    month_position=month,
+    agents={
+        primary_owner_actor_id: AgentState(
+            actor_id=primary_owner_actor_id,
+            cash_by_account={cash_account_id: current_cash},
+            holdings={
+                "sp500": AssetHolding(...),
+                "crypto": AssetHolding(...),
+                "private_equity": AssetHolding(...),
+            },
+            liabilities=(
+                {f"mortgage:{property_id}": LiabilityState(
+                    liability_id=f"mortgage:{property_id}",
+                    liability_kind=LiabilityKind.MORTGAGE,
+                    property_id=property_id,
+                    principal_usd=mortgage_balance[:, month],
+                    interest_accrued_this_month_usd=mortgage_interest[:, month],
+                    principal_paid_this_month_usd=mortgage_principal[:, month],
+                )}
+                if property_id is not None
+                else {}
+            ),
+            property_stakes=(
+                {property_id: PropertyStake(
+                    property_id=property_id,
+                    ownership_pct=partner_equity.column("owner_ownership_pct")[:, month],
+                    contribution_used_usd=partner_equity.column(
+                        "owner_contribution_used_usd"
+                    )[:, month],
+                    equity_ledger_usd=partner_equity.column(
+                        "owner_equity_ledger_usd"
+                    )[:, month],
+                )}
+                if property_id is not None
+                else {}
+            ),
+        ),
+        # Plus a partner AgentState if scenario has one — empty
+        # cash/holdings/liabilities, just property_stakes.
+        **partner_agents,
+    },
+    properties=(
+        {property_id: PropertyState(
+            property_id=property_id,
+            live=property_live_mask[:, month],
+            value_usd=property_value[:, month],
+            cumulative_depreciation_usd=disposition.column(
+                "depreciation_taken_usd"
+            )[:, month],
+        )}
+        if property_id is not None
+        else {}
+    ),
+)
 ```
 
-**Construction in the engine.** Phase 3b is mechanically similar to
-Phases 1 and 3a: at every `state = SimulationState(...)` site
-(initial + end-of-month), populate the two new dicts.
+Same construction at the initial-state site (column 0) and the
+end-of-month site (column `month`).
 
-- Initial site (before the loop, `scenario_engine.py:~1573`):
-  populate `properties[property_id]` if a property is configured,
-  using `property_live_mask[:, 0]`, `property_value[:, 0]`, and a
-  cumulative-depreciation slice (initially zeros). Populate
-  `liabilities["mortgage:{property_id}"]` from `mortgage_balance[:,
-0]`, `mortgage_interest[:, 0]`, `mortgage_principal[:, 0]`.
-- End-of-month site (`~:1872`): same construction but at the current
-  `month` column position. The dict carries a fresh
-  `PropertyState` / `LiabilityState` per iteration, each with
-  `(rollouts,)` slices of the precomputed matrices.
+**No matrices removed.** Mortgage matrices, `property_value`,
+disposition / partner-equity frames stay as they are;
+`SimulationState` reads from them. Phase 5 / 6 are where reads
+migrate through state and matrices become derived.
 
-For the no-property case (`property_id is None`), both dicts are
-empty — `state.properties` is `{}`, no mortgage entry. Downstream
-consumers loop over `.values()` and naturally do nothing.
-
-**Cumulative depreciation slice.** This is the one piece of data
-that needs a small derivation: today the engine reads
-`disposition.column("depreciation_taken_usd")[:, month]` (which is
-already cumulative per the property-sale module's output). Verify
-this is monotone-nondecreasing in `month` and use it directly. If
-it's not cumulative there, derive via `cumsum` over
-`property_depreciation_usd` in the disposition frame at Phase 3b
-init time.
-
-**No matrix is removed in Phase 3b.** Mortgage matrices,
-`property_value`, and the disposition / partner*equity / property-
-cash-flow frames stay as they are; `SimulationState` reads from
-them. Phase 6 (matrix-derivation) and the eventual decision-log
-refactor are where these get either replaced (mortgage payments
-become entries on the liability log, not a precomputed schedule) or
-kept as canonical inputs (the property value path is genuinely an
-input, not state). That's intentional — Phase 3b is the
-\_architectural* placement; physical replacement comes later.
-
-**Tax payable is deferred to Phase 4.** Today there is no
-tax-payable liability tracked in the engine — tax accrual happens
-inside `AccountingTraceBuilder` as posting entries against
-`TAX_PAYABLE` chart accounts, but nothing surfaces it as a per-month
-balance matrix. Phase 4 (collapsing the post-loop pass into the main
-month loop) is the natural place to introduce a `LiabilityKind.
-TAX_PAYABLE` entry: at quarter-marker and year-end months, the new
-single-pass loop will compute tax obligations from YTD income +
-estimated-payment ledger and emit obligations _and_ update the tax-
-payable liability balance. Phase 3b's
-`LiabilityKind` enum has a `TAX_PAYABLE` member as the seam for
-this; no engine code reads it yet.
-
-**Read sites — none change in Phase 3b.** The engine continues to
-read mortgage / property arrays directly. Phase 3b is purely the
-state-object scaffold for these fields; later phases (Phase 5+) will
-swap individual read sites to go through `state.liabilities[…]` /
-`state.properties[…]`.
-
-**`_settle_partner_equity_on_property_sale` and partner equity.**
-Partner equity is _not_ a liability — it's an ownership-stake
-ledger. Folding it into `SimulationState` is a separate question
-(see "Out of scope" below). The one in-loop `replace()` mutation at
-`:1965` produces a new `PartnerEquityArrays`; in a future phase the
-PartnerEquityArrays + the single mutation site become a per-rollout
-ownership-stake update with a clean log row. For Phase 3b, leave
-partner equity alone.
+**Tax payable seam.** `LiabilityKind.TAX_PAYABLE` is declared but
+not populated by Phase 3b. Phase 4 adds tax-payable entries to
+`agents[actor_id].liabilities["tax_payable"]` when the post-loop
+pass collapses into the main loop and quarterly / year-end tax
+obligations emit at their natural months.
 
 **Files touched in Phase 3b:**
 
-- `augur/core/simulation_state.py` — add `LiabilityKind`,
-  `PropertyState`, `LiabilityState` dataclasses; add `properties`
-  and `liabilities` fields to `SimulationState` plus
-  `state.property(id)` / `state.liability(id)` accessor helpers.
-- `augur/core/simulation_state_test.py` — unit-test the new
-  dataclasses and accessors with simple fixtures.
-- `augur/core/scenario_engine.py` — populate the two new dicts at
-  the two `state = SimulationState(...)` construction sites. No
-  read-side changes; matrices unchanged.
-- `augur/core/BUILD.bazel` — no dep changes (numpy + dataclass
-  only).
+- `augur/core/simulation_state.py` — restructure:
+  add `AgentState`, `PropertyState`, `PropertyStake`,
+  `LiabilityState`, `LiabilityKind`. Move `cash_by_account` and
+  `holdings` from `SimulationState` into `AgentState`. Convenience
+  accessors: `state.agent(actor_id)`, `state.property(property_id)`,
+  `agent.cash(account_id)`, `agent.holding(asset_id)`,
+  `agent.liability(liability_id)`, `agent.stake(property_id)`.
+- `augur/core/simulation_state_test.py` — extend tests to cover
+  the agent-centric shape: single-actor scenario, owner+partner
+  scenario, no-property scenario.
+- `augur/core/scenario_engine.py` — rewrite both `state =
+SimulationState(...)` call sites to construct the
+  `AgentState` / `PropertyState` / `PropertyStake` /
+  `LiabilityState` tree. No read-side changes.
+- `augur/core/BUILD.bazel` — no dep changes.
 
 **Verification.**
 
@@ -666,28 +709,24 @@ partner equity alone.
 //augur/core:scenario_engine_test //augur/core:test_e2e
 //augur/core:backend_test //augur/core:property_sale_test
 //augur/core:annual_tax_test` — all green.
-2. Add a small test in `simulation_state_test` that constructs
-   `SimulationState` with one property and one mortgage liability
-   and verifies `state.property(id).value_usd` / `state.liability(
-id).principal_usd` round-trip the input `(rollouts,)` arrays.
-3. Bench unchanged within ±5% (the only new work is two `dict`
-   constructions per month with one-element dicts — negligible).
+2. Tests: round-trip `(rollouts,)` arrays through the new
+   accessors; assert single-actor scenarios produce one agent
+   entry, owner+partner produce two.
+3. Bench within ±5% of current baseline.
 
 **Out of scope for Phase 3b (followups):**
 
-- Partner equity as a state-object field. The single in-loop
-  mutation site at `:1965` and the `PartnerEquityArrays.replace()`
-  pattern want a small design pass before fitting them into the
-  state object. Tracked as a Phase 3c if it lands separately.
 - Multi-property support. Engine is single-property today; the
-  `dict`-keyed shape is forward-compatible but no engine code today
-  iterates more than one property. Tracked as a future scenario-
-  schema change.
-- Read-site migration. Replacing inline matrix reads
-  (`mortgage_principal[:, month]`, `property_value[:, month]`, …)
-  with `state.liability(...).principal_usd` / `state.property(...).
-value_usd` is mechanical and lands in Phase 5 alongside the
-  derive-from-logs work; no value adding it here.
+  `dict`-keyed shape is forward-compatible but no engine code
+  iterates more than one property yet.
+- Read-site migration. Replacing inline matrix reads with
+  `state.agent(...).liability(...).principal_usd` etc. lands in
+  Phase 5 alongside derive-from-logs work.
+- `TAX_PAYABLE` liability population. Lands in Phase 4 with the
+  post-loop pass collapse.
+- Decision-log entries for partner-equity changes (the post-sale
+  `replace()` becomes a stake-update row on the action log).
+  Lands later alongside the cashflow log emission work.
 
 ### Phase 4: post-loop pass elimination
 
