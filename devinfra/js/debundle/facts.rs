@@ -412,16 +412,8 @@ fn analyze_item(
 ) -> StatementFacts {
     let kind = classify_item(item);
     let declared = collect_declared_names(item);
-    let mut at_init = AtInitReadCollector::default();
-    item.visit_with(&mut at_init);
-    let mut lazy = LazyReadCollector::default();
-    item.visit_with(&mut lazy);
-    let mut writes = BindingWriteCollector::default();
-    item.visit_with(&mut writes);
-    let mut calls = CallCollector::default();
-    item.visit_with(&mut calls);
-    let mut effects_collector = EffectSummaryCollector::new();
-    item.visit_with(&mut effects_collector);
+    let mut collector = StatementFactsCollector::new();
+    item.visit_with(&mut collector);
     let local_effects = collect_local_effects(item, &hints.known_effects);
     let purity = item_purity(
         item,
@@ -432,41 +424,38 @@ fn analyze_item(
         !local_effects.is_empty(),
     );
     let mut effects_writes = BTreeSet::<EffectCell>::new();
-    for name in &declared {
+    for name in declared.iter().chain(collector.at_init_writes.iter()) {
         effects_writes.insert(EffectCell::Binding(name.clone()));
     }
-    for name in &writes.at_init {
-        effects_writes.insert(EffectCell::Binding(name.clone()));
-    }
-    for key in &effects_collector.global_writes {
+    for key in &collector.global_writes {
         effects_writes.insert(EffectCell::GlobalProp(key.clone()));
     }
     let mut effects_reads = BTreeSet::<EffectCell>::new();
-    for name in &at_init.names {
+    for name in &collector.at_init_reads {
         effects_reads.insert(EffectCell::Binding(name.clone()));
     }
-    for key in &effects_collector.global_reads {
+    for key in &collector.global_reads {
         effects_reads.insert(EffectCell::GlobalProp(key.clone()));
     }
     let effects = StatementEffectSummary {
         writes: effects_writes,
         reads: effects_reads,
-        dataflow_summarizable: effects_collector.summarizable,
+        dataflow_summarizable: collector.dataflow_summarizable,
     };
     StatementFacts {
         ordinal,
         source_location: None,
         declared,
-        eager_reads: at_init.names,
-        eager_rebinds: writes.at_init,
-        lazy_reads: lazy.names,
-        lazy_rebinds: writes.lazy,
-        first_order_lazy_reads: lazy.first_order,
-        first_order_lazy_rebinds: writes.first_order_lazy,
+        eager_reads: collector.at_init_reads,
+        eager_rebinds: collector.at_init_writes,
+        lazy_reads: collector.lazy_reads,
+        lazy_rebinds: collector.lazy_writes,
+        first_order_lazy_reads: collector.first_order_lazy_reads,
+        first_order_lazy_rebinds: collector.first_order_lazy_writes,
         local_effects,
-        at_init_calls: calls.at_init,
-        body_calls: calls.lazy,
-        first_order_body_calls: calls.first_order_lazy,
+        at_init_calls: collector.at_init_calls,
+        body_calls: collector.lazy_calls,
+        first_order_body_calls: collector.first_order_lazy_calls,
         effects,
         purity,
         kind,
@@ -717,51 +706,6 @@ fn declaration_names(decl: &Decl) -> BTreeSet<String> {
     }
 }
 
-/// Visitor that collects ident reads happening at-init only. Stops
-/// at function bodies, method bodies, instance class-field
-/// initializers, getter/setter bodies, and other lazy positions.
-#[derive(Default)]
-struct AtInitReadCollector {
-    names: BTreeSet<String>,
-}
-
-impl Visit for AtInitReadCollector {
-    fn visit_ident(&mut self, node: &Ident) {
-        self.names.insert(node.sym.to_string());
-    }
-
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
-    // Export specifiers don't fire reads at module-init: ESM treats
-    // them as a static export entry, linked lazily when consumers
-    // import. Counting them as at-init reads adds spurious `R`
-    // edges (and, post-Phase-5 where R ⊆ I, spurious `I` edges).
-    // `export var X = ...` / `export class X {}` etc. are still
-    // visited via `ExportDecl`; only the bare-specifier forms are
-    // suppressed here.
-    fn visit_named_export(&mut self, _node: &NamedExport) {}
-    fn visit_export_all(&mut self, _node: &ExportAll) {}
-
-    // Function bodies are lazy — references inside don't read at-init.
-    fn visit_function(&mut self, _node: &Function) {}
-    fn visit_fn_decl(&mut self, _node: &FnDecl) {}
-    fn visit_fn_expr(&mut self, _node: &FnExpr) {}
-    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
-    fn visit_method_prop(&mut self, _node: &MethodProp) {}
-    fn visit_getter_prop(&mut self, _node: &GetterProp) {}
-    fn visit_setter_prop(&mut self, _node: &SetterProp) {}
-
-    fn visit_class(&mut self, node: &Class) {
-        visit_class_decl(self, node, |v, m| v.visit_class_member(m));
-    }
-
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        visit_eager_member_parts(self, member);
-    }
-}
-
 /// Shared trait for visitors that track lazy nesting depth and the
 /// per-body "past first await" boundary.
 ///
@@ -803,142 +747,166 @@ trait LazyBoundary: Visit {
     }
 }
 
-/// Visitor that collects ident reads happening inside lazy syntactic
-/// positions only — function bodies, method bodies, constructor
-/// bodies, instance class-field initializers, getter/setter bodies.
-/// Inverse boundary semantics from `AtInitReadCollector`.
+/// Single-pass collector producing every per-statement fact set the
+/// analyzer needs. Walks the statement's AST exactly once and buckets
+/// reads, rebind writes, calls, and effect-summary cells by the
+/// syntactic context the cursor is in (`lazy_depth`, `past_await`).
+/// Replaces the earlier five-pass design — one per fact set — which
+/// each re-implemented the same `LazyBoundary` boilerplate and walked
+/// the same AST.
 ///
-/// `first_order` is the subset of `names` whose read sites sit
-/// directly inside the function body the read collector is visiting
-/// (depth 1); deeper closures don't contribute. Used by at-init call
-/// promotion.
+/// Bucketing rules:
+///
+/// - `lazy_depth == 0` (eager, top of the statement): reads land in
+///   `at_init_reads`, rebind writes in `at_init_writes`, direct
+///   `f(...)` callees in `at_init_calls`; static-key
+///   `globalThis.<prop>` accesses contribute to
+///   `global_writes`/`global_reads`; bail-out shapes flip
+///   `dataflow_summarizable` to `false`.
+/// - `lazy_depth >= 1` (inside a function/arrow/method/getter/setter
+///   body, constructor body, or instance class-field initializer):
+///   reads/writes/calls land in `lazy_*`. The subset whose call sites
+///   sit at `lazy_depth == 1 && !past_await` also lands in
+///   `first_order_lazy_*` — used by at-init call promotion, which
+///   only inherits effects from a callee's immediate pre-await body.
+/// - Bail-out shapes nested inside lazy scopes are deliberately not
+///   recorded: at-init call promotion handles transitive effects via
+///   the call graph, not via per-statement syntactic checks.
 #[derive(Default)]
-struct LazyReadCollector {
-    names: BTreeSet<String>,
-    first_order: BTreeSet<String>,
+struct StatementFactsCollector {
+    at_init_reads: BTreeSet<String>,
+    lazy_reads: BTreeSet<String>,
+    first_order_lazy_reads: BTreeSet<String>,
+    at_init_writes: BTreeSet<String>,
+    lazy_writes: BTreeSet<String>,
+    first_order_lazy_writes: BTreeSet<String>,
+    at_init_calls: BTreeSet<String>,
+    lazy_calls: BTreeSet<String>,
+    first_order_lazy_calls: BTreeSet<String>,
+    global_writes: BTreeSet<String>,
+    global_reads: BTreeSet<String>,
+    dataflow_summarizable: bool,
     lazy_depth: u32,
     past_await: bool,
 }
 
-impl LazyBoundary for LazyReadCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
+impl StatementFactsCollector {
+    fn new() -> Self {
+        Self {
+            dataflow_summarizable: true,
+            ..Self::default()
+        }
     }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-}
 
-impl Visit for LazyReadCollector {
-    fn visit_ident(&mut self, node: &Ident) {
+    fn record_read(&mut self, name: &str) {
         if self.lazy_depth == 0 {
+            self.at_init_reads.insert(name.to_string());
             return;
         }
-        self.names.insert(node.sym.to_string());
+        self.lazy_reads.insert(name.to_string());
         if self.lazy_depth == 1 && !self.past_await {
-            self.first_order.insert(node.sym.to_string());
+            self.first_order_lazy_reads.insert(name.to_string());
         }
     }
 
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-
-    fn visit_await_expr(&mut self, node: &AwaitExpr) {
-        // Sub-expressions of the awaited operand evaluate before the
-        // engine suspends (`await foo(g())` runs `g()` then `foo` then
-        // suspends), so visit children first; only flip the flag once
-        // we've finished collecting the pre-await reads.
-        node.visit_children_with(self);
-        self.past_await = true;
-    }
-
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
-
-    fn visit_class(&mut self, node: &Class) {
-        lazy_visit_class(self, node);
-    }
-
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        lazy_visit_class_member(self, member);
-    }
-}
-
-/// Visitor that collects rebinding writes to identifier bindings,
-/// split by whether the write runs at module initialization or only
-/// from a lazy syntactic position.
-///
-/// `first_order_lazy` is the subset of `lazy` whose write sites sit
-/// directly inside the function body the collector is visiting
-/// (depth 1); deeper closures don't contribute. Used by at-init call
-/// promotion.
-#[derive(Default)]
-struct BindingWriteCollector {
-    at_init: BTreeSet<String>,
-    lazy: BTreeSet<String>,
-    first_order_lazy: BTreeSet<String>,
-    lazy_depth: u32,
-    past_await: bool,
-}
-
-impl LazyBoundary for BindingWriteCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-}
-
-impl BindingWriteCollector {
     fn record_write(&mut self, name: &str) {
         if self.lazy_depth == 0 {
-            self.at_init.insert(name.to_string());
+            self.at_init_writes.insert(name.to_string());
             return;
         }
-        self.lazy.insert(name.to_string());
+        self.lazy_writes.insert(name.to_string());
         if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy.insert(name.to_string());
+            self.first_order_lazy_writes.insert(name.to_string());
+        }
+    }
+
+    fn record_call(&mut self, name: &str) {
+        if self.lazy_depth == 0 {
+            self.at_init_calls.insert(name.to_string());
+            return;
+        }
+        self.lazy_calls.insert(name.to_string());
+        if self.lazy_depth == 1 && !self.past_await {
+            self.first_order_lazy_calls.insert(name.to_string());
+        }
+    }
+
+    fn bail_summarizable(&mut self) {
+        self.dataflow_summarizable = false;
+    }
+
+    fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
+        if !is_global_this_expr(&member.obj) {
+            return;
+        }
+        let key = match &member.prop {
+            MemberProp::Ident(ident) => Some(ident.sym.to_string()),
+            MemberProp::Computed(ComputedPropName { expr, .. }) => match strip_parens(expr) {
+                Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().into_owned()),
+                _ => {
+                    self.bail_summarizable();
+                    return;
+                }
+            },
+            MemberProp::PrivateName(_) => None,
+        };
+        if let Some(key) = key {
+            if is_write {
+                self.global_writes.insert(key);
+            } else {
+                self.global_reads.insert(key);
+            }
         }
     }
 }
 
-impl TargetAccessRecorder for BindingWriteCollector {
+impl LazyBoundary for StatementFactsCollector {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+}
+
+impl TargetAccessRecorder for StatementFactsCollector {
     fn record_binding_write(&mut self, name: &str) {
         self.record_write(name);
     }
 }
 
-impl Visit for BindingWriteCollector {
-    fn visit_ident(&mut self, _node: &Ident) {}
+impl Visit for StatementFactsCollector {
+    fn visit_ident(&mut self, node: &Ident) {
+        self.record_read(node.sym.as_ref());
+    }
+
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    // Export specifiers (`export { X }`, `export * from ...`) don't
+    // fire reads at module-init: ESM links them lazily when consumers
+    // import. Counting them as at-init reads invents spurious `R`/`I`
+    // edges. `export var X = ...` / `export class X {}` etc. route
+    // through `ExportDecl` and are still visited.
     fn visit_named_export(&mut self, _node: &NamedExport) {}
     fn visit_export_all(&mut self, _node: &ExportAll) {}
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         // The awaited operand runs to completion (synchronously)
-        // before the engine suspends; flip past_await only after
-        // recording its writes.
+        // before the engine suspends; visit its children first and
+        // flip `past_await` only after, so the pre-await reads/writes
+        // still count as first-order.
         node.visit_children_with(self);
         self.past_await = true;
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         record_assign_target(&node.left, self);
+        if self.lazy_depth == 0
+            && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
+        {
+            self.record_global_prop(member, /*is_write=*/ true);
+        }
         node.left.visit_with(self);
         node.right.visit_with(self);
     }
@@ -966,228 +934,16 @@ impl Visit for BindingWriteCollector {
         node.body.visit_with(self);
     }
 
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
-
-    fn visit_class(&mut self, node: &Class) {
-        lazy_visit_class(self, node);
-    }
-
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        lazy_visit_class_member(self, member);
-    }
-}
-
-/// Visitor that collects bare-identifier callees of `CallExpr` nodes,
-/// split by whether the call appears at-init (top-level chunk
-/// position, class static initializers) or only in a lazy position
-/// (function/arrow/method/getter/setter bodies, instance class fields,
-/// constructor bodies). Drives at-init call promotion in
-/// `build_owner_graph`: see DESIGN.md "At-init call promotion".
-///
-/// Only direct `f(...)` calls where the callee is an `Ident` are
-/// recorded. `obj.method()`, `(g)()`, `f()()`, computed callees, and
-/// `(const g = f, g)()` are skipped — interprocedural promotion only
-/// fires when the callee is statically a known chunk binding.
-#[derive(Default)]
-struct CallCollector {
-    at_init: BTreeSet<String>,
-    lazy: BTreeSet<String>,
-    first_order_lazy: BTreeSet<String>,
-    lazy_depth: u32,
-    past_await: bool,
-}
-
-impl LazyBoundary for CallCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-}
-
-impl Visit for CallCollector {
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-    fn visit_named_export(&mut self, _node: &NamedExport) {}
-    fn visit_export_all(&mut self, _node: &ExportAll) {}
-
-    fn visit_await_expr(&mut self, node: &AwaitExpr) {
-        // The awaited operand runs synchronously before the engine
-        // suspends; record its calls first, then flip past_await.
-        node.visit_children_with(self);
-        self.past_await = true;
-    }
-
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Some(callee) = call_callee_ident(node) {
-            let name = callee.to_string();
-            if self.lazy_depth == 0 {
-                self.at_init.insert(name);
-            } else {
-                self.lazy.insert(name.clone());
-                if self.lazy_depth == 1 && !self.past_await {
-                    self.first_order_lazy.insert(name);
-                }
-            }
+            self.record_call(callee);
         }
-        // Always recurse into args + callee so nested calls are seen.
-        node.visit_children_with(self);
-    }
-
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
-
-    fn visit_class(&mut self, node: &Class) {
-        lazy_visit_class(self, node);
-    }
-
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        lazy_visit_class_member(self, member);
-    }
-}
-
-/// Visitor that collects the per-statement (writes, reads) summary
-/// driving the dataflow-aware S-chain emission in `graph.rs`. Walks
-/// at-init scopes only (function/arrow/method/getter/setter/class-body
-/// scopes are lazy and don't contribute) and tracks:
-///
-/// - static-key `globalThis.<key>` writes / reads
-/// - bail-out shapes that defeat static dataflow tracking: `with`,
-///   direct `eval(...)`, `Function(...)` / `new Function(...)`,
-///   computed-key `globalThis[<expr>]`, `Object.defineProperty(<global>,
-///   ...)`, `new Proxy(<global>, ...)`.
-///
-/// When a bail-out shape fires at-init, `dataflow_summarizable` flips
-/// to `false`. The S-chain emission must then treat the statement as
-/// touching every cell and fall back to the unconditional edge.
-///
-/// Binding-level reads / writes are not re-collected here — the
-/// existing `AtInitReadCollector` / `BindingWriteCollector` already
-/// produce `eager_reads` / `eager_rebinds` / `declared`, which
-/// `analyze_item` folds into the final [`StatementEffectSummary`].
-#[derive(Default)]
-struct EffectSummaryCollector {
-    global_writes: BTreeSet<String>,
-    global_reads: BTreeSet<String>,
-    summarizable: bool,
-    lazy_depth: u32,
-    past_await: bool,
-}
-
-impl EffectSummaryCollector {
-    fn new() -> Self {
-        Self {
-            summarizable: true,
-            ..Self::default()
-        }
-    }
-
-    fn bail(&mut self) {
-        self.summarizable = false;
-    }
-
-    fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
-        if !is_global_this_expr(&member.obj) {
-            return;
-        }
-        let key = match &member.prop {
-            MemberProp::Ident(ident) => Some(ident.sym.to_string()),
-            MemberProp::Computed(ComputedPropName { expr, .. }) => match strip_parens(expr) {
-                Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().into_owned()),
-                _ => {
-                    self.bail();
-                    return;
-                }
-            },
-            MemberProp::PrivateName(_) => None,
-        };
-        if let Some(key) = key {
-            if is_write {
-                self.global_writes.insert(key);
-            } else {
-                self.global_reads.insert(key);
-            }
-        }
-    }
-}
-
-impl LazyBoundary for EffectSummaryCollector {
-    fn lazy_depth_mut(&mut self) -> &mut u32 {
-        &mut self.lazy_depth
-    }
-    fn past_await_mut(&mut self) -> &mut bool {
-        &mut self.past_await
-    }
-}
-
-impl Visit for EffectSummaryCollector {
-    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
-    fn visit_named_export(&mut self, _node: &NamedExport) {}
-    fn visit_export_all(&mut self, _node: &ExportAll) {}
-
-    fn visit_await_expr(&mut self, node: &AwaitExpr) {
-        node.visit_children_with(self);
-        self.past_await = true;
-    }
-
-    fn visit_with_stmt(&mut self, node: &WithStmt) {
-        if self.lazy_depth == 0 {
-            self.bail();
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_assign_expr(&mut self, node: &AssignExpr) {
-        if self.lazy_depth == 0
-            && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
-        {
-            self.record_global_prop(member, /*is_write=*/ true);
-        }
-        node.left.visit_with(self);
-        node.right.visit_with(self);
-    }
-
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if self.lazy_depth == 0 {
-            self.record_global_prop(node, /*is_write=*/ false);
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_call_expr(&mut self, node: &CallExpr) {
         if self.lazy_depth == 0 {
             if let Callee::Expr(expr) = &node.callee
                 && let Expr::Ident(ident) = strip_parens(expr)
             {
                 match ident.sym.as_ref() {
-                    "eval" | "Function" => self.bail(),
+                    "eval" | "Function" => self.bail_summarizable(),
                     _ => {}
                 }
             }
@@ -1204,7 +960,7 @@ impl Visit for EffectSummaryCollector {
                     .first()
                     .is_some_and(|a| is_global_this_expr(&a.expr))
             {
-                self.bail();
+                self.bail_summarizable();
             }
         }
         node.visit_children_with(self);
@@ -1215,7 +971,7 @@ impl Visit for EffectSummaryCollector {
             && let Expr::Ident(ident) = strip_parens(&node.callee)
         {
             match ident.sym.as_ref() {
-                "Function" => self.bail(),
+                "Function" => self.bail_summarizable(),
                 "Proxy" => {
                     let proxies_global = node
                         .args
@@ -1223,11 +979,25 @@ impl Visit for EffectSummaryCollector {
                         .and_then(|args| args.first())
                         .is_some_and(|a| is_global_this_expr(&a.expr));
                     if proxies_global {
-                        self.bail();
+                        self.bail_summarizable();
                     }
                 }
                 _ => {}
             }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if self.lazy_depth == 0 {
+            self.record_global_prop(node, /*is_write=*/ false);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_with_stmt(&mut self, node: &WithStmt) {
+        if self.lazy_depth == 0 {
+            self.bail_summarizable();
         }
         node.visit_children_with(self);
     }

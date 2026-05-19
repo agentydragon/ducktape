@@ -344,3 +344,26 @@ Land both sides in lock-step (or in a release-pin-aware order)
 so an in-flight Tana peel doesn't suddenly miss the file. Adds
 to the broader Tana peel coordination tracked in
 `gaffer-private/tana/re/web/`.
+
+## Migrate `BindingName = String` → swc's hygiene-preserving `Id`
+
+`ids.rs:55` aliases `BindingName` to `String`, flattening swc's
+`Id = (Atom, SyntaxContext)`. This works at chunk top-level (no
+hygienic shadowing possible) but means cross-scope work has to
+re-introduce hygiene out-of-band — see the explicit `top_level_id`
+lookups in lowering and the lossy `binding_names` helper
+(`binding_targets.rs:15`) that drops `SyntaxContext` from `Pat`
+walks.
+
+Migrating would let us drop the manual re-resolution: store `Id`
+everywhere `BindingName` flows today, swap `binding_names` for
+`swc_ecma_utils::find_pat_ids::<Pat, Id>`, and shrink the
+`EffectCell::Binding(BindingName)` cell key in `facts.rs` /
+`graph.rs` to a hygiene-aware identity. Mostly mechanical but
+touches every fact-producing site (`StatementFacts.declared`,
+`eager_reads`, `eager_rebinds`, `lazy_reads`, `lazy_rebinds`,
+`first_order_lazy_*`, `local_effects`, `at_init_calls`,
+`body_calls`, `first_order_body_calls`), the binding table interner,
+and the JSON report schema. Plan when there's a reason to want
+hygiene-aware bindings (e.g. analyzing a chunk that legally
+shadows top-level names via top-level `var`).
