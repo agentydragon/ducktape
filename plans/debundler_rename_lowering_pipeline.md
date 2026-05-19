@@ -35,11 +35,12 @@ through.
 | 4c   | NOT STARTED | Side-table rebuilds during execute (`runtime_imports`, `referenced_idents`, export tables, source-map fragments, cross-module binding indexes), all keyed on original `Id`                          |
 | 4d   | NOT STARTED | `LoweringOp { RewriteImportSpecifier, AddExport, ReorderHoists }` variants — added when their first contributor is migrated                                                                         |
 | 5    | DONE        | `validate_chunk_renames_via_plan` replaces the inline validation loop in `lower.rs:167-238`; AST mutation still runs through `IdentifierRenamer` (executor migration follows Phase 7)               |
-| 6    | NOT STARTED | Migrate naturalizer `collect_*` funcs + `RenameAndShorthandNaturalizer` onto Plan; thread `Scope::Function(_)` through the execute visitor                                                          |
+| 6    | DONE        | `naturalize_module_body` submits spec-driven (Explicit) + heuristic (Heuristic/SkipIfClaimed) renames to the per-module `LoweringPlan`; legacy `drop_target_collisions` retired                     |
 | 7a   | DONE        | Entry-body call site (`lower.rs:209`) on Plan via `disambiguate_import_locals_via_plan`; `imports_cross.rs` cross-module + residual-entry sites still on legacy (Phase 7b/c)                        |
 | 7b   | DONE        | `cross_module_imports_for_plan` routes through `disambiguate_import_locals_via_plan`; legacy `disambiguate_import_locals` deleted (now dead)                                                        |
 | 7c   | DONE        | `residual_entry_imports_for_moved_body` routes through `disambiguate_residual_entry_import_locals_via_plan`; legacy `disambiguate_residual_entry_import_locals` and `mint_fresh_local_name` deleted |
-| 8    | NOT STARTED | Migrate `materialize_logical_chunk` declaration moves into Phase A/B `MoveBinding` ops; retire the implicit `binding_assignment`-driven body splitting in favour of `apply_moves`                   |
+| 8a   | DONE        | Every `binding_assignment` entry now submits a `MoveBinding` op to the chunk plan; `chunk_plan.seal()` runs at end of `lower_chunk` for cross-op coherence over the full rename + move picture      |
+| 8b   | NOT STARTED | Replace `remaining_item_after_selection` (binding_assignment-driven body splitting) with an `apply_moves` visitor that consumes `plan.move_index` as the sole source of truth                       |
 | 9    | NOT STARTED | Retire `plan_module_reference_needs` reverse-lookup (#1631 fix) — dead once renames + runtime imports share one final mapping                                                                       |
 | 10   | NOT STARTED | Retire `normalize_relative_module_specifier` defensive use (#1627 fix); the helper can stay as a path utility but the call site in module-specifier rewriting drops it                              |
 
