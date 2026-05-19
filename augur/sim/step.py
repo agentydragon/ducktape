@@ -1,40 +1,64 @@
 """`step_emit_events` — pure function that reads state + scenario +
 month index and returns the events for that month.
 
-At spike 1 step 4 the step emits:
+At spike 1 step 7 the step emits:
 
   - transfer events for scheduled + recurring transfers active at
-    this month;
-  - lot_disposition events for scheduled asset sales active at this
-    month — FIFO across the agent's lots of the asset, vectorized
-    over the rollout dimension.
+    this month, optionally tagged with an `income_category`;
+  - lot_disposition events for scheduled asset sales (FIFO across
+    the agent's lots);
+  - tax_accrual events at the end of each tax year (month_index
+    in {11, 23, 35, ...}) — one per (taxed agent, jurisdiction),
+    computed by bracket-walking end-of-year ordinary income minus
+    the jurisdiction's standard deduction.
 
-Initial holdings are seeded into `state.asset_lots` at _initial_state
-time, not via in-sim AssetPurchase events. In-sim purchases (a later
-layer) will emit AssetPurchase events here. The step does not mutate
-`state`. The simulate loop calls `apply_events(state, step_result)`
-separately.
+The step does not mutate `state`. The simulate loop calls
+`apply_events(state, step_result)` separately. apply_events
+processes income transfers before tax accruals so the accrual
+amount the step computes is consistent with the YTD that apply
+will produce.
 """
 
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 
-from augur.sim.events import ASSET_PURCHASE_EVENT_SCHEMA, LOT_DISPOSITION_EVENT_SCHEMA, TRANSFER_EVENT_SCHEMA, EventLog
+from augur.sim.events import (
+    ASSET_PURCHASE_EVENT_SCHEMA,
+    LOT_DISPOSITION_EVENT_SCHEMA,
+    TAX_ACCRUAL_EVENT_SCHEMA,
+    TRANSFER_EVENT_SCHEMA,
+    EventLog,
+)
+from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.market import MarketContext
-from augur.sim.scenario import RecurringTransfer, Scenario, ScheduledAssetSale, ScheduledTransfer
+from augur.sim.scenario import RecurringTransfer, Scenario, ScheduledAssetSale, ScheduledTransfer, TaxProfile
 from augur.sim.state import StateCrossSection
+from augur.sim.tax import apply_brackets
 
 
 def step_emit_events(
-    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int, rollout_count: int
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    market: MarketContext,
+    jurisdictions: dict[str, Jurisdiction],
+    month: int,
+    rollout_count: int,
 ) -> EventLog:
     """Return the events to apply at this month. Pure: does not
     mutate `state`."""
+    transfers = _emit_transfers(scenario, month, rollout_count)
+    dispositions = _emit_lot_dispositions(state, scenario, market, month)
+    tax_accruals = _emit_year_end_tax_accruals(
+        state=state, scenario=scenario, jurisdictions=jurisdictions, month=month, transfers=transfers
+    )
     return EventLog(
-        transfers=_emit_transfers(scenario, month, rollout_count),
+        transfers=transfers,
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
-        lot_dispositions=_emit_lot_dispositions(state, scenario, market, month),
+        lot_dispositions=dispositions,
+        tax_accruals=tax_accruals,
     )
 
 
@@ -69,6 +93,7 @@ def _transfer_block_per_rollout(
         pl.lit(t.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
         pl.lit(t.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
         pl.lit(t.amount_usd, dtype=pl.Float64()).alias("amount_usd"),
+        pl.lit(t.income_category, dtype=pl.Utf8()).alias("income_category"),
     )
 
 
@@ -153,3 +178,96 @@ def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, prices_at_m
         {"price_per_unit_usd": "_unit_price"}
     )
     return lots.join(prices_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
+
+
+def _is_year_end(month: int) -> bool:
+    """Tax years are calendar-year-aligned at spike 1: the year
+    ends at month index 11, 23, 35, …"""
+    return month % 12 == 11
+
+
+def _emit_year_end_tax_accruals(
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    jurisdictions: dict[str, Jurisdiction],
+    month: int,
+    transfers: pl.DataFrame,
+) -> pl.DataFrame:
+    """At year-end emit one `tax_accrual` row per (taxed agent,
+    jurisdiction, rollout). Tax = bracket-walk(
+    end_of_year_ordinary_income - standard_deduction) where
+    `end_of_year_ordinary_income` is the pre-month YTD from state
+    plus the income arriving this month (which the step is emitting
+    itself, so it can sum without round-tripping through apply)."""
+    if not _is_year_end(month) or not scenario.tax_profiles:
+        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
+    end_of_year_income = _compute_end_of_year_ordinary_income(state, transfers, scenario.tax_profiles)
+    blocks = [
+        _tax_accruals_for_profile(profile, end_of_year_income, jurisdictions, month)
+        for profile in scenario.tax_profiles
+    ]
+    blocks = [b for b in blocks if not b.is_empty()]
+    if not blocks:
+        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
+    return pl.concat(blocks).select(list(TAX_ACCRUAL_EVENT_SCHEMA.keys()))
+
+
+def _compute_end_of_year_ordinary_income(
+    state: StateCrossSection, transfers: pl.DataFrame, profiles: list[TaxProfile]
+) -> pl.DataFrame:
+    """Return a frame of `(rollout_index, agent_id,
+    ordinary_income_usd)` for every taxed agent. The value is the
+    pre-month YTD plus this month's incoming ordinary transfers
+    (so apply_events would produce the same YTD before the year
+    closes)."""
+    taxed_agents = {p.agent_id for p in profiles}
+    pre_month = state.ordinary_income_ytd.filter(pl.col("agent_id").is_in(list(taxed_agents)))
+    this_month = (
+        transfers.filter((pl.col("income_category") == "ordinary") & pl.col("to_agent_id").is_in(list(taxed_agents)))
+        .group_by(["rollout_index", "to_agent_id"])
+        .agg(pl.col("amount_usd").sum().alias("_this_month_income"))
+        .rename({"to_agent_id": "agent_id"})
+    )
+    return (
+        pre_month.join(this_month, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(ordinary_income_usd=pl.col("ordinary_income_usd") + pl.col("_this_month_income").fill_null(0.0))
+        .drop("_this_month_income")
+    )
+
+
+def _tax_accruals_for_profile(
+    profile: TaxProfile, end_of_year_income: pl.DataFrame, jurisdictions: dict[str, Jurisdiction], month: int
+) -> pl.DataFrame:
+    """Compute one row per jurisdiction in the profile by walking
+    that jurisdiction's bracket schedule against
+    `max(income - standard_deduction, 0)`. The walk is vectorized
+    via numpy across the rollout dimension."""
+    income_rows = end_of_year_income.filter(pl.col("agent_id") == profile.agent_id).sort("rollout_index")
+    if income_rows.is_empty():
+        return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
+    rollout_idx = income_rows.get_column("rollout_index").to_numpy()
+    income = income_rows.get_column("ordinary_income_usd").to_numpy()
+    blocks = []
+    for jurisdiction_id in profile.jurisdiction_ids:
+        jurisdiction = jurisdictions[jurisdiction_id]
+        deduction = jurisdiction.standard_deduction[profile.filing_status]
+        taxable = np.maximum(income - deduction, 0.0)
+        brackets = jurisdiction.ordinary_income_brackets[profile.filing_status]
+        tax = apply_brackets(taxable, brackets)
+        cause_id = f"{profile.agent_id}_{jurisdiction_id}_year_end_accrual_m{month}"
+        blocks.append(
+            pl.DataFrame(
+                {
+                    "rollout_index": rollout_idx,
+                    "month_index": np.full_like(rollout_idx, month),
+                    "cause_id": [cause_id] * len(rollout_idx),
+                    "agent_id": [profile.agent_id] * len(rollout_idx),
+                    "jurisdiction_id": [jurisdiction_id] * len(rollout_idx),
+                    "tax_year_end_month": np.full_like(rollout_idx, month),
+                    "amount_usd": tax,
+                },
+                schema=TAX_ACCRUAL_EVENT_SCHEMA,
+            )
+        )
+    return pl.concat(blocks)

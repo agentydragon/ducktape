@@ -33,7 +33,13 @@ class InitialAccountBalance(BaseModel):
 class ScheduledTransfer(BaseModel):
     """A cash transfer between two agents scheduled at a fixed
     month. Emitted by the engine as a Transfer event at that month;
-    the same amount applies to every rollout."""
+    the same amount applies to every rollout.
+
+    `income_category` tags the transfer for downstream tax
+    classification. The canonical value at spike 1 is `"ordinary"`
+    (W-2-style wages for the recipient). When set, the recipient's
+    `ordinary_income_ytd` increments by the transferred amount at
+    apply time."""
 
     month: int
     cause_id: str
@@ -42,6 +48,7 @@ class ScheduledTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: float
+    income_category: str | None = None
 
 
 class RecurringTransfer(BaseModel):
@@ -65,6 +72,7 @@ class RecurringTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: float
+    income_category: str | None = None
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
@@ -108,6 +116,24 @@ class ScheduledAssetSale(BaseModel):
     price_per_unit_usd: float | None = None
 
 
+class TaxProfile(BaseModel):
+    """A taxed agent's tax-time configuration. At spike 1 only
+    single filers are modeled; later layers add MFJ / HoH and any
+    filing-status-driven branching. `jurisdiction_ids` is the
+    ordered list of taxing authorities — typically
+    `["federal_us", "california"]` for a CA resident.
+
+    `tax_authority_agent_id` is the destination of tax-payment
+    transfers when timing logic emits them (a later step); it is a
+    bookkeeping sink, not a taxed agent itself."""
+
+    agent_id: str
+    filing_status: str = "single"
+    jurisdiction_ids: list[str]
+    tax_authority_agent_id: str
+    prior_year_tax_usd: float = 0.0
+
+
 class Scenario(BaseModel):
     """Spike-1 simulation scenario. Carries the minimum to run
     a multi-rollout simulation over a fixed horizon with both
@@ -121,4 +147,5 @@ class Scenario(BaseModel):
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     market: MarketBundle = Field(default_factory=MarketBundle)
+    tax_profiles: list[TaxProfile] = Field(default_factory=list)
     horizon_months: PositiveInt

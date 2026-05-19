@@ -22,6 +22,7 @@ from augur.sim.scenario import (
     Scenario,
     ScheduledAssetSale,
     ScheduledTransfer,
+    TaxProfile,
 )
 from augur.sim.simulate import _initial_state, simulate
 
@@ -810,6 +811,107 @@ def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None
         (pl.col("agent_id") == "alice") & (pl.col("month_index") == 6)
     ).get_column("balance_usd")
     assert cash_at_end.n_unique() > 100
+
+
+def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
+    """L7 — Alice gets $200k of W-2 income in year 0. At month 11
+    the engine computes federal + CA tax on (200000 - std_deduction)
+    and writes one tax_liability row per jurisdiction.
+
+    Federal: $200,000 - $14,600 = $185,400 taxable.
+      10% × 11600 + 12% × 35550 + 22% × 53375 + 24% × 84825
+      = 1160.00 + 4266.00 + 11742.50 + 20358.00 = 37526.50
+    California: $200,000 - $5,363 = $194,637 taxable.
+      1% × 10412 + 2% × 14272 + 4% × 14275 + 6% × 15122 + 8% × 14269
+      + 9.3% × 126287 = 104.12 + 285.44 + 571.00 + 907.32 + 1141.52
+      + 11744.69 = 14754.09
+    """
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=200_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # 12 paycheck transfers fired (income_category = "ordinary").
+    assert result.events_log.transfers.filter(pl.col("income_category") == "ordinary").height == 12
+
+    # Two tax accruals at month 11 — federal + CA — for one rollout.
+    accruals = result.events_log.tax_accruals.sort("jurisdiction_id")
+    assert accruals.height == 2
+    accruals_by_jurisdiction = {row["jurisdiction_id"]: row for row in accruals.iter_rows(named=True)}
+    assert accruals_by_jurisdiction["federal_us"]["amount_usd"] == pytest.approx(37526.50, abs=0.01)
+    assert accruals_by_jurisdiction["california"]["amount_usd"] == pytest.approx(14754.09, abs=0.02)
+    assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
+    assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
+
+    # tax_liabilities at end-of-horizon has two rows (one per
+    # jurisdiction) with matching amounts.
+    end_liabilities = result.tax_liabilities.filter(pl.col("month_index") == 12).sort("jurisdiction_id")
+    assert end_liabilities.height == 2
+    assert end_liabilities.get_column("amount_owed_usd").to_list()[0] == pytest.approx(14754.09, abs=0.02)
+    assert end_liabilities.get_column("amount_owed_usd").to_list()[1] == pytest.approx(37526.50, abs=0.01)
+
+    # YTD ordinary income peaks at $200000 at month 11, resets to 0
+    # at month 12 after the year-end accrual fires.
+    ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
+    assert ytd_alice.get_column("ordinary_income_usd").to_list()[-2] == pytest.approx(200_000.0, abs=1e-6)
+    assert ytd_alice.get_column("ordinary_income_usd").to_list()[-1] == 0.0
+
+
+def test_no_tax_profile_means_no_year_end_accrual() -> None:
+    """If no agent has a tax profile, the year-end accrual emits
+    nothing — confirms the engine doesn't tax non-taxed agents."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=5_000.0,
+                income_category="ordinary",
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    assert result.events_log.tax_accruals.is_empty()
+    assert result.tax_liabilities.is_empty()
 
 
 def test_explicit_sale_price_overrides_market() -> None:

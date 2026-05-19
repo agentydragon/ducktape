@@ -27,6 +27,10 @@ TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "to_agent_id": pl.Utf8(),
     "to_account_id": pl.Utf8(),
     "amount_usd": pl.Float64(),
+    # Tax classification: when set (e.g. "ordinary" for W-2 wages),
+    # apply_events increments the recipient's ordinary_income_ytd.
+    # Null for non-income transfers (e.g. expense payments).
+    "income_category": pl.Utf8(),
 }
 
 # `AssetPurchase` records the creation of a new tax lot — either an
@@ -45,6 +49,21 @@ ASSET_PURCHASE_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "lot_id": pl.Utf8(),
     "quantity": pl.Float64(),
     "cost_basis_per_unit_usd": pl.Float64(),
+}
+
+# `TaxAccrual` records a year-end tax computation: a single
+# year's ordinary income for one agent under one jurisdiction has
+# been bracket-walked, and the resulting tax `amount_usd` is now
+# owed. apply_events appends a row to `state.tax_liabilities` and
+# zeroes the agent's `ordinary_income_ytd` for the next year.
+TAX_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "jurisdiction_id": pl.Utf8(),
+    "tax_year_end_month": pl.Int64(),
+    "amount_usd": pl.Float64(),
 }
 
 # `LotDisposition` records the consumption of part (or all) of one
@@ -76,6 +95,7 @@ class EventLog:
     transfers: pl.DataFrame
     asset_purchases: pl.DataFrame
     lot_dispositions: pl.DataFrame
+    tax_accruals: pl.DataFrame
 
     @classmethod
     def empty(cls) -> EventLog:
@@ -83,4 +103,5 @@ class EventLog:
             transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
             asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
             lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
+            tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
         )

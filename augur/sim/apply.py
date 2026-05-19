@@ -14,7 +14,9 @@ for every M. If the invariant ever fails, the bug is here and the
 fix is in one place.
 
 Dispatch is by event kind: each kind's frame is consumed by a
-kind-specific apply function. `apply_events` composes them.
+kind-specific apply function. `apply_events` composes them in a
+fixed order so that downstream kinds (tax accruals) see the
+already-updated state from upstream kinds (income transfers).
 """
 
 from __future__ import annotations
@@ -27,9 +29,17 @@ from augur.sim.state import ASSET_LOT_SCHEMA, StateCrossSection
 
 def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSection:
     """Apply all events in `events` to `state`. Returns the new
-    cross-section. Pure: does not mutate inputs."""
+    cross-section. Pure: does not mutate inputs.
+
+    Order matters: income-carrying transfers increment
+    `ordinary_income_ytd` first, then asset sales credit cash and
+    consume lots, then year-end tax accruals book a liability and
+    zero out the year-to-date income."""
     cash_balances = state.cash_balances
     asset_lots = state.asset_lots
+    ordinary_income_ytd = state.ordinary_income_ytd
+    tax_liabilities = state.tax_liabilities
+
     if not events.asset_purchases.is_empty():
         asset_lots = _apply_asset_purchases(asset_lots, events.asset_purchases)
     if not events.lot_dispositions.is_empty():
@@ -37,7 +47,17 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
         cash_balances = _apply_lot_dispositions_to_cash(cash_balances, events.lot_dispositions)
     if not events.transfers.is_empty():
         cash_balances = _apply_transfers(cash_balances, events.transfers)
-    return StateCrossSection(cash_balances=cash_balances, asset_lots=asset_lots)
+        ordinary_income_ytd = _apply_income_to_ytd(ordinary_income_ytd, events.transfers)
+    if not events.tax_accruals.is_empty():
+        tax_liabilities = _apply_tax_accruals_to_liabilities(tax_liabilities, events.tax_accruals)
+        ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
+
+    return StateCrossSection(
+        cash_balances=cash_balances,
+        asset_lots=asset_lots,
+        ordinary_income_ytd=ordinary_income_ytd,
+        tax_liabilities=tax_liabilities,
+    )
 
 
 def _apply_transfers(cash_balances: pl.DataFrame, transfers: pl.DataFrame) -> pl.DataFrame:
@@ -62,6 +82,25 @@ def _apply_transfers(cash_balances: pl.DataFrame, transfers: pl.DataFrame) -> pl
             balance_usd=pl.col("balance_usd") - pl.col("_delta_out").fill_null(0.0) + pl.col("_delta_in").fill_null(0.0)
         )
         .drop(["_delta_out", "_delta_in"])
+    )
+
+
+def _apply_income_to_ytd(ordinary_income_ytd: pl.DataFrame, transfers: pl.DataFrame) -> pl.DataFrame:
+    """Increment per-(rollout, recipient) ordinary_income_ytd by
+    the sum of transfer amounts whose `income_category == "ordinary"`.
+    Transfers without that tag don't touch YTD."""
+    ordinary_transfers = transfers.filter(pl.col("income_category") == "ordinary")
+    if ordinary_transfers.is_empty():
+        return ordinary_income_ytd
+    deltas = (
+        ordinary_transfers.group_by(["rollout_index", "to_agent_id"])
+        .agg(pl.col("amount_usd").sum().alias("_delta"))
+        .rename({"to_agent_id": "agent_id"})
+    )
+    return (
+        ordinary_income_ytd.join(deltas, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(ordinary_income_usd=pl.col("ordinary_income_usd") + pl.col("_delta").fill_null(0.0))
+        .drop("_delta")
     )
 
 
@@ -111,4 +150,38 @@ def _apply_lot_dispositions_to_cash(cash_balances: pl.DataFrame, dispositions: p
         cash_balances.join(credits, on=["rollout_index", "agent_id", "account_id"], how="left")
         .with_columns(balance_usd=pl.col("balance_usd") + pl.col("_delta_in").fill_null(0.0))
         .drop("_delta_in")
+    )
+
+
+def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
+    """Append each accrual as a new liability row. Liabilities are
+    additive — paying them down is a later (step-9) concern that
+    reduces `amount_owed_usd` via tax-payment events."""
+    new_rows = tax_accruals.select(
+        pl.col("rollout_index"),
+        pl.col("agent_id"),
+        pl.col("jurisdiction_id"),
+        pl.col("tax_year_end_month"),
+        pl.col("amount_usd").alias("amount_owed_usd"),
+    )
+    if tax_liabilities.is_empty():
+        return new_rows
+    return pl.concat([tax_liabilities, new_rows])
+
+
+def _reset_ytd_for_taxed_agents(ordinary_income_ytd: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
+    """Zero `ordinary_income_usd` for every (rollout, agent) that
+    has a tax accrual fired this month — that's "year closed, start
+    counting again from zero". Multiple jurisdictions accruing for
+    the same agent collapse to one reset via the `_reset` flag from
+    the left join."""
+    affected = tax_accruals.select("rollout_index", "agent_id").unique().with_columns(pl.lit(True).alias("_reset"))
+    return (
+        ordinary_income_ytd.join(affected, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(
+            ordinary_income_usd=pl.when(pl.col("_reset").fill_null(False))
+            .then(0.0)
+            .otherwise(pl.col("ordinary_income_usd"))
+        )
+        .drop("_reset")
     )

@@ -23,6 +23,28 @@ CASH_BALANCES_SCHEMA: dict[str, pl.DataType] = {
     "balance_usd": pl.Float64(),
 }
 
+# Running total of ordinary (W-2-style) income for the current tax
+# year, per `(rollout_index, agent_id)`. Reset to 0 by year-end
+# tax accrual events. Only taxed agents have rows here (the engine
+# initializes one row per `TaxProfile.agent_id` per rollout).
+ORDINARY_INCOME_YTD_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "agent_id": pl.Utf8(),
+    "ordinary_income_usd": pl.Float64(),
+}
+
+# Outstanding tax liabilities — money owed to a tax authority that
+# hasn't been paid yet. The year-end accrual event creates one row
+# per `(rollout, agent, jurisdiction, tax_year_end_month)`; later
+# layers reduce `amount_owed_usd` as payments fire.
+TAX_LIABILITIES_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "agent_id": pl.Utf8(),
+    "jurisdiction_id": pl.Utf8(),
+    "tax_year_end_month": pl.Int64(),
+    "amount_owed_usd": pl.Float64(),
+}
+
 # An asset lot is a tax-relevant unit-of-acquisition: a quantity of
 # some asset bought at a specific time at a specific per-unit cost
 # basis. Sales consume from lots in some order (FIFO for spike 1);
@@ -50,3 +72,5 @@ class StateCrossSection:
 
     cash_balances: pl.DataFrame
     asset_lots: pl.DataFrame
+    ordinary_income_ytd: pl.DataFrame
+    tax_liabilities: pl.DataFrame

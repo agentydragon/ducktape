@@ -54,6 +54,27 @@ py_test(
 )
 
 py_library(
+    name = "tax_py",
+    srcs = ["tax.py"],
+    deps = [
+        ":jurisdictions_py",
+        "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "tax_test",
+    srcs = ["tax_test.py"],
+    deps = [
+        ":jurisdictions_py",
+        ":tax_py",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "scenario_py",
     srcs = ["scenario.py"],
     deps = [
@@ -77,9 +98,12 @@ py_library(
     srcs = ["step.py"],
     deps = [
         ":events_py",
+        ":jurisdictions_py",
         ":market_py",
         ":scenario_py",
         ":state_py",
+        ":tax_py",
+        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
@@ -99,6 +123,7 @@ py_library(
     deps = [
         ":apply_py",
         ":events_py",
+        ":jurisdictions_py",
         ":market_py",
         ":run_py",
         ":scenario_py",
@@ -116,6 +141,7 @@ py_test(
         ":market_py",
         ":scenario_py",
         ":simulate_py",
+        ":state_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
