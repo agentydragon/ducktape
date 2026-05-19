@@ -147,13 +147,17 @@ class TaxProfile(BaseModel):
     `["federal_us", "california"]` for a CA resident.
 
     `tax_authority_agent_id` is the destination of tax-payment
-    transfers when timing logic emits them (a later step); it is a
-    bookkeeping sink, not a taxed agent itself."""
+    transfers — a bookkeeping sink, not a taxed agent itself.
+    `payment_account_id` is the agent's account that the engine
+    debits at year-end; `tax_authority_account_id` is the matching
+    credit account on the authority side."""
 
     agent_id: str
     filing_status: str = "single"
     jurisdiction_ids: list[str]
     tax_authority_agent_id: str
+    payment_account_id: str = "checking"
+    tax_authority_account_id: str = "checking"
     prior_year_tax_usd: float = 0.0
 
 

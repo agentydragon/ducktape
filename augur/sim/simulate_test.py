@@ -999,6 +999,133 @@ def test_no_tax_profile_means_no_year_end_accrual() -> None:
     assert result.tax_liabilities.is_empty()
 
 
+def test_year_end_tax_payment_debits_agent_cash() -> None:
+    """The year-end tax accrual is mirrored into a transfer event
+    from the taxed agent's checking to the tax authority. Alice
+    earns $200k of W-2 income across year 0; at month 11 the
+    engine emits one tax-payment transfer per jurisdiction whose
+    amount matches the accrual. End-of-year cash reflects the
+    payments having gone out."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=200_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Year-end tax: $37538.50 federal + $14754.09 CA = $52292.59.
+    tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("_payment"))
+    assert tax_payments.height == 2
+    assert tax_payments.get_column("amount_usd").sum() == pytest.approx(52_292.59, abs=0.02)
+    # Tax payments fire at year-end month 11.
+    assert set(tax_payments.get_column("month_index").to_list()) == {11}
+    # Cash flow: $200k income - $52292.59 tax = $147707.41 at end of horizon.
+    alice_end_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert alice_end_cash == pytest.approx(200_000.0 - 52_292.59, abs=0.02)
+    # The IRS sink accumulates the tax inflows.
+    irs_end_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "irs") & (pl.col("month_index") == 12))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert irs_end_cash == pytest.approx(52_292.59, abs=0.02)
+
+
+def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
+    """When the tax-payment transfer at year-end exceeds the
+    agent's cash plus liquidatable assets, the floor-triggered
+    sale policy tries to cover, and the rollout-failure detector
+    fires when even that fails. The "mandatory obligation that
+    fails the scenario if unpaid" pattern works for any cash
+    outflow — taxes here, rent in other tests, later mortgages."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=500_000.0 / 12.0,  # big tax bill
+                income_category="ordinary",
+            ),
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_rent",
+                from_agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="payroll",  # use payroll as sink
+                to_account_id="checking",
+                amount_usd=500_000.0 / 12.0,  # spend it all on rent
+            ),
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+            )
+        ],
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(
+                agent_id="alice",
+                account_id="checking",
+                floor_usd=0.0,
+                asset_preference_chain=[],  # no assets to sell
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+    # Alice has $0 cash at year-end (income == rent), no assets,
+    # but the tax bill arrives. Failure event fires at month 11.
+    failures = result.events_log.rollout_failures
+    assert failures.height == 1
+    assert failures.row(0, named=True)["month_index"] == 11
+    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+
+
 def test_explicit_sale_price_overrides_market() -> None:
     """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
     uses that scalar; market is ignored for that sale. This is the

@@ -26,8 +26,9 @@ def test_bench_scenario_runs_at_low_rollout_count() -> None:
     result = simulate(scenario, rollout_count=10)
 
     # Two recurring transfers (paycheck + rent) × 24 months × 10
-    # rollouts = 480 transfer rows.
-    assert result.events_log.transfers.height == 2 * 24 * 10
+    # rollouts = 480 monthly transfer rows, plus 2 jurisdictions ×
+    # 2 years × 10 rollouts = 40 year-end tax-payment transfers.
+    assert result.events_log.transfers.height == 2 * 24 * 10 + 2 * 2 * 10
 
     # Year-end accruals: 2 jurisdictions × 2 years (months 11, 23)
     # × 10 rollouts = 40 accrual rows.

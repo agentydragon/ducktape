@@ -58,8 +58,9 @@ def step_emit_scheduled_events(
     rollout_count: int,
 ) -> EventLog:
     """Phase 1 of the month step: scheduled / recurring transfers,
-    scheduled asset sales, and year-end tax accruals. Pure: does
-    not mutate `state`."""
+    scheduled asset sales, year-end tax accruals, and tax-payment
+    transfers derived from those accruals. Pure: does not mutate
+    `state`."""
     transfers = _emit_transfers(scenario, month, rollout_count)
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
     tax_accruals = _emit_year_end_tax_accruals(
@@ -70,8 +71,9 @@ def step_emit_scheduled_events(
         transfers=transfers,
         dispositions=dispositions,
     )
+    tax_payments = _emit_tax_payment_transfers(tax_accruals, scenario.tax_profiles)
     return EventLog(
-        transfers=transfers,
+        transfers=pl.concat([transfers, tax_payments]),
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=tax_accruals,
@@ -409,6 +411,40 @@ def _is_year_end(month: int) -> bool:
     """Tax years are calendar-year-aligned at spike 1: the year
     ends at month index 11, 23, 35, …"""
     return month % 12 == 11
+
+
+def _emit_tax_payment_transfers(tax_accruals: pl.DataFrame, profiles: list[TaxProfile]) -> pl.DataFrame:
+    """Mirror each year-end tax accrual into a payment transfer
+    from the taxed agent's `payment_account_id` to the configured
+    tax authority. Combined with the accrual itself this means the
+    full year's tax is paid in one go at year-end; quarterly +
+    true-up timing is deferred to a later step.
+
+    A tax-payment transfer is just like any other mandatory cash
+    outflow (rent today; later mortgage payments): if the cash
+    isn't there, phase-2's floor-triggered sale tries to cover and
+    the rollout-failure detector fires when even that fails."""
+    blocks: list[pl.DataFrame] = []
+    for profile in profiles:
+        agent_accruals = tax_accruals.filter(pl.col("agent_id") == profile.agent_id)
+        if agent_accruals.is_empty():
+            continue
+        blocks.append(
+            agent_accruals.select(
+                pl.col("rollout_index"),
+                pl.col("month_index"),
+                (pl.col("cause_id") + pl.lit("_payment")).alias("cause_id"),
+                pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+                pl.lit(profile.payment_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+                pl.lit(profile.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+                pl.lit(profile.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+                pl.col("amount_usd"),
+                pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+            )
+        )
+    if not blocks:
+        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+    return pl.concat(blocks).select(list(TRANSFER_EVENT_SCHEMA.keys()))
 
 
 def _emit_year_end_tax_accruals(
