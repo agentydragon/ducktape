@@ -44,6 +44,9 @@ Migrated so far:
   variant — `MonthlySpendDecision`, `SellPublicStockDecision`,
   `SellCryptoDecision`, `PrivateEquitySaleDecision`,
   `PartnerContributionDecision`).
+* **Tax lots** (root) → `TaxLot` (one row per opening-balance asset lot).
+* **Liabilities** (root) → `LiabilityState` (one row per opening-balance
+  liability, e.g. mortgage).
 """
 
 from __future__ import annotations
@@ -55,7 +58,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from augur.core.accounting import LotAssetClass, LotDisposition
+from augur.core.accounting import LiabilityState, LiabilityType, LotAssetClass, LotDisposition, TaxLot
 from augur.core.scenario_set import (
     AccountingDetail,
     AccountingDetailType,
@@ -1089,4 +1092,76 @@ def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:
             exogenous_path_id=row.get("exogenous_path_id"),
             scenario_input_id=row.get("scenario_input_id"),
             projection_trajectory_id=row.get("projection_trajectory_id"),
+        )
+
+
+# -- tax lots ------------------------------------------------------------------
+#
+# End-of-run snapshot, one row per opening-balance asset lot. Sort key from
+# the legacy `_sorted_tax_lots` is just `lot_id`. No trajectory identity
+# fields on `TaxLot` (snapshot, not per-trajectory).
+
+TAX_LOT_SCHEMA: dict[str, pl.DataType] = {
+    "lot_id": pl.String,
+    "asset_class": pl.String,
+    "owner_actor_id": pl.String,
+    "source_account_id": pl.String,
+    "source_asset_id": pl.String,
+    "property_id": pl.String,
+    "quantity": pl.Float64,
+    "cost_basis_usd": pl.Float64,
+    "acquisition_month_index": pl.Int64,
+}
+
+
+def sort_tax_lots(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["lot_id"])
+
+
+def materialize_tax_lots(df: pl.DataFrame) -> Iterator[TaxLot]:
+    for row in df.iter_rows(named=True):
+        yield TaxLot(
+            lot_id=row["lot_id"],
+            asset_class=LotAssetClass(row["asset_class"]),
+            owner_actor_id=row["owner_actor_id"],
+            source_account_id=row["source_account_id"],
+            source_asset_id=row["source_asset_id"],
+            property_id=row["property_id"],
+            quantity=row["quantity"],
+            cost_basis_usd=float(row["cost_basis_usd"]),
+            acquisition_month_index=int(row["acquisition_month_index"]),
+        )
+
+
+# -- liabilities ---------------------------------------------------------------
+#
+# End-of-run snapshot, one row per opening-balance liability (e.g. mortgage).
+# Sort key from the legacy `_sorted_liabilities` is just `liability_id`. No
+# trajectory identity fields (snapshot, not per-trajectory).
+
+LIABILITY_STATE_SCHEMA: dict[str, pl.DataType] = {
+    "liability_id": pl.String,
+    "liability_type": pl.String,
+    "actor_id": pl.String,
+    "creditor_id": pl.String,
+    "counterparty_actor_id": pl.String,
+    "property_id": pl.String,
+    "balance_usd": pl.Float64,
+}
+
+
+def sort_liabilities(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["liability_id"])
+
+
+def materialize_liabilities(df: pl.DataFrame) -> Iterator[LiabilityState]:
+    for row in df.iter_rows(named=True):
+        yield LiabilityState(
+            liability_id=row["liability_id"],
+            liability_type=LiabilityType(row["liability_type"]),
+            actor_id=row["actor_id"],
+            creditor_id=row["creditor_id"],
+            counterparty_actor_id=row["counterparty_actor_id"],
+            property_id=row["property_id"],
+            balance_usd=float(row["balance_usd"]),
         )

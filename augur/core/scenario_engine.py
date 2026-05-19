@@ -187,9 +187,9 @@ class ScenarioRunArrays:
     market_path_observations_frame: pl.DataFrame
     pe_sale_opportunity_observations_frame: pl.DataFrame
     accounting_trace: AccountingTrace
-    tax_lots: tuple[TaxLot, ...]
+    tax_lots_frame: pl.DataFrame
     lot_dispositions_frame: pl.DataFrame
-    liabilities: tuple[LiabilityState, ...]
+    liabilities_frame: pl.DataFrame
     property_sale_basis_gain_details_frame: pl.DataFrame
     tax_payment_allocation_details_frame: pl.DataFrame
     funding_decisions_frame: pl.DataFrame
@@ -213,6 +213,14 @@ class ScenarioRunArrays:
     @property
     def lot_dispositions(self) -> tuple[LotDisposition, ...]:
         return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def tax_lots(self) -> tuple[TaxLot, ...]:
+        return tuple(event_streams.materialize_tax_lots(self.tax_lots_frame))
+
+    @property
+    def liabilities(self) -> tuple[LiabilityState, ...]:
+        return tuple(event_streams.materialize_liabilities(self.liabilities_frame))
 
     @property
     def policy_decisions(self) -> tuple[PolicyDecision, ...]:
@@ -1008,8 +1016,8 @@ def _trace_row_id(prefix: str, *, rollout_index: int, month_index: int) -> str:
 
 def _record_opening_accounting_state(
     accounting: AccountingTraceBuilder,
-    tax_lots: list[TaxLot],
-    liabilities: list[LiabilityState],
+    tax_lots: event_streams.StreamFrameBuilder,
+    liabilities: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     rollout_count: int,
@@ -1064,15 +1072,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PUBLIC_SECURITY,
-                owner_actor_id=actor_id,
-                source_asset_id=sp500_source.asset_id if sp500_source is not None else None,
-                cost_basis_usd=max(0.0, float(initial_sp500_basis_usd)),
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [lot_id],
+                "asset_class": [LotAssetClass.PUBLIC_SECURITY.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [sp500_source.asset_id if sp500_source is not None else None],
+                "property_id": [None],
+                "quantity": [None],
+                "cost_basis_usd": [max(0.0, float(initial_sp500_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     if initial_crypto_value_usd > 0:
@@ -1091,15 +1102,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=crypto_lot_id,
-                asset_class=LotAssetClass.CRYPTO,
-                owner_actor_id=actor_id,
-                source_asset_id=crypto_source_id,
-                cost_basis_usd=max(0.0, float(initial_crypto_basis_usd)),
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [crypto_lot_id],
+                "asset_class": [LotAssetClass.CRYPTO.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [crypto_source_id],
+                "property_id": [None],
+                "quantity": [None],
+                "cost_basis_usd": [max(0.0, float(initial_crypto_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     if initial_private_equity_value_usd > 0:
@@ -1117,16 +1131,18 @@ def _record_opening_accounting_state(
                 {"actor_id": actor_id},
             ),
         )
-        tax_lots.append(
-            TaxLot(
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PRIVATE_EQUITY,
-                owner_actor_id=actor_id,
-                source_asset_id=private_equity_source_id,
-                cost_basis_usd=max(0.0, float(initial_private_equity_basis_usd)),
-                quantity=_initial_private_equity_units(scenario) or None,
-                acquisition_month_index=0,
-            )
+        tax_lots.extend(
+            {
+                "lot_id": [lot_id],
+                "asset_class": [LotAssetClass.PRIVATE_EQUITY.value],
+                "owner_actor_id": [actor_id],
+                "source_account_id": [None],
+                "source_asset_id": [private_equity_source_id],
+                "property_id": [None],
+                "quantity": [_initial_private_equity_units(scenario) or None],
+                "cost_basis_usd": [max(0.0, float(initial_private_equity_basis_usd))],
+                "acquisition_month_index": [0],
+            }
         )
 
     property_id = scenario.property_selection.property_id
@@ -1152,27 +1168,31 @@ def _record_opening_accounting_state(
             {"actor_id": actor_id, "liability_id": liability_id, "property_id": property_id},
         ),
     )
-    tax_lots.append(
-        TaxLot(
-            lot_id=_tax_lot_id(LotAssetClass.PROPERTY, property_id),
-            asset_class=LotAssetClass.PROPERTY,
-            owner_actor_id=actor_id,
-            property_id=property_id,
-            cost_basis_usd=max(0.0, purchase_price_usd + float(np.mean(closing))),
-            acquisition_month_index=0,
-        )
+    tax_lots.extend(
+        {
+            "lot_id": [_tax_lot_id(LotAssetClass.PROPERTY, property_id)],
+            "asset_class": [LotAssetClass.PROPERTY.value],
+            "owner_actor_id": [actor_id],
+            "source_account_id": [None],
+            "source_asset_id": [None],
+            "property_id": [property_id],
+            "quantity": [None],
+            "cost_basis_usd": [max(0.0, purchase_price_usd + float(np.mean(closing)))],
+            "acquisition_month_index": [0],
+        }
     )
     initial_mortgage = float(np.max(mortgage))
     if initial_mortgage > 0:
-        liabilities.append(
-            LiabilityState(
-                liability_id=liability_id,
-                liability_type=LiabilityType.MORTGAGE,
-                actor_id=actor_id,
-                creditor_id="mortgage_lender",
-                property_id=property_id,
-                balance_usd=initial_mortgage,
-            )
+        liabilities.extend(
+            {
+                "liability_id": [liability_id],
+                "liability_type": [LiabilityType.MORTGAGE.value],
+                "actor_id": [actor_id],
+                "creditor_id": ["mortgage_lender"],
+                "counterparty_actor_id": [None],
+                "property_id": [property_id],
+                "balance_usd": [initial_mortgage],
+            }
         )
 
 
@@ -1427,9 +1447,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         event_streams.PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA
     )
     accounting = AccountingTraceBuilder()
-    tax_lots: list[TaxLot] = []
+    tax_lots = event_streams.StreamFrameBuilder(event_streams.TAX_LOT_SCHEMA)
     lot_dispositions = event_streams.StreamFrameBuilder(event_streams.LOT_DISPOSITION_SCHEMA)
-    liabilities: list[LiabilityState] = []
+    liabilities = event_streams.StreamFrameBuilder(event_streams.LIABILITY_STATE_SCHEMA)
     property_sale_basis_gain_details = event_streams.StreamFrameBuilder(
         event_streams.PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA
     )
@@ -2596,11 +2616,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             event_streams.join_trajectory_identity(pe_sale_opportunity_observations.build(), trace_identity_frame)
         ),
         accounting_trace=accounting_trace.with_trajectory_identity(trace_identity_by_rollout).sorted_canonical(),
-        tax_lots=_sorted_tax_lots(tax_lots),
+        tax_lots_frame=event_streams.sort_tax_lots(tax_lots.build()),
         lot_dispositions_frame=event_streams.sort_lot_dispositions(
             event_streams.join_trajectory_identity(lot_dispositions.build(), trace_identity_frame)
         ),
-        liabilities=_sorted_liabilities(liabilities),
+        liabilities_frame=event_streams.sort_liabilities(liabilities.build()),
         property_sale_basis_gain_details_frame=event_streams.sort_property_sale_basis_gain_details(
             event_streams.join_trajectory_identity(property_sale_basis_gain_details.build(), trace_identity_frame)
         ),
@@ -3447,14 +3467,6 @@ def _record_partner_agreement_accounting_detail(
         return
     _record_journal_entry_batches(accounting, month_index=month_index, entries=partner_equity.journal_entries)
     _record_balance_snapshot_batches(accounting, month_index=month_index, entries=partner_equity.balance_snapshots)
-
-
-def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
-    return tuple(sorted(records, key=lambda lot: lot.lot_id))
-
-
-def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, ...]:
-    return tuple(sorted(records, key=lambda liability: liability.liability_id))
 
 
 def _record_property_sale_effects(
