@@ -117,7 +117,7 @@ class StreamFrameBuilder:
     the rows just emitted by a sub-loop — the equivalent of
     `recorded_list[initial_count:]` for the legacy Python-list path."""
 
-    def __init__(self, schema: dict[str, pl.DataType]) -> None:
+    def __init__(self, schema: dict[str, type[pl.DataType]]) -> None:
         self._schema = schema
         self._blocks: list[dict[str, Any]] = []
 
@@ -210,7 +210,7 @@ def join_trajectory_identity(df: pl.DataFrame, identity_df: pl.DataFrame) -> pl.
 #                           is always `UNSETTLED_OBLIGATION` and `failure_event_id`
 #                           sorts lex-equivalent to `obligation_id`.
 
-OBLIGATION_LIFECYCLE_SCHEMA: dict[str, pl.DataType] = {
+OBLIGATION_LIFECYCLE_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "obligation_type": pl.String,
@@ -310,7 +310,7 @@ def materialize_settlement_results(df: pl.DataFrame) -> Iterator[SettlementResul
 # `(month, rollout, fillna(policy_sequence_index, -1), decision_type,
 #   fillna(policy_id, ""), obligation_id)`.
 
-FUNDING_DECISION_SCHEMA: dict[str, pl.DataType] = {
+FUNDING_DECISION_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "obligation_type": pl.String,
@@ -392,7 +392,7 @@ def materialize_funding_decisions(df: pl.DataFrame) -> Iterator[FundingDecision]
 # private equity). Sort key from the legacy `_sorted_lot_dispositions` is
 # `(month, rollout, asset_class, lot_disposition_id)`.
 
-LOT_DISPOSITION_SCHEMA: dict[str, pl.DataType] = {
+LOT_DISPOSITION_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "lot_disposition_id": pl.String,
@@ -442,7 +442,7 @@ def materialize_lot_dispositions(df: pl.DataFrame) -> Iterator[LotDisposition]:
 # canonical `(month, rollout, observation_type)` order — `market_path` sorts
 # before `private_equity_sale_opportunity` lexicographically.
 
-MARKET_PATH_OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
+MARKET_PATH_OBSERVATION_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "location_id": pl.String,
@@ -455,7 +455,7 @@ MARKET_PATH_OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
     "private_equity_sale_opportunity_event": pl.Boolean,
 }
 
-PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA: dict[str, pl.DataType] = {
+PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "source_asset_id": pl.String,
@@ -533,6 +533,7 @@ def materialize_market_observations(
     opp_row = next(opp_iter, None)
     while path_row is not None or opp_row is not None:
         if path_row is None:
+            assert opp_row is not None  # guaranteed by the while-or
             yield _build_pe_opportunity_observation(opp_row)
             opp_row = next(opp_iter, None)
         elif opp_row is None:
@@ -597,7 +598,7 @@ def _build_pe_opportunity_observation(row: dict[str, Any]) -> PrivateEquitySaleO
 # lexicographically before `tax_payment_allocation`); within each frame we
 # sort by the remaining sub-key.
 
-PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA: dict[str, pl.DataType] = {
+PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "actor_id": pl.String,
@@ -616,7 +617,7 @@ PROPERTY_SALE_BASIS_GAIN_DETAIL_SCHEMA: dict[str, pl.DataType] = {
     "taxable_gain_usd": pl.Float64,
 }
 
-TAX_PAYMENT_ALLOCATION_DETAIL_SCHEMA: dict[str, pl.DataType] = {
+TAX_PAYMENT_ALLOCATION_DETAIL_SCHEMA: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "actor_id": pl.String,
@@ -681,6 +682,7 @@ def materialize_accounting_details(
     t_row = next(tax_iter, None)
     while p_row is not None or t_row is not None:
         if p_row is None:
+            assert t_row is not None  # guaranteed by the while-or
             yield _build_tax_payment_allocation_detail(t_row)
             t_row = next(tax_iter, None)
         elif t_row is None:
@@ -760,14 +762,14 @@ def _build_tax_payment_allocation_detail(row: dict[str, Any]) -> TaxPaymentAlloc
 # frame by `(month, rollout)` and merge-sort by the full key at
 # materialization time using `heapq.merge`.
 
-_EFFECT_BASE_COLUMNS: dict[str, pl.DataType] = {
+_EFFECT_BASE_COLUMNS: dict[str, type[pl.DataType]] = {
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
     "actor_id": pl.String,
     "policy_id": pl.String,
 }
 
-SELL_SP500_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+SELL_SP500_EFFECT_SCHEMA: dict[str, type[pl.DataType]] = {
     **_EFFECT_BASE_COLUMNS,
     "amount_usd": pl.Float64,
     "after_tax_proceeds_usd": pl.Float64,
@@ -777,7 +779,7 @@ SELL_SP500_EFFECT_SCHEMA: dict[str, pl.DataType] = {
     "shortfall_usd": pl.Float64,
 }
 
-SELL_CRYPTO_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+SELL_CRYPTO_EFFECT_SCHEMA: dict[str, type[pl.DataType]] = {
     **_EFFECT_BASE_COLUMNS,
     "source_asset_id": pl.String,
     "asset_symbol": pl.String,
@@ -788,7 +790,7 @@ SELL_CRYPTO_EFFECT_SCHEMA: dict[str, pl.DataType] = {
     "shortfall_usd": pl.Float64,
 }
 
-SELL_PRIVATE_EQUITY_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+SELL_PRIVATE_EQUITY_EFFECT_SCHEMA: dict[str, type[pl.DataType]] = {
     **_EFFECT_BASE_COLUMNS,
     "event_id": pl.String,
     "event_type": pl.String,
@@ -804,7 +806,7 @@ SELL_PRIVATE_EQUITY_EFFECT_SCHEMA: dict[str, pl.DataType] = {
     "proceeds_destination": pl.String,
 }
 
-SETTLE_PROPERTY_SALE_EFFECT_SCHEMA: dict[str, pl.DataType] = {
+SETTLE_PROPERTY_SALE_EFFECT_SCHEMA: dict[str, type[pl.DataType]] = {
     **_EFFECT_BASE_COLUMNS,
     "event_id": pl.String,
     "property_id": pl.String,
@@ -965,7 +967,7 @@ def _coerce_proceeds_destination(value: str) -> AccountType | AssetType:
 # policy_sequence_index, decision_type, policy_id)` reproduces the legacy
 # `_sorted_policy_decisions` tuple key directly — no merge step needed.
 
-POLICY_DECISION_SCHEMA: dict[str, pl.DataType] = {
+POLICY_DECISION_SCHEMA: dict[str, type[pl.DataType]] = {
     # Common base.
     "rollout_index": pl.Int64,
     "month_index": pl.Int64,
@@ -1146,7 +1148,7 @@ def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:
 # the legacy `_sorted_tax_lots` is just `lot_id`. No trajectory identity
 # fields on `TaxLot` (snapshot, not per-trajectory).
 
-TAX_LOT_SCHEMA: dict[str, pl.DataType] = {
+TAX_LOT_SCHEMA: dict[str, type[pl.DataType]] = {
     "lot_id": pl.String,
     "asset_class": pl.String,
     "owner_actor_id": pl.String,
@@ -1184,7 +1186,7 @@ def materialize_tax_lots(df: pl.DataFrame) -> Iterator[TaxLot]:
 # Sort key from the legacy `_sorted_liabilities` is just `liability_id`. No
 # trajectory identity fields (snapshot, not per-trajectory).
 
-LIABILITY_STATE_SCHEMA: dict[str, pl.DataType] = {
+LIABILITY_STATE_SCHEMA: dict[str, type[pl.DataType]] = {
     "liability_id": pl.String,
     "liability_type": pl.String,
     "actor_id": pl.String,
