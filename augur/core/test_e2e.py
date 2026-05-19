@@ -3584,5 +3584,69 @@ def test_two_crypto_symbols_route_to_per_symbol_paths() -> None:
     assert_allclose(result.rollout(0).series(ReportMetric.CASH_USD), 10_000)
 
 
+def test_property_cost_driven_sp500_sales_show_up_in_year_tax() -> None:
+    """Regression: property-cost obligations (mortgage) that force SP500 sales
+    via `CheckingFloorSellPublicStockPolicy` must surface the realized gain in
+    the year's tax. Pre-fix, the engine's per-month
+    `generic_sp500_sale_gain[:, M] = sp500_sale - sp500_basis` overwrite at
+    end-of-month dropped the property-cost-driven sales' gains (those were
+    appended to `sp500_sale_action_records` AFTER the snapshot ran);
+    `TOTAL_INCOME_TAX_USD` undercounted accordingly. Post-fix the gain matrix
+    is derived from the unified `asset_change_log` covering ALL sales, so the
+    tax catches them."""
+    scenario = Scenario(
+        scenario_id="property_cost_sp500_tax_regression",
+        label="Property Cost SP500 Tax Regression",
+        actors=(_simple_actor(),),
+        tax_profile=TaxProfile(prior_year_tax_usd=0),
+        property_selection=PropertySelection(
+            property_id="test_property", location_id="san_francisco_ca", purchase_price_usd=500_000
+        ),
+        financing=Financing(financing_mode=FinancingMode.FIXED_30, down_payment_pct=20, mortgage_rate_pct=6),
+        transaction_costs=TransactionCosts(closing_cost_buy_pct=0, closing_cost_sell_pct=0),
+        property_assumptions=PropertyAssumptions(insurance_annual_usd=0, maintenance_pct=0),
+        policies=(
+            CheckingFloorSellPublicStockPolicy(
+                policy_id="mortgage_funding_sale", actor_id="alpha", floor_usd=0, sale_amount_usd=5_000
+            ),
+        ),
+        initial_balance_sheet=InitialBalanceSheet(
+            accounts=(
+                AccountBalance(
+                    account_id="checking",
+                    account_type=AccountType.CHECKING,
+                    owner_actor_id="alpha",
+                    balance_usd=100_000,
+                ),
+            ),
+            assets=(
+                # Zero cost basis → every SP500 dollar sold is realized gain.
+                GenericSp500StockPosition(
+                    asset_id="sp500", owner_actor_id="alpha", value_usd=500_000, cost_basis_usd=0
+                ),
+            ),
+        ),
+    )
+    horizon_months = 12
+    result = _run_scenario(scenario, horizon_months=horizon_months)
+    rollout = result.rollout(0)
+    sp500_sale_total = float(np.sum(rollout.series(ReportMetric.GENERIC_SP500_SALE_USD)))
+    sp500_gain_total = float(np.sum(rollout.series(ReportMetric.GENERIC_SP500_SALE_GAIN_USD)))
+    # Every dollar sold is a gain (basis was zero).
+    assert sp500_sale_total > 0
+    assert_allclose(sp500_gain_total, sp500_sale_total)
+    # The year's TOTAL_INCOME_TAX_USD must include those gains. Pre-fix this
+    # was 0; post-fix it's the LTCG tax on the realized gain.
+    total_year_tax = float(np.sum(rollout.series(ReportMetric.TOTAL_INCOME_TAX_USD)))
+    assert total_year_tax > 0, (
+        f"property-cost-driven SP500 sales (gain={sp500_gain_total:.0f}) must produce non-zero year tax; "
+        f"got {total_year_tax:.4f}"
+    )
+    # SP500 sale tax matrix should be the same total as TOTAL_INCOME_TAX_USD
+    # (the only taxable source in this scenario is the SP500 sale gain).
+    sp500_sale_tax_total = float(np.sum(rollout.series(ReportMetric.GENERIC_SP500_SALE_TAX_USD)))
+    assert_allclose(sp500_sale_tax_total, total_year_tax)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
