@@ -40,6 +40,7 @@ mod exports;
 mod imports_cross;
 mod imports_runtime;
 mod lower;
+pub mod lowering_plan;
 mod materialize;
 mod naturalize;
 mod plan_references;
