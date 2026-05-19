@@ -367,3 +367,13 @@ touches every fact-producing site (`StatementFacts.declared`,
 and the JSON report schema. Plan when there's a reason to want
 hygiene-aware bindings (e.g. analyzing a chunk that legally
 shadows top-level names via top-level `var`).
+
+Side effect: `BindingTable`'s intern step becomes redundant — swc's
+`Atom` is already globally interned, so `Id` equality is O(1)
+pointer comparison without our `String → BindingId` mapping. The
+table's other role (dense `BindingId(usize)` keys indexing
+`Vec<Option<OwnerId>>` / similar columnar storage in `graph.rs`)
+would either move to `FxHashMap<Id, OwnerId>` or keep a thin
+`Id → index` side-table alongside the storage. The cache-locality
+trade-off between the two is worth measuring on a Tana-sized chunk
+before deciding.
