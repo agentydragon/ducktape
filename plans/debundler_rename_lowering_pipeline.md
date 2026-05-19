@@ -86,7 +86,7 @@ enum LoweringOp {
     Rename {
         scope: Scope,
         original: Id,
-        new_name: Atom,
+        name: NamePolicy,
         reason: RenameReason,
         priority: Priority,
     },
@@ -105,12 +105,27 @@ enum LoweringOp {
     AddExport {
         in_module: ModuleId,
         binding: Id,
-        public_name: Atom,
+        public_name: NamePolicy,
     },
     ReorderHoists {
         in_module: ModuleId,
         new_order: Vec<usize>,
     },
+}
+
+/// How a name-producing op (Rename, AddExport) wants the plan to
+/// pick the final name when its preferred name is taken.
+enum NamePolicy {
+    /// Use this exact name; fail submission if the name is
+    /// already taken in the relevant scope. The right policy for
+    /// spec-driven and naturalizer-driven renames where the
+    /// target name carries semantic meaning.
+    Required(Atom),
+    /// Prefer this name; if it's taken, fall back to `name_1`,
+    /// `name_2`, … until a free name is found. The right policy
+    /// for collision-resolution renames (today's
+    /// `disambiguate_import_locals`).
+    MintOrSuffix(Atom),
 }
 ```
 
@@ -133,52 +148,129 @@ Heuristic`. Same-priority disagreements panic at seal (per the
 ### Plan builder
 
 ```rust
-struct LoweringPlan {
-    ops: Vec<LoweringOp>,
-    by_scope: HashMap<Scope, Vec<usize>>,
-}
+struct LoweringPlan { /* opaque */ }
 
 impl LoweringPlan {
-    fn submit(&mut self, op: LoweringOp);
+    /// Submit an op. The `NamePolicy` carried by the op handles
+    /// new-name conflicts (Required panics; MintOrSuffix retries
+    /// with numeric suffixes). The `SubmitPolicy` argument handles
+    /// the orthogonal "(scope, original) is already claimed by
+    /// some other op" axis.
+    fn submit(&mut self, op: LoweringOp, on_conflict: SubmitPolicy) -> SubmitOutcome;
+
+    // Read-only queries — used during stratified submission to
+    // compose later phases against earlier ones. Cheap; no
+    // mutation, no allocation.
+    fn is_claimed(&self, scope: Scope, original: &Id) -> Option<Priority>;
+    fn is_name_taken(&self, scope: Scope, name: &Atom) -> bool;
+    fn modules(&self) -> &[ModuleId];
+    fn residual(&self) -> ModuleId;
+
     fn seal(self) -> Result<CheckedPlan, ValidationError>;
+}
+
+/// How to handle "(scope, original) already claimed by a
+/// previously submitted op at any priority". Orthogonal to
+/// NamePolicy, which handles "new_name is taken".
+enum SubmitPolicy {
+    /// Error on conflict, citing both contributors' `reason`s.
+    /// Right for spec-driven ops where a conflict is a bug.
+    Fail,
+    /// Drop this op if `(scope, original)` is already claimed at
+    /// equal or higher priority; submit normally otherwise. Right
+    /// for heuristic contributors that should defer to the spec.
+    SkipIfClaimed,
+}
+
+enum SubmitOutcome {
+    Accepted { final_op: LoweringOp },
+    Skipped { reason: ConflictReason },
 }
 ```
 
-Submission is order-independent. Contributors don't know about
-each other. The buffer is the only writer; the AST and side
-tables are unchanged through Phase 1.
+Two orthogonal conflict axes, two enums:
+
+| Conflict                            | Handled by                 |
+| ----------------------------------- | -------------------------- |
+| `(scope, original)` already claimed | `SubmitPolicy` (on submit) |
+| op's preferred `new_name` is taken  | `NamePolicy` (on op)       |
+
+`Accepted { final_op }` returns the op the Plan actually committed
+to — important for `MintOrSuffix`, where `final_op.new_name` may
+differ from the submitted base (e.g. `foo` → `foo_3`). Contributors
+that care about the final name (the import-disambiguation pass
+needs it to update its own bookkeeping for the next specifier) read
+it off the outcome.
+
+### Stratified submission
+
+Submission proceeds in priority-ordered phases. Each phase sees the
+plan state contributed by every earlier phase via the readback
+queries; phases cannot see siblings within the same phase.
+
+| Phase | Priority      | Contributors                                                | Typical policy mix                                    |
+| ----- | ------------- | ----------------------------------------------------------- | ----------------------------------------------------- |
+| A     | Explicit      | spec `chunk_renames`, spec-driven `MoveDecl`s, `AddExport`s | `(NamePolicy::Required, SubmitPolicy::Fail)`          |
+| B     | Explicit      | materializer structural moves (no new names)                | `SubmitPolicy::Fail`                                  |
+| C     | ImportInduced | `disambiguate_import_locals` / `_residual_entry_`           | `(NamePolicy::MintOrSuffix, SubmitPolicy::Fail)`      |
+| D     | Heuristic     | naturalizer collectors                                      | `(NamePolicy::Required, SubmitPolicy::SkipIfClaimed)` |
+| E     | Collision     | residual collision sweep (today's `_N` mint pass)           | `(NamePolicy::MintOrSuffix, SubmitPolicy::Fail)`      |
+| —     | —             | `seal()`                                                    | —                                                     |
+
+Within a phase, submission is unordered and parallelisable.
+Between phases, readback is the only channel — no contributor
+mutates earlier ops, retracts them, or observes contributors at
+its own priority. That keeps the fixpoint trivial (no iteration,
+just topological order over the priority strata) and makes the
+final plan reproducible from the (deterministic) per-phase
+inputs.
+
+The materializer-vs-spec split into phases A and B is deliberate:
+spec moves are authoritative; materialiser structural moves run
+second so they can read back which ordinals the spec has already
+claimed and route only the residual. If the spec submits a
+`MoveDecl` and the materialiser submits a different one for the
+same ordinal in phase B, that's `SubmitPolicy::Fail` panicking
+with both `reason`s — exactly the contradiction this design
+exists to surface.
 
 ### Check phase
 
-`seal()` runs these checks in order:
+Most local invariants are caught at submit time, so they fail
+loudly at the contributor's site (with a stack pointing at the
+specific submit call) rather than at seal:
 
-1. **Identifier validity.** Every `new_name` is a valid JS
-   identifier. Catches the `chunk_renames target … is not a valid
-JS identifier` class of error currently raised inline in
-   `lower_chunk` (`lower.rs:204-208`).
-2. **Per-scope rename consistency.** No `(scope, original)`
-   appears in two `Rename` ops with different `new_name` at the
-   same priority. Same-priority disagreement = hard error citing
-   both `reason`s.
-3. **Rename target collision.** No two `Rename` ops in the same
-   scope name the same `new_name` for different `original`s
-   (`occupied` collision today, surfaced in `lower.rs:182`).
-4. **Move target consistency.** No two `MoveDecl` ops route the
-   same ordinal to different `to` modules. (The current
-   `binding_assignment` map enforces this implicitly by being a
-   map; the plan makes it explicit.)
-5. **Cross-op coherence.** Renames + moves agree: if a binding's
+| Invariant                                                | Caught                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `NamePolicy`'s preferred `Atom` is a valid JS identifier | Op constructor (`NamePolicy::Required(atom)?` / `MintOrSuffix(atom)?`) |
+| `(scope, original)` already claimed                      | `submit` per `SubmitPolicy`                                            |
+| New name taken in scope                                  | `submit` per op's `NamePolicy`                                         |
+| Same-priority disagreement on `(scope, original)`        | `submit` (always panics, regardless of `SubmitPolicy`)                 |
+| Two `MoveDecl`s route the same ordinal to different `to` | `submit` per `SubmitPolicy`                                            |
+
+What's left for `seal()` to check is genuinely cross-op:
+
+1. **Cross-op coherence.** Renames + moves agree: if a binding's
    declaration is moved to module M, every `Rename` op on that
-   binding has scope ⊆ M. (The current chunk_renames-vs-body
-   split is exactly this check, currently expressed as the
+   binding has scope ⊆ M. (Currently expressed as the
    `binding_assignment.contains_key(top_level_id(name, …))`
-   filter in `lower.rs:117-124` and `lower.rs:183-188`.)
-6. **Realizability preservation.** No `MoveDecl` op produces a
-   partition that the realizability gate (`realizability.rs`)
-   would reject. Today the partition is fixed before lowering and
-   the gate runs once; in the new pipeline the moves _are_ the
-   partition refinement, so the gate runs over the post-execute
-   partition before execute begins.
+   filter in `lower.rs:117-124` and `lower.rs:183-188`. Can't be
+   caught at submit time because the move and the rename might be
+   submitted in either order — phase-A spec move first, then
+   phase-D heuristic rename, or vice versa for materializer
+   moves.)
+2. **Realizability preservation.** No combination of `MoveDecl`
+   ops produces a partition that the realizability gate
+   (`realizability.rs`) would reject. Today the partition is
+   fixed before lowering and the gate runs once; in the new
+   pipeline the moves _are_ the partition refinement, so the
+   gate runs over the post-execute partition before execute
+   begins. Can't be caught per-op because realizability is a
+   cycle-level property — one move alone never violates it.
+3. **Reorder/move consistency.** A `ReorderHoists` op's
+   `new_order` references only ordinals whose `MoveDecl`s (if
+   any) land in the same module. Same reason as cross-op
+   coherence — depends on the cumulative move plan.
 
 Output is `CheckedPlan { ops, rename_index, move_index,
 specifier_index, export_index }` — immutable, indexed for O(1)
@@ -289,19 +381,25 @@ Already pinned in TODO.md's "RenameLedger (PR2) open questions"
 section, restated here so the implementation phase doesn't need
 to re-derive them:
 
-1. **Same-priority heuristic conflict policy.** Panic at seal,
+1. **Same-priority heuristic conflict policy.** Panic at submit,
    citing both contributors by `reason`. Silent suppression is
-   the trap this pipeline closes.
+   the trap this pipeline closes. (Moved from seal-time to
+   submit-time once the stratified-phases model landed —
+   `SubmitPolicy::SkipIfClaimed` only suppresses strictly higher
+   priority claims, never same-priority.)
 2. **Disambiguation naming scheme.** Keep `_N` suffixing for the
-   first implementation. Readability heuristics (e.g.
-   `name_from_module`) are a follow-up Plan _contributor_, not a
-   change to the minter.
+   first implementation, as `NamePolicy::MintOrSuffix`. Readability
+   heuristics (e.g. `name_from_module`) are a follow-up Plan
+   _contributor_ submitting `NamePolicy::Required("name_from_module")`
+   at heuristic priority — not a change to the `MintOrSuffix`
+   suffixer itself.
 3. **Structural mutations during COLLECT.** Pick "all structural
-   moves pre-COLLECT" — moves become `MoveDecl` ops, submitted
-   before any rename collection runs. Type-level barrier: rename
-   contributors take `&Module`, not `&mut Module`. Pragmatic
-   alternative (no structural moves between seal and execute)
-   reserved as fallback if the reordering proves too invasive.
+   moves pre-COLLECT" — `MoveDecl` ops are submitted in phases A/B
+   before any rename collection in phases C-E runs. Type-level
+   barrier: rename contributors take `&Module`, not `&mut Module`.
+   Pragmatic alternative (no structural moves between seal and
+   execute) reserved as fallback if the reordering proves too
+   invasive.
 
 New questions surfaced by the broader scope:
 
@@ -316,7 +414,7 @@ New questions surfaced by the broader scope:
    gate runs over the spec-fixed partition before lowering. In
    the new pipeline, `MoveDecl` ops change the partition during
    Plan collection. Open: does the gate run inside `seal()` (so
-   check #6 above is real), or does Plan keep an invariant that
+   check #2 above is real), or does Plan keep an invariant that
    no `MoveDecl` may produce an unrealizable partition (enforced
    per-op at submit time)? Default: gate runs inside `seal()`,
    per-op enforcement is too local to catch combinations.
