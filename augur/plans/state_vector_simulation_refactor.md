@@ -1142,6 +1142,44 @@ the unified-gain-log + the inline TaxActor. Concretely:
 
 All 19 augur/core tests green. Bench within tolerance.
 
+### Additional commits after the re-prioritization
+
+- **Mortgage / special_assessment / outside_rent settlements moved
+  inline (Wave 4 partial, G7 partial).** The three post-loop
+  `_settle_required_cash_obligations(...)` sweeps for these
+  obligation kinds were deleted; they now settle inside the main
+  month loop, immediately after the tax-settlement block, threading
+  1D state through `_settle_required_cash_obligation_at_month_position`
+  like TaxActor obligations do. Per-accumulator obligation +
+  funding-decision streams emit post-loop. The only remaining
+  post-loop sweep is `_settle_partner_contribution_obligations` —
+  it has its own per-partner state matrices that need their own
+  PartnerActor.
+- **Crypto sales taxed (Wave 1.2 + 1.3, G3 partial + G4).** Crypto
+  sale gain (`derive_per_month_taxable_gain_matrix(asset_kind=CRYPTO,
+  tax_treatment=LONG_TERM_CAPITAL)`) is now an input to both
+  `TaxActor.observe_month(generic_crypto_sale_gain_usd=...)` (for
+  obligation sizing) and `annual_sale_tax_allocation(generic_crypto
+  _sale_gain_usd=..., → generic_crypto_sale_tax_usd output)` (for
+  per-month allocation). `_record_crypto_sale_journal_entries` takes
+  `tax_usd`; the crypto lot disposition's `tax_expense_usd` is
+  populated; the result frame gains `crypto_sale_tax_usd` (via
+  `_lot_disposition_amount_matrix(LotAssetClass.CRYPTO, "tax_expense_usd")`)
+  + `ReportMetric.CRYPTO_SALE_TAX_USD` + terminal
+  `total_crypto_sale_tax_usd`. `TaxPaymentAllocationDetail` schema
+  grew `generic_crypto_sale_tax_usd` + `generic_crypto_taxable_gain_usd`.
+- **Year-tax computed once per scenario per year (Wave 5.1 partial,
+  G10 partial).** TaxActor now stores `year_federal_tax_usd` +
+  `year_california_tax_usd` separately (split from the existing
+  `year_actual_tax_usd`). `annual_sale_tax_allocation` accepts
+  `precomputed_year_tax_usd: dict[year, (federal, california)]` and
+  uses it when present — the engine passes TaxActor's stored totals
+  in. `federal_income_tax_due_usd` /
+  `california_income_tax_due_usd` are no longer called twice per
+  year. The per-month allocation logic still lives in
+  `annual_sale_tax_allocation`; full G10 (move allocation into
+  TaxActor, delete the helper) is still ahead.
+
 ## Remaining gaps (enumerated)
 
 After the work above, the engine still falls short of the target
