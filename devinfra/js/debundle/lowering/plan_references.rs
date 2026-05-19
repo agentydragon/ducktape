@@ -116,9 +116,9 @@ pub(super) fn collect_imported_reexports_by_module(
         };
         reexports.push(ImportedReexport {
             local: local.to_string(),
-            imported_name: imported_name.clone(),
+            imported_name: imported_name.to_string(),
             imported_from: imported_from.clone(),
-            public_name: public_name.clone(),
+            public_name: public_name.to_string(),
         });
     }
     by_module

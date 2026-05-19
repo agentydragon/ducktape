@@ -53,16 +53,7 @@ impl Partition {
         let mut p = Self::new(owner_graph, default_destination);
         for node in &owner_graph.nodes {
             for binding_id in &node.declared {
-                let Some(name) = owner_graph.binding_table.name(*binding_id) else {
-                    continue;
-                };
-                // BindingTable interns by `sym` (no ctxt); look up the
-                // assignment by matching the entry's sym half.
-                if let Some(module) = binding_assignment
-                    .iter()
-                    .find(|(id, _)| id.0.as_ref() == name.as_str())
-                    .map(|(_, m)| m)
-                {
+                if let Some(module) = binding_assignment.get(binding_id) {
                     p.of[node.id.0] = *module;
                     break;
                 }

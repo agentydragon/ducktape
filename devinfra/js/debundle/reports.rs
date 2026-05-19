@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
+use swc_ecma_ast::Id;
 
 use crate::graph::OwnerEdge;
 use crate::peelability::build_peelability_report;
 use crate::{
-    BindingId, BindingName, BindingReport, ChunkFactorization, DepKind, LogicalModuleIndex,
-    ModuleId, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, QuotientEdgeReport, QuotientSccReport,
+    BindingReport, ChunkFactorization, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+    OwnerId, QuotientEdgeReport, QuotientSccReport,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -30,10 +31,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             id: owner_key(node.id),
             statement_ordinal: node.statement_ordinal,
             source_location: node.source_location.clone(),
-            declared_bindings: binding_reports_for_ids(
-                factorization,
-                node.declared.iter().copied(),
-            ),
+            declared_bindings: binding_reports(factorization, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
             destination: module_report_ref(factorization, factorization.partition.of(node.id)),
@@ -46,10 +44,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             source: owner_key(edge.from),
             target: owner_key(edge.to),
             edge_kind: edge.reason.kind,
-            binding: edge
-                .reason
-                .binding
-                .map(|binding| factorization.analysis.binding_name(binding).to_string()),
+            binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
             statement_ordinal: edge.reason.statement_ordinal,
             constrains_init_order: edge.reason.constrains_init_order(),
         })
@@ -74,33 +69,18 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
     }
 }
 
-pub(crate) fn binding_reports_for_ids<I>(
-    factorization: &ChunkFactorization,
-    bindings: I,
-) -> Vec<BindingReport>
-where
-    I: IntoIterator<Item = BindingId>,
-{
-    binding_reports(
-        factorization,
-        bindings
-            .into_iter()
-            .map(|binding| factorization.analysis.binding_name(binding)),
-    )
-}
-
 pub(crate) fn binding_reports<'a, I>(
     factorization: &ChunkFactorization,
     bindings: I,
 ) -> Vec<BindingReport>
 where
-    I: IntoIterator<Item = &'a BindingName>,
+    I: IntoIterator<Item = &'a Id>,
 {
     bindings
         .into_iter()
-        .map(|binding| BindingReport {
-            binding: binding.clone(),
-            export_name: factorization.analysis.export_name_for(binding),
+        .map(|id| BindingReport {
+            binding: id.0.clone(),
+            export_name: factorization.analysis.export_name_for(&id.0),
         })
         .collect()
 }

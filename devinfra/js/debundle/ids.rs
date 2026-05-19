@@ -5,6 +5,18 @@ use swc_atoms::Atom;
 use swc_common::{Mark, SyntaxContext};
 use swc_ecma_ast::Id;
 
+// `swc_ecma_ast::Id = (Atom, SyntaxContext)` is the canonical
+// hygiene-preserving binding identity. The analysis stores `Id`s
+// directly; reports drop `SyntaxContext` at the JSON boundary by
+// serializing only the `Atom` (so wire shape stays a bare string).
+//
+// Previously this module defined `pub type BindingName = String` plus
+// a per-chunk `BindingTable` interner that mapped strings to
+// `BindingId(usize)`. Both are gone: swc's `Atom` is globally
+// interned (equality is pointer comparison), and analysis cells in
+// `graph.rs` now key by `Id` directly via `HashMap<Id, _>` instead
+// of dense-vec storage indexed by `BindingId.0`.
+
 /// Construct the hygiene-aware `Id` for a chunk-top-level binding.
 /// SWC's `resolver` pass assigns `ctxt = SyntaxContext::empty().apply_mark(top_level_mark)`
 /// to every top-level binding in a parsed `Module`. Spec-derived
@@ -49,18 +61,6 @@ impl ModuleId {
 #[serde(transparent)]
 pub struct StatementOrdinal(pub usize);
 
-/// Local name of a binding in a chunk's top-level scope. Stays a
-/// plain `String` (the actual JavaScript identifier text); the alias
-/// is documentation. See DESIGN.md "Identifiers and types".
-pub type BindingName = String;
-
-/// Stable per-chunk interned binding id. Reports and specs still use
-/// `BindingName`; graph algorithms can use this compact key for maps
-/// built during one chunk analysis.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct BindingId(pub usize);
-
 /// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
 /// loading and used throughout the pipeline in place of `String` chunk names.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -101,45 +101,6 @@ impl ChunkTable {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct BindingTable {
-    names: Vec<BindingName>,
-    ids_by_name: HashMap<BindingName, BindingId>,
-}
-
-impl BindingTable {
-    pub fn intern(&mut self, name: BindingName) -> BindingId {
-        if let Some(id) = self.ids_by_name.get(&name) {
-            return *id;
-        }
-        let id = BindingId(self.names.len());
-        self.names.push(name.clone());
-        self.ids_by_name.insert(name, id);
-        id
-    }
-
-    pub fn get(&self, name: &str) -> Option<BindingId> {
-        self.ids_by_name.get(name).copied()
-    }
-
-    pub fn name(&self, id: BindingId) -> Option<&BindingName> {
-        self.names.get(id.0)
-    }
-
-    pub fn required_name(&self, id: BindingId) -> &BindingName {
-        self.name(id)
-            .expect("BindingId should come from this BindingTable")
-    }
-
-    pub fn len(&self) -> usize {
-        self.names.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.names.is_empty()
-    }
-}
-
 /// How a top-level binding in the chunk relates to the split. See
 /// DESIGN.md "Two binding kinds".
 #[derive(Debug, Clone)]
@@ -155,8 +116,10 @@ pub enum BindingKind {
     /// rejects two modules claiming the same import).
     Imported {
         /// The original imported name from the source chunk (e.g. "j"
-        /// for `import { j as a } from "..."`).
-        imported_name: BindingName,
+        /// for `import { j as a } from "..."`). An `Atom` rather than
+        /// `Id`: export names are pure labels, no hygiene context
+        /// applies.
+        imported_name: Atom,
         /// Output-tree-rooted absolute path of the import source
         /// (e.g. `"static/vendor.js"`). Already resolved against the
         /// chunk's directory + the artifact's source-chunk index;
@@ -167,7 +130,7 @@ pub enum BindingKind {
         /// `kind: import_specifier` member.
         re_exporter: ModuleId,
         /// Public export name that re-exporter assigned to it.
-        public_name: BindingName,
+        public_name: Atom,
     },
 }
 

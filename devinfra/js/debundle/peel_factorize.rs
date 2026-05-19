@@ -315,7 +315,11 @@ fn diagnostics_from_analyzer(graph: &OwnerGraphReport) -> Vec<FactorizeDiagnosti
         .map(|diagnostic| FactorizeDiagnosticReport {
             diagnostic_id: diagnostic.diagnostic_id.clone(),
             owner_ids: diagnostic.owner_ids.clone(),
-            binding_ids: diagnostic.binding_ids.clone(),
+            binding_ids: diagnostic
+                .binding_ids
+                .iter()
+                .map(|a| a.to_string())
+                .collect(),
             size_lines_estimate: diagnostic.size_lines_estimate,
             size_members: diagnostic.size_members,
             source_line_range: diagnostic.source_line_range,
@@ -333,7 +337,7 @@ fn diagnostic_from_legacy_cell(idx: usize, cell: &FactorizeCell) -> FactorizeDia
     FactorizeDiagnosticReport {
         diagnostic_id: format!("legacy_factorize_cell_{idx:04}"),
         owner_ids: cell.owner_ids.clone(),
-        binding_ids: cell.binding_ids.clone(),
+        binding_ids: cell.binding_ids.iter().map(|a| a.to_string()).collect(),
         size_lines_estimate: cell.size_lines_estimate,
         size_members: cell.size_members,
         source_line_range: cell.source_line_range,
@@ -520,7 +524,7 @@ fn build_proposal(
             anonymous_owner_ids.push(node.id.clone());
         }
         for binding in &node.declared_bindings {
-            binding_ids.insert(binding.binding.clone());
+            binding_ids.insert(binding.binding.to_string());
         }
         if let Some(loc) = &node.source_location {
             have_loc = true;
@@ -726,6 +730,8 @@ fn diagnostic_reason_key(reason: FactorizeDiagnosticReason) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use swc_atoms::Atom;
+
     use analysis::{
         BindingReport, DepKind, FactorizeCell, FactorizeReport, ModuleReportRef,
         OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelabilityReport,
@@ -830,7 +836,7 @@ mod tests {
             source: source.to_string(),
             target: target.to_string(),
             edge_kind: kind,
-            binding: binding.map(str::to_string),
+            binding: binding.map(Atom::from),
             statement_ordinal: StatementOrdinal(0),
             constrains_init_order: constrains,
         }
@@ -894,7 +900,7 @@ mod tests {
         cycle_blockers: &[&str],
     ) -> FactorizeCell {
         let owners: Vec<String> = owner_ids.iter().map(|s| s.to_string()).collect();
-        let mut bindings: Vec<String> = Vec::new();
+        let mut bindings: Vec<Atom> = Vec::new();
         let mut anonymous: Vec<String> = Vec::new();
         let mut size_lines = 0usize;
         let mut start = usize::MAX;

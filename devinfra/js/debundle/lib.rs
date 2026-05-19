@@ -48,8 +48,8 @@ pub use graph::{
     OwnerNode, build_module_quotient, build_owner_graph, build_owner_graph_with,
 };
 pub use ids::{
-    BindingId, BindingKind, BindingName, BindingTable, ChunkId, ChunkTable, LogicalModule,
-    LogicalModuleIndex, ModuleId, StatementOrdinal, top_level_id,
+    BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,
+    StatementOrdinal, top_level_id,
 };
 pub use partition::Partition;
 pub use purity::{

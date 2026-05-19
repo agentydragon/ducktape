@@ -9,12 +9,13 @@ use crate::realizability::{PartitionDelta, RealizabilityIndex};
 use crate::reports::{
     binding_reports, is_residual_destination, module_id_from_key, module_report_ref, owner_key,
 };
+use swc_ecma_ast::Id;
+
 use crate::{
-    AtomicUnit, BindingKind, BindingName, ChunkFactorization, DepKind,
-    EvaluatedPeelCandidateReport, LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport,
-    OwnerGraphPeelabilityReport, OwnerId, OwnerNode, PeelCandidateStatus, QuotientEdgeReport,
-    ResidualOwnerCompanionOptionReport, ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus,
-    compute_atomic_units,
+    AtomicUnit, BindingKind, ChunkFactorization, DepKind, EvaluatedPeelCandidateReport,
+    LogicalModuleIndex, ModuleId, OwnerGraphPeelSetReport, OwnerGraphPeelabilityReport, OwnerId,
+    OwnerNode, PeelCandidateStatus, QuotientEdgeReport, ResidualOwnerCompanionOptionReport,
+    ResidualOwnerPeelHorizonReport, ResidualOwnerPeelStatus, compute_atomic_units,
 };
 
 pub(crate) struct PeelabilityContext<'a> {
@@ -46,7 +47,7 @@ pub(crate) struct PeelCandidateEvaluation {
     pub(crate) id: String,
     pub(crate) status: PeelCandidateStatus,
     pub(crate) owner_ids: Vec<OwnerId>,
-    pub(crate) members: Vec<BindingName>,
+    pub(crate) members: Vec<Id>,
     pub(crate) constraining_owner_edge_indices: BTreeSet<usize>,
     /// Owner ids whose residual dependency forced the candidate into
     /// `BlockedResidualDependency`. Empty for other statuses. Surfaces
@@ -71,7 +72,7 @@ pub(crate) fn build_peelability_report(
         .collect();
 
     let context = PeelabilityContext::new(factorization, owner_edges, quotient_edges);
-    let mut declared_by_owner = BTreeMap::<OwnerId, Vec<BindingName>>::new();
+    let mut declared_by_owner = BTreeMap::<OwnerId, Vec<Id>>::new();
     for node in factorization.analysis.owner_graph.iter_nodes() {
         if !is_residual_destination(factorization, factorization.partition.of(node.id)) {
             continue;
@@ -182,7 +183,7 @@ pub(crate) fn build_peelability_report(
 
 fn build_residual_owner_horizon(
     factorization: &ChunkFactorization,
-    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<Id>>,
     candidates: &[PeelCandidateEvaluation],
 ) -> (Vec<ResidualOwnerPeelHorizonReport>, BTreeSet<String>) {
     let candidate_owner_sets = build_candidate_owner_sets(candidates);
@@ -203,7 +204,7 @@ fn build_residual_owner_horizon(
     let mut minimal_peel_set_ids = BTreeSet::new();
     for (owner_id, bindings) in declared_by_owner {
         let owner_report_id = owner_key(*owner_id);
-        let owner_bindings: BTreeSet<&str> = bindings.iter().map(String::as_str).collect();
+        let owner_bindings: BTreeSet<&Id> = bindings.iter().collect();
         let mut containing_indices = peelable_candidate_indices_by_owner
             .get(owner_id)
             .cloned()
@@ -271,7 +272,7 @@ fn build_residual_owner_horizon(
                     candidate
                         .members
                         .iter()
-                        .filter(|member| !owner_bindings.contains(member.as_str())),
+                        .filter(|member| !owner_bindings.contains(member)),
                 ),
             });
         }
@@ -307,19 +308,14 @@ fn build_candidate_owner_sets(candidates: &[PeelCandidateEvaluation]) -> Vec<BTr
         .collect()
 }
 
-fn residual_declared_for_owner(
-    factorization: &ChunkFactorization,
-    node: &OwnerNode,
-) -> Vec<BindingName> {
+fn residual_declared_for_owner(factorization: &ChunkFactorization, node: &OwnerNode) -> Vec<Id> {
     node.declared
         .iter()
-        .map(|binding| factorization.analysis.binding_name(*binding))
-        .filter(|name| {
-            // factorization.analysis.bindings is Id-keyed but BindingTable.name returns
-            // sym only; match by sym.
-            !factorization.analysis.bindings.iter().any(|(id, kind)| {
-                id.0.as_ref() == name.as_str() && matches!(kind, BindingKind::Imported { .. })
-            })
+        .filter(|id| {
+            !matches!(
+                factorization.analysis.bindings.get(id),
+                Some(BindingKind::Imported { .. })
+            )
         })
         .cloned()
         .collect()
@@ -395,7 +391,7 @@ fn residual_pair_candidates_from_singleton_blockers(
     factorization: &ChunkFactorization,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
     owner_edges: &[OwnerEdge],
-    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<Id>>,
 ) -> BTreeSet<(OwnerId, OwnerId)> {
     let mut pair_owner_sets = BTreeSet::new();
     for (owner_id, candidate) in singleton_candidates {
@@ -447,7 +443,7 @@ fn residual_pair_candidates_from_singleton_blockers(
 fn residual_atomic_unit_candidates(
     factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
-    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<Id>>,
 ) -> Vec<PeelCandidateEvaluation> {
     let mut candidates = Vec::new();
     for unit in &context.atomic_units {
@@ -492,7 +488,7 @@ fn residual_dependency_closure_candidates(
     factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     singleton_candidates: &[(OwnerId, PeelCandidateEvaluation)],
-    declared_by_owner: &BTreeMap<OwnerId, Vec<BindingName>>,
+    declared_by_owner: &BTreeMap<OwnerId, Vec<Id>>,
 ) -> Vec<PeelCandidateEvaluation> {
     let mut closure_index = ResidualDependencyClosureIndex::new(factorization, context);
     let mut seen_components = BTreeSet::<usize>::new();
@@ -666,7 +662,7 @@ pub(crate) fn evaluate_peel_candidate(
     factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
     owner_ids: &[OwnerId],
-    declared: Vec<BindingName>,
+    declared: Vec<Id>,
 ) -> PeelCandidateEvaluation {
     let moved_owners: BTreeSet<OwnerId> = owner_ids.iter().copied().collect();
     let owner_id_keys: Vec<String> = owner_ids.iter().copied().map(owner_key).collect();

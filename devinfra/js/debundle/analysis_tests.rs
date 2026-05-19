@@ -66,7 +66,7 @@ mod tests {
         assert!(facts[0].at_init_calls.is_empty());
         assert!(facts[0].body_calls.is_empty());
         // call statement: f() is at-init, no body reads.
-        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("f")]),);
         assert!(facts[1].body_calls.is_empty());
     }
 
@@ -80,7 +80,7 @@ mod tests {
         let facts = analyze_facts(&module);
         // f's decl: its body calls g lazily.
         assert!(facts[0].at_init_calls.is_empty());
-        assert_eq!(facts[0].body_calls, BTreeSet::from(["g".to_string()]),);
+        assert_eq!(facts[0].body_calls, BTreeSet::from([test_id("g")]),);
     }
 
     /// Indirect calls (`const g = f; g()`) are skipped — the callee
@@ -92,7 +92,7 @@ mod tests {
         let facts = analyze_facts(&module);
         // Last statement: `g()` records `g`, not `f`. (The aliasing
         // is unmodeled; callee resolution only sees `g`.)
-        assert_eq!(facts[2].at_init_calls, BTreeSet::from(["g".to_string()]),);
+        assert_eq!(facts[2].at_init_calls, BTreeSet::from([test_id("g")]),);
     }
 
     /// Method calls (`obj.method()`) are skipped — callee is a
@@ -104,7 +104,7 @@ mod tests {
         // Last statement: no at_init_calls. `obj` is still recorded
         // as an eager read.
         assert!(facts[1].at_init_calls.is_empty());
-        assert!(facts[1].eager_reads.contains("obj"));
+        assert!(facts[1].eager_reads.contains(&test_id("obj")));
     }
 
     /// Class static field initializers fire at-init (class evaluation
@@ -113,7 +113,7 @@ mod tests {
     fn class_static_init_call_is_at_init() {
         let module = parse("function f() {} class C { static x = f(); }");
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].at_init_calls, BTreeSet::from(["f".to_string()]),);
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("f")]),);
         assert!(facts[1].body_calls.is_empty());
     }
 
@@ -126,7 +126,7 @@ mod tests {
         let module = parse("function f() {} class C { x = f(); }");
         let facts = analyze_facts(&module);
         assert!(facts[1].at_init_calls.is_empty());
-        assert_eq!(facts[1].body_calls, BTreeSet::from(["f".to_string()]),);
+        assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("f")]),);
     }
 
     /// Nested calls in argument positions are still seen by the
@@ -139,11 +139,8 @@ mod tests {
         // The console.log statement: console is an eager read.
         // readB is recorded as an at-init call. console.log is a
         // method call, so it's NOT in at_init_calls.
-        assert!(facts[1].eager_reads.contains("console"));
-        assert_eq!(
-            facts[1].at_init_calls,
-            BTreeSet::from(["readB".to_string()]),
-        );
+        assert!(facts[1].eager_reads.contains(&test_id("console")));
+        assert_eq!(facts[1].at_init_calls, BTreeSet::from([test_id("readB")]),);
     }
 
     /// VarDecl-bound arrow functions participate in body_calls the
@@ -155,7 +152,7 @@ mod tests {
         let facts = analyze_facts(&module);
         // f's vardecl: g() is a lazy body call.
         assert!(facts[1].at_init_calls.is_empty());
-        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]),);
+        assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]),);
     }
 
     /// A binding rebind inside a function's immediate body
@@ -167,10 +164,10 @@ mod tests {
         let module = parse("let s = 0; function f() { s = 1; }");
         let facts = analyze_facts(&module);
         // f's decl: body rebinds s at depth 1.
-        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
         assert_eq!(
             facts[1].first_order_lazy_rebinds,
-            BTreeSet::from(["s".to_string()])
+            BTreeSet::from([test_id("s")])
         );
     }
 
@@ -186,7 +183,7 @@ mod tests {
              function f() { globalThis.fire = () => { s = 1; }; }",
         );
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
         assert!(facts[1].first_order_lazy_rebinds.is_empty());
     }
 
@@ -200,7 +197,7 @@ mod tests {
              function f() { globalThis.fire = () => { g(); }; }",
         );
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]));
+        assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]));
         assert!(facts[1].first_order_body_calls.is_empty());
     }
 
@@ -215,10 +212,10 @@ mod tests {
              async function f() { s = 1; await Promise.resolve(); }",
         );
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
         assert_eq!(
             facts[1].first_order_lazy_rebinds,
-            BTreeSet::from(["s".to_string()])
+            BTreeSet::from([test_id("s")])
         );
     }
 
@@ -235,7 +232,7 @@ mod tests {
              async function f() { await Promise.resolve(); s = 1; }",
         );
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from(["s".to_string()]));
+        assert_eq!(facts[1].lazy_rebinds, BTreeSet::from([test_id("s")]));
         assert!(facts[1].first_order_lazy_rebinds.is_empty());
     }
 
@@ -247,7 +244,7 @@ mod tests {
              async function f() { await Promise.resolve(); g(); }",
         );
         let facts = analyze_facts(&module);
-        assert_eq!(facts[1].body_calls, BTreeSet::from(["g".to_string()]));
+        assert_eq!(facts[1].body_calls, BTreeSet::from([test_id("g")]));
         assert!(facts[1].first_order_body_calls.is_empty());
     }
 
@@ -257,17 +254,11 @@ mod tests {
         let facts = analyze_facts(&module);
         assert_eq!(facts.len(), 2);
         // f() declares "f"; its body reference to X is lazy.
-        assert_eq!(
-            facts[0].declared,
-            ["f"].iter().map(|s| s.to_string()).collect()
-        );
-        assert!(!facts[0].eager_reads.contains("X"));
+        assert_eq!(facts[0].declared, BTreeSet::from([test_id("f")]));
+        assert!(!facts[0].eager_reads.contains(&test_id("X")));
         assert_eq!(facts[0].kind, StatementKind::FnDecl);
         // Y declares "Y"; init is `1` (no reads).
-        assert_eq!(
-            facts[1].declared,
-            ["Y"].iter().map(|s| s.to_string()).collect()
-        );
+        assert_eq!(facts[1].declared, BTreeSet::from([test_id("Y")]));
         assert!(facts[1].eager_reads.is_empty());
     }
 
@@ -277,8 +268,8 @@ mod tests {
         let facts = analyze_facts(&module);
         assert_eq!(facts.len(), 1);
         // extends A is eager; method body reference to X is lazy.
-        assert!(facts[0].eager_reads.contains("A"));
-        assert!(!facts[0].eager_reads.contains("X"));
+        assert!(facts[0].eager_reads.contains(&test_id("A")));
+        assert!(!facts[0].eager_reads.contains(&test_id("X")));
     }
 
     #[test]
@@ -286,14 +277,14 @@ mod tests {
         let module = parse("const M = { [k.foo]: 1 };");
         let facts = analyze_facts(&module);
         // The key expression `k.foo` reads `k` at-init.
-        assert!(facts[0].eager_reads.contains("k"));
+        assert!(facts[0].eager_reads.contains(&test_id("k")));
     }
 
     #[test]
     fn class_static_init_eager_read() {
         let module = parse("class C { static x = Y; }");
         let facts = analyze_facts(&module);
-        assert!(facts[0].eager_reads.contains("Y"));
+        assert!(facts[0].eager_reads.contains(&test_id("Y")));
     }
 
     #[test]
@@ -302,7 +293,7 @@ mod tests {
         let facts = analyze_facts(&module);
         // Instance field initializer evaluates per-instance, not at
         // class-decl time.
-        assert!(!facts[0].eager_reads.contains("Y"));
+        assert!(!facts[0].eager_reads.contains(&test_id("Y")));
     }
 
     #[test]
@@ -316,7 +307,7 @@ Ro([Z.shallow], C.prototype, "x", 2);
 console.log("tail");"#,
         );
         let facts = analyze_facts_with_hints(&module, &hints_with_decorate_helper("Ro"));
-        assert_eq!(facts[4].local_effects, BTreeSet::from(["C".to_string()]));
+        assert_eq!(facts[4].local_effects, BTreeSet::from([test_id("C")]));
         assert!(facts[4].purity.is_pure());
 
         let graph = build_owner_graph(&facts);
@@ -331,7 +322,8 @@ console.log("tail");"#,
             local_effects[0]
                 .reason
                 .binding
-                .map(|id| graph.binding_table.required_name(id).as_str()),
+                .as_ref()
+                .map(|id| id.0.as_ref()),
             Some("C"),
         );
         assert!(
@@ -353,7 +345,7 @@ class C {}
 Ro([Z], C);"#,
         );
         let facts = analyze_facts_with_hints(&module, &hints_with_decorate_helper("Ro"));
-        assert_eq!(facts[3].local_effects, BTreeSet::from(["C".to_string()]));
+        assert_eq!(facts[3].local_effects, BTreeSet::from([test_id("C")]));
         assert!(facts[3].purity.is_pure());
     }
 
@@ -425,22 +417,8 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     fn member_bindings(members: &[BindingReport]) -> Vec<String> {
         members
             .iter()
-            .map(|member| member.binding.clone())
+            .map(|member| member.binding.to_string())
             .collect()
-    }
-
-    #[test]
-    fn binding_table_interns_stable_chunk_local_ids() {
-        let mut table = BindingTable::default();
-        let alpha = table.intern("alpha".to_string());
-        let beta = table.intern("beta".to_string());
-        let alpha_again = table.intern("alpha".to_string());
-
-        assert_eq!(alpha, alpha_again);
-        assert_ne!(alpha, beta);
-        assert_eq!(table.get("alpha"), Some(alpha));
-        assert_eq!(table.name(beta).map(String::as_str), Some("beta"));
-        assert_eq!(table.len(), 2);
     }
 
     #[test]
@@ -529,7 +507,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let facts = analyze_facts(&module);
         assert_eq!(
             facts[2].at_init_calls,
-            BTreeSet::from(["readB".to_string()]),
+            BTreeSet::from([test_id("readB")]),
             "triggerInit's at_init_calls must include readB: {:?}",
             facts[2].at_init_calls,
         );
@@ -813,10 +791,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                     && edge.to == OwnerId(1)
                     && edge.reason.kind == DepKind::EagerUse
                     && edge.reason.statement_ordinal == StatementOrdinal(0)
-                    && factorization
-                        .analysis
-                        .binding_name(edge.reason.binding.unwrap())
-                        == "X"
+                    && edge.reason.binding.as_ref().is_some_and(|id| id.0 == "X")
             }),
             "owner graph should retain the unassigned declared provider edge",
         );
@@ -1889,7 +1864,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let facts = analyze_facts(&module);
         let registry_fact = facts
             .iter()
-            .find(|f| f.declared.contains("registry"))
+            .find(|f| f.declared.contains(&test_id("registry")))
             .expect("registry fact missing");
         assert!(
             registry_fact.purity.is_pure(),
@@ -1909,7 +1884,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let facts = analyze_facts(&module);
         let registry_fact = facts
             .iter()
-            .find(|f| f.declared.contains("registry"))
+            .find(|f| f.declared.contains(&test_id("registry")))
             .expect("registry fact missing");
         assert!(
             !registry_fact.purity.is_pure(),
@@ -2748,7 +2723,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let facts = analyze_facts(&module);
         let gf_fact = facts
             .iter()
-            .find(|f| f.declared.contains("gF"))
+            .find(|f| f.declared.contains(&test_id("gF")))
             .expect("gF fact missing from chunk analysis");
         assert!(
             gf_fact.purity.is_pure(),
@@ -2771,7 +2746,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let facts = analyze_facts(&module);
         let v_fact = facts
             .iter()
-            .find(|f| f.declared.contains("v"))
+            .find(|f| f.declared.contains(&test_id("v")))
             .expect("v fact missing");
         assert!(
             !v_fact.purity.is_pure(),
@@ -3266,18 +3241,14 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         let module = parse(source);
         analyze_facts(&module)
             .into_iter()
-            .map(|f| f.declared.into_iter().collect::<Vec<_>>())
+            .map(|f| f.declared.into_iter().map(|id| id.0.to_string()).collect())
             .collect()
     }
 
     fn owner_for_binding(graph: &OwnerGraph, name: &str) -> OwnerId {
-        let binding_id = graph
-            .binding_table
-            .get(name)
-            .unwrap_or_else(|| panic!("binding {name} should be interned"));
         graph
             .iter_nodes()
-            .find(|node| node.declared.contains(&binding_id))
+            .find(|node| node.declared.iter().any(|id| id.0.as_ref() == name))
             .map(|node| node.id)
             .unwrap_or_else(|| panic!("binding {name} should have an owner"))
     }
@@ -3345,14 +3316,14 @@ const impure = new Something(), pureBrand = Symbol("Brand");"#;
         let graph = build_owner_graph(&facts);
         let first_owner = owner_for_binding(&graph, "first");
         let second_owner = owner_for_binding(&graph, "second");
-        let first_binding = graph.binding_table.get("first").unwrap();
+        let first_binding = test_id("first");
         let edge = graph
             .iter_edges()
             .find(|edge| {
                 edge.from == second_owner
                     && edge.to == first_owner
                     && edge.reason.kind == DepKind::EagerUse
-                    && edge.reason.binding == Some(first_binding)
+                    && edge.reason.binding.as_ref() == Some(&first_binding)
             })
             .expect("second's initializer should eagerly read first");
         assert_eq!(
@@ -3775,18 +3746,8 @@ mutable = mutable + 1;"#,
             .owner_graph
             .iter_nodes()
             .map(|node| {
-                let declared: Vec<String> = node
-                    .declared
-                    .iter()
-                    .filter_map(|b| {
-                        factorization
-                            .analysis
-                            .owner_graph
-                            .binding_table
-                            .name(*b)
-                            .cloned()
-                    })
-                    .collect();
+                let declared: Vec<String> =
+                    node.declared.iter().map(|id| id.0.to_string()).collect();
                 let key = if declared.is_empty() {
                     format!("stmt_{}", node.statement_ordinal.0)
                 } else {
@@ -3973,7 +3934,7 @@ mutable = mutable + 1;"#,
         // existing A. (B's owner is in the supernode but doesn't
         // sit in the same SCC; it survives as a stable supernode-
         // only cell and gets skipped.)
-        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().map(|a| a.to_string()).collect();
         assert!(
             bindings.contains("A") && bindings.contains("C"),
             "extension cell should expose A (from supernode) and C (the addition): {bindings:?}",
@@ -4023,7 +3984,7 @@ mutable = mutable + 1;"#,
             "fresh-module cells keep the auto_partition_NNNN id shape: {}",
             cell.proposed_module_id,
         );
-        let bindings: BTreeSet<String> = cell.binding_ids.iter().cloned().collect();
+        let bindings: BTreeSet<String> = cell.binding_ids.iter().map(|a| a.to_string()).collect();
         let expected: BTreeSet<String> = ["X".to_string(), "Y".to_string()].into_iter().collect();
         assert_eq!(
             bindings, expected,

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
+use swc_atoms::Atom;
 
 use crate::purity::Purity;
-use crate::{BindingName, DepKind, StatementKind, StatementOrdinal};
+use crate::{DepKind, StatementKind, StatementOrdinal};
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -12,8 +13,8 @@ pub struct SourceLocation {
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct BindingReport {
-    pub binding: BindingName,
-    pub export_name: BindingName,
+    pub binding: Atom,
+    pub export_name: Atom,
 }
 
 /// Node-link JSON side output for downstream graph analysis.
@@ -58,7 +59,7 @@ pub struct OwnerGraphEdgeReport {
     pub target: String,
     pub edge_kind: DepKind,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding: Option<BindingName>,
+    pub binding: Option<Atom>,
     pub statement_ordinal: StatementOrdinal,
     pub constrains_init_order: bool,
 }
@@ -201,7 +202,7 @@ pub struct FactorizeReport {
 pub struct FactorizeCell {
     pub proposed_module_id: String,
     pub owner_ids: Vec<String>,
-    pub binding_ids: Vec<BindingName>,
+    pub binding_ids: Vec<Atom>,
     /// Owner ids in this cell whose `declared_bindings` is empty
     /// (anonymous side-effect statements). Lane workers materialize
     /// these via `anonymous_statements:` entries quoting the
@@ -257,7 +258,7 @@ pub enum FactorizeDiagnosticReason {
 pub struct FactorizeDiagnostic {
     pub diagnostic_id: String,
     pub owner_ids: Vec<String>,
-    pub binding_ids: Vec<BindingName>,
+    pub binding_ids: Vec<Atom>,
     pub size_lines_estimate: usize,
     pub size_members: usize,
     #[serde(skip_serializing_if = "Option::is_none")]

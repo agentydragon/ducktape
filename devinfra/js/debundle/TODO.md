@@ -345,35 +345,19 @@ so an in-flight Tana peel doesn't suddenly miss the file. Adds
 to the broader Tana peel coordination tracked in
 `gaffer-private/tana/re/web/`.
 
-## Migrate `BindingName = String` → swc's hygiene-preserving `Id`
+<!--
+The "Migrate BindingName = String → swc's hygiene-preserving Id"
+entry that used to live here was done by the Id migration PR.
+StatementFacts now carries `BTreeSet<Id>` everywhere; `BindingTable`
+is gone; `graph.rs` keys binding ownership with `HashMap<Id, OwnerId>`;
+reports keep their wire shape via `Atom: Serialize` (atom-only,
+SyntaxContext dropped at the JSON boundary).
+-->
 
-`ids.rs:55` aliases `BindingName` to `String`, flattening swc's
-`Id = (Atom, SyntaxContext)`. This works at chunk top-level (no
-hygienic shadowing possible) but means cross-scope work has to
-re-introduce hygiene out-of-band — see the explicit `top_level_id`
-lookups in lowering and the lossy `binding_names` helper
-(`binding_targets.rs:15`) that drops `SyntaxContext` from `Pat`
-walks.
+## Adopt `swc_ecma_utils::find_pat_ids` for `binding_names`
 
-Migrating would let us drop the manual re-resolution: store `Id`
-everywhere `BindingName` flows today, swap `binding_names` for
-`swc_ecma_utils::find_pat_ids::<Pat, Id>`, and shrink the
-`EffectCell::Binding(BindingName)` cell key in `facts.rs` /
-`graph.rs` to a hygiene-aware identity. Mostly mechanical but
-touches every fact-producing site (`StatementFacts.declared`,
-`eager_reads`, `eager_rebinds`, `lazy_reads`, `lazy_rebinds`,
-`first_order_lazy_*`, `local_effects`, `at_init_calls`,
-`body_calls`, `first_order_body_calls`), the binding table interner,
-and the JSON report schema. Plan when there's a reason to want
-hygiene-aware bindings (e.g. analyzing a chunk that legally
-shadows top-level names via top-level `var`).
-
-Side effect: `BindingTable`'s intern step becomes redundant — swc's
-`Atom` is already globally interned, so `Id` equality is O(1)
-pointer comparison without our `String → BindingId` mapping. The
-table's other role (dense `BindingId(usize)` keys indexing
-`Vec<Option<OwnerId>>` / similar columnar storage in `graph.rs`)
-would either move to `FxHashMap<Id, OwnerId>` or keep a thin
-`Id → index` side-table alongside the storage. The cache-locality
-trade-off between the two is worth measuring on a Tana-sized chunk
-before deciding.
+`binding_targets.rs::binding_names` is a handwritten work-stack walker
+that yields `Id` for each binding in a `Pat`. `swc_ecma_utils` ships
+`find_pat_ids::<Pat, Id>` which does the same. Worth swapping once
+`swc_ecma_utils` is otherwise in the analysis crate's deps (no good
+reason today — the local walker is small and equivalent).

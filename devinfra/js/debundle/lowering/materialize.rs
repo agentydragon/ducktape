@@ -201,10 +201,10 @@ pub(super) fn materialize_logical_chunk(
                 bindings_catalogue.insert(
                     top_level_id(&member.binding, chunk_top_level_mark),
                     BindingKind::Imported {
-                        imported_name,
+                        imported_name: imported_name.into(),
                         imported_from,
                         re_exporter: module_id,
-                        public_name: member.export_name.clone(),
+                        public_name: member.export_name.as_str().into(),
                     },
                 );
             } else {
@@ -668,9 +668,13 @@ pub(super) fn materialize_logical_chunk(
                 sorted.sort_by(|a, b| a.0.cmp(b.0));
                 let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
                 let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
+                let binding_ids: Vec<Id> = binding_names
+                    .iter()
+                    .map(|name| top_level_id(name, chunk_top_level_mark))
+                    .collect();
                 let owner_ids = factorization
                     .analysis
-                    .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
+                    .owner_report_ids_for_bindings(binding_ids.iter());
                 FinalModuleContent {
                     binding_names,
                     file: plan.target_file.clone(),

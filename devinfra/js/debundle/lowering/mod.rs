@@ -12,9 +12,9 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::{
-    AnalysisHints, AtomicUnitConflict, BindingKind, BindingName, ChunkFactorization, DepKind,
-    KnownEffect, LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId,
-    OwnerGraphAndUnits, OwnerGraphOptions, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
+    AnalysisHints, AtomicUnitConflict, BindingKind, ChunkFactorization, DepKind, KnownEffect,
+    LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
+    OwnerGraphOptions, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
     RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units_with,
     render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
 };

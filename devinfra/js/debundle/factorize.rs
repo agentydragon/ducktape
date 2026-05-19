@@ -21,9 +21,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::atomic_units::compute_atomic_units;
 use crate::peelability::{PeelCandidateEvaluation, PeelabilityContext, evaluate_peel_candidate};
+use swc_atoms::Atom;
+use swc_ecma_ast::Id;
+
 use crate::reports::{build_quotient_edge_reports, is_residual_destination, module_key, owner_key};
 use crate::{
-    BindingName, ChunkFactorization, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason,
+    ChunkFactorization, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason,
     FactorizeOptions, FactorizeReport, ModuleId, OwnerId, PeelCandidateStatus,
 };
 
@@ -196,7 +199,7 @@ pub fn build_factorize_report(
 struct FactorizeIndex {
     unit_by_owner: Vec<usize>,
     owners_by_unit: Vec<Vec<OwnerId>>,
-    bindings_by_owner: HashMap<OwnerId, Vec<BindingName>>,
+    bindings_by_owner: HashMap<OwnerId, Vec<Id>>,
 }
 
 impl FactorizeIndex {
@@ -214,18 +217,11 @@ impl FactorizeIndex {
                 members
             })
             .collect();
-        let bindings_by_owner: HashMap<OwnerId, Vec<BindingName>> = factorization
+        let bindings_by_owner: HashMap<OwnerId, Vec<Id>> = factorization
             .analysis
             .owner_graph
             .iter_nodes()
-            .map(|node| {
-                let names: Vec<BindingName> = node
-                    .declared
-                    .iter()
-                    .map(|bid| factorization.analysis.binding_name(*bid).clone())
-                    .collect();
-                (node.id, names)
-            })
+            .map(|node| (node.id, node.declared.iter().cloned().collect()))
             .collect();
         Self {
             unit_by_owner,
@@ -484,7 +480,7 @@ fn evaluate_current(
     owners: &BTreeSet<OwnerId>,
 ) -> PeelCandidateEvaluation {
     let owner_vec: Vec<OwnerId> = owners.iter().copied().collect();
-    let mut declared: Vec<BindingName> = owner_vec
+    let mut declared: Vec<Id> = owner_vec
         .iter()
         .flat_map(|o| index.bindings_by_owner.get(o).cloned().unwrap_or_default())
         .collect();
@@ -635,7 +631,7 @@ fn make_cell(
     extension_target: Option<ModuleId>,
     node_by_owner: &[FactorizeNode],
     verdict: &PeelCandidateEvaluation,
-    bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
+    bindings_by_owner: &HashMap<OwnerId, Vec<Id>>,
     factorization: &ChunkFactorization,
 ) -> FactorizeCell {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
@@ -646,25 +642,24 @@ fn make_cell(
     let extends_module_id: Option<String> = extension_target.map(module_key);
 
     let mut anonymous_statement_owner_ids: Vec<String> = Vec::new();
-    let mut binding_ids_set: HashSet<BindingName> = HashSet::new();
+    let mut binding_ids_set: HashSet<Atom> = HashSet::new();
     let mut start_line = usize::MAX;
     let mut end_line: usize = 0;
     let mut have_loc = false;
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
     let mut size_lines: usize = 0;
-    let empty_vec: Vec<BindingName> = Vec::new();
+    let empty_vec: Vec<Id> = Vec::new();
     for owner_id in &owners {
         let Some(node) = factorization.analysis.owner_graph.node(*owner_id) else {
             continue;
         };
-        let declared_bindings: &Vec<BindingName> =
-            bindings_by_owner.get(owner_id).unwrap_or(&empty_vec);
+        let declared_bindings: &Vec<Id> = bindings_by_owner.get(owner_id).unwrap_or(&empty_vec);
         if declared_bindings.is_empty() {
             anonymous_statement_owner_ids.push(owner_key(*owner_id));
         }
         for b in declared_bindings {
-            binding_ids_set.insert(b.clone());
+            binding_ids_set.insert(b.0.clone());
         }
         if let Some(loc) = &node.source_location {
             have_loc = true;
@@ -725,7 +720,7 @@ fn make_cell(
     }
 
     let landable_today = matches!(verdict.status, PeelCandidateStatus::PeelableNow);
-    let mut binding_ids: Vec<BindingName> = binding_ids_set.into_iter().collect();
+    let mut binding_ids: Vec<Atom> = binding_ids_set.into_iter().collect();
     binding_ids.sort();
     let mut active_modules_referenced: Vec<String> =
         active_modules_referenced.into_iter().collect();
@@ -760,13 +755,13 @@ fn make_diagnostic(
     node_by_owner: &[FactorizeNode],
     verdict: &PeelCandidateEvaluation,
     reason: FactorizeDiagnosticReason,
-    bindings_by_owner: &HashMap<OwnerId, Vec<BindingName>>,
+    bindings_by_owner: &HashMap<OwnerId, Vec<Id>>,
     factorization: &ChunkFactorization,
 ) -> FactorizeDiagnostic {
     let mut owner_ids: Vec<String> = owners.iter().copied().map(owner_key).collect();
     owner_ids.sort();
 
-    let mut binding_ids_set: HashSet<BindingName> = HashSet::new();
+    let mut binding_ids_set: HashSet<Atom> = HashSet::new();
     let mut start_line = usize::MAX;
     let mut end_line = 0usize;
     let mut have_loc = false;
@@ -775,7 +770,7 @@ fn make_diagnostic(
     let mut size_lines = 0usize;
     for owner in &owners {
         if let Some(bindings) = bindings_by_owner.get(owner) {
-            binding_ids_set.extend(bindings.iter().cloned());
+            binding_ids_set.extend(bindings.iter().map(|id| id.0.clone()));
         }
         let Some(node) = factorization.analysis.owner_graph.node(*owner) else {
             continue;
@@ -834,7 +829,7 @@ fn make_diagnostic(
         }
     }
 
-    let mut binding_ids: Vec<BindingName> = binding_ids_set.into_iter().collect();
+    let mut binding_ids: Vec<Atom> = binding_ids_set.into_iter().collect();
     binding_ids.sort();
     let mut active_modules_referenced: Vec<String> =
         active_modules_referenced.into_iter().collect();

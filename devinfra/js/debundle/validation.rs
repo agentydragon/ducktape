@@ -10,9 +10,9 @@ use crate::factor_assembly::AtomicUnitConflict;
 use crate::graph::build_module_quotient;
 use crate::partition::Partition;
 use crate::realizability::check_realizability;
-use crate::{
-    BindingName, DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal,
-};
+use swc_atoms::Atom;
+
+use crate::{DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -65,7 +65,7 @@ pub struct CycleEdge {
     pub to: String,
     pub statement_ordinal: StatementOrdinal,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub binding: Option<BindingName>,
+    pub binding: Option<Atom>,
     /// Edge kind. Lets
     /// downstream consumers (cycle-evidence visualizers, spec
     /// authors triaging which edges to break) tell at a glance
@@ -206,9 +206,7 @@ pub fn validate_factorization(
                     from: module_name(from),
                     to: module_name(to),
                     statement_ordinal: reason.statement_ordinal,
-                    binding: reason
-                        .binding
-                        .map(|binding| graph.binding_table.required_name(binding).clone()),
+                    binding: reason.binding.as_ref().map(|id| id.0.clone()),
                     kind: reason.kind,
                 });
             }
@@ -265,7 +263,15 @@ pub fn render_atomic_unit_conflict_summary(
             let names = if claim.binding_names.is_empty() {
                 String::new()
             } else {
-                format!(" ({})", claim.binding_names.join(","))
+                format!(
+                    " ({})",
+                    claim
+                        .binding_names
+                        .iter()
+                        .map(|atom| atom.as_ref())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
             };
             out.push_str(&format!(
                 "    - {}{} → {}\n",
@@ -402,9 +408,7 @@ fn compute_realizability_cut(
                 from: module_name(u),
                 to: module_name(v),
                 statement_ordinal: reason.statement_ordinal,
-                binding: reason
-                    .binding
-                    .map(|binding| graph.binding_table.required_name(binding).clone()),
+                binding: reason.binding.as_ref().map(|id| id.0.clone()),
                 kind: reason.kind,
             });
         }

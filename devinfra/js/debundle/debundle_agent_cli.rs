@@ -405,7 +405,7 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     bindings.dedup();
     let binding_ids: BTreeSet<String> = bindings
         .iter()
-        .map(|binding| binding.binding.clone())
+        .map(|binding| binding.binding.to_string())
         .collect();
     let mut binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
 
@@ -936,8 +936,8 @@ mod tests {
 
     fn member(binding: &str, export_name: &str) -> BindingReport {
         BindingReport {
-            binding: binding.to_string(),
-            export_name: export_name.to_string(),
+            binding: binding.into(),
+            export_name: export_name.into(),
         }
     }
 
@@ -979,7 +979,7 @@ mod tests {
                 source: "owner:1".to_string(),
                 target: "owner:0".to_string(),
                 edge_kind: DepKind::EagerUse,
-                binding: Some("ZZ".to_string()),
+                binding: Some("ZZ".into()),
                 statement_ordinal: StatementOrdinal(2),
                 constrains_init_order: true,
             }],
@@ -1004,7 +1004,7 @@ mod tests {
                 cells: vec![FactorizeCell {
                     proposed_module_id: "factor_0000".to_string(),
                     owner_ids: vec!["owner:0".to_string()],
-                    binding_ids: vec!["ZZ".to_string()],
+                    binding_ids: vec!["ZZ".into()],
                     anonymous_statement_owner_ids: Vec::new(),
                     size_lines_estimate: 1,
                     size_members: 1,
@@ -1081,7 +1081,7 @@ mod tests {
         graph.factorize.cells.push(FactorizeCell {
             proposed_module_id: "factor_0001".to_string(),
             owner_ids: vec!["owner:1".to_string()],
-            binding_ids: vec!["aa".to_string()],
+            binding_ids: vec!["aa".into()],
             anonymous_statement_owner_ids: Vec::new(),
             size_lines_estimate: 1,
             size_members: 1,
@@ -1192,7 +1192,7 @@ mod tests {
             source: "owner:2".to_string(),
             target: "owner:0".to_string(),
             edge_kind: DepKind::EagerUse,
-            binding: Some("ZZ".to_string()),
+            binding: Some("ZZ".into()),
             statement_ordinal: StatementOrdinal(3),
             constrains_init_order: true,
         });
@@ -1201,7 +1201,7 @@ mod tests {
             source: "owner:3".to_string(),
             target: "owner:0".to_string(),
             edge_kind: DepKind::EagerUse,
-            binding: Some("ZZ".to_string()),
+            binding: Some("ZZ".into()),
             statement_ordinal: StatementOrdinal(4),
             constrains_init_order: true,
         });

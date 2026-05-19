@@ -1,18 +1,24 @@
+use swc_atoms::Atom;
 use swc_ecma_ast::*;
 
 pub trait TargetAccessRecorder {
     /// Called for update expressions like `a++`, where the target binding is
     /// both read and written. Validators that only care about writes can leave
     /// the default no-op in place.
-    fn record_binding_read(&mut self, _name: &str) {}
-    fn record_binding_write(&mut self, name: &str);
-    /// Called for mutations through a binding, e.g. `obj.x = 1`.
-    /// This is not a rebinding write to `obj`; validator collectors can ignore
-    /// it when they only need to reject assignments to imported binding cells.
-    fn record_member_write(&mut self, _name: &str) {}
+    fn record_binding_read(&mut self, _id: &Id) {}
+    fn record_binding_write(&mut self, id: &Id);
+    /// Called for mutations through a binding, e.g. `obj.x = 1`. The `id` is
+    /// the leftmost identifier of the member access (`obj` here). This is not
+    /// a rebinding write to `obj`; validator collectors can ignore it when
+    /// they only need to reject assignments to imported binding cells.
+    fn record_member_write(&mut self, _id: &Id) {}
 }
 
-pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = String> + '_ {
+/// Yield the hygiene-preserving `Id` of every binding the pattern
+/// declares. `swc_ecma_utils::find_pat_ids::<Pat, Id>` does the
+/// same; this handwritten walker is kept to avoid an extra crate
+/// dep and to surface order deterministically.
+pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = Id> + '_ {
     enum Work<'a> {
         Pat(&'a Pat),
         BindIdent(&'a BindingIdent),
@@ -21,9 +27,9 @@ pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = String> + '_ {
     std::iter::from_fn(move || {
         loop {
             match stack.pop()? {
-                Work::BindIdent(id) => return Some(id.id.sym.to_string()),
+                Work::BindIdent(id) => return Some(id.to_id()),
                 Work::Pat(pat) => match pat {
-                    Pat::Ident(id) => return Some(id.id.sym.to_string()),
+                    Pat::Ident(id) => return Some(id.to_id()),
                     Pat::Array(arr) => {
                         for elem in arr.elems.iter().flatten().rev() {
                             stack.push(Work::Pat(elem));
@@ -60,7 +66,7 @@ fn record_simple_assign_target(
 ) {
     match target {
         SimpleAssignTarget::Ident(ident) => {
-            recorder.record_binding_write(ident.id.sym.as_ref());
+            recorder.record_binding_write(&ident.to_id());
         }
         SimpleAssignTarget::Member(member) => {
             record_member_target(member, recorder);
@@ -69,8 +75,8 @@ fn record_simple_assign_target(
             record_assign_expr_target(&paren.expr, recorder);
         }
         SimpleAssignTarget::OptChain(opt_chain) => {
-            if let Some(name) = opt_chain_base_name(opt_chain) {
-                recorder.record_member_write(name);
+            if let Some(id) = opt_chain_base_id(opt_chain) {
+                recorder.record_member_write(&id);
             }
         }
         _ => {}
@@ -79,12 +85,12 @@ fn record_simple_assign_target(
 
 fn record_assign_expr_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
     match target {
-        Expr::Ident(ident) => recorder.record_binding_write(ident.sym.as_ref()),
+        Expr::Ident(ident) => recorder.record_binding_write(&ident.to_id()),
         Expr::Member(member) => record_member_target(member, recorder),
         Expr::Paren(paren) => record_assign_expr_target(&paren.expr, recorder),
         Expr::OptChain(opt_chain) => {
-            if let Some(name) = opt_chain_base_name(opt_chain) {
-                recorder.record_member_write(name);
+            if let Some(id) = opt_chain_base_id(opt_chain) {
+                recorder.record_member_write(&id);
             }
         }
         _ => {}
@@ -105,7 +111,7 @@ fn record_assign_target_pat(target: &AssignTargetPat, recorder: &mut impl Target
                         record_pat_write(&key_value.value, recorder);
                     }
                     ObjectPatProp::Assign(assign) => {
-                        recorder.record_binding_write(assign.key.id.sym.as_ref());
+                        recorder.record_binding_write(&assign.key.to_id());
                     }
                     ObjectPatProp::Rest(rest) => record_pat_write(&rest.arg, recorder),
                 }
@@ -116,56 +122,79 @@ fn record_assign_target_pat(target: &AssignTargetPat, recorder: &mut impl Target
 }
 
 pub fn record_pat_write(pattern: &Pat, recorder: &mut impl TargetAccessRecorder) {
-    for name in binding_names(pattern) {
-        recorder.record_binding_write(&name);
+    for id in binding_names(pattern) {
+        recorder.record_binding_write(&id);
     }
 }
 
 pub fn record_member_target(member: &MemberExpr, recorder: &mut impl TargetAccessRecorder) {
-    if let Some(name) = member_root_ident(&member.obj) {
-        recorder.record_member_write(name);
+    if let Some(id) = member_root_id(&member.obj) {
+        recorder.record_member_write(&id);
     }
 }
 
 pub fn record_update_target(target: &Expr, recorder: &mut impl TargetAccessRecorder) {
     match target {
         Expr::Ident(ident) => {
-            recorder.record_binding_read(ident.sym.as_ref());
-            recorder.record_binding_write(ident.sym.as_ref());
+            let id = ident.to_id();
+            recorder.record_binding_read(&id);
+            recorder.record_binding_write(&id);
         }
         Expr::Member(member) => {
-            if let Some(name) = member_root_ident(&member.obj) {
-                recorder.record_binding_read(name);
-                recorder.record_member_write(name);
+            if let Some(id) = member_root_id(&member.obj) {
+                recorder.record_binding_read(&id);
+                recorder.record_member_write(&id);
             }
         }
         Expr::Paren(paren) => record_update_target(&paren.expr, recorder),
         Expr::OptChain(opt_chain) => {
-            if let Some(name) = opt_chain_base_name(opt_chain) {
-                recorder.record_binding_read(name);
-                recorder.record_member_write(name);
+            if let Some(id) = opt_chain_base_id(opt_chain) {
+                recorder.record_binding_read(&id);
+                recorder.record_member_write(&id);
             }
         }
         _ => {}
     }
 }
 
-pub fn member_root_ident(expr: &Expr) -> Option<&str> {
+/// Hygiene-preserving counterpart of [`member_root_sym`]. Returns the
+/// leftmost identifier of `expr`'s member-access chain as an `Id`
+/// (atom + syntax context), or `None` if the head isn't a plain
+/// identifier (numeric literal, call expression, etc.).
+pub fn member_root_id(expr: &Expr) -> Option<Id> {
     match expr {
-        Expr::Ident(ident) => Some(ident.sym.as_ref()),
-        Expr::Member(member) => member_root_ident(&member.obj),
+        Expr::Ident(ident) => Some(ident.to_id()),
+        Expr::Member(member) => member_root_id(&member.obj),
         Expr::OptChain(opt_chain) => match &*opt_chain.base {
-            OptChainBase::Member(member) => member_root_ident(&member.obj),
-            OptChainBase::Call(call) => member_root_ident(&call.callee),
+            OptChainBase::Member(member) => member_root_id(&member.obj),
+            OptChainBase::Call(call) => member_root_id(&call.callee),
         },
-        Expr::Paren(paren) => member_root_ident(&paren.expr),
+        Expr::Paren(paren) => member_root_id(&paren.expr),
         _ => None,
     }
 }
 
-fn opt_chain_base_name(opt_chain: &OptChainExpr) -> Option<&str> {
+/// Returns the leftmost identifier's atom (i.e. just the source-level
+/// textual name, without `SyntaxContext`). Use when the caller only
+/// compares against fixed literal names — e.g. detecting
+/// `window.foo` / `document.foo`. For binding-cell identity (graph
+/// edges, validator membership checks), use [`member_root_id`].
+pub fn member_root_sym(expr: &Expr) -> Option<&Atom> {
+    match expr {
+        Expr::Ident(ident) => Some(&ident.sym),
+        Expr::Member(member) => member_root_sym(&member.obj),
+        Expr::OptChain(opt_chain) => match &*opt_chain.base {
+            OptChainBase::Member(member) => member_root_sym(&member.obj),
+            OptChainBase::Call(call) => member_root_sym(&call.callee),
+        },
+        Expr::Paren(paren) => member_root_sym(&paren.expr),
+        _ => None,
+    }
+}
+
+fn opt_chain_base_id(opt_chain: &OptChainExpr) -> Option<Id> {
     match &*opt_chain.base {
-        OptChainBase::Member(member) => member_root_ident(&member.obj),
-        OptChainBase::Call(call) => member_root_ident(&call.callee),
+        OptChainBase::Member(member) => member_root_id(&member.obj),
+        OptChainBase::Call(call) => member_root_id(&call.callee),
     }
 }

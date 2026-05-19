@@ -196,7 +196,10 @@ rust_library(
     srcs = ["binding_targets.rs"],
     crate_root = "binding_targets.rs",
     edition = "2024",
-    deps = ["@crates//:swc_ecma_ast"],
+    deps = [
+        "@crates//:swc_atoms",
+        "@crates//:swc_ecma_ast",
+    ],
 )
 
 rust_library(
@@ -300,6 +303,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:swc_atoms",
     ],
 )
 

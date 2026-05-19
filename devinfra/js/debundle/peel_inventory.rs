@@ -152,7 +152,7 @@ fn build_inventory_from(
         let members: Vec<(String, String)> = peel_set
             .members
             .iter()
-            .map(|member| (member.binding.clone(), member.export_name.clone()))
+            .map(|member| (member.binding.to_string(), member.export_name.to_string()))
             .collect();
         let has_readable = members.iter().any(|(binding, name)| binding != name);
 
@@ -386,8 +386,8 @@ mod tests {
 
     fn member(binding: &str, export_name: &str) -> BindingReport {
         BindingReport {
-            binding: binding.to_string(),
-            export_name: export_name.to_string(),
+            binding: binding.into(),
+            export_name: export_name.into(),
         }
     }
 

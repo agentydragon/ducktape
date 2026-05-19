@@ -1,16 +1,14 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
+use swc_ecma_ast::Id;
 
 use crate::facts::EffectCell;
 use crate::partition::Partition;
 use crate::purity::Purity;
-use crate::{
-    BindingId, BindingName, BindingTable, ModuleId, SourceLocation, StatementFacts, StatementKind,
-    StatementOrdinal,
-};
+use crate::{ModuleId, SourceLocation, StatementFacts, StatementKind, StatementOrdinal};
 
 /// Per-chunk owner-graph build options. Each field defaults to the
 /// strictly-conservative behavior; opt-ins enable conditionally-correct
@@ -53,32 +51,32 @@ pub struct OwnerGraphOptions {
 pub struct EdgeReason {
     pub(crate) kind: DepKind,
     pub(crate) statement_ordinal: StatementOrdinal,
-    pub(crate) binding: Option<BindingId>,
+    pub(crate) binding: Option<Id>,
 }
 
 impl EdgeReason {
-    pub(crate) fn eager_use(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_use(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_use(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_use(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyUse,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn eager_rebind(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn eager_rebind(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::EagerRebind,
             statement_ordinal: so,
             binding: Some(b),
         }
     }
-    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn lazy_rebind(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LazyRebind,
             statement_ordinal: so,
@@ -92,7 +90,7 @@ impl EdgeReason {
             binding: None,
         }
     }
-    pub(crate) fn local_effect(so: StatementOrdinal, b: BindingId) -> Self {
+    pub(crate) fn local_effect(so: StatementOrdinal, b: Id) -> Self {
         Self {
             kind: DepKind::LocalEffect,
             statement_ordinal: so,
@@ -149,7 +147,6 @@ pub struct OwnerId(pub usize);
 /// stable indices into edges; this collapses them.
 #[derive(Debug, Clone, Default)]
 pub struct OwnerGraph {
-    pub binding_table: BindingTable,
     pub nodes: Vec<OwnerNode>,
     pub edges: Vec<OwnerEdge>,
     /// CSR adjacency by source owner. `out_edges[owner.0]` is a list
@@ -164,7 +161,7 @@ pub struct OwnerNode {
     pub id: OwnerId,
     pub statement_ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
-    pub declared: BTreeSet<BindingId>,
+    pub declared: BTreeSet<Id>,
     pub kind: StatementKind,
     pub purity: Purity,
 }
@@ -258,7 +255,6 @@ impl EdgeMetadata {
 /// `tarjan_scc`.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleQuotient {
-    pub binding_table: BindingTable,
     pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
 }
 
@@ -320,25 +316,18 @@ pub fn build_owner_graph(facts: &[StatementFacts]) -> OwnerGraph {
 
 /// Like [`build_owner_graph`] but takes per-chunk [`OwnerGraphOptions`].
 pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptions) -> OwnerGraph {
-    let mut binding_table = BindingTable::default();
-    let mut binding_owner = Vec::<Option<OwnerId>>::new();
+    let mut binding_owner = HashMap::<Id, OwnerId>::new();
     let mut nodes = Vec::<OwnerNode>::with_capacity(facts.len());
     for stmt in facts {
-        let mut declared = BTreeSet::new();
         for binding in &stmt.declared {
-            let binding_id = binding_table.intern(binding.clone());
-            if binding_owner.len() <= binding_id.0 {
-                binding_owner.resize(binding_id.0 + 1, None);
-            }
-            binding_owner[binding_id.0] = Some(OwnerId(stmt.ordinal.0));
-            declared.insert(binding_id);
+            binding_owner.insert(binding.clone(), OwnerId(stmt.ordinal.0));
         }
         let id = OwnerId(stmt.ordinal.0);
         nodes.push(OwnerNode {
             id,
             statement_ordinal: stmt.ordinal,
             source_location: stmt.source_location.clone(),
-            declared,
+            declared: stmt.declared.clone(),
             kind: stmt.kind,
             purity: stmt.purity.clone(),
         });
@@ -367,36 +356,30 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
     // `promote_at_init_calls`. Other declared kinds (VarDecl,
     // ClassDecl) are TDZ-locked until their statement runs, so their
     // cross-module reads stay constrained.
-    let target_is_hoisted = |binding_id: BindingId| -> bool {
+    let target_is_hoisted = |id: &Id| -> bool {
         binding_owner
-            .get(binding_id.0)
-            .and_then(|owner| owner.as_ref())
+            .get(id)
             .and_then(|owner| stmt_by_owner.get(owner))
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
     let push_binding_edge = |raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
                              from: OwnerId,
-                             binding: &BindingName,
-                             make_reason: fn(StatementOrdinal, BindingId) -> EdgeReason,
+                             binding: &Id,
+                             make_reason: fn(StatementOrdinal, Id) -> EdgeReason,
                              statement_ordinal: StatementOrdinal| {
-        let Some(binding_id) = binding_table.get(binding) else {
+        let Some(to) = binding_owner.get(binding) else {
             return; // not declared in this chunk (global, ImportSpecifier, never-declared)
-        };
-        let Some(Some(to)) = binding_owner.get(binding_id.0) else {
-            return;
         };
         if from == *to {
             return;
         }
-        raw_edges.push((from, *to, make_reason(statement_ordinal, binding_id)));
+        raw_edges.push((from, *to, make_reason(statement_ordinal, binding.clone())));
     };
     for stmt in facts {
         let from = OwnerId(stmt.ordinal.0);
         for binding in &stmt.eager_reads {
-            if let Some(binding_id) = binding_table.get(binding)
-                && target_is_hoisted(binding_id)
-            {
+            if target_is_hoisted(binding) {
                 continue;
             }
             push_binding_edge(
@@ -475,20 +458,19 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
     // resolve to chunk-declared bindings are followed; indirect
     // calls (`const g = f; g()`), method calls (`obj.method()`), and
     // dynamic dispatch are conservatively unmodelled.
-    promote_at_init_calls(facts, &binding_table, &binding_owner, &mut raw_edges);
+    promote_at_init_calls(facts, &binding_owner, &mut raw_edges);
 
     emit_s_chain(facts, options, &mut raw_edges);
 
     // Sort + assign stable `OwnerEdgeId` indices, then build CSR
     // adjacency in one pass.
-    raw_edges.sort_by_key(|(from, to, reason)| {
-        (
-            *from,
-            *to,
-            reason.kind,
-            reason.statement_ordinal,
-            reason.binding,
-        )
+    raw_edges.sort_by(|(from_a, to_a, reason_a), (from_b, to_b, reason_b)| {
+        from_a
+            .cmp(from_b)
+            .then(to_a.cmp(to_b))
+            .then(reason_a.kind.cmp(&reason_b.kind))
+            .then(reason_a.statement_ordinal.cmp(&reason_b.statement_ordinal))
+            .then(reason_a.binding.cmp(&reason_b.binding))
     });
     let edges: Vec<OwnerEdge> = raw_edges
         .into_iter()
@@ -512,7 +494,6 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
     }
 
     OwnerGraph {
-        binding_table,
         nodes,
         edges,
         out_edges,
@@ -622,8 +603,7 @@ fn emit_s_chain(
 /// statement would multiply that further.
 fn promote_at_init_calls(
     facts: &[StatementFacts],
-    binding_table: &BindingTable,
-    binding_owner: &[Option<OwnerId>],
+    binding_owner: &HashMap<Id, OwnerId>,
     raw_edges: &mut Vec<(OwnerId, OwnerId, EdgeReason)>,
 ) {
     // 1. Build the call graph: owner → owner edges for each
@@ -653,11 +633,8 @@ fn promote_at_init_calls(
             continue;
         }
         let caller = OwnerId(stmt.ordinal.0);
-        for callee_name in &stmt.first_order_body_calls {
-            let Some(binding_id) = binding_table.get(callee_name) else {
-                continue;
-            };
-            let Some(Some(callee_owner)) = binding_owner.get(binding_id.0) else {
+        for callee_id in &stmt.first_order_body_calls {
+            let Some(callee_owner) = binding_owner.get(callee_id) else {
                 continue;
             };
             call_graph.add_node(*callee_owner);
@@ -696,8 +673,8 @@ fn promote_at_init_calls(
     for stmt in facts {
         stmt_by_owner.insert(OwnerId(stmt.ordinal.0), stmt);
     }
-    let target_is_hoisted = |binding_id: BindingId| -> bool {
-        let Some(Some(target_owner)) = binding_owner.get(binding_id.0) else {
+    let target_is_hoisted = |id: &Id| -> bool {
+        let Some(target_owner) = binding_owner.get(id) else {
             return false;
         };
         stmt_by_owner
@@ -705,29 +682,27 @@ fn promote_at_init_calls(
             .map(|stmt| stmt.kind == StatementKind::FnDecl)
             .unwrap_or(false)
     };
-    let mut scc_reads: Vec<BTreeSet<BindingId>> = vec![BTreeSet::new(); sccs.len()];
-    let mut scc_rebinds: Vec<BTreeSet<BindingId>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
+    let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
 
     // 4. Closure over the call graph. Iterate SCCs in
     //    reverse-topological order (leaves first). For each SCC,
     //    union members' own seeds plus successor SCC closures.
     for (scc_idx, scc) in sccs.iter().enumerate() {
-        let mut reads: BTreeSet<BindingId> = BTreeSet::new();
-        let mut rebinds: BTreeSet<BindingId> = BTreeSet::new();
+        let mut reads: BTreeSet<Id> = BTreeSet::new();
+        let mut rebinds: BTreeSet<Id> = BTreeSet::new();
         for owner in scc {
             let Some(stmt) = stmt_by_owner.get(owner) else {
                 continue;
             };
-            for name in &stmt.first_order_lazy_reads {
-                if let Some(id) = binding_table.get(name)
-                    && !target_is_hoisted(id)
-                {
-                    reads.insert(id);
+            for id in &stmt.first_order_lazy_reads {
+                if binding_owner.contains_key(id) && !target_is_hoisted(id) {
+                    reads.insert(id.clone());
                 }
             }
-            for name in &stmt.first_order_lazy_rebinds {
-                if let Some(id) = binding_table.get(name) {
-                    rebinds.insert(id);
+            for id in &stmt.first_order_lazy_rebinds {
+                if binding_owner.contains_key(id) {
+                    rebinds.insert(id.clone());
                 }
             }
         }
@@ -739,8 +714,8 @@ fn promote_at_init_calls(
                 if target_scc == scc_idx {
                     continue;
                 }
-                reads.extend(&scc_reads[target_scc]);
-                rebinds.extend(&scc_rebinds[target_scc]);
+                reads.extend(scc_reads[target_scc].iter().cloned());
+                rebinds.extend(scc_rebinds[target_scc].iter().cloned());
             }
         }
         scc_reads[scc_idx] = reads;
@@ -755,18 +730,15 @@ fn promote_at_init_calls(
         let caller = OwnerId(stmt.ordinal.0);
         let mut promoted_read_targets: BTreeSet<OwnerId> = BTreeSet::new();
         let mut promoted_rebind_targets: BTreeSet<OwnerId> = BTreeSet::new();
-        for callee_name in &stmt.at_init_calls {
-            let Some(callee_binding) = binding_table.get(callee_name) else {
-                continue;
-            };
-            let Some(Some(callee_owner)) = binding_owner.get(callee_binding.0) else {
+        for callee_id in &stmt.at_init_calls {
+            let Some(callee_owner) = binding_owner.get(callee_id) else {
                 continue;
             };
             let Some(&scc_idx) = scc_of.get(callee_owner) else {
                 continue;
             };
-            for &target_binding in &scc_reads[scc_idx] {
-                let Some(Some(target_owner)) = binding_owner.get(target_binding.0) else {
+            for target_binding in &scc_reads[scc_idx] {
+                let Some(target_owner) = binding_owner.get(target_binding) else {
                     continue;
                 };
                 if caller == *target_owner {
@@ -778,11 +750,11 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_owner,
-                    EdgeReason::eager_use(stmt.ordinal, target_binding),
+                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone()),
                 ));
             }
-            for &target_binding in &scc_rebinds[scc_idx] {
-                let Some(Some(target_owner)) = binding_owner.get(target_binding.0) else {
+            for target_binding in &scc_rebinds[scc_idx] {
+                let Some(target_owner) = binding_owner.get(target_binding) else {
                     continue;
                 };
                 if caller == *target_owner {
@@ -794,7 +766,7 @@ fn promote_at_init_calls(
                 raw_edges.push((
                     caller,
                     *target_owner,
-                    EdgeReason::eager_rebind(stmt.ordinal, target_binding),
+                    EdgeReason::eager_rebind(stmt.ordinal, target_binding.clone()),
                 ));
             }
         }
@@ -807,7 +779,6 @@ fn promote_at_init_calls(
 /// this for any non-hypothetical quotient.
 pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
     let mut graph = ModuleQuotient {
-        binding_table: owner_graph.binding_table.clone(),
         graph: DiGraphMap::new(),
     };
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();

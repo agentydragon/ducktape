@@ -196,7 +196,7 @@ fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
         let bindings: BTreeSet<String> = candidate
             .members
             .iter()
-            .map(|member| member.binding.clone())
+            .map(|member| member.binding.to_string())
             .collect();
         let binding_order: Vec<String> = bindings.iter().cloned().collect();
         let candidate_index = candidates.len();
@@ -218,8 +218,8 @@ fn graph_index(graph: &OwnerGraphReport) -> GraphIndex {
     let mut member_by_binding = BTreeMap::new();
     for node in &graph.nodes {
         for member in &node.declared_bindings {
-            owner_by_binding.insert(member.binding.clone(), node.id.clone());
-            member_by_binding.insert(member.binding.clone(), member.clone());
+            owner_by_binding.insert(member.binding.to_string(), node.id.clone());
+            member_by_binding.insert(member.binding.to_string(), member.clone());
         }
     }
 
@@ -452,8 +452,8 @@ fn report_member(
         .get(binding)
         .cloned()
         .unwrap_or_else(|| BindingReport {
-            binding: binding.to_string(),
-            export_name: binding.to_string(),
+            binding: binding.into(),
+            export_name: binding.into(),
         })
 }
 
@@ -614,8 +614,8 @@ mod tests {
                     statement_ordinal: StatementOrdinal(ordinal),
                     source_location: None,
                     declared_bindings: vec![BindingReport {
-                        binding: binding.to_string(),
-                        export_name: binding.to_string(),
+                        binding: (*binding).into(),
+                        export_name: (*binding).into(),
                     }],
                     statement_kind: StatementKind::VarDecl,
                     purity: Purity::Pure,
@@ -658,8 +658,8 @@ mod tests {
             members: members
                 .iter()
                 .map(|binding| BindingReport {
-                    binding: binding.to_string(),
-                    export_name: binding.to_string(),
+                    binding: (*binding).into(),
+                    export_name: (*binding).into(),
                 })
                 .collect(),
         }

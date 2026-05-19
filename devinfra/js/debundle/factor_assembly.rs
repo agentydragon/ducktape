@@ -12,11 +12,12 @@
 use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
+use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::atomic_units::AtomicUnit;
 use crate::graph::{DepKind, OwnerGraph, OwnerId};
-use crate::ids::{BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId};
+use crate::ids::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId};
 use crate::partition::Partition;
 
 /// One owner's claimed destination inside a conflicting atomic
@@ -24,7 +25,7 @@ use crate::partition::Partition;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct ConflictingClaim {
     pub owner: OwnerId,
-    pub binding_names: Vec<BindingName>,
+    pub binding_names: Vec<Atom>,
     pub module: ModuleId,
 }
 
@@ -93,18 +94,10 @@ fn compute_owner_claims(
     let mut claims = vec![None; owner_graph.nodes.len()];
     for node in &owner_graph.nodes {
         for binding_id in &node.declared {
-            let Some(name) = owner_graph.binding_table.name(*binding_id) else {
-                continue;
-            };
-            // bindings is Id-keyed but `name` is just a sym; match
-            // by sym since chunk-top-level bindings are unique by sym.
-            let claim = bindings
-                .iter()
-                .find(|(id, _)| id.0.as_ref() == name.as_str())
-                .and_then(|(_, kind)| match kind {
-                    BindingKind::Owned { owner: dest } => Some(*dest),
-                    _ => None,
-                });
+            let claim = bindings.get(binding_id).and_then(|kind| match kind {
+                BindingKind::Owned { owner: dest } => Some(*dest),
+                _ => None,
+            });
             if let Some(dest) = claim {
                 claims[node.id.0] = Some(dest);
                 break;
@@ -164,7 +157,7 @@ fn detect_unit_conflict(
                 .map(|node| {
                     node.declared
                         .iter()
-                        .filter_map(|b| owner_graph.binding_table.name(*b).cloned())
+                        .map(|id| id.0.clone())
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();

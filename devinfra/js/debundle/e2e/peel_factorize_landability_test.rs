@@ -42,9 +42,11 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 }
 
 fn cell_has_bindings(cell: &analysis::FactorizeCell, bindings: &[&str]) -> bool {
-    bindings
-        .iter()
-        .all(|binding| cell.binding_ids.contains(&(*binding).to_string()))
+    bindings.iter().all(|binding| {
+        cell.binding_ids
+            .iter()
+            .any(|atom| atom.as_ref() == *binding)
+    })
 }
 
 fn proposal_has_bindings(proposal: &peel_factorize::FactorizeProposal, bindings: &[&str]) -> bool {
@@ -473,8 +475,13 @@ export { anchor, impure, pureBrand };
     );
     assert!(
         !graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids.contains(&"pureBrand".to_string())
-                && cell.binding_ids.contains(&"impure".to_string())
+            cell.binding_ids
+                .iter()
+                .any(|atom| atom.as_ref() == "pureBrand")
+                && cell
+                    .binding_ids
+                    .iter()
+                    .any(|atom| atom.as_ref() == "impure")
         }),
         "impure sibling must not poison pureBrand's factorize cell: {:#?}",
         graph.factorize,

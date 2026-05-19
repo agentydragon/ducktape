@@ -10,7 +10,7 @@ use artifact::{
     TopLevelDeclarationKind,
 };
 use binding_targets::{
-    TargetAccessRecorder, binding_names, member_root_ident, record_assign_target,
+    TargetAccessRecorder, binding_names, member_root_sym, record_assign_target,
     record_member_target, record_pat_write, record_update_target,
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
@@ -55,6 +55,7 @@ fn classify_top_level_decl(item: &ModuleItem) -> Option<(TopLevelDeclarationKind
             var.decls
                 .iter()
                 .flat_map(|decl| binding_names(&decl.name))
+                .map(|id| id.0.to_string())
                 .collect(),
         )),
         _ => None,
@@ -383,7 +384,7 @@ impl Visit for ObservableTopLevelEffectCollector {
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if member_root_ident(&node.obj).is_some_and(|name| name == "window" || name == "document") {
+        if member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document") {
             self.observed = true;
         }
         node.visit_children_with(self);
@@ -513,15 +514,15 @@ impl IdentifierAccessCollector {
 }
 
 impl TargetAccessRecorder for IdentifierAccessCollector {
-    fn record_binding_read(&mut self, name: &str) {
-        self.record_read(name);
+    fn record_binding_read(&mut self, id: &Id) {
+        self.record_read(id.0.as_ref());
     }
 
-    fn record_binding_write(&mut self, name: &str) {
-        self.record_write(name);
+    fn record_binding_write(&mut self, id: &Id) {
+        self.record_write(id.0.as_ref());
     }
 
-    fn record_member_write(&mut self, name: &str) {
-        IdentifierAccessCollector::record_member_write(self, name);
+    fn record_member_write(&mut self, id: &Id) {
+        IdentifierAccessCollector::record_member_write(self, id.0.as_ref());
     }
 }

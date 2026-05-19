@@ -15,10 +15,7 @@ use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
 use crate::reports::owner_key;
-use crate::{
-    BindingId, BindingKind, BindingName, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph,
-    StatementFacts,
-};
+use crate::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId, OwnerGraph, StatementFacts};
 
 /// Per-chunk inputs + IR + input-derived caches.
 ///
@@ -42,7 +39,7 @@ pub struct ChunkAnalysis {
     /// deterministic.
     pub chunk_renames: HashMap<Id, Atom>,
     pub owner_graph: OwnerGraph,
-    owner_report_ids_by_binding: Vec<Vec<String>>,
+    owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
     /// Pre-computed `binding → exported name` map. Built once per
     /// chunk so peelability's per-candidate `binding_reports` calls
     /// do a single hash lookup instead of re-walking `bindings` /
@@ -85,15 +82,15 @@ impl ChunkAnalysis {
     /// peelability report generation.
     ///
     /// Looks up by `sym`-only since the report generators pass bare
-    /// `BindingName` (no ctxt available at the call site). Within a
-    /// chunk's top-level scope, syms are unique by construction, so
-    /// the first sym match is unambiguous.
-    pub(crate) fn export_name_for(&self, binding: &str) -> BindingName {
+    /// atoms (no ctxt available at the call site). Within a chunk's
+    /// top-level scope, syms are unique by construction, so the
+    /// first sym match is unambiguous.
+    pub(crate) fn export_name_for(&self, binding: &Atom) -> Atom {
         self.export_name_by_binding
             .iter()
-            .find(|(id, _)| id.0.as_ref() == binding)
-            .map(|(_, atom)| atom.to_string())
-            .unwrap_or_else(|| binding.to_string())
+            .find(|(id, _)| &id.0 == binding)
+            .map(|(_, atom)| atom.clone())
+            .unwrap_or_else(|| binding.clone())
     }
 
     /// Render `id` to a human-readable label (used in cycle reports).
@@ -127,18 +124,12 @@ impl ChunkAnalysis {
         self.logical_modules.get(idx.0)
     }
 
-    pub fn binding_name(&self, id: BindingId) -> &BindingName {
-        self.owner_graph.binding_table.required_name(id)
-    }
-
     pub fn owner_report_ids_for_bindings<'a>(
         &self,
-        names: impl IntoIterator<Item = &'a str>,
+        ids: impl IntoIterator<Item = &'a Id>,
     ) -> Vec<String> {
-        names
-            .into_iter()
-            .filter_map(|name| self.owner_graph.binding_table.get(name))
-            .filter_map(|binding| self.owner_report_ids_by_binding.get(binding.0))
+        ids.into_iter()
+            .filter_map(|id| self.owner_report_ids_by_binding.get(id))
             .flat_map(|ids| ids.iter().cloned())
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -146,21 +137,26 @@ impl ChunkAnalysis {
     }
 }
 
-fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> Vec<Vec<String>> {
-    let mut by_binding = (0..owner_graph.binding_table.len())
-        .map(|_| BTreeSet::<String>::new())
-        .collect::<Vec<_>>();
+/// Reverse-index `owner_graph.nodes[].declared` so peelability /
+/// factorize reports can resolve a binding `Id` → owners-that-declare-it
+/// in a single hash lookup. Most bindings come from exactly one owner;
+/// the `Vec<String>` shape accommodates the rare cases where the same
+/// hygiene-identity ends up on multiple owners (anonymous statements
+/// that share a synthetic owner).
+fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> HashMap<Id, Vec<String>> {
+    let mut by_binding: HashMap<Id, BTreeSet<String>> = HashMap::new();
     for node in owner_graph.iter_nodes() {
         let report_id = owner_key(node.id);
         for binding in &node.declared {
-            if let Some(ids) = by_binding.get_mut(binding.0) {
-                ids.insert(report_id.clone());
-            }
+            by_binding
+                .entry(binding.clone())
+                .or_default()
+                .insert(report_id.clone());
         }
     }
     by_binding
         .into_iter()
-        .map(|ids| ids.into_iter().collect())
+        .map(|(id, ids)| (id, ids.into_iter().collect()))
         .collect()
 }
 

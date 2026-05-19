@@ -24,14 +24,14 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 fn binding_names(members: &[BindingReport]) -> Vec<String> {
     members
         .iter()
-        .map(|member| member.binding.clone())
+        .map(|member| member.binding.to_string())
         .collect()
 }
 
 fn binding_report(binding: &str, export_name: &str) -> BindingReport {
     BindingReport {
-        binding: binding.to_string(),
-        export_name: export_name.to_string(),
+        binding: binding.into(),
+        export_name: export_name.into(),
     }
 }
 

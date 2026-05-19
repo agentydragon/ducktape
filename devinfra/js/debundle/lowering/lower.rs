@@ -573,9 +573,13 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                 .iter()
                 .map(|(_, v)| (*v).clone())
                 .collect();
+            let binding_ids: Vec<Id> = binding_names
+                .iter()
+                .map(|name| top_level_id(name, chunk_top_level_mark))
+                .collect();
             let owner_ids = factorization
                 .analysis
-                .owner_report_ids_for_bindings(binding_names.iter().map(String::as_str));
+                .owner_report_ids_for_bindings(binding_ids.iter());
             let header = vec![
                 LOWERING_FILE_PRAGMA.to_string(),
                 LOWERING_GENERATOR_HEADER.to_string(),

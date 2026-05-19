@@ -14,39 +14,39 @@ use crate::purity::{
     WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
     classify_var_decl_purity, detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
-use crate::{BindingName, SourceLocation, StatementOrdinal};
+use crate::{SourceLocation, StatementOrdinal};
 
 #[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
-    pub declared: BTreeSet<BindingName>,
-    pub eager_reads: BTreeSet<BindingName>,
-    pub eager_rebinds: BTreeSet<BindingName>,
+    pub declared: BTreeSet<Id>,
+    pub eager_reads: BTreeSet<Id>,
+    pub eager_rebinds: BTreeSet<Id>,
     /// Reads happening only inside lazy syntactic positions (function
     /// bodies, instance class-field initializers, getters/setters,
     /// constructor bodies). May overlap with `eager_reads` if the
     /// same name appears in both eager and lazy positions of the
     /// statement.
-    pub lazy_reads: BTreeSet<BindingName>,
+    pub lazy_reads: BTreeSet<Id>,
     /// Rebinding writes happening only inside lazy syntactic
     /// positions. Member writes (`obj.x = ...`) are intentionally
     /// excluded: mutating an imported object is legal, but rebinding
     /// the imported binding cell is not.
-    pub lazy_rebinds: BTreeSet<BindingName>,
+    pub lazy_rebinds: BTreeSet<Id>,
     /// Subset of `lazy_reads` whose read sites sit in a function's
     /// **first-order** body (depth 1 from this statement). Used by
     /// at-init call promotion: a synchronous call to the function
     /// only runs its immediate body, so reads inside nested
     /// function/arrow definitions don't promote to the caller.
-    pub first_order_lazy_reads: BTreeSet<BindingName>,
+    pub first_order_lazy_reads: BTreeSet<Id>,
     /// Subset of `lazy_rebinds` whose write sites sit in a function's
     /// first-order body. See `first_order_lazy_reads`.
-    pub first_order_lazy_rebinds: BTreeSet<BindingName>,
+    pub first_order_lazy_rebinds: BTreeSet<Id>,
     /// Target-local mutations produced by recognized trusted helper
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
-    pub local_effects: BTreeSet<BindingName>,
+    pub local_effects: BTreeSet<Id>,
     /// Bare-identifier callees of `CallExpr` nodes seen at-init —
     /// i.e. outside any function/arrow/method body. Used by the
     /// owner-graph build to drive at-init call promotion: a call from
@@ -56,19 +56,19 @@ pub struct StatementFacts {
     /// (`const g = f; g()`), method calls (`obj.method()`), and
     /// computed callees are skipped — the callee must be a direct
     /// `Ident`.
-    pub at_init_calls: BTreeSet<BindingName>,
+    pub at_init_calls: BTreeSet<Id>,
     /// Same as `at_init_calls` but for calls inside lazy positions.
     /// Used by the owner-graph build to reconstruct the chunk call
     /// graph so that promotion can transitively follow call chains
     /// (e.g. `function f() { g(); } f();` at top level promotes
     /// through `g`'s body too).
-    pub body_calls: BTreeSet<BindingName>,
+    pub body_calls: BTreeSet<Id>,
     /// Subset of `body_calls` whose call sites sit in a function's
     /// **first-order** body. The promotion call graph uses this so
     /// that calls lexically nested inside a closure of the body
     /// don't appear as direct callees of the outer function — they
     /// don't fire when the outer function is invoked synchronously.
-    pub first_order_body_calls: BTreeSet<BindingName>,
+    pub first_order_body_calls: BTreeSet<Id>,
     /// Per-statement (writes, reads) summary used by the
     /// dataflow-aware S-chain emission in `graph.rs`. Tracks the
     /// outer-observable cells the statement touches at-init:
@@ -94,7 +94,7 @@ pub struct StatementFacts {
 /// non-summarizable.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum EffectCell {
-    Binding(BindingName),
+    Binding(Id),
     GlobalProp(String),
 }
 
@@ -386,8 +386,8 @@ pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSe
     };
     for item in body {
         let item = item.as_module_item();
-        for name in collect_declared_names(item) {
-            try_shadow(name.as_str(), &mut shadowed);
+        for id in collect_declared_names(item) {
+            try_shadow(id.0.as_ref(), &mut shadowed);
         }
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for spec in &import.specifiers {
@@ -509,7 +509,7 @@ fn item_purity(
 fn collect_local_effects(
     item: &ModuleItem,
     known_effects: &BTreeMap<String, KnownEffect>,
-) -> BTreeSet<BindingName> {
+) -> BTreeSet<Id> {
     let mut out = BTreeSet::new();
     if let Some(target) = recognized_local_effect_target(item, known_effects) {
         out.insert(target);
@@ -520,7 +520,7 @@ fn collect_local_effects(
 fn recognized_local_effect_target(
     item: &ModuleItem,
     known_effects: &BTreeMap<String, KnownEffect>,
-) -> Option<BindingName> {
+) -> Option<Id> {
     let ModuleItem::Stmt(Stmt::Expr(expr_stmt)) = item else {
         return None;
     };
@@ -528,23 +528,23 @@ fn recognized_local_effect_target(
         return None;
     };
     let callee = call_callee_ident(call)?;
-    if known_effects.get(callee) != Some(&KnownEffect::TypescriptDecorateHelper) {
+    if known_effects.get(callee.sym.as_ref()) != Some(&KnownEffect::TypescriptDecorateHelper) {
         return None;
     }
     typescript_decorate_helper_target(call)
 }
 
-fn call_callee_ident(call: &CallExpr) -> Option<&str> {
+fn call_callee_ident(call: &CallExpr) -> Option<&Ident> {
     let Callee::Expr(callee) = &call.callee else {
         return None;
     };
     match strip_parens(callee) {
-        Expr::Ident(ident) => Some(ident.sym.as_ref()),
+        Expr::Ident(ident) => Some(ident),
         _ => None,
     }
 }
 
-fn typescript_decorate_helper_target(call: &CallExpr) -> Option<BindingName> {
+fn typescript_decorate_helper_target(call: &CallExpr) -> Option<Id> {
     if call.args.iter().any(|arg| arg.spread.is_some()) {
         return None;
     }
@@ -591,9 +591,9 @@ fn static_reference_expr(expr: &Expr) -> bool {
     }
 }
 
-fn class_or_prototype_target_binding(expr: &Expr) -> Option<BindingName> {
+fn class_or_prototype_target_binding(expr: &Expr) -> Option<Id> {
     match strip_parens(expr) {
-        Expr::Ident(ident) => Some(ident.sym.to_string()),
+        Expr::Ident(ident) => Some(ident.to_id()),
         Expr::Member(member) => {
             let MemberProp::Ident(prop) = &member.prop else {
                 return None;
@@ -602,7 +602,7 @@ fn class_or_prototype_target_binding(expr: &Expr) -> Option<BindingName> {
                 return None;
             }
             match strip_parens(member.obj.as_ref()) {
-                Expr::Ident(ident) => Some(ident.sym.to_string()),
+                Expr::Ident(ident) => Some(ident.to_id()),
                 _ => None,
             }
         }
@@ -672,7 +672,7 @@ fn classify_item(item: &ModuleItem) -> StatementKind {
     }
 }
 
-fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
+fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_names(decl),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl)) => declaration_names(&decl.decl),
@@ -680,12 +680,12 @@ fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
             DefaultDecl::Fn(fn_expr) => fn_expr
                 .ident
                 .as_ref()
-                .map(|id| BTreeSet::from([id.sym.to_string()]))
+                .map(|id| BTreeSet::from([id.to_id()]))
                 .unwrap_or_default(),
             DefaultDecl::Class(class_expr) => class_expr
                 .ident
                 .as_ref()
-                .map(|id| BTreeSet::from([id.sym.to_string()]))
+                .map(|id| BTreeSet::from([id.to_id()]))
                 .unwrap_or_default(),
             _ => BTreeSet::new(),
         },
@@ -693,15 +693,15 @@ fn collect_declared_names(item: &ModuleItem) -> BTreeSet<String> {
     }
 }
 
-fn declaration_names(decl: &Decl) -> BTreeSet<String> {
+fn declaration_names(decl: &Decl) -> BTreeSet<Id> {
     match decl {
         Decl::Var(var) => var
             .decls
             .iter()
             .flat_map(|declarator| binding_names(&declarator.name))
             .collect(),
-        Decl::Fn(fn_decl) => BTreeSet::from([fn_decl.ident.sym.to_string()]),
-        Decl::Class(class_decl) => BTreeSet::from([class_decl.ident.sym.to_string()]),
+        Decl::Fn(fn_decl) => BTreeSet::from([fn_decl.ident.to_id()]),
+        Decl::Class(class_decl) => BTreeSet::from([class_decl.ident.to_id()]),
         _ => BTreeSet::new(),
     }
 }
@@ -774,15 +774,15 @@ trait LazyBoundary: Visit {
 ///   the call graph, not via per-statement syntactic checks.
 #[derive(Default)]
 struct StatementFactsCollector {
-    at_init_reads: BTreeSet<String>,
-    lazy_reads: BTreeSet<String>,
-    first_order_lazy_reads: BTreeSet<String>,
-    at_init_writes: BTreeSet<String>,
-    lazy_writes: BTreeSet<String>,
-    first_order_lazy_writes: BTreeSet<String>,
-    at_init_calls: BTreeSet<String>,
-    lazy_calls: BTreeSet<String>,
-    first_order_lazy_calls: BTreeSet<String>,
+    at_init_reads: BTreeSet<Id>,
+    lazy_reads: BTreeSet<Id>,
+    first_order_lazy_reads: BTreeSet<Id>,
+    at_init_writes: BTreeSet<Id>,
+    lazy_writes: BTreeSet<Id>,
+    first_order_lazy_writes: BTreeSet<Id>,
+    at_init_calls: BTreeSet<Id>,
+    lazy_calls: BTreeSet<Id>,
+    first_order_lazy_calls: BTreeSet<Id>,
     global_writes: BTreeSet<String>,
     global_reads: BTreeSet<String>,
     dataflow_summarizable: bool,
@@ -798,36 +798,36 @@ impl StatementFactsCollector {
         }
     }
 
-    fn record_read(&mut self, name: &str) {
+    fn record_read(&mut self, id: &Id) {
         if self.lazy_depth == 0 {
-            self.at_init_reads.insert(name.to_string());
+            self.at_init_reads.insert(id.clone());
             return;
         }
-        self.lazy_reads.insert(name.to_string());
+        self.lazy_reads.insert(id.clone());
         if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_reads.insert(name.to_string());
+            self.first_order_lazy_reads.insert(id.clone());
         }
     }
 
-    fn record_write(&mut self, name: &str) {
+    fn record_write(&mut self, id: &Id) {
         if self.lazy_depth == 0 {
-            self.at_init_writes.insert(name.to_string());
+            self.at_init_writes.insert(id.clone());
             return;
         }
-        self.lazy_writes.insert(name.to_string());
+        self.lazy_writes.insert(id.clone());
         if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_writes.insert(name.to_string());
+            self.first_order_lazy_writes.insert(id.clone());
         }
     }
 
-    fn record_call(&mut self, name: &str) {
+    fn record_call(&mut self, id: &Id) {
         if self.lazy_depth == 0 {
-            self.at_init_calls.insert(name.to_string());
+            self.at_init_calls.insert(id.clone());
             return;
         }
-        self.lazy_calls.insert(name.to_string());
+        self.lazy_calls.insert(id.clone());
         if self.lazy_depth == 1 && !self.past_await {
-            self.first_order_lazy_calls.insert(name.to_string());
+            self.first_order_lazy_calls.insert(id.clone());
         }
     }
 
@@ -870,14 +870,14 @@ impl LazyBoundary for StatementFactsCollector {
 }
 
 impl TargetAccessRecorder for StatementFactsCollector {
-    fn record_binding_write(&mut self, name: &str) {
-        self.record_write(name);
+    fn record_binding_write(&mut self, id: &Id) {
+        self.record_write(id);
     }
 }
 
 impl Visit for StatementFactsCollector {
     fn visit_ident(&mut self, node: &Ident) {
-        self.record_read(node.sym.as_ref());
+        self.record_read(&node.to_id());
     }
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
@@ -936,7 +936,7 @@ impl Visit for StatementFactsCollector {
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Some(callee) = call_callee_ident(node) {
-            self.record_call(callee);
+            self.record_call(&callee.to_id());
         }
         if self.lazy_depth == 0 {
             if let Callee::Expr(expr) = &node.callee
