@@ -1720,11 +1720,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # `generic_sp500_value` and `crypto_value` are derived post-loop from
     # the snapshot `remaining_*_units_by_month` matrices × the market
     # multipliers; not pre-allocated here.
-    generic_sp500_sale_gain = np.zeros((rollout_count, month_count), dtype="float64")
-    # `generic_sp500_sale_tax`, `private_equity_sale_taxable_gain`, and
-    # `private_equity_sale_tax` are reassigned post-loop from the
-    # derived gain matrix / `annual_sale_tax_allocation` output; no
-    # pre-allocation needed here.
+    # `generic_sp500_sale_gain`, `generic_sp500_sale_tax`,
+    # `private_equity_sale_taxable_gain`, and `private_equity_sale_tax`
+    # are reassigned post-loop from the derived gain matrix /
+    # `annual_sale_tax_allocation` output; no pre-allocation needed here.
     checking_floor_shortfall = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_usd = np.zeros((rollout_count, month_count), dtype="float64")
     crypto_sale_basis_usd = np.zeros((rollout_count, month_count), dtype="float64")
