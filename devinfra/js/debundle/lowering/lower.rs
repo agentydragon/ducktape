@@ -169,12 +169,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
     let mut occupied = collect_occupied_local_names(&entry_body);
-    // `chunk_renames_plan` carries residual-side chunk_renames
-    // (applied to entry body AND every moved body — moved bodies
-    // reference residual bindings whose atoms are being changed)
-    // plus every `binding_assignment` entry as a `MoveBinding`
-    // (Phase 8a tracking). Sealed early; the resulting
-    // `CheckedPlan` drives the plan-aware visitor in two places.
+    // Residual-side renames + move tracking. Applied to entry
+    // body AND every moved body (each references residual
+    // bindings whose atoms change).
     let mut chunk_renames_plan = new_chunk_plan(&entry_body);
     {
         let mut sorted_moves: Vec<(&Id, &usize)> = binding_assignment.iter().collect();
@@ -197,19 +194,16 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         chunk_top_level_mark,
     )?;
     let chunk_renames_checked = chunk_renames_plan.seal()?;
-    // `body_renames` retained for export-emit consumers
+    // Atom-keyed view retained for export-emit consumers
     // (`entry_exports_for_moved_bindings`, `auto_grown_residual_exports`,
-    // `collect_entry_exports_by_original_local`) that still need a
-    // `binding → exported_name` map keyed on atoms.
+    // `collect_entry_exports_by_original_local`).
     let mut body_renames = chunk_rename_map;
     occupied.extend(body_renames.values().cloned());
     let nested_locals = collect_local_binding_names(&entry_body);
     occupied.extend(nested_locals.iter().cloned());
-    // `entry_plan` accumulates entry-body-local renames
-    // (cross-module import disambiguation per-module-plan).
-    // Applies only to entry body — does NOT propagate to moved
-    // bodies (a moved body's view of "import X from plan A" is
-    // disambiguated independently in its own per-module plan).
+    // Entry-body-local renames (cross-module import disambig).
+    // Applied only to entry body — moved bodies disambiguate
+    // their own imports in their own per-module plan.
     let mut entry_plan = new_chunk_plan(&entry_body);
     entry_plan.extend_occupied(
         Scope::Chunk,
@@ -375,24 +369,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
     let mut applied = Vec::new();
 
-    // Filter chunk_renames down to entries the per-module emit path
-    // should apply: bindings *not* claimed by any logical module.
-    // (Residual-side chunk_renames apply to each moved body via
-    // `apply_chunk_renames_to_items(&chunk_renames_checked)` —
-    // see the per-iteration code below. The legacy
-    // `cross_module_chunk_renames` BTreeMap + `IdentifierRenamer`
-    // pass that used to do this work has been retired.)
-
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = std::mem::take(&mut selected_by_module[index]);
-        // Per-moved-module plan: each emitted module body is a
-        // separate ES-module scope, so its rename pipeline operates
-        // on its own name pool. Sharing the chunk-wide plan would
-        // surface false-positive cross-module collisions on bindings
-        // that two different moved modules independently use.
-        // Seeded BEFORE naturalize so the plan tracks pre-rename
-        // atoms; naturalize submissions add their targets to the
-        // plan's occupied set.
+        // Per-moved-module plan. Each emitted module body is a
+        // separate ES-module scope; sharing with other modules
+        // would surface false-positive collisions on bindings
+        // independently used in each.
         let mut module_plan = super::lowering_plan::LoweringPlan::new(
             ModuleId::logical(0),
             Vec::new(),
@@ -481,14 +463,8 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         module_imports.append(&mut runtime_reimports);
         module_imports.append(&mut body);
         body = module_imports;
-        // Apply the per-module plan (naturalize + cross-module +
-        // residual-entry disambig) AND the chunk's residual
-        // chunk_renames to the assembled body in one pass each.
-        // The plan-aware visitor renames by `(Scope::Chunk, Id)`
-        // — hygiene-preserving — so a function-local binding
-        // with the same atom as a top-level one isn't touched,
-        // and `export { local }` specifiers get their public
-        // name preserved via the pre-fill of `exported`.
+        // Apply this module's per-body renames + the residual
+        // chunk_renames in two passes.
         let module_checked = module_plan.seal()?;
         time_phase!(timings, "module.apply_renames", {
             apply_plan_renames_and_naturalize(&mut body, &module_checked);

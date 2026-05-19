@@ -1,74 +1,39 @@
-//! Apply a sealed [`CheckedPlan`] to a module's AST via a single
-//! visitor walk. Replaces the legacy `IdentifierRenamer`,
-//! `RenameAndShorthandNaturalizer`, and `ShorthandNaturalizer`:
-//! the visitor renames by hygiene-preserving `Id` (matching the
-//! plan's rename_index), preserves public export names, adds
-//! `as` aliases on import-named-specifiers when the local is
-//! renamed, leaves property-name labels alone, and collapses
-//! object literal/pattern shorthand.
+//! Apply a sealed [`CheckedPlan`] to a JS AST. One visitor walk:
+//! renames idents by hygiene-preserving `Id`, preserves public
+//! export names, synthesizes `as` aliases on renamed import
+//! specifiers, leaves property labels alone, and optionally
+//! collapses object literal/pattern shorthand.
 
 use std::collections::HashMap;
 
 use swc_atoms::Atom;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    ExportNamedSpecifier, ExportSpecifier, Id, Ident, ImportNamedSpecifier, MemberProp, Module,
-    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, ObjectLit, ObjectPat, PropName,
+    ExportNamedSpecifier, ExportSpecifier, Id, Ident, ImportNamedSpecifier, MemberProp, ModuleDecl,
+    ModuleExportName, ModuleItem, NamedExport, ObjectLit, ObjectPat, PropName,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use super::lowering_plan::{CheckedPlan, Scope};
 use super::visitors::{naturalize_object_literal_shorthand, naturalize_object_pattern_shorthand};
 
-/// Apply chunk-scope renames from `plan` to `module`. Walks the
-/// tree once.
-pub fn apply_chunk_renames(module: &mut Module, plan: &CheckedPlan) {
-    let renames = chunk_rename_map(plan);
-    preserve_export_specifier_names_for_renamed(&mut module.body, &renames);
-    let mut v = PlanRenameVisitor {
-        renames: &renames,
-        naturalize_shorthand: false,
-    };
-    module.visit_mut_with(&mut v);
-}
-
-/// Slice variant for callers that carry the body as
-/// `Vec<ModuleItem>`. Renames only; no shorthand collapse.
+/// Renames only; no shorthand collapse.
 pub fn apply_chunk_renames_to_items(items: &mut [ModuleItem], plan: &CheckedPlan) {
-    let renames = chunk_rename_map(plan);
-    preserve_export_specifier_names_for_renamed(items, &renames);
-    let mut v = PlanRenameVisitor {
-        renames: &renames,
-        naturalize_shorthand: false,
-    };
-    for item in items.iter_mut() {
-        item.visit_mut_with(&mut v);
-    }
+    apply(items, plan, false);
 }
 
-/// Apply chunk-scope renames AND collapse object literal/pattern
-/// shorthand. Used for moved-module bodies that previously ran
-/// through the legacy `RenameAndShorthandNaturalizer`.
+/// Renames + object literal/pattern shorthand collapse in one
+/// walk. Used for moved-module bodies.
 pub fn apply_plan_renames_and_naturalize(items: &mut [ModuleItem], plan: &CheckedPlan) {
+    apply(items, plan, true);
+}
+
+fn apply(items: &mut [ModuleItem], plan: &CheckedPlan, naturalize_shorthand: bool) {
     let renames = chunk_rename_map(plan);
     preserve_export_specifier_names_for_renamed(items, &renames);
     let mut v = PlanRenameVisitor {
         renames: &renames,
-        naturalize_shorthand: true,
-    };
-    for item in items.iter_mut() {
-        item.visit_mut_with(&mut v);
-    }
-}
-
-/// Apply only shorthand collapse — for the case where a body has
-/// no renames to apply but still needs `{ x: x }` normalized to
-/// `{ x }`.
-pub fn apply_shorthand_only(items: &mut [ModuleItem]) {
-    let empty: HashMap<Id, Atom> = HashMap::new();
-    let mut v = PlanRenameVisitor {
-        renames: &empty,
-        naturalize_shorthand: true,
+        naturalize_shorthand,
     };
     for item in items.iter_mut() {
         item.visit_mut_with(&mut v);
@@ -87,8 +52,7 @@ fn chunk_rename_map(plan: &CheckedPlan) -> HashMap<Id, Atom> {
 
 /// Pre-fill `exported` on `export { local }` re-export specifiers
 /// whose `local` is about to be renamed, so the public export
-/// name survives the rename. Id-based variant of the legacy
-/// `preserve_export_specifier_names` helper.
+/// name survives.
 fn preserve_export_specifier_names_for_renamed(
     items: &mut [ModuleItem],
     renames: &HashMap<Id, Atom>,
@@ -195,7 +159,7 @@ mod tests {
     use std::collections::HashMap;
     use swc_atoms::Atom;
     use swc_common::Mark;
-    use swc_ecma_ast::Ident;
+    use swc_ecma_ast::{Ident, Module};
     use swc_ecma_transforms_base::resolver;
     use swc_ecma_visit::{Visit, VisitMutWith, VisitWith};
 
@@ -266,7 +230,7 @@ mod tests {
             )
             .unwrap();
             let checked = plan.seal().unwrap();
-            apply_chunk_renames(&mut module, &checked);
+            apply_chunk_renames_to_items(&mut module.body, &checked);
             assert_eq!(idents(&module), vec!["renamed", "foo", "renamed"]);
         });
     }
@@ -293,7 +257,7 @@ mod tests {
             )
             .unwrap();
             let checked = plan.seal().unwrap();
-            apply_chunk_renames(&mut module, &checked);
+            apply_chunk_renames_to_items(&mut module.body, &checked);
             assert_eq!(idents(&module), vec!["xx", "y"]);
         });
     }
@@ -309,7 +273,7 @@ mod tests {
                 HashMap::new(),
             );
             let checked = plan.seal().unwrap();
-            apply_chunk_renames(&mut module, &checked);
+            apply_chunk_renames_to_items(&mut module.body, &checked);
             assert_eq!(idents(&module), before);
         });
     }
@@ -337,7 +301,7 @@ mod tests {
             )
             .unwrap();
             let checked = plan.seal().unwrap();
-            apply_chunk_renames(&mut module, &checked);
+            apply_chunk_renames_to_items(&mut module.body, &checked);
             assert_eq!(
                 idents(&module),
                 vec!["renamed", "f", "x", "x", "f", "renamed"]

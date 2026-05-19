@@ -91,11 +91,6 @@ use util::{
     normalize_optional_relative_dir, prepare_output_dir, prune_artifact_to_chunk_ids,
     write_chunk_report_json,
 };
-// Legacy `IdentifierRenamer` / `RenameAndShorthandNaturalizer` /
-// `ShorthandNaturalizer` retired by the executor migration —
-// `lowering_execute.rs::PlanRenameVisitor` is now the unified
-// Id-based renamer driving every body mutation.
-
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
 const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";

@@ -86,12 +86,9 @@ pub(super) enum RuntimeImportKind {
     Namespace,
 }
 
-/// Construct a synthetic top-level import-binding Ident with the
-/// chunk's top-level `SyntaxContext`. Synthetic imports built
-/// during lowering need this so the plan-aware visitor's
-/// Id-based rename lookup matches references in the body
-/// (which carry `chunk_top_level_mark` from the source AST's
-/// resolver pass).
+/// Synthetic import-binding Ident with chunk-top-level hygiene
+/// so the plan-aware visitor matches body references that carry
+/// `chunk_top_level_mark` from the resolver pass.
 fn synthetic_top_level_ident(name: &str, chunk_top_level_mark: Mark) -> Ident {
     Ident::new(
         name.into(),
@@ -112,9 +109,8 @@ pub(super) fn runtime_reimport_specifier(
             imported: if imported == local {
                 None
             } else {
-                // `imported` is a label string (source-module's
-                // exported name), not a local binding — DUMMY ctxt
-                // is correct here.
+                // `imported` is a label (source-module's exported
+                // name), not a binding — DUMMY ctxt.
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
                     imported.clone().into(),
                     DUMMY_SP,

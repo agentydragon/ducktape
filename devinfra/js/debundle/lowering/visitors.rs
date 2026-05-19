@@ -1,10 +1,5 @@
-//! AST helpers shared by the lowering pipeline's plan-aware
-//! visitor (see `lowering_execute.rs`).
-//!
-//! The legacy `IdentifierRenamer`, `RenameAndShorthandNaturalizer`,
-//! and `ShorthandNaturalizer` visitors retired with the executor
-//! migration; the object-shorthand collapse helpers below survive
-//! as re-usable functions called by `PlanRenameVisitor`.
+//! Object-shorthand collapse helpers shared with
+//! `lowering_execute.rs::PlanRenameVisitor`.
 
 use super::*;
 

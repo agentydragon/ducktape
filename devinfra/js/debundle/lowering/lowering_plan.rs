@@ -1,20 +1,15 @@
-//! `LoweringPlan` — single collect-validate-execute buffer for
-//! every lowering mutation applied to a chunk's logical modules
-//! (renames, declaration moves, future import-spec rewrites,
-//! export additions, hoist reorders). Contributors submit
-//! [`LoweringOp`]s into the plan; the plan validates each
-//! submission locally and a future [`LoweringPlan::seal`]
-//! returns a `CheckedPlan` that an execute pass can apply to the
-//! AST in one walk. See
-//! <plans/debundler_rename_lowering_pipeline.md> for the
-//! end-to-end design.
+//! Collect-validate-execute buffer for lowering mutations
+//! (renames + declaration moves) on a single emitted JS file.
+//! Contributors submit [`LoweringOp`]s; [`LoweringPlan::seal`]
+//! validates cross-op coherence and returns a [`CheckedPlan`]
+//! the execute pass in `lowering_execute.rs` applies in one
+//! tree walk. See <plans/debundler_rename_lowering_pipeline.md>
+//! for the design.
 //!
-//! Phase 2 deliverable: the type surface, the per-submit
-//! conflict-resolution policy, and the `is_claimed` /
-//! `is_name_taken` readback queries. No contributor is migrated
-//! yet; [`seal`](LoweringPlan::seal) returns the committed
-//! [`CheckedPlan`] without running cross-op checks (those land
-//! in Phase 3).
+//! Each instance is per-file, not per-chunk: `lower_chunk`
+//! constructs three (residual chunk_renames, entry-body
+//! disambig, per-moved-module) because each has a different
+//! set of bodies it applies to.
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,20 +21,13 @@ use analysis::ModuleId;
 
 use super::util::is_valid_js_identifier;
 
-/// Lexical scope a rename or query is associated with. Plan
-/// scopes form a tree rooted at [`Scope::Chunk`]; readback
-/// queries walk *up* this tree so a rename in an inner scope
-/// honours name pools held by enclosing scopes (renaming a
-/// function-local to a name held at chunk level would silently
-/// shadow the outer reference).
-///
-/// The downward direction — renaming a chunk-level binding to a
-/// name a descendant function uses locally — is a known soundness
-/// gap on parity with today's `disambiguate_import_locals`. The
-/// occupied-set seed deliberately collects only the chunk's
-/// top-level names for Phase 2; a future phase widens this to
-/// descendant pools once the executor knows which scopes are
-/// reachable.
+/// Lexical scope of a rename or query. Forms a tree rooted at
+/// [`Scope::Chunk`]; `is_name_taken` walks *up* the chain so an
+/// inner-scope rename doesn't shadow a name held by an enclosing
+/// scope. Downward shadow detection (chunk-level rename
+/// colliding with a function-local binding of the same name) is
+/// not modeled — matches today's `disambiguate_import_locals`
+/// semantics.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub enum Scope {
     Chunk,
@@ -47,11 +35,9 @@ pub enum Scope {
     Function(FunctionScopeId),
 }
 
-/// Opaque handle minted by the plan for each function scope a
-/// contributor needs to talk about (Phase 6 — naturalizer
-/// migration). Function scopes carry a `parent: Scope` so
-/// `is_name_taken` can walk back up to the enclosing module /
-/// chunk.
+/// Handle minted by the plan for each function scope. Carries a
+/// `parent: Scope` so `is_name_taken` can walk up to the
+/// enclosing module/chunk.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
 pub struct FunctionScopeId(pub usize);
 
@@ -112,9 +98,8 @@ pub enum LoweringOp {
         to: ModuleId,
         reason: &'static str,
     },
-    // RewriteImportSpecifier, AddExport, ReorderHoists are listed
-    // in the design but unused until their first contributor is
-    // migrated. Added when needed.
+    // Design also lists `RewriteImportSpecifier`, `AddExport`,
+    // `ReorderHoists`; add on first use.
 }
 
 #[derive(Clone, Debug)]
@@ -132,8 +117,6 @@ pub enum SkipReason {
     },
 }
 
-/// State committed to the plan for a single `(scope, original)`
-/// rename slot.
 #[derive(Clone, Debug)]
 struct CommittedRename {
     new_name: Atom,
@@ -148,12 +131,9 @@ struct CommittedMove {
 }
 
 pub struct LoweringPlan {
-    /// Pre-AST name pool per scope (seed) **plus** every
-    /// committed rename's `new_name`. `is_name_taken` queries
-    /// this and walks ancestor scopes.
+    /// Pristine name pool per scope, plus every committed
+    /// rename's `new_name`. `is_name_taken` walks ancestors.
     occupied: HashMap<Scope, HashSet<Atom>>,
-    /// Parent for every minted function scope, indexed by
-    /// `FunctionScopeId.0`.
     function_parents: Vec<Scope>,
     residual: ModuleId,
     modules: Vec<ModuleId>,
@@ -161,9 +141,6 @@ pub struct LoweringPlan {
     moves: HashMap<Id, CommittedMove>,
 }
 
-/// Validated plan produced by [`LoweringPlan::seal`]. Phase 2 is a
-/// stub — Phase 3 fleshes it out with the cross-op check results
-/// and the indices the executor consumes.
 #[derive(Debug, Default)]
 pub struct CheckedPlan {
     pub rename_index: HashMap<(Scope, Id), Atom>,
@@ -171,11 +148,9 @@ pub struct CheckedPlan {
 }
 
 impl LoweringPlan {
-    /// Build an empty plan seeded with the pristine name pool.
-    /// `occupied_by_scope[scope]` should list every identifier
-    /// already declared at that scope before any contributor
-    /// runs. The plan calls [`is_name_taken`] against this pool
-    /// *in addition to* names committed by submitted ops.
+    /// `occupied_by_scope` is the pristine name pool: every
+    /// identifier already bound at each scope before any
+    /// contributor runs.
     pub fn new(
         residual: ModuleId,
         modules: Vec<ModuleId>,
@@ -191,19 +166,15 @@ impl LoweringPlan {
         }
     }
 
-    /// Register a new function scope nested inside `parent`.
-    /// Returns the minted handle. Phase 6 wires this up.
     pub fn mint_function_scope(&mut self, parent: Scope) -> FunctionScopeId {
         let id = FunctionScopeId(self.function_parents.len());
         self.function_parents.push(parent);
         id
     }
 
-    /// Add names to a scope's occupied pool after construction —
-    /// for late-discovered bindings (e.g. names declared inside
-    /// function bodies that the chunk-level seed didn't capture).
-    /// Used to keep the shared plan in sync as `lower_chunk`
-    /// expands its `occupied` working set across phases.
+    /// Extend a scope's occupied pool after construction (for
+    /// late-discovered bindings — e.g. names declared inside
+    /// function bodies that the chunk-level seed missed).
     pub fn extend_occupied(&mut self, scope: Scope, names: impl IntoIterator<Item = Atom>) {
         let entry = self.occupied.entry(scope).or_default();
         for name in names {
@@ -220,20 +191,15 @@ impl LoweringPlan {
     }
 
     /// Highest priority that has claimed `(scope, original)`, or
-    /// `None` if no rename op has been submitted for that slot.
-    /// Walks only the exact slot — does not consult ancestor
-    /// scopes (those would belong to a *different* binding's
-    /// rename slot, not a competing claim on `original`).
+    /// `None`. Exact-slot only — ancestor scopes would refer to
+    /// a different binding.
     pub fn is_claimed(&self, scope: Scope, original: &Id) -> Option<Priority> {
         self.renames
             .get(&(scope, original.clone()))
             .map(|r| r.priority)
     }
 
-    /// `true` iff `name` is held at `scope` or any enclosing
-    /// scope. Used by `MintOrSuffix` to iterate suffixes until a
-    /// free name is found, and by `Required` submissions to
-    /// detect collisions.
+    /// `true` iff `name` is held at `scope` or any enclosing scope.
     pub fn is_name_taken(&self, scope: Scope, name: &Atom) -> bool {
         let mut cur = Some(scope);
         while let Some(s) = cur {
@@ -253,14 +219,12 @@ impl LoweringPlan {
         }
     }
 
-    /// Submit `op` under `on_conflict`. Returns
-    /// `Ok(Accepted { final_op })` with the committed op (which
-    /// for `MintOrSuffix` may carry a suffixed name), or
+    /// `Ok(Accepted { final_op })` with the committed op
+    /// (`MintOrSuffix` may carry a suffixed name);
     /// `Ok(Skipped { … })` if `SubmitPolicy::SkipIfClaimed`
-    /// dropped it, or `Err(_)` with a spec-author-facing
-    /// diagnostic (same-priority disagreement, `Required` name
-    /// taken, invalid identifier, two `MoveBinding`s for the
-    /// same id, …).
+    /// dropped it; `Err(_)` for spec-author-facing diagnostics
+    /// (same-priority disagreement, `Required` name taken,
+    /// invalid identifier, two `MoveBinding`s on the same id).
     pub fn submit(&mut self, op: LoweringOp, on_conflict: SubmitPolicy) -> Result<SubmitOutcome> {
         match op {
             LoweringOp::Rename {
@@ -333,12 +297,11 @@ impl LoweringPlan {
                             },
                         })
                     } else {
-                        // The incoming op is at strictly higher
-                        // priority than the existing one. Phase 2's
-                        // stratified-phases discipline says this
-                        // can't happen — phases run highest-priority
-                        // first — so flag it as a bug rather than
-                        // silently overriding.
+                        // Stratified submission orders contributors
+                        // highest-priority-first; a higher-priority
+                        // op arriving after a lower-priority claim
+                        // is an orchestrator bug, not a silent
+                        // override.
                         Err(anyhow!(
                             "rename submission order violation: incoming op {reason} \
                              at priority {priority:?} arrived after lower-priority op \
@@ -452,26 +415,18 @@ impl LoweringPlan {
         }
     }
 
-    /// Snapshot the plan into a [`CheckedPlan`] consumable by the
-    /// executor.
+    /// Snapshot the plan into a [`CheckedPlan`].
     ///
-    /// Runs cross-op coherence checks that submit-time can't catch
-    /// (because they depend on *combinations* of ops, not single
-    /// submissions):
+    /// Runs the cross-op coherence check that submit-time can't
+    /// catch (it depends on *combinations* of ops): if a binding
+    /// has a `MoveBinding { to: M }`, every `Rename` op on that
+    /// binding must apply where the binding lives — `Scope::Chunk`
+    /// is always OK; `Scope::Module(N)` for `N != M` is not;
+    /// `Scope::Function(_)` is conservatively accepted (function
+    /// scopes don't carry an enclosing-module link).
     ///
-    /// - **Rename/move scope coherence.** If a binding has a
-    ///   `MoveBinding { to: M }`, every `Rename` op on that binding
-    ///   must apply where the binding lives — `Scope::Chunk` is
-    ///   always OK; `Scope::Module(N)` for `N != M` is not.
-    ///   `Scope::Function(F)` cases are deferred until function
-    ///   scopes carry an enclosing-module link (Phase 6).
-    ///
-    /// Errors collected across the whole pass; on failure the
-    /// returned [`anyhow::Error`] embeds every violation so spec
-    /// authors see the full set in one round-trip rather than
-    /// fixing one error at a time. Realizability of the cumulative
-    /// move set is checked here too in a follow-up — needs
-    /// `OwnerGraph` access plumbed into the plan first.
+    /// All violations collected; the returned error embeds them
+    /// so spec authors see the full set in one round-trip.
     pub fn seal(self) -> Result<CheckedPlan> {
         let mut errors: Vec<String> = Vec::new();
         for ((scope, original), rename) in &self.renames {
@@ -480,10 +435,8 @@ impl LoweringPlan {
                 let coherent = match scope {
                     Scope::Chunk => true,
                     Scope::Module(m) => *m == move_to,
-                    // Phase 2 doesn't track which module a function
-                    // scope is enclosed in. Conservative: accept,
-                    // and Phase 6 tightens this when function scopes
-                    // carry their enclosing module.
+                    // Function scopes don't carry an enclosing
+                    // module link; conservatively accept.
                     Scope::Function(_) => true,
                 };
                 if !coherent {

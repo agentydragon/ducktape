@@ -1,16 +1,6 @@
-//! Validate + collect chunk-level `chunk_renames` from the spec,
-//! including the body-level checks driven through `LoweringPlan`
-//! (Phase 5 of the plan-pipeline migration). Phases 7a-c also
-//! routed every import-disambiguation call site through Plan
-//! submission, retiring the legacy `mint_fresh_local_name`
-//! helper.
-//!
-//! The AST mutation itself still runs through `IdentifierRenamer`
-//! in `lower.rs` — the executor migration lands later, once all
-//! rename contributors are on the plan and a single Plan-aware
-//! visitor can replace `IdentifierRenamer` (which today
-//! special-cases import/export specifiers, prop names, and
-//! member props in ways the Phase 4a executor doesn't yet).
+//! Spec-driven chunk_renames + import-disambiguation submissions
+//! routed through `LoweringPlan`. The plan-aware visitor in
+//! `lowering_execute.rs` applies the AST mutations.
 
 use std::collections::HashSet;
 
@@ -45,12 +35,10 @@ pub(super) fn collect_chunk_renames(
     Ok(renames)
 }
 
-/// Build a fresh chunk-level `LoweringPlan` for `lower_chunk`,
-/// seeded with the chunk body's existing top-level names so that
-/// rename submissions don't collide with what's already in the
-/// AST. Callers extend the plan's name pool later with nested
-/// binding names via `LoweringPlan::extend_occupied` before the
-/// import-disambiguation phase.
+/// Build a chunk-level plan seeded with the chunk body's existing
+/// top-level names. Callers extend the pool with nested binding
+/// names via `LoweringPlan::extend_occupied` before submitting
+/// import-disambiguation ops.
 pub(super) fn new_chunk_plan(entry_body: &[ModuleItem]) -> LoweringPlan {
     let body_locals: HashSet<Atom> = collect_occupied_local_names(entry_body)
         .into_iter()
@@ -58,24 +46,18 @@ pub(super) fn new_chunk_plan(entry_body: &[ModuleItem]) -> LoweringPlan {
         .collect();
     let mut occupied_by_scope = HashMap::new();
     occupied_by_scope.insert(Scope::Chunk, body_locals);
-    // `Scope::Chunk` renames don't consult `plan.modules()` or
-    // `plan.residual()`, so a placeholder residual + empty modules
-    // list is fine — neither submit, the chunk-coherence rule, nor
-    // execute reads them for chunk-scope renames.
+    // `Scope::Chunk` renames don't read `modules()` or
+    // `residual()`; placeholder values are fine.
     LoweringPlan::new(ModuleId::logical(0), Vec::new(), occupied_by_scope)
 }
 
-/// Phase 5 of the plan pipeline: validate `chunk_renames` against
-/// the shared chunk plan and return the body-level rename map.
-/// Replaces the ad-hoc validation that previously lived inline in
-/// `lower.rs:167-238`.
+/// Submit each `chunk_renames` entry as an Explicit Rename op.
+/// Returns the `binding → exported` map of accepted renames for
+/// downstream consumers that still want an atom-keyed view.
 ///
 /// Bindings owned by a logical module are silently dropped — the
-/// `disambiguate_import_locals` pass picks them up via the
-/// logical-module plan's `bindings` map. Rename-to-self entries
-/// are also dropped (legacy accepted these as no-ops; the plan
-/// would reject because the binding's own name is in the occupied
-/// pool).
+/// `disambiguate_import_locals` pass picks them up via the plan's
+/// `bindings` map. Rename-to-self entries are also dropped.
 pub(super) fn submit_chunk_renames(
     plan: &mut LoweringPlan,
     chunk_renames: &HashMap<String, String>,
@@ -117,16 +99,10 @@ pub(super) fn submit_chunk_renames(
     Ok(accepted)
 }
 
-/// Phase 7: import-disambiguation routed through the shared
-/// chunk `LoweringPlan` with `NamePolicy::MintOrSuffix` at
-/// `Priority::ImportInduced`. The plan's `is_name_taken` queries
-/// see every prior submission (chunk_renames, other
-/// import-disambiguation calls in the same chunk), so the minted
-/// `_N` suffix steers clear of all of them by construction.
-///
-/// The extern `occupied` BTreeSet and `emit_renames` BTreeMap are
-/// still mutated for the legacy `IdentifierRenamer` pass — those
-/// drop in a future iteration once the executor is plan-aware.
+/// Import-disambiguation as `MintOrSuffix` rename submissions at
+/// `Priority::ImportInduced`. The plan's `is_name_taken` keeps
+/// minted `_N` suffixes clear of every prior submission in this
+/// scope.
 pub(super) fn disambiguate_import_locals_via_plan(
     plan: &mut LoweringPlan,
     live_bindings: &BTreeMap<String, String>,
@@ -173,12 +149,10 @@ pub(super) fn disambiguate_import_locals_via_plan(
     Ok(resolved)
 }
 
-/// Phase 7c counterpart of [`disambiguate_import_locals_via_plan`]
-/// for residual-entry imports keyed on `EntryExport` (different
-/// shape — preferred local is the entry's actual local name, not
-/// the spec-exported alias). Returns `(actual_local → exported)`.
-/// Shares the per-chunk `LoweringPlan` with all other rename
-/// contributors.
+/// Residual-entry-import variant of
+/// [`disambiguate_import_locals_via_plan`]: keyed on `EntryExport`
+/// because the preferred local is the entry's actual local name,
+/// not the spec-exported alias.
 pub(super) fn disambiguate_residual_entry_import_locals_via_plan(
     plan: &mut LoweringPlan,
     imports: &BTreeMap<String, super::plan_references::EntryExport>,

@@ -1,8 +1,5 @@
-//! Emit cross-module + residual-entry imports for a moved module body.
-//! Both fresh-local minting paths flow through `LoweringPlan` via
-//! `disambiguate_import_locals_via_plan` (cross-module, Phase 7b)
-//! and `disambiguate_residual_entry_import_locals_via_plan`
-//! (residual-entry, Phase 7c).
+//! Emit cross-module + residual-entry imports for a moved module
+//! body. Fresh-local minting flows through `LoweringPlan`.
 
 use super::chunk_renames::{
     disambiguate_import_locals_via_plan, disambiguate_residual_entry_import_locals_via_plan,
@@ -11,12 +8,8 @@ use super::lowering_plan::LoweringPlan;
 use super::util::import_decl_for_plan;
 use super::*;
 
-/// Shared rename-context bundle for the import-disambiguation
-/// helpers. Bundles the chunk-wide `LoweringPlan` with the legacy
-/// `occupied` BTreeSet + `renames` BTreeMap that drive
-/// `IdentifierRenamer` (until the executor migration drops them).
-/// Keeps function signatures under clippy's argument-count
-/// threshold.
+/// Per-moved-body rename-state bundle. Keeps function signatures
+/// under clippy's argument-count threshold.
 pub(super) struct RenameContext<'a> {
     pub(super) plan: &'a mut LoweringPlan,
     pub(super) occupied: &'a mut BTreeSet<String>,

@@ -17,16 +17,11 @@ use super::lowering_plan::{
 use super::util::is_identifier_like;
 use super::*;
 
-/// Phase 6: submit spec-driven (Explicit) + heuristic (Heuristic /
-/// SkipIfClaimed) naturalize renames to the per-module
-/// `LoweringPlan`. Does NOT mutate `body`; the caller applies via
-/// `apply_plan_renames_and_naturalize` after every per-module
+/// Submit spec-driven (Explicit) + AST-shape-inferred heuristic
+/// (Heuristic / SkipIfClaimed) naturalize renames to the
+/// per-module plan. Does NOT mutate `body` — the caller applies
+/// via `apply_plan_renames_and_naturalize` after every per-module
 /// rename contributor has submitted.
-///
-/// Returns the accepted rename map (atom → atom, for callers that
-/// still need a `local → exported` view — notably
-/// `plan_module_reference_needs`'s reverse-lookup, Phase 9
-/// retires it).
 pub(super) fn submit_naturalize_renames(
     body: &[ModuleItem],
     module_spec: &ModulePlan,

@@ -124,11 +124,6 @@ pub(super) fn collect_imported_reexports_by_module(
     by_module
 }
 
-/// Runtime-import resolution context. Single-field for now;
-/// `heuristic_renames` retired in Phase 9 (the reverse-lookup
-/// path through naturalize's post-rename atoms is dead now that
-/// naturalize defers body application until after this function
-/// runs).
 pub(super) struct RuntimeImportLookup<'a> {
     pub(super) imports: &'a RuntimeImportFacts,
 }
@@ -191,12 +186,8 @@ pub(super) fn plan_module_reference_needs<'a>(
         if body_facts.imported_locals.contains(body_id) {
             continue;
         }
-        // Direct Id-based lookup. Phase 6's deferred naturalize
-        // application means `body_facts` walks pre-rename bodies,
-        // so every `body_id` matches the source chunk's import
-        // map keys directly — the legacy reverse-lookup through
-        // a `heuristic_renames` post→pre map is now dead and was
-        // retired here (Phase 9).
+        // `body_facts` walks pre-rename bodies, so `body_id` is
+        // a direct hit in the source chunk's import map.
         if let Some(info) = runtime_imports.imports.imports.get(body_id) {
             needs.runtime_reimports.insert(name_str.to_string(), info);
         }

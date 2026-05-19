@@ -206,19 +206,14 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
-## Rename + lowering pipeline: collect → validate → execute _once_
-
-Design fleshed out at <../../../plans/debundler_rename_lowering_pipeline.md>.
-Generalises beyond renames to cover declaration moves, import-specifier
-rewrites, export additions, and hoist reordering — same plan-check-execute
-seam for every lowering mutation. Tracks the migration path from today's
-scattered in-place mutators (PR #1627 / PR #1631 are the canonical
-"wrong-era name" symptoms) to a single plan value collected across all
-contributors and consumed by a single execute pass.
-
-Cross-references PR1631's `plan_module_reference_needs` reverse-lookup
-and PR1627's `normalize_relative_module_specifier` as the two defensive
-patches the pipeline retires.
+<!--
+The "Rename pipeline: collect → validate → execute once" entry that
+used to live here was completed; see
+<../../../plans/debundler_rename_lowering_pipeline.md> for the
+resulting per-file `LoweringPlan` reference. PR #1627 and PR #1631's
+defensive patches (`normalize_relative_module_specifier`,
+`plan_module_reference_needs` reverse-lookup) both retired.
+-->
 
 <!--
 The "Migrate BindingName = String → swc's hygiene-preserving Id"
