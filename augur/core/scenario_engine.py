@@ -1554,23 +1554,21 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         # policies run. This keeps within-month policy decisions (which depend on
         # current_cash) observing the post-carrying-cost cash balance, matching
         # the pre-refactor behavior where carrying costs were deducted via
-        # net_property_cash_flow at month start. The settlement function operates
-        # on the (rollout, month) matrices, so we round-trip current_cash and the
-        # remaining-units 1D vectors through the matrices for this month
-        # position.
+        # net_property_cash_flow at month start. Settlement takes 1D state in
+        # and returns 1D state out; the end-of-month snapshot at :1818-1826
+        # writes the post-settlement 1D state into the matrices.
         if any(np.any(due[:, month] > 0) for due, _, _, _ in property_cost_obligation_specs):
-            cash[:, month] = current_cash
-            remaining_sp500_units_by_month[:, month] = remaining_sp500_units
-            remaining_sp500_basis_by_month[:, month] = remaining_sp500_basis
-            remaining_crypto_quantity_by_month[:, month] = remaining_crypto_quantity
-            remaining_crypto_basis_by_month[:, month] = remaining_crypto_basis
+            sp500_multiplier_at_month = market_bundle.generic_sp500_multipliers[:, month]
+            crypto_multiplier_at_month = crypto_value_multipliers[:, month]
+            current_sp500_value = remaining_sp500_units * sp500_multiplier_at_month
+            current_crypto_value = remaining_crypto_quantity * crypto_multiplier_at_month
             for spec, accumulator in zip(
                 property_cost_obligation_specs, property_cost_obligation_accumulators, strict=True
             ):
                 due, kind, creditor_id, policy_id = spec
                 if not np.any(due[:, month] > 0):
                     continue
-                _settle_required_cash_obligation_at_month_position(
+                settled = _settle_required_cash_obligation_at_month_position(
                     market_bundle=market_bundle,
                     month_position=month,
                     due_month_index=int(month_index[month]),
@@ -1581,13 +1579,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     source_policy_id=policy_id,
                     actor_id=primary_owner_actor_id,
                     sources=primary_owner_funding_sources,
-                    cash_usd=cash,
-                    generic_sp500_value_usd=generic_sp500_value,
-                    remaining_sp500_units_by_month=remaining_sp500_units_by_month,
-                    remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
-                    crypto_value_usd=crypto_value,
-                    remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
-                    remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+                    cash_usd=current_cash,
+                    generic_sp500_value_usd=current_sp500_value,
+                    remaining_sp500_units=remaining_sp500_units,
+                    remaining_sp500_basis=remaining_sp500_basis,
+                    crypto_value_usd=current_crypto_value,
+                    remaining_crypto_quantity=remaining_crypto_quantity,
+                    remaining_crypto_basis=remaining_crypto_basis,
                     crypto_sale_usd=crypto_sale_usd,
                     crypto_sale_basis_usd=crypto_sale_basis_usd,
                     checking_floor_shortfall_usd=checking_floor_shortfall,
@@ -1596,11 +1594,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                     sp500_sale_action_records=sp500_sale_action_records,
                     crypto_sale_action_records=crypto_sale_action_records,
                 )
-            current_cash = cash[:, month]
-            remaining_sp500_units = remaining_sp500_units_by_month[:, month]
-            remaining_sp500_basis = remaining_sp500_basis_by_month[:, month]
-            remaining_crypto_quantity = remaining_crypto_quantity_by_month[:, month]
-            remaining_crypto_basis = remaining_crypto_basis_by_month[:, month]
+                current_cash = settled.cash_usd
+                remaining_sp500_units = settled.remaining_sp500_units
+                remaining_sp500_basis = settled.remaining_sp500_basis
+                current_sp500_value = settled.generic_sp500_value_usd
+                remaining_crypto_quantity = settled.remaining_crypto_quantity
+                remaining_crypto_basis = settled.remaining_crypto_basis
+                current_crypto_value = settled.crypto_value_usd
 
         # Compute pre-acquisition value first so the downstream "value - sale"
         # bookkeeping nets to zero rather than going negative when the entire
@@ -4028,10 +4028,29 @@ def _settle_required_cash_obligations(
         month_index=month_index,
         amount_due_usd=obligation_amount_usd,
     )
+    # The matrices passed in carry per-month state populated by the main engine
+    # month loop; each iteration here reads `[:, month_position]` into 1D
+    # vectors, calls settlement (1D in, 1D out), writes the post-settlement
+    # state back into matrix `[:, month_position]`, and explicitly
+    # forward-propagates units/basis (constant going forward) and
+    # multiplier-scaled value to `[:, month_position+1:]` so the next
+    # iteration — and subsequent settlement calls for other obligation kinds —
+    # see the post-sale state. PE state is matrix-backed end-to-end and
+    # self-propagates inside the settlement function.
+    sp500_multipliers = market_bundle.generic_sp500_multipliers
+    crypto_path = (
+        market_bundle.crypto_value_multiplier(sources.crypto_source_symbol) if sources.crypto_source_symbol else None
+    )
+    months_total = remaining_sp500_units_by_month.shape[1]
     for month_position, due_month_index in enumerate(month_index.tolist()):
         if not np.any(obligation_amount_usd[:, month_position] > 0):
             continue
-        _settle_required_cash_obligation_at_month_position(
+        pre_cash = cash_usd[:, month_position].copy()
+        pre_sp500_units = remaining_sp500_units_by_month[:, month_position].copy()
+        pre_sp500_basis = remaining_sp500_basis_by_month[:, month_position].copy()
+        pre_crypto_quantity = remaining_crypto_quantity_by_month[:, month_position].copy()
+        pre_crypto_basis = remaining_crypto_basis_by_month[:, month_position].copy()
+        settled = _settle_required_cash_obligation_at_month_position(
             market_bundle=market_bundle,
             month_position=month_position,
             due_month_index=int(due_month_index),
@@ -4042,13 +4061,13 @@ def _settle_required_cash_obligations(
             source_policy_id=source_policy_id,
             actor_id=resolved_actor_id,
             sources=sources,
-            cash_usd=cash_usd,
-            generic_sp500_value_usd=generic_sp500_value_usd,
-            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
-            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
-            crypto_value_usd=crypto_value_usd,
-            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
-            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
+            cash_usd=pre_cash,
+            generic_sp500_value_usd=generic_sp500_value_usd[:, month_position],
+            remaining_sp500_units=pre_sp500_units,
+            remaining_sp500_basis=pre_sp500_basis,
+            crypto_value_usd=crypto_value_usd[:, month_position],
+            remaining_crypto_quantity=pre_crypto_quantity,
+            remaining_crypto_basis=pre_crypto_basis,
             crypto_sale_usd=crypto_sale_usd,
             crypto_sale_basis_usd=crypto_sale_basis_usd,
             checking_floor_shortfall_usd=checking_floor_shortfall_usd,
@@ -4058,6 +4077,43 @@ def _settle_required_cash_obligations(
             crypto_sale_action_records=crypto_sale_action_records,
             pe_state=pe_state,
         )
+        cash_usd[:, month_position] = settled.cash_usd
+        remaining_sp500_units_by_month[:, month_position] = settled.remaining_sp500_units
+        remaining_sp500_basis_by_month[:, month_position] = settled.remaining_sp500_basis
+        generic_sp500_value_usd[:, month_position] = settled.generic_sp500_value_usd
+        remaining_crypto_quantity_by_month[:, month_position] = settled.remaining_crypto_quantity
+        remaining_crypto_basis_by_month[:, month_position] = settled.remaining_crypto_basis
+        crypto_value_usd[:, month_position] = settled.crypto_value_usd
+        # Forward-propagate deltas (not absolute values) so the main-loop's
+        # per-month dynamics — e.g. acquisition proceeds at a future
+        # event_month, additional main-loop sales, multiplier evolution —
+        # are preserved while this iteration's settlement deltas accumulate.
+        if month_position + 1 < months_total:
+            cash_delta = settled.cash_usd - pre_cash
+            sp500_units_delta = settled.remaining_sp500_units - pre_sp500_units
+            sp500_basis_delta = settled.remaining_sp500_basis - pre_sp500_basis
+            crypto_quantity_delta = settled.remaining_crypto_quantity - pre_crypto_quantity
+            crypto_basis_delta = settled.remaining_crypto_basis - pre_crypto_basis
+            cash_usd[:, month_position + 1 :] = cash_usd[:, month_position + 1 :] + cash_delta[:, None]
+            remaining_sp500_units_by_month[:, month_position + 1 :] = np.maximum(
+                0.0, remaining_sp500_units_by_month[:, month_position + 1 :] + sp500_units_delta[:, None]
+            )
+            remaining_sp500_basis_by_month[:, month_position + 1 :] = np.maximum(
+                0.0, remaining_sp500_basis_by_month[:, month_position + 1 :] + sp500_basis_delta[:, None]
+            )
+            generic_sp500_value_usd[:, month_position + 1 :] = (
+                remaining_sp500_units_by_month[:, month_position + 1 :] * sp500_multipliers[:, month_position + 1 :]
+            )
+            remaining_crypto_quantity_by_month[:, month_position + 1 :] = np.maximum(
+                0.0, remaining_crypto_quantity_by_month[:, month_position + 1 :] + crypto_quantity_delta[:, None]
+            )
+            remaining_crypto_basis_by_month[:, month_position + 1 :] = np.maximum(
+                0.0, remaining_crypto_basis_by_month[:, month_position + 1 :] + crypto_basis_delta[:, None]
+            )
+            if crypto_path is not None:
+                crypto_value_usd[:, month_position + 1 :] = (
+                    remaining_crypto_quantity_by_month[:, month_position + 1 :] * crypto_path[:, month_position + 1 :]
+                )
     accumulator.emit_obligations(obligations)
     accumulator.emit_funding_decisions(funding_decisions)
 
@@ -4344,6 +4400,24 @@ class _ObligationFundingAccumulator:
             )
 
 
+@dataclass(frozen=True)
+class _ObligationSettlementResult:
+    """1D per-rollout state returned by
+    `_settle_required_cash_obligation_at_month_position`. All fields are
+    `(rollouts,)` numpy vectors. The main month loop threads these back into
+    its 1D `current_cash` / `remaining_*` locals; the post-loop wrapper
+    `_settle_required_cash_obligations` writes them into matrix `[:, M]`
+    snapshots and forward-propagates to later months explicitly."""
+
+    cash_usd: np.ndarray
+    remaining_sp500_units: np.ndarray
+    remaining_sp500_basis: np.ndarray
+    generic_sp500_value_usd: np.ndarray
+    remaining_crypto_quantity: np.ndarray
+    remaining_crypto_basis: np.ndarray
+    crypto_value_usd: np.ndarray
+
+
 @dataclass
 class _PrivateEquityFundingState:
     """Mutable PE state shared with the obligation funding chain.
@@ -4424,11 +4498,11 @@ def _settle_required_cash_obligation_at_month_position(
     sources: _ObligationFundingSources,
     cash_usd: np.ndarray,
     generic_sp500_value_usd: np.ndarray,
-    remaining_sp500_units_by_month: np.ndarray,
-    remaining_sp500_basis_by_month: np.ndarray,
+    remaining_sp500_units: np.ndarray,
+    remaining_sp500_basis: np.ndarray,
     crypto_value_usd: np.ndarray,
-    remaining_crypto_quantity_by_month: np.ndarray,
-    remaining_crypto_basis_by_month: np.ndarray,
+    remaining_crypto_quantity: np.ndarray,
+    remaining_crypto_basis: np.ndarray,
     crypto_sale_usd: np.ndarray,
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
@@ -4437,24 +4511,29 @@ def _settle_required_cash_obligation_at_month_position(
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
     pe_state: _PrivateEquityFundingState | None = None,
-) -> None:
+) -> _ObligationSettlementResult:
     """Settle one obligation at a single month position.
 
-    Mutates `cash_usd` (and the units/basis/sale tracking matrices) in place from
-    `month_position` forward — callers that drive this per-month inside the engine's
-    month loop must ensure the matrices already carry the start-of-month state at
-    `month_position`. Per-month settlement and funding-decision deltas are
-    written into the `accumulator` `(rollouts, months)` matrices; the caller
-    melts them into the global `obligations` / `funding_decisions` builders at
-    end-of-call.
+    Takes 1D `(rollouts,)` state vectors for cash/units/basis/value as the
+    pre-settlement balance at `month_position`; returns the post-settlement
+    balance as `_ObligationSettlementResult`. The caller threads the result
+    back into its working state (1D locals in the main month loop; matrix
+    columns + explicit forward propagation in
+    `_settle_required_cash_obligations`).
+
+    Single-month accumulator matrices (`crypto_sale_usd`,
+    `crypto_sale_basis_usd`, `checking_floor_shortfall_usd`,
+    `accumulator.*`, and `pe_state.private_equity_sale_*`) are still
+    written `[:, month_position]` in place — they record per-month decisions,
+    not state that flows forward. The PE branch additionally forward-propagates
+    `pe_state.remaining_*` and `pe_state.private_equity_value_usd` so the
+    next iteration / next settlement call sees the post-sale state.
     """
     obligation_type = obligation_kind.obligation_type
     due = obligation_amount_usd
-    paid_from_cash = np.minimum(np.maximum(0.0, cash_usd[:, month_position]), due)
+    paid_from_cash = np.minimum(np.maximum(0.0, cash_usd), due)
     remaining_due = np.maximum(0.0, due - paid_from_cash)
-    accumulator.record_cash_decision(
-        month_position=month_position, available_cash=cash_usd[:, month_position], funded_cash=paid_from_cash
-    )
+    accumulator.record_cash_decision(month_position=month_position, available_cash=cash_usd, funded_cash=paid_from_cash)
 
     for policy_step in policy_steps:
         if not np.any(remaining_due > 0):
@@ -4470,29 +4549,22 @@ def _settle_required_cash_obligation_at_month_position(
                     policy_step,
                     due_usd=due,
                     remaining_due_usd=remaining_due,
-                    cash_usd=cash_usd[:, month_position],
-                    remaining_units=remaining_sp500_units_by_month[:, month_position],
-                    remaining_basis_usd=remaining_sp500_basis_by_month[:, month_position],
+                    cash_usd=cash_usd,
+                    remaining_units=remaining_sp500_units,
+                    remaining_basis_usd=remaining_sp500_basis,
                     sp500_unit_price_usd=market_bundle.generic_sp500_multipliers[:, month_position],
                     source_asset=sources.sp500_source_asset,
                 )
                 if application is None:
                     continue
-                old_units = remaining_sp500_units_by_month[:, month_position].copy()
-                old_basis = remaining_sp500_basis_by_month[:, month_position].copy()
-                units_sold = np.maximum(0.0, old_units - application.remaining_units)
-                basis_sold = np.maximum(0.0, old_basis - application.remaining_basis_usd)
-                remaining_sp500_units_by_month[:, month_position:] = np.maximum(
-                    0.0, remaining_sp500_units_by_month[:, month_position:] - units_sold[:, None]
+                units_sold = np.maximum(0.0, remaining_sp500_units - application.remaining_units)
+                basis_sold = np.maximum(0.0, remaining_sp500_basis - application.remaining_basis_usd)
+                remaining_sp500_units = np.maximum(0.0, remaining_sp500_units - units_sold)
+                remaining_sp500_basis = np.maximum(0.0, remaining_sp500_basis - basis_sold)
+                generic_sp500_value_usd = (
+                    remaining_sp500_units * market_bundle.generic_sp500_multipliers[:, month_position]
                 )
-                remaining_sp500_basis_by_month[:, month_position:] = np.maximum(
-                    0.0, remaining_sp500_basis_by_month[:, month_position:] - basis_sold[:, None]
-                )
-                generic_sp500_value_usd[:, month_position:] = (
-                    remaining_sp500_units_by_month[:, month_position:]
-                    * market_bundle.generic_sp500_multipliers[:, month_position:]
-                )
-                cash_usd[:, month_position:] = cash_usd[:, month_position:] + application.sale_usd[:, None]
+                cash_usd = cash_usd + application.sale_usd
                 remaining_due = application.remaining_due_usd
                 checking_floor_shortfall_usd[:, month_position] = np.maximum(
                     checking_floor_shortfall_usd[:, month_position], remaining_due
@@ -4543,28 +4615,20 @@ def _settle_required_cash_obligation_at_month_position(
                     policy_step,
                     due_usd=due,
                     remaining_due_usd=remaining_due,
-                    cash_usd=cash_usd[:, month_position],
-                    remaining_quantity=remaining_crypto_quantity_by_month[:, month_position],
-                    remaining_basis_usd=remaining_crypto_basis_by_month[:, month_position],
+                    cash_usd=cash_usd,
+                    remaining_quantity=remaining_crypto_quantity,
+                    remaining_basis_usd=remaining_crypto_basis,
                     crypto_unit_price_usd=crypto_path[:, month_position],
                     source_asset_id=sources.crypto_source_id,
                 )
                 if crypto_application is None:
                     continue
-                old_quantity = remaining_crypto_quantity_by_month[:, month_position].copy()
-                old_basis = remaining_crypto_basis_by_month[:, month_position].copy()
-                quantity_sold = np.maximum(0.0, old_quantity - crypto_application.remaining_quantity)
-                basis_sold = np.maximum(0.0, old_basis - crypto_application.remaining_basis_usd)
-                remaining_crypto_quantity_by_month[:, month_position:] = np.maximum(
-                    0.0, remaining_crypto_quantity_by_month[:, month_position:] - quantity_sold[:, None]
-                )
-                remaining_crypto_basis_by_month[:, month_position:] = np.maximum(
-                    0.0, remaining_crypto_basis_by_month[:, month_position:] - basis_sold[:, None]
-                )
-                crypto_value_usd[:, month_position:] = (
-                    remaining_crypto_quantity_by_month[:, month_position:] * crypto_path[:, month_position:]
-                )
-                cash_usd[:, month_position:] = cash_usd[:, month_position:] + crypto_application.sale_usd[:, None]
+                quantity_sold = np.maximum(0.0, remaining_crypto_quantity - crypto_application.remaining_quantity)
+                basis_sold = np.maximum(0.0, remaining_crypto_basis - crypto_application.remaining_basis_usd)
+                remaining_crypto_quantity = np.maximum(0.0, remaining_crypto_quantity - quantity_sold)
+                remaining_crypto_basis = np.maximum(0.0, remaining_crypto_basis - basis_sold)
+                crypto_value_usd = remaining_crypto_quantity * crypto_path[:, month_position]
+                cash_usd = cash_usd + crypto_application.sale_usd
                 crypto_sale_usd[:, month_position] = crypto_sale_usd[:, month_position] + crypto_application.sale_usd
                 crypto_sale_basis_usd[:, month_position] = crypto_sale_basis_usd[:, month_position] + basis_sold
                 remaining_due = crypto_application.remaining_due_usd
@@ -4624,7 +4688,7 @@ def _settle_required_cash_obligation_at_month_position(
                     policy_step,
                     due_usd=due,
                     remaining_due_usd=remaining_due,
-                    cash_usd=cash_usd[:, month_position],
+                    cash_usd=cash_usd,
                     remaining_units=pe_units_now,
                     remaining_basis_usd=pe_state.remaining_basis_by_month[:, month_position],
                     pe_unit_price_usd=pe_unit_price_now,
@@ -4638,14 +4702,19 @@ def _settle_required_cash_obligation_at_month_position(
                 basis_sold = np.maximum(
                     0.0, pe_state.remaining_basis_by_month[:, month_position] - pe_application.remaining_basis_usd
                 )
+                # PE state stays matrix-backed because the post-loop
+                # `_settle_required_cash_obligations` wrapper reads
+                # `pe_state.remaining_*_by_month[:, M+1]` at the next iteration
+                # (and successive settlement calls for other obligation kinds
+                # read these matrices too). Forward-propagate units/basis and
+                # multiplier-scaled value here so the next consumer sees the
+                # post-sale state.
                 pe_state.remaining_units_by_month[:, month_position:] = np.maximum(
                     0.0, pe_state.remaining_units_by_month[:, month_position:] - units_sold[:, None]
                 )
                 pe_state.remaining_basis_by_month[:, month_position:] = np.maximum(
                     0.0, pe_state.remaining_basis_by_month[:, month_position:] - basis_sold[:, None]
                 )
-                # Recompute PE value matrix from `month_position` forward:
-                # `units_remaining × unit_price × forward_multiplier_ratio`.
                 pe_state.private_equity_value_usd[:, month_position] = np.maximum(
                     0.0, pe_value_now - pe_application.sale_usd
                 )
@@ -4660,7 +4729,7 @@ def _settle_required_cash_obligation_at_month_position(
                     pe_state.private_equity_value_usd[:, month_position + 1 :] = np.maximum(
                         0.0, pe_state.private_equity_value_usd[:, month_position, None] * forward_ratios
                     )
-                cash_usd[:, month_position:] = cash_usd[:, month_position:] + pe_application.sale_usd[:, None]
+                cash_usd = cash_usd + pe_application.sale_usd
                 pe_state.private_equity_sale_usd[:, month_position] = (
                     pe_state.private_equity_sale_usd[:, month_position] + pe_application.sale_usd
                 )
@@ -4723,8 +4792,8 @@ def _settle_required_cash_obligation_at_month_position(
                     f"unsupported sale_asset_preference entry {asset_type} for CheckingFloorSellPublicStockPolicy"
                 )
 
-    amount_paid = np.minimum(due, np.maximum(0.0, cash_usd[:, month_position]))
-    cash_usd[:, month_position:] = cash_usd[:, month_position:] - amount_paid[:, None]
+    amount_paid = np.minimum(due, np.maximum(0.0, cash_usd))
+    cash_usd = cash_usd - amount_paid
     _record_obligation_accrual_and_settlement_entries(
         accounting,
         obligation_kind=obligation_kind,
@@ -4736,6 +4805,15 @@ def _settle_required_cash_obligation_at_month_position(
         amount_paid_usd=amount_paid,
     )
     accumulator.record_settlement(month_position=month_position, amount_paid=amount_paid)
+    return _ObligationSettlementResult(
+        cash_usd=cash_usd,
+        remaining_sp500_units=remaining_sp500_units,
+        remaining_sp500_basis=remaining_sp500_basis,
+        generic_sp500_value_usd=generic_sp500_value_usd,
+        remaining_crypto_quantity=remaining_crypto_quantity,
+        remaining_crypto_basis=remaining_crypto_basis,
+        crypto_value_usd=crypto_value_usd,
+    )
 
 
 def _record_obligation_accrual_and_settlement_entries(
