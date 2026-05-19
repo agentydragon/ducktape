@@ -16,6 +16,7 @@ from augur.sim.apply import apply_events
 from augur.sim.market import DeterministicPath, GeometricBrownianPath, MarketBundle
 from augur.sim.scenario import (
     Agent,
+    FloorTriggeredSalePolicy,
     InitialAccountBalance,
     InitialLot,
     RecurringTransfer,
@@ -1033,6 +1034,125 @@ def test_explicit_sale_price_overrides_market() -> None:
 
     result = simulate(scenario, rollout_count=1)
     assert result.events_log.lot_dispositions.get_column("proceeds_usd").item() == 3.0 * 99.0
+
+
+def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
+    """L9 — Alice has $1k cash, a $5k/month spend, and 100 units of
+    VTI at $100/unit market price. The floor-triggered sale policy
+    has floor $0 + replenish buffer $0: any deficit triggers asset
+    sale. At month 0, cash falls to -$4k after spending; the policy
+    sells $4k of VTI (40 units) to bring cash back to $0. Spends
+    repeat each month; the policy keeps selling until 100 units
+    are exhausted."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-1,
+                quantity=100.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_rent",
+                from_agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_usd=5000.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 4)]),
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(
+                agent_id="alice",
+                account_id="checking",
+                floor_usd=0.0,
+                replenish_buffer_usd=0.0,
+                asset_preference_chain=["vti"],
+            )
+        ],
+        horizon_months=3,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Month-0 sale: deficit was 4000, sold 40 units at $100 = $4000.
+    m0_dispositions = result.events_log.lot_dispositions.filter(pl.col("month_index") == 0)
+    assert m0_dispositions.height == 1
+    assert m0_dispositions.row(0, named=True)["units_sold"] == pytest.approx(40.0, abs=1e-6)
+    assert m0_dispositions.row(0, named=True)["proceeds_usd"] == pytest.approx(4000.0, abs=1e-6)
+
+    # End-of-horizon (month 3) cash for Alice should be at the floor (0).
+    end_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 3))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert end_cash == pytest.approx(0.0, abs=1e-6)
+
+
+def test_rollout_marked_failed_when_assets_exhausted() -> None:
+    """L11 — when the agent's preference chain is exhausted but
+    cash still negative, the engine marks the rollout failed."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-1,
+                quantity=5.0,  # only $500 of VTI at $100/unit
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_rent",
+                from_agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_usd=1000.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(
+                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
+            )
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Failure event fired at month 0: spend 1000, sold $500 of VTI,
+    # still -$500 left.
+    assert result.events_log.rollout_failures.height == 1
+    failure = result.events_log.rollout_failures.row(0, named=True)
+    assert failure["month_index"] == 0
+    assert failure["deficit_usd"] == pytest.approx(500.0, abs=1e-6)
+    assert failure["agent_id"] == "alice"
+
+    status_row = result.rollout_status.row(0, named=True)
+    assert status_row["status"] == "failed_insufficient_cash"
+    assert status_row["failed_month"] == 0
 
 
 if __name__ == "__main__":

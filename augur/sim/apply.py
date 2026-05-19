@@ -40,6 +40,7 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     ordinary_income_ytd = state.ordinary_income_ytd
     capital_gains_ytd = state.capital_gains_ytd
     tax_liabilities = state.tax_liabilities
+    rollout_status = state.rollout_status
 
     if not events.asset_purchases.is_empty():
         asset_lots = _apply_asset_purchases(asset_lots, events.asset_purchases)
@@ -54,6 +55,8 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
         tax_liabilities = _apply_tax_accruals_to_liabilities(tax_liabilities, events.tax_accruals)
         ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
         capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
+    if not events.rollout_failures.is_empty():
+        rollout_status = _apply_rollout_failures(rollout_status, events.rollout_failures)
 
     return StateCrossSection(
         cash_balances=cash_balances,
@@ -61,6 +64,7 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
         ordinary_income_ytd=ordinary_income_ytd,
         capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
+        rollout_status=rollout_status,
     )
 
 
@@ -213,6 +217,28 @@ def _reset_ytd_for_taxed_agents(ordinary_income_ytd: pl.DataFrame, tax_accruals:
             .otherwise(pl.col("ordinary_income_usd"))
         )
         .drop("_reset")
+    )
+
+
+def _apply_rollout_failures(rollout_status: pl.DataFrame, failures: pl.DataFrame) -> pl.DataFrame:
+    """Mark the listed rollouts failed. Once flagged, the status is
+    sticky: a second failure event on an already-failed rollout
+    leaves the original `failed_month` in place. The `status` field
+    transitions monotonically from "active" to a failure state."""
+    first_failure = failures.group_by("rollout_index").agg(pl.col("month_index").min().alias("_failed_month"))
+    return (
+        rollout_status.join(first_failure, on="rollout_index", how="left")
+        .with_columns(
+            status=pl.when(pl.col("status") != "active")
+            .then(pl.col("status"))
+            .when(pl.col("_failed_month").is_not_null())
+            .then(pl.lit("failed_insufficient_cash"))
+            .otherwise(pl.col("status")),
+            failed_month=pl.when(pl.col("failed_month").is_not_null())
+            .then(pl.col("failed_month"))
+            .otherwise(pl.col("_failed_month")),
+        )
+        .drop("_failed_month")
     )
 
 

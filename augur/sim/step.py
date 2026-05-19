@@ -21,24 +21,34 @@ will produce.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import polars as pl
 
 from augur.sim.events import (
     ASSET_PURCHASE_EVENT_SCHEMA,
     LOT_DISPOSITION_EVENT_SCHEMA,
+    ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
     TRANSFER_EVENT_SCHEMA,
     EventLog,
 )
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.market import MarketContext
-from augur.sim.scenario import RecurringTransfer, Scenario, ScheduledAssetSale, ScheduledTransfer, TaxProfile
+from augur.sim.scenario import (
+    FloorTriggeredSalePolicy,
+    RecurringTransfer,
+    Scenario,
+    ScheduledAssetSale,
+    ScheduledTransfer,
+    TaxProfile,
+)
 from augur.sim.state import StateCrossSection
 from augur.sim.tax import apply_brackets, apply_ltcg_brackets
 
 
-def step_emit_events(
+def step_emit_scheduled_events(
     *,
     state: StateCrossSection,
     scenario: Scenario,
@@ -47,8 +57,9 @@ def step_emit_events(
     month: int,
     rollout_count: int,
 ) -> EventLog:
-    """Return the events to apply at this month. Pure: does not
-    mutate `state`."""
+    """Phase 1 of the month step: scheduled / recurring transfers,
+    scheduled asset sales, and year-end tax accruals. Pure: does
+    not mutate `state`."""
     transfers = _emit_transfers(scenario, month, rollout_count)
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
     tax_accruals = _emit_year_end_tax_accruals(
@@ -64,6 +75,24 @@ def step_emit_events(
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=tax_accruals,
+        rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
+    )
+
+
+def step_emit_policy_events(
+    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int
+) -> EventLog:
+    """Phase 2 of the month step: discretionary policies +
+    failure detection. Runs on the post-phase-1 state so the floor
+    check sees cash after all scheduled events have applied."""
+    dispositions = _emit_floor_triggered_sales(state, scenario, market, month)
+    failures = _emit_rollout_failures(state, scenario, dispositions, market, month)
+    return EventLog(
+        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
+        asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
+        lot_dispositions=dispositions,
+        tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
+        rollout_failures=failures,
     )
 
 
@@ -183,6 +212,197 @@ def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, prices_at_m
         {"price_per_unit_usd": "_unit_price"}
     )
     return lots.join(prices_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
+
+
+def _emit_floor_triggered_sales(
+    state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int
+) -> pl.DataFrame:
+    """For every `FloorTriggeredSalePolicy`, find rollouts whose
+    monitored account is below the floor and emit FIFO lot
+    dispositions walking the asset preference chain until either
+    the deficit is covered or the chain is exhausted. Vectorized
+    over rollouts; Python-loops only over asset slots (typically
+    3-5 entries)."""
+    if not scenario.floor_triggered_sale_policies:
+        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+    prices = market.prices_at(month)
+    active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
+    blocks: list[pl.DataFrame] = []
+    for policy in scenario.floor_triggered_sale_policies:
+        blocks.extend(_dispositions_for_policy(state, policy, prices, active_rollouts, month))
+    blocks = [b for b in blocks if not b.is_empty()]
+    if not blocks:
+        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+    return pl.concat(blocks).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+
+
+def _dispositions_for_policy(
+    state: StateCrossSection,
+    policy: FloorTriggeredSalePolicy,
+    prices: pl.DataFrame,
+    active_rollouts: pl.DataFrame,
+    month: int,
+) -> list[pl.DataFrame]:
+    """Resolve one policy across the rollout column. Returns a list
+    of disposition blocks (one per asset slot consumed)."""
+    cash = state.cash_balances.filter(
+        (pl.col("agent_id") == policy.agent_id) & (pl.col("account_id") == policy.account_id)
+    ).select("rollout_index", pl.col("balance_usd").alias("_balance_usd"))
+    deficit = (
+        cash.join(active_rollouts, on="rollout_index", how="inner")
+        .with_columns(
+            _remaining_deficit_usd=pl.lit(policy.floor_usd + policy.replenish_buffer_usd) - pl.col("_balance_usd")
+        )
+        .filter(pl.col("_remaining_deficit_usd") > 0)
+        .select("rollout_index", "_remaining_deficit_usd")
+    )
+    if deficit.is_empty():
+        return []
+    blocks: list[pl.DataFrame] = []
+    for slot_index, asset_id in enumerate(policy.asset_preference_chain):
+        if deficit.is_empty():
+            break
+        cause_id = f"{policy.cause_id_prefix}_m{month}_{asset_id}"
+        result = _consume_asset_for_policy(
+            state=state,
+            policy=policy,
+            asset_id=asset_id,
+            slot_index=slot_index,
+            prices=prices,
+            deficit=deficit,
+            cause_id=cause_id,
+            month=month,
+        )
+        if result.dispositions is not None and not result.dispositions.is_empty():
+            blocks.append(result.dispositions)
+        deficit = result.remaining_deficit
+    return blocks
+
+
+@dataclass(frozen=True)
+class _PolicyAssetResult:
+    """Output of consuming one asset within a policy: the lot
+    dispositions emitted for the asset plus the residual deficit
+    after this asset's sale (to feed the next asset slot)."""
+
+    dispositions: pl.DataFrame | None
+    remaining_deficit: pl.DataFrame
+
+
+def _consume_asset_for_policy(
+    *,
+    state: StateCrossSection,
+    policy: FloorTriggeredSalePolicy,
+    asset_id: str,
+    slot_index: int,
+    prices: pl.DataFrame,
+    deficit: pl.DataFrame,
+    cause_id: str,
+    month: int,
+) -> _PolicyAssetResult:
+    """Walk the agent's lots of `asset_id` in FIFO order to cover
+    as much of each rollout's remaining deficit as the asset
+    supports. Decrement the deficit by the dollars actually
+    realized. Returns the new disposition frame and an updated
+    deficit frame for the next asset slot."""
+    asset_price = prices.filter(pl.col("asset_id") == asset_id).select(
+        "rollout_index", pl.col("price_per_unit_usd").alias("_unit_price")
+    )
+    lots = (
+        state.asset_lots.filter(
+            (pl.col("agent_id") == policy.agent_id)
+            & (pl.col("asset_id") == asset_id)
+            & (pl.col("remaining_quantity") > 0)
+        )
+        .join(asset_price, on="rollout_index", how="left")
+        .join(deficit, on="rollout_index", how="inner")
+    )
+    if lots.is_empty():
+        return _PolicyAssetResult(dispositions=None, remaining_deficit=deficit)
+    ordered = lots.sort(["rollout_index", "purchase_month_index", "lot_id"])
+    with_cum = ordered.with_columns(
+        _prev_cum_dollars=(
+            (pl.col("remaining_quantity") * pl.col("_unit_price")).cum_sum().over("rollout_index")
+            - (pl.col("remaining_quantity") * pl.col("_unit_price"))
+        )
+    )
+    sized = with_cum.with_columns(
+        _dollars_from_lot=pl.min_horizontal(
+            pl.col("remaining_quantity") * pl.col("_unit_price"),
+            pl.max_horizontal(pl.lit(0.0), pl.col("_remaining_deficit_usd") - pl.col("_prev_cum_dollars")),
+        )
+    )
+    consumed = sized.filter(pl.col("_dollars_from_lot") > 0).with_columns(
+        _units_from_lot=pl.col("_dollars_from_lot") / pl.col("_unit_price")
+    )
+    if consumed.is_empty():
+        return _PolicyAssetResult(dispositions=None, remaining_deficit=deficit)
+    dispositions = consumed.with_columns(
+        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+        pl.lit(cause_id, dtype=pl.Utf8()).alias("cause_id"),
+        pl.col("_units_from_lot").alias("units_sold"),
+        (pl.col("_units_from_lot") * pl.col("cost_basis_per_unit_usd")).alias("cost_basis_consumed_usd"),
+        pl.col("_dollars_from_lot").alias("proceeds_usd"),
+        pl.lit(policy.account_id, dtype=pl.Utf8()).alias("proceeds_account_id"),
+    ).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+    _ = slot_index  # reserved for future use (e.g. partial-fill accounting)
+    realized_per_rollout = consumed.group_by("rollout_index").agg(
+        pl.col("_dollars_from_lot").sum().alias("_realized_usd")
+    )
+    new_deficit = (
+        deficit.join(realized_per_rollout, on="rollout_index", how="left")
+        .with_columns(_remaining_deficit_usd=pl.col("_remaining_deficit_usd") - pl.col("_realized_usd").fill_null(0.0))
+        .filter(pl.col("_remaining_deficit_usd") > 0)
+        .select("rollout_index", "_remaining_deficit_usd")
+    )
+    return _PolicyAssetResult(dispositions=dispositions, remaining_deficit=new_deficit)
+
+
+def _emit_rollout_failures(
+    state: StateCrossSection, scenario: Scenario, policy_dispositions: pl.DataFrame, market: MarketContext, month: int
+) -> pl.DataFrame:
+    """Flag any active rollout whose monitored cash account is
+    still below 0 after the floor-triggered sales have fired. Cash
+    on the post-phase-1 state is in `state.cash_balances`; the
+    policy dispositions emitted this phase haven't been applied
+    yet, so we credit them in projection before checking the
+    floor."""
+    _ = market
+    if not scenario.floor_triggered_sale_policies:
+        return pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA)
+    active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
+    blocks: list[pl.DataFrame] = []
+    for policy in scenario.floor_triggered_sale_policies:
+        policy_proceeds = (
+            policy_dispositions.filter(
+                (pl.col("agent_id") == policy.agent_id) & (pl.col("proceeds_account_id") == policy.account_id)
+            )
+            .group_by("rollout_index")
+            .agg(pl.col("proceeds_usd").sum().alias("_proceeds"))
+        )
+        pre_failure_cash = (
+            state.cash_balances.filter(
+                (pl.col("agent_id") == policy.agent_id) & (pl.col("account_id") == policy.account_id)
+            )
+            .select("rollout_index", pl.col("balance_usd").alias("_balance"))
+            .join(policy_proceeds, on="rollout_index", how="left")
+            .with_columns(_projected=pl.col("_balance") + pl.col("_proceeds").fill_null(0.0))
+            .join(active_rollouts, on="rollout_index", how="inner")
+            .filter(pl.col("_projected") < 0)
+        )
+        if pre_failure_cash.is_empty():
+            continue
+        blocks.append(
+            pre_failure_cash.with_columns(
+                pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+                pl.lit(f"{policy.cause_id_prefix}_failure_m{month}", dtype=pl.Utf8()).alias("cause_id"),
+                pl.lit(policy.agent_id, dtype=pl.Utf8()).alias("agent_id"),
+                deficit_usd=-pl.col("_projected"),
+            ).select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
+        )
+    if not blocks:
+        return pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA)
+    return pl.concat(blocks)
 
 
 def _is_year_end(month: int) -> bool:

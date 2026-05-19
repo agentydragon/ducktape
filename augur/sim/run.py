@@ -25,5 +25,6 @@ class SimulationRun:
     ordinary_income_ytd: pl.DataFrame
     capital_gains_ytd: pl.DataFrame
     tax_liabilities: pl.DataFrame
+    rollout_status: pl.DataFrame
     market_prices: pl.DataFrame
     events_log: EventLog

@@ -66,6 +66,18 @@ TAX_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "amount_usd": pl.Float64(),
 }
 
+# `RolloutFailure` flags a rollout as having run out of disposable
+# wealth — agent's cash is negative even after the floor-triggered
+# sale policy has done its best. Once flagged, the rollout stays
+# failed for the rest of the sim (L11.2).
+ROLLOUT_FAILURE_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "deficit_usd": pl.Float64(),
+}
+
 # `LotDisposition` records the consumption of part (or all) of one
 # lot by one logical sale. A single AssetSale "sell N units of vti"
 # decomposes into one disposition row per lot the sale ate into;
@@ -96,6 +108,7 @@ class EventLog:
     asset_purchases: pl.DataFrame
     lot_dispositions: pl.DataFrame
     tax_accruals: pl.DataFrame
+    rollout_failures: pl.DataFrame
 
     @classmethod
     def empty(cls) -> EventLog:
@@ -104,4 +117,5 @@ class EventLog:
             asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
             lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
             tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
+            rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
         )

@@ -35,10 +35,11 @@ from augur.sim.state import (
     CAPITAL_GAINS_YTD_SCHEMA,
     CASH_BALANCES_SCHEMA,
     ORDINARY_INCOME_YTD_SCHEMA,
+    ROLLOUT_STATUS_SCHEMA,
     TAX_LIABILITIES_SCHEMA,
     StateCrossSection,
 )
-from augur.sim.step import step_emit_events
+from augur.sim.step import step_emit_policy_events, step_emit_scheduled_events
 
 
 def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
@@ -53,7 +54,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
     cross_sections: list[StateCrossSection] = [state_t]
     events_by_month: list[EventLog] = []
     for month in range(int(scenario.horizon_months)):
-        events_t = step_emit_events(
+        events_p1 = step_emit_scheduled_events(
             state=state_t,
             scenario=scenario,
             market=market,
@@ -61,15 +62,18 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
             month=month,
             rollout_count=rollout_count,
         )
-        state_t = apply_events(state_t, events_t)
+        state_t = apply_events(state_t, events_p1)
+        events_p2 = step_emit_policy_events(state=state_t, scenario=scenario, market=market, month=month)
+        state_t = apply_events(state_t, events_p2)
         cross_sections.append(state_t)
-        events_by_month.append(events_t)
+        events_by_month.append(_merge_event_logs(events_p1, events_p2))
     return SimulationRun(
         cash_balances=_stack_cash_balances(cross_sections),
         asset_lots=_stack_asset_lots(cross_sections),
         ordinary_income_ytd=_stack_income_ytd(cross_sections),
         capital_gains_ytd=_stack_capital_gains(cross_sections),
         tax_liabilities=_stack_tax_liabilities(cross_sections),
+        rollout_status=cross_sections[-1].rollout_status,
         market_prices=market.prices,
         events_log=_concat_events(events_by_month),
     )
@@ -95,13 +99,22 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
     ordinary_income_ytd = _initial_ordinary_income_ytd(scenario, rollouts)
     capital_gains_ytd = pl.DataFrame(schema=CAPITAL_GAINS_YTD_SCHEMA)
     tax_liabilities = pl.DataFrame(schema=TAX_LIABILITIES_SCHEMA)
+    rollout_status = _initial_rollout_status(rollouts)
     return StateCrossSection(
         cash_balances=cash,
         asset_lots=asset_lots,
         ordinary_income_ytd=ordinary_income_ytd,
         capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
+        rollout_status=rollout_status,
     )
+
+
+def _initial_rollout_status(rollouts: pl.DataFrame) -> pl.DataFrame:
+    """One row per rollout, status = "active", failed_month = null."""
+    return rollouts.with_columns(
+        status=pl.lit("active", dtype=pl.Utf8()), failed_month=pl.lit(None, dtype=pl.Int64())
+    ).select(list(ROLLOUT_STATUS_SCHEMA.keys()))
 
 
 def _initial_cash(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFrame:
@@ -216,16 +229,40 @@ def _stack_tax_liabilities(cross_sections: list[StateCrossSection]) -> pl.DataFr
     )
 
 
+def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
+    """Concatenate two per-phase logs into one per-month log."""
+    return EventLog(
+        transfers=_concat_or_empty(a.transfers, b.transfers),
+        asset_purchases=_concat_or_empty(a.asset_purchases, b.asset_purchases),
+        lot_dispositions=_concat_or_empty(a.lot_dispositions, b.lot_dispositions),
+        tax_accruals=_concat_or_empty(a.tax_accruals, b.tax_accruals),
+        rollout_failures=_concat_or_empty(a.rollout_failures, b.rollout_failures),
+    )
+
+
+def _concat_or_empty(a: pl.DataFrame, b: pl.DataFrame) -> pl.DataFrame:
+    """Concatenate two frames sharing a schema, dropping empties so
+    the result doesn't carry phantom rows when one side has nothing
+    to contribute."""
+    if a.is_empty():
+        return b
+    if b.is_empty():
+        return a
+    return pl.concat([a, b])
+
+
 def _concat_events(events_by_month: list[EventLog]) -> EventLog:
     """Concatenate per-month event logs into one cumulative log."""
     transfer_blocks = [e.transfers for e in events_by_month if not e.transfers.is_empty()]
     purchase_blocks = [e.asset_purchases for e in events_by_month if not e.asset_purchases.is_empty()]
     disposition_blocks = [e.lot_dispositions for e in events_by_month if not e.lot_dispositions.is_empty()]
     accrual_blocks = [e.tax_accruals for e in events_by_month if not e.tax_accruals.is_empty()]
+    failure_blocks = [e.rollout_failures for e in events_by_month if not e.rollout_failures.is_empty()]
     empty = EventLog.empty()
     return EventLog(
         transfers=pl.concat(transfer_blocks) if transfer_blocks else empty.transfers,
         asset_purchases=pl.concat(purchase_blocks) if purchase_blocks else empty.asset_purchases,
         lot_dispositions=pl.concat(disposition_blocks) if disposition_blocks else empty.lot_dispositions,
         tax_accruals=pl.concat(accrual_blocks) if accrual_blocks else empty.tax_accruals,
+        rollout_failures=pl.concat(failure_blocks) if failure_blocks else empty.rollout_failures,
     )

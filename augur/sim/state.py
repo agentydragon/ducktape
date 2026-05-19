@@ -58,6 +58,17 @@ CAPITAL_GAINS_YTD_SCHEMA: dict[str, pl.DataType] = {
     "gain_usd": pl.Float64(),
 }
 
+# Per-rollout terminal status. "active" is the only running state;
+# `"failed_insufficient_cash"` is set once and not cleared (L11.2:
+# failed rollouts stay failed). One row per rollout regardless of
+# how many agents are in the scenario — the failure is a property
+# of the rollout, not of an agent.
+ROLLOUT_STATUS_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "status": pl.Utf8(),
+    "failed_month": pl.Int64(),
+}
+
 # An asset lot is a tax-relevant unit-of-acquisition: a quantity of
 # some asset bought at a specific time at a specific per-unit cost
 # basis. Sales consume from lots in some order (FIFO for spike 1);
@@ -88,3 +99,4 @@ class StateCrossSection:
     ordinary_income_ytd: pl.DataFrame
     capital_gains_ytd: pl.DataFrame
     tax_liabilities: pl.DataFrame
+    rollout_status: pl.DataFrame
