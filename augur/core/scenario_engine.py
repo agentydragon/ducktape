@@ -3028,6 +3028,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         asset_class=LotAssetClass.PUBLIC_SECURITY,
         amount_field="tax_expense_usd",
     )
+    crypto_sale_tax_from_accounting = _lot_disposition_amount_matrix(
+        lot_dispositions,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_class=LotAssetClass.CRYPTO,
+        amount_field="tax_expense_usd",
+    )
     private_equity_sale_from_accounting = _posting_amount_matrix(
         accounting_trace,
         rollout_count=rollout_count,
@@ -3247,6 +3254,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         "crypto_sale_usd": crypto_sale_usd,
         "crypto_sale_basis_usd": crypto_sale_basis_usd,
         "crypto_sale_gain_usd": crypto_sale_usd - crypto_sale_basis_usd,
+        "crypto_sale_tax_usd": crypto_sale_tax_from_accounting,
         "checking_floor_action_usd": generic_sp500_sale_from_accounting,
         "checking_floor_shortfall_usd": checking_floor_shortfall,
         "private_equity_value_usd": private_equity_value,
