@@ -841,8 +841,8 @@ def test_explicit_sale_price_overrides_market() -> None:
                 proceeds_account_id="checking",
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[10.0, 10.0])]),
-        horizon_months=1,
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[10.0, 10.0, 10.0])]),
+        horizon_months=2,
     )
 
     result = simulate(scenario, rollout_count=1)
