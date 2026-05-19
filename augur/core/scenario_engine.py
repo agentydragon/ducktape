@@ -198,7 +198,7 @@ class ScenarioRunArrays:
     lot_dispositions: tuple[LotDisposition, ...]
     liabilities: tuple[LiabilityState, ...]
     accounting_details: tuple[AccountingDetail, ...]
-    funding_decisions: tuple[FundingDecision, ...]
+    funding_decisions_frame: pl.DataFrame
     # Single root for the obligation lifecycle. Three Pydantic surfaces
     # (`obligations`, `settlement_results`, `failure_events`) materialize
     # from this one frame via projection/filter at end-of-run — `obligations`
@@ -211,6 +211,10 @@ class ScenarioRunArrays:
     @property
     def obligations(self) -> tuple[Obligation, ...]:
         return tuple(event_streams.materialize_obligations(self.obligations_frame))
+
+    @property
+    def funding_decisions(self) -> tuple[FundingDecision, ...]:
+        return tuple(event_streams.materialize_funding_decisions(self.funding_decisions_frame))
 
     @property
     def settlement_results(self) -> tuple[SettlementResult, ...]:
@@ -1389,7 +1393,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # surfaces are projection/filter views over this single frame at
     # end-of-run (see `event_streams.materialize_*`).
     obligations = event_streams.StreamFrameBuilder(event_streams.OBLIGATION_LIFECYCLE_SCHEMA)
-    funding_decisions: list[FundingDecision] = []
+    funding_decisions = event_streams.StreamFrameBuilder(event_streams.FUNDING_DECISION_SCHEMA)
     sp500_sale_action_records: list[Sp500SaleActionRecord] = []
     crypto_sale_action_records: list[CryptoSaleActionRecord] = []
     private_equity_sale_action_records: list[PrivateEquitySaleActionRecord] = []
@@ -2543,8 +2547,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         accounting_details=_sorted_accounting_details(
             _with_trajectory_identity(accounting_details, trace_identity_by_rollout)
         ),
-        funding_decisions=_sorted_funding_decisions(
-            _with_trajectory_identity(funding_decisions, trace_identity_by_rollout)
+        funding_decisions_frame=event_streams.sort_funding_decisions(
+            event_streams.join_trajectory_identity(funding_decisions.build(), trace_identity_frame)
         ),
         obligations_frame=event_streams.sort_obligation_lifecycle(
             event_streams.join_trajectory_identity(obligations.build(), trace_identity_frame)
@@ -3327,22 +3331,6 @@ def _sorted_accounting_details(records: list[AccountingDetail]) -> tuple[Account
     )
 
 
-def _sorted_funding_decisions(records: list[FundingDecision]) -> tuple[FundingDecision, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda decision: (
-                decision.month_index,
-                decision.rollout_index,
-                -1 if decision.policy_sequence_index is None else decision.policy_sequence_index,
-                decision.decision_type,
-                decision.policy_id or "",
-                decision.obligation_id,
-            ),
-        )
-    )
-
-
 def _record_property_sale_effects(
     effects: list[Effect],
     *,
@@ -3838,7 +3826,7 @@ def _settle_required_cash_obligations(
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
     obligations: event_streams.StreamFrameBuilder,
-    funding_decisions: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -3969,7 +3957,7 @@ def _settle_required_cash_obligation_at_month_position(
     crypto_sale_basis_usd: np.ndarray,
     checking_floor_shortfall_usd: np.ndarray,
     obligations: event_streams.StreamFrameBuilder,
-    funding_decisions: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
@@ -4600,8 +4588,58 @@ def _apply_crypto_checking_floor_obligation_funding_policy(
     )
 
 
+def _funding_decision_block(
+    *,
+    rollouts: np.ndarray,
+    obligation_type: ObligationType,
+    month_index: int,
+    decision_type: FundingDecisionType,
+    actor_id: str,
+    available_cash_usd: np.ndarray,
+    requested_cash_usd: np.ndarray,
+    requested_sale_usd: np.ndarray,
+    funded_cash_usd: np.ndarray,
+    shortfall_usd: np.ndarray,
+    policy_id: str | None = None,
+    policy_sequence_index: int | None = None,
+    source_type: FundingSourceType | None = None,
+    source_account_id: str | None = None,
+    source_account_type: AccountType | None = None,
+    source_asset_id: str | None = None,
+    source_asset_type: AssetType | None = None,
+) -> dict[str, Any]:
+    """Build the dict-of-columns a `FundingDecision` row-block needs.
+
+    All recorders below feed `funding_decisions.extend(_funding_decision_block(...))`
+    so the column-set is single-source-of-truth and matches
+    `event_streams.FUNDING_DECISION_SCHEMA` exactly."""
+
+    size = int(rollouts.size)
+    return {
+        "rollout_index": rollouts.astype(np.int64),
+        "month_index": np.full(size, month_index, dtype=np.int64),
+        "obligation_id": [
+            _obligation_id(obligation_type, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ],
+        "decision_type": [decision_type.value] * size,
+        "actor_id": [actor_id] * size,
+        "policy_id": [policy_id] * size,
+        "policy_sequence_index": [policy_sequence_index] * size,
+        "source_type": [None if source_type is None else source_type.value] * size,
+        "source_account_id": [source_account_id] * size,
+        "source_account_type": [None if source_account_type is None else source_account_type.value] * size,
+        "source_asset_id": [source_asset_id] * size,
+        "source_asset_type": [None if source_asset_type is None else source_asset_type.value] * size,
+        "available_cash_usd": available_cash_usd[rollouts].astype(np.float64),
+        "requested_cash_usd": requested_cash_usd[rollouts].astype(np.float64),
+        "requested_sale_usd": requested_sale_usd[rollouts].astype(np.float64),
+        "funded_cash_usd": funded_cash_usd[rollouts].astype(np.float64),
+        "shortfall_usd": shortfall_usd[rollouts].astype(np.float64),
+    }
+
+
 def _record_obligation_cash_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4611,31 +4649,32 @@ def _record_obligation_cash_funding_decisions(
     funded_cash_usd: np.ndarray,
     source_account: AccountBalance | None,
 ) -> None:
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.USE_CASH,
-                actor_id=actor_id,
-                source_type=FundingSourceType.CASH_ACCOUNT,
-                source_account_id=source_account.account_id if source_account is not None else None,
-                source_account_type=AccountType.CHECKING,
-                available_cash_usd=float(available_cash_usd[rollout_index]),
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(
-                    np.maximum(0.0, obligation_amount_usd[rollout_index] - funded_cash_usd[rollout_index])
-                ),
-            )
+    mask = obligation_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    shortfall = np.maximum(0.0, obligation_amount_usd - funded_cash_usd)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.USE_CASH,
+            actor_id=actor_id,
+            available_cash_usd=available_cash_usd,
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=np.zeros_like(obligation_amount_usd),
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall,
+            source_type=FundingSourceType.CASH_ACCOUNT,
+            source_account_id=source_account.account_id if source_account is not None else None,
+            source_account_type=AccountType.CHECKING,
         )
-        for rollout_index in np.nonzero(obligation_amount_usd > 0)[0].tolist()
     )
 
 
 def _record_obligation_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4647,33 +4686,33 @@ def _record_obligation_sale_funding_decisions(
     shortfall_usd: np.ndarray,
     source_asset: GenericSp500StockPosition | None,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
-                source_asset_id=source_asset.asset_id if source_asset is not None else None,
-                source_asset_type=AssetType.GENERIC_SP500_STOCK,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_PUBLIC_STOCK,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.PUBLIC_MARKET_ASSET,
+            source_asset_id=source_asset.asset_id if source_asset is not None else None,
+            source_asset_type=AssetType.GENERIC_SP500_STOCK,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_obligation_crypto_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4686,35 +4725,35 @@ def _record_obligation_crypto_sale_funding_decisions(
     source_asset_id: str,
     source_account_id: str | None,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_CRYPTO,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.CRYPTO_ASSET,
-                source_account_id=source_account_id,
-                source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
-                source_asset_id=source_asset_id,
-                source_asset_type=AssetType.CRYPTO,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_CRYPTO,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.CRYPTO_ASSET,
+            source_account_id=source_account_id,
+            source_account_type=AccountType.CRYPTO_EXCHANGE if source_account_id is not None else None,
+            source_asset_id=source_asset_id,
+            source_asset_type=AssetType.CRYPTO,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_obligation_pe_sale_funding_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4726,33 +4765,33 @@ def _record_obligation_pe_sale_funding_decisions(
     shortfall_usd: np.ndarray,
     source_asset_id: str,
 ) -> None:
-    policy = policy_step.policy
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
-                actor_id=actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
-                source_asset_id=source_asset_id,
-                source_asset_type=AssetType.PRIVATE_EQUITY,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                requested_sale_usd=float(requested_sale_usd[rollout_index]),
-                funded_cash_usd=float(funded_cash_usd[rollout_index]),
-                shortfall_usd=float(shortfall_usd[rollout_index]),
-            )
+    mask = (requested_sale_usd > 0) | (shortfall_usd > 0)
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=requested_sale_usd,
+            funded_cash_usd=funded_cash_usd,
+            shortfall_usd=shortfall_usd,
+            policy_id=policy_step.policy.policy_id,
+            policy_sequence_index=policy_step.sequence_index,
+            source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
+            source_asset_id=source_asset_id,
+            source_asset_type=AssetType.PRIVATE_EQUITY,
         )
-        for rollout_index in np.nonzero((requested_sale_usd > 0) | (shortfall_usd > 0))[0].tolist()
     )
 
 
 def _record_unfunded_obligation_decisions(
-    records: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     *,
     obligation_type: ObligationType,
     actor_id: str,
@@ -4760,22 +4799,24 @@ def _record_unfunded_obligation_decisions(
     obligation_amount_usd: np.ndarray,
     unpaid_amount_usd: np.ndarray,
 ) -> None:
-    records.extend(
-        (
-            FundingDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                obligation_id=_obligation_id(obligation_type, rollout_index=rollout_index, month_index=month_index),
-                decision_type=FundingDecisionType.UNFUNDED,
-                actor_id=actor_id,
-                source_type=FundingSourceType.UNFUNDED,
-                available_cash_usd=0.0,
-                requested_cash_usd=float(obligation_amount_usd[rollout_index]),
-                funded_cash_usd=0.0,
-                shortfall_usd=float(unpaid_amount_usd[rollout_index]),
-            )
+    mask = unpaid_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    funding_decisions.extend(
+        _funding_decision_block(
+            rollouts=rollouts,
+            obligation_type=obligation_type,
+            month_index=month_index,
+            decision_type=FundingDecisionType.UNFUNDED,
+            actor_id=actor_id,
+            available_cash_usd=np.zeros_like(obligation_amount_usd),
+            requested_cash_usd=obligation_amount_usd,
+            requested_sale_usd=np.zeros_like(obligation_amount_usd),
+            funded_cash_usd=np.zeros_like(obligation_amount_usd),
+            shortfall_usd=unpaid_amount_usd,
+            source_type=FundingSourceType.UNFUNDED,
         )
-        for rollout_index in np.nonzero(unpaid_amount_usd > 0)[0].tolist()
     )
 
 
@@ -5645,7 +5686,7 @@ def _settle_partner_contribution_obligations(
     partner_equity: PartnerEquityArrays,
     owner_actor_id: str,
     obligations: event_streams.StreamFrameBuilder,
-    funding_decisions: list[FundingDecision],
+    funding_decisions: event_streams.StreamFrameBuilder,
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],

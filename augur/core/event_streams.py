@@ -24,6 +24,9 @@ Migrated so far:
 * **Obligation lifecycle** (root) → `Obligation`, `SettlementResult`,
   `FailureEvent` (the latter two are filter+projection over the same root
   frame; one accumulator, three Pydantic surfaces).
+* **Funding decisions** (root) → `FundingDecision` (separate cardinality
+  from obligations — multiple funding decisions per obligation when the
+  policy tries cash, then sells SP500, then crypto, etc.).
 """
 
 from __future__ import annotations
@@ -34,8 +37,13 @@ from typing import Any
 import polars as pl
 
 from augur.core.scenario_set import (
+    AccountType,
+    AssetType,
     FailureEvent,
     FailureEventType,
+    FundingDecision,
+    FundingDecisionType,
+    FundingSourceType,
     Obligation,
     ObligationStatus,
     ObligationType,
@@ -203,6 +211,86 @@ def materialize_settlement_results(df: pl.DataFrame) -> Iterator[SettlementResul
             amount_due_usd=float(row["amount_due_usd"]),
             amount_paid_usd=float(row["amount_paid_usd"]),
             unpaid_amount_usd=float(row["unpaid_amount_usd"]),
+            path_set_id=row.get("path_set_id"),
+            exogenous_path_id=row.get("exogenous_path_id"),
+            scenario_input_id=row.get("scenario_input_id"),
+            projection_trajectory_id=row.get("projection_trajectory_id"),
+        )
+
+
+# -- funding decisions ---------------------------------------------------------
+#
+# Separate cardinality from obligations (multiple funding decisions per
+# obligation when the policy tries cash, then sells SP500, then crypto, etc.),
+# so this is its own root frame. Sort key matches the legacy
+# `_sorted_funding_decisions` Python-list sort:
+# `(month, rollout, fillna(policy_sequence_index, -1), decision_type,
+#   fillna(policy_id, ""), obligation_id)`.
+
+FUNDING_DECISION_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "obligation_id": pl.String,
+    "decision_type": pl.String,
+    "actor_id": pl.String,
+    "policy_id": pl.String,
+    "policy_sequence_index": pl.Int64,
+    "source_type": pl.String,
+    "source_account_id": pl.String,
+    "source_account_type": pl.String,
+    "source_asset_id": pl.String,
+    "source_asset_type": pl.String,
+    "available_cash_usd": pl.Float64,
+    "requested_cash_usd": pl.Float64,
+    "requested_sale_usd": pl.Float64,
+    "funded_cash_usd": pl.Float64,
+    "shortfall_usd": pl.Float64,
+}
+
+
+def sort_funding_decisions(df: pl.DataFrame) -> pl.DataFrame:
+    """Polars equivalent of `_sorted_funding_decisions` over the Pydantic list.
+    `policy_sequence_index = None` sorted as `-1` and `policy_id = None`
+    sorted as empty string in the legacy code, so we fill-null those columns
+    into transient sort keys."""
+
+    return (
+        df.with_columns(
+            pl.col("policy_sequence_index").fill_null(-1).alias("_sort_seq"),
+            pl.col("policy_id").fill_null("").alias("_sort_pid"),
+        )
+        .sort(["month_index", "rollout_index", "_sort_seq", "decision_type", "_sort_pid", "obligation_id"])
+        .drop(["_sort_seq", "_sort_pid"])
+    )
+
+
+def _row_optional_enum(row: dict[str, Any], column: str, enum_cls: type) -> Any:
+    value = row.get(column)
+    if value is None:
+        return None
+    return enum_cls(value)
+
+
+def materialize_funding_decisions(df: pl.DataFrame) -> Iterator[FundingDecision]:
+    for row in df.iter_rows(named=True):
+        yield FundingDecision(
+            rollout_index=int(row["rollout_index"]),
+            month_index=int(row["month_index"]),
+            obligation_id=row["obligation_id"],
+            decision_type=FundingDecisionType(row["decision_type"]),
+            actor_id=row["actor_id"],
+            policy_id=row["policy_id"],
+            policy_sequence_index=row["policy_sequence_index"],
+            source_type=_row_optional_enum(row, "source_type", FundingSourceType),
+            source_account_id=row["source_account_id"],
+            source_account_type=_row_optional_enum(row, "source_account_type", AccountType),
+            source_asset_id=row["source_asset_id"],
+            source_asset_type=_row_optional_enum(row, "source_asset_type", AssetType),
+            available_cash_usd=float(row["available_cash_usd"]),
+            requested_cash_usd=float(row["requested_cash_usd"]),
+            requested_sale_usd=float(row["requested_sale_usd"]),
+            funded_cash_usd=float(row["funded_cash_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
             path_set_id=row.get("path_set_id"),
             exogenous_path_id=row.get("exogenous_path_id"),
             scenario_input_id=row.get("scenario_input_id"),
