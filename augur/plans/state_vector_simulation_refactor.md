@@ -1056,6 +1056,32 @@ what the unified `asset_change_log` provides. Land that first:
    special_assessment, outside_rent) for now — each can become its
    own actor later but isn't blocking.
 
+   **Open architectural question — year-0 quarterly safe-harbor with no
+   prior-year tax.** Today's `_quarterly_estimated_tax_obligation_due_usd`
+   uses 90% of year-0's actual total tax (the IRS first-year exception)
+   for Q1-Q4 of year 0 when `tax_profile.prior_year_tax_usd` is None.
+   This relies on **forward knowledge** — the simulation precomputes the
+   full year-0 tax via `annual_sale_tax_allocation` post-loop, then
+   places 0.9/4 of that amount at each year-0 quarterly marker
+   retroactively. A true inline observer cannot do this without either:
+   - a **two-pass simulation** (pass 1 just observes to fill TaxActor's
+     year accumulators; pass 2 emits obligations using known totals
+     — ~2x runtime),
+   - **changing test expectations** so year-0 quarterlies are zero
+     when no prior_year_tax is supplied and the full residual settles
+     at year-end (semantically more honest — you don't actually know
+     this year's tax in April; the IRS just won't penalize you under
+     the first-year exception),
+   - or some pre-loop estimate (e.g., a scenario-attribute
+     `expected_year_zero_tax_usd` distinct from `prior_year_tax_usd`).
+
+   The wired Phase 4b prototype showed the inline TaxActor + accumulator
+   - per-iteration observe pattern works for the common case (years
+     N ≥ 1, prior-year tax known) and matches today's bit-for-bit. The
+     3 e2e tests that fail are all year-0-no-prior-year-tax scenarios.
+     The decision on which solution to take is the gating item for
+     Phase 4b landing.
+
 ### Phase 5: derive everything
 
 Switch all metric matrices to be derived from logs at end-of-sim. The
