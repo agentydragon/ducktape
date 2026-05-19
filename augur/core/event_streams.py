@@ -138,9 +138,24 @@ class StreamFrameBuilder:
         return self._concat(self._blocks[start_block_index:])
 
     def _concat(self, blocks: list[dict[str, Any]]) -> pl.DataFrame:
+        # Materialize the polars frame in ONE shot at end-of-run by
+        # column-concatenating the raw arrays/lists. Building a `pl.DataFrame`
+        # per `extend()` block then `pl.concat`-ing them was the post-event-
+        # stream-migration hot spot (~43% of simulate at 3x32x360) because
+        # each `pl.DataFrame(dict, schema=...)` call dispatches into
+        # `dict_to_pydf` and validates per call.
         if not blocks:
             return pl.DataFrame(schema=self._schema)
-        return pl.concat([pl.DataFrame(block, schema=self._schema) for block in blocks])
+        if len(blocks) == 1:
+            return pl.DataFrame(blocks[0], schema=self._schema)
+        merged: dict[str, Any] = {}
+        for column_name in self._schema:
+            parts = [block[column_name] for block in blocks]
+            if all(isinstance(part, np.ndarray) for part in parts):
+                merged[column_name] = np.concatenate(parts)
+            else:
+                merged[column_name] = [item for part in parts for item in part]
+        return pl.DataFrame(merged, schema=self._schema)
 
 
 # Identity columns added to every event stream at end-of-run by
