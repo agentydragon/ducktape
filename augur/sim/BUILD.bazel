@@ -77,7 +77,6 @@ py_test(
         ":apply_py",
         ":scenario_py",
         ":simulate_py",
-        ":state_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

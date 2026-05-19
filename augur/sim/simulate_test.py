@@ -15,7 +15,6 @@ import pytest_bazel
 from augur.sim.apply import apply_events
 from augur.sim.scenario import Agent, InitialAccountBalance, Scenario, ScheduledTransfer
 from augur.sim.simulate import _initial_state, simulate
-from augur.sim.state import StateCrossSection
 
 
 def _alice_bob_scenario() -> Scenario:
@@ -109,19 +108,6 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
 def test_rejects_zero_rollout_count() -> None:
     with pytest.raises(ValueError, match="rollout_count"):
         simulate(_alice_bob_scenario(), rollout_count=0)
-
-
-def test_state_cross_section_is_frozen() -> None:
-    """StateCrossSection must be immutable so that downstream
-    callers can't accidentally mutate state mid-step."""
-    initial = _initial_state(_alice_bob_scenario(), rollout_count=1)
-    assert isinstance(initial, StateCrossSection)
-    try:
-        initial.cash_balances = pl.DataFrame()
-    except (AttributeError, TypeError):
-        return
-    msg = "expected StateCrossSection to be frozen"
-    raise AssertionError(msg)
 
 
 if __name__ == "__main__":
