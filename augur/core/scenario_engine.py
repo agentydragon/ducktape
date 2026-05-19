@@ -195,7 +195,7 @@ class ScenarioRunArrays:
     market_observations: tuple[MarketObservation, ...]
     accounting_trace: AccountingTrace
     tax_lots: tuple[TaxLot, ...]
-    lot_dispositions: tuple[LotDisposition, ...]
+    lot_dispositions_frame: pl.DataFrame
     liabilities: tuple[LiabilityState, ...]
     accounting_details: tuple[AccountingDetail, ...]
     funding_decisions_frame: pl.DataFrame
@@ -215,6 +215,10 @@ class ScenarioRunArrays:
     @property
     def funding_decisions(self) -> tuple[FundingDecision, ...]:
         return tuple(event_streams.materialize_funding_decisions(self.funding_decisions_frame))
+
+    @property
+    def lot_dispositions(self) -> tuple[LotDisposition, ...]:
+        return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
 
     @property
     def settlement_results(self) -> tuple[SettlementResult, ...]:
@@ -1385,7 +1389,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     market_observations: list[MarketObservation] = list(_market_path_observations(scenario, market_bundle))
     accounting = AccountingTraceBuilder()
     tax_lots: list[TaxLot] = []
-    lot_dispositions: list[LotDisposition] = []
+    lot_dispositions = event_streams.StreamFrameBuilder(event_streams.LOT_DISPOSITION_SCHEMA)
     liabilities: list[LiabilityState] = []
     accounting_details: list[AccountingDetail] = []
     # One root accumulator for the entire obligation lifecycle. The
@@ -2540,8 +2544,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         ),
         accounting_trace=accounting_trace.with_trajectory_identity(trace_identity_by_rollout).sorted_canonical(),
         tax_lots=_sorted_tax_lots(tax_lots),
-        lot_dispositions=_sorted_lot_dispositions(
-            _with_trajectory_identity(lot_dispositions, trace_identity_by_rollout)
+        lot_dispositions_frame=event_streams.sort_lot_dispositions(
+            event_streams.join_trajectory_identity(lot_dispositions.build(), trace_identity_frame)
         ),
         liabilities=_sorted_liabilities(liabilities),
         accounting_details=_sorted_accounting_details(
@@ -2932,26 +2936,36 @@ def _balance_snapshot_amount_matrix(
 
 
 def _lot_disposition_amount_matrix(
-    records: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     rollout_count: int,
     month_index: np.ndarray,
     asset_class: LotAssetClass,
     amount_field: str,
 ) -> np.ndarray:
+    """Reshape the in-progress `lot_dispositions` builder into a
+    `(rollouts, months)` matrix of `amount_field` summed per
+    `(rollout_index, month_index)` for the given asset class."""
+
     matrix = np.zeros((rollout_count, len(month_index)), dtype="float64")
+    frame = lot_dispositions.build()
+    if frame.height == 0:
+        return matrix
     month_position_by_index = {int(month): position for position, month in enumerate(month_index.tolist())}
-    for disposition in records:
-        if disposition.asset_class is not asset_class:
-            continue
+    aggregated = (
+        frame.lazy()
+        .filter(pl.col("asset_class") == asset_class.value)
+        .group_by(["rollout_index", "month_index"])
+        .agg(amount=pl.col(amount_field).sum())
+        .collect()
+    )
+    for row in aggregated.iter_rows(named=True):
+        month = int(row["month_index"])
         try:
-            month_position = month_position_by_index[disposition.month_index]
+            month_position = month_position_by_index[month]
         except KeyError as exc:
-            raise ValueError(f"lot disposition has month outside result horizon: {disposition.month_index}") from exc
-        amount = getattr(disposition, amount_field)
-        if not isinstance(amount, int | float):
-            raise TypeError(f"lot disposition field {amount_field!r} is not numeric")
-        matrix[disposition.rollout_index, month_position] += float(amount)
+            raise ValueError(f"lot disposition has month outside result horizon: {month}") from exc
+        matrix[int(row["rollout_index"]), month_position] += float(row["amount"])
     return matrix
 
 
@@ -2989,7 +3003,7 @@ def _accounting_detail_amount_matrix(
 
 def _record_property_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     scenario: Scenario,
     disposition: PropertyDispositionArrays,
@@ -3043,24 +3057,31 @@ def _record_property_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PROPERTY, property_id)
-    for rollout_index in np.nonzero(gross > 0)[0].tolist():
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PROPERTY,
-                proceeds_usd=float(gross[rollout_index]),
-                cost_basis_usd=float(
-                    disposition.column("property_sale_adjusted_basis_usd")[rollout_index, month_index]
-                ),
-                realized_gain_usd=float(disposition.column("realized_property_gain_usd")[rollout_index, month_index]),
-                taxable_gain_usd=float(disposition.column("taxable_property_gain_usd")[rollout_index, month_index]),
-                tax_expense_usd=float(tax[rollout_index]),
-            )
+    mask = gross > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        basis_col = disposition.column("property_sale_adjusted_basis_usd")[:, month_index]
+        realized_col = disposition.column("realized_property_gain_usd")[:, month_index]
+        taxable_col = disposition.column("taxable_property_gain_usd")[:, month_index]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PROPERTY.value] * size,
+                "proceeds_usd": gross[rollouts].astype(np.float64),
+                "cost_basis_usd": basis_col[rollouts].astype(np.float64),
+                "realized_gain_usd": realized_col[rollouts].astype(np.float64),
+                "taxable_gain_usd": taxable_col[rollouts].astype(np.float64),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": tax[rollouts].astype(np.float64),
+            }
         )
 
 
@@ -3164,7 +3185,7 @@ def _record_tax_payment_allocation_details(
 
 def _record_sp500_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy: Policy,
@@ -3185,30 +3206,37 @@ def _record_sp500_sale_journal_entries(
         leg_chart_account_keys=({"actor_id": policy.actor_id}, {"actor_id": policy.actor_id}),
     )
     lot_id = _tax_lot_id(LotAssetClass.PUBLIC_SECURITY, "portfolio")
-    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PUBLIC_SECURITY,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=max(0.0, amount - basis),
-                tax_expense_usd=float(tax_usd[rollout_index]),
-            )
+    mask = amount_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = amount_usd[rollouts].astype(np.float64)
+        bases = basis_usd[rollouts].astype(np.float64)
+        gains = amounts - bases
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PUBLIC_SECURITY.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": gains,
+                "taxable_gain_usd": np.maximum(0.0, gains),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": tax_usd[rollouts].astype(np.float64),
+            }
         )
 
 
 def _record_private_equity_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     instruction: PrivateEquitySaleInstructionBatch,
@@ -3236,25 +3264,30 @@ def _record_private_equity_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.PRIVATE_EQUITY, source_holding_id)
-    for rollout_index in np.nonzero(sale_application.sale_usd > 0)[0].tolist():
-        amount = float(sale_application.sale_usd[rollout_index])
-        basis = float(sale_application.basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(entry_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.PRIVATE_EQUITY,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=float(sale_application.taxable_gain_usd[rollout_index]),
-                quantity_sold=float(sale_application.sold_units[rollout_index]),
-                tax_expense_usd=float(tax_usd[rollout_index]),
-            )
+    mask = sale_application.sale_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = sale_application.sale_usd[rollouts].astype(np.float64)
+        bases = sale_application.basis_usd[rollouts].astype(np.float64)
+        journal_entry_ids = [
+            _trace_row_id(entry_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.PRIVATE_EQUITY.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": amounts - bases,
+                "taxable_gain_usd": sale_application.taxable_gain_usd[rollouts].astype(np.float64),
+                "quantity_sold": sale_application.sold_units[rollouts].astype(np.float64).tolist(),
+                "tax_expense_usd": tax_usd[rollouts].astype(np.float64),
+            }
         )
 
 
@@ -3294,20 +3327,6 @@ def _sorted_market_observations(records: list[MarketObservation]) -> tuple[Marke
 
 def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:
     return tuple(sorted(records, key=lambda lot: lot.lot_id))
-
-
-def _sorted_lot_dispositions(records: list[LotDisposition]) -> tuple[LotDisposition, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda disposition: (
-                disposition.month_index,
-                disposition.rollout_index,
-                disposition.asset_class,
-                disposition.lot_disposition_id,
-            ),
-        )
-    )
 
 
 def _sorted_liabilities(records: list[LiabilityState]) -> tuple[LiabilityState, ...]:
@@ -3419,7 +3438,7 @@ def _record_sp500_sale_effects(
 
 def _record_crypto_sale_journal_entries(
     accounting: AccountingTraceBuilder,
-    lot_dispositions: list[LotDisposition],
+    lot_dispositions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy: Policy,
@@ -3450,24 +3469,31 @@ def _record_crypto_sale_journal_entries(
         ),
     )
     lot_id = _tax_lot_id(LotAssetClass.CRYPTO, source_asset_id)
-    for rollout_index in np.nonzero(amount_usd > 0)[0].tolist():
-        amount = float(amount_usd[rollout_index])
-        basis = float(basis_usd[rollout_index])
-        journal_entry_id = _trace_row_id(cause_id_prefix, rollout_index=rollout_index, month_index=month_index)
-        lot_dispositions.append(
-            LotDisposition(
-                lot_disposition_id=f"{journal_entry_id}:lot:{lot_id}",
-                journal_entry_id=journal_entry_id,
-                rollout_index=rollout_index,
-                month_index=month_index,
-                lot_id=lot_id,
-                asset_class=LotAssetClass.CRYPTO,
-                proceeds_usd=amount,
-                cost_basis_usd=max(0.0, basis),
-                realized_gain_usd=amount - basis,
-                taxable_gain_usd=max(0.0, amount - basis),
-                tax_expense_usd=0.0,
-            )
+    mask = amount_usd > 0
+    if mask.any():
+        rollouts = np.nonzero(mask)[0].astype(np.int64)
+        size = int(rollouts.size)
+        amounts = amount_usd[rollouts].astype(np.float64)
+        bases = basis_usd[rollouts].astype(np.float64)
+        gains = amounts - bases
+        journal_entry_ids = [
+            _trace_row_id(cause_id_prefix, rollout_index=int(r), month_index=month_index) for r in rollouts
+        ]
+        lot_dispositions.extend(
+            {
+                "rollout_index": rollouts,
+                "month_index": np.full(size, month_index, dtype=np.int64),
+                "lot_disposition_id": [f"{jid}:lot:{lot_id}" for jid in journal_entry_ids],
+                "journal_entry_id": journal_entry_ids,
+                "lot_id": [lot_id] * size,
+                "asset_class": [LotAssetClass.CRYPTO.value] * size,
+                "proceeds_usd": amounts,
+                "cost_basis_usd": np.maximum(0.0, bases),
+                "realized_gain_usd": gains,
+                "taxable_gain_usd": np.maximum(0.0, gains),
+                "quantity_sold": np.full(size, None, dtype=object),
+                "tax_expense_usd": np.zeros(size, dtype=np.float64),
+            }
         )
 
 

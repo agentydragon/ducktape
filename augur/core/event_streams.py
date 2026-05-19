@@ -27,6 +27,8 @@ Migrated so far:
 * **Funding decisions** (root) → `FundingDecision` (separate cardinality
   from obligations — multiple funding decisions per obligation when the
   policy tries cash, then sells SP500, then crypto, etc.).
+* **Lot dispositions** (root) → `LotDisposition` (one row per tax-lot
+  consumption during a sale event).
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from typing import Any
 
 import polars as pl
 
+from augur.core.accounting import LotAssetClass, LotDisposition
 from augur.core.scenario_set import (
     AccountType,
     AssetType,
@@ -291,6 +294,54 @@ def materialize_funding_decisions(df: pl.DataFrame) -> Iterator[FundingDecision]
             requested_sale_usd=float(row["requested_sale_usd"]),
             funded_cash_usd=float(row["funded_cash_usd"]),
             shortfall_usd=float(row["shortfall_usd"]),
+            path_set_id=row.get("path_set_id"),
+            exogenous_path_id=row.get("exogenous_path_id"),
+            scenario_input_id=row.get("scenario_input_id"),
+            projection_trajectory_id=row.get("projection_trajectory_id"),
+        )
+
+
+# -- lot dispositions ----------------------------------------------------------
+#
+# One row per tax-lot consumption during a sale (property, SP500 stock, crypto,
+# private equity). Sort key from the legacy `_sorted_lot_dispositions` is
+# `(month, rollout, asset_class, lot_disposition_id)`.
+
+LOT_DISPOSITION_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "lot_disposition_id": pl.String,
+    "journal_entry_id": pl.String,
+    "lot_id": pl.String,
+    "asset_class": pl.String,
+    "proceeds_usd": pl.Float64,
+    "cost_basis_usd": pl.Float64,
+    "realized_gain_usd": pl.Float64,
+    "taxable_gain_usd": pl.Float64,
+    "quantity_sold": pl.Float64,
+    "tax_expense_usd": pl.Float64,
+}
+
+
+def sort_lot_dispositions(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["month_index", "rollout_index", "asset_class", "lot_disposition_id"])
+
+
+def materialize_lot_dispositions(df: pl.DataFrame) -> Iterator[LotDisposition]:
+    for row in df.iter_rows(named=True):
+        yield LotDisposition(
+            lot_disposition_id=row["lot_disposition_id"],
+            journal_entry_id=row["journal_entry_id"],
+            rollout_index=int(row["rollout_index"]),
+            month_index=int(row["month_index"]),
+            lot_id=row["lot_id"],
+            asset_class=LotAssetClass(row["asset_class"]),
+            proceeds_usd=float(row["proceeds_usd"]),
+            cost_basis_usd=float(row["cost_basis_usd"]),
+            realized_gain_usd=float(row["realized_gain_usd"]),
+            taxable_gain_usd=float(row["taxable_gain_usd"]),
+            quantity_sold=row["quantity_sold"],  # nullable
+            tax_expense_usd=float(row["tax_expense_usd"]),
             path_set_id=row.get("path_set_id"),
             exogenous_path_id=row.get("exogenous_path_id"),
             scenario_input_id=row.get("scenario_input_id"),
