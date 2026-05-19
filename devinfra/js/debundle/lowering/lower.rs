@@ -370,9 +370,29 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
 
     for (index, plan) in module_plans.iter().enumerate() {
         let mut body = std::mem::take(&mut selected_by_module[index]);
+        // Per-moved-module plan: each emitted module body is a
+        // separate ES-module scope, so its rename pipeline operates
+        // on its own name pool. Sharing the chunk-wide plan would
+        // surface false-positive cross-module collisions on bindings
+        // that two different moved modules independently use.
+        // Seeded BEFORE naturalize so the plan tracks pre-rename
+        // atoms; naturalize submissions add their targets to the
+        // plan's occupied set.
+        let mut module_plan = super::lowering_plan::LoweringPlan::new(
+            ModuleId::logical(0),
+            Vec::new(),
+            std::iter::once((
+                Scope::Chunk,
+                collect_local_binding_names(&body)
+                    .iter()
+                    .map(|s| Atom::from(s.as_str()))
+                    .collect(),
+            ))
+            .collect(),
+        );
         let local_renames = time_phase!(timings, "module.naturalize_body", {
-            naturalize_module_body(&mut body, plan)
-        });
+            naturalize_module_body(&mut body, plan, &mut module_plan, chunk_top_level_mark)
+        })?;
         let body_facts = time_phase!(timings, "module.collect_body_facts", {
             collect_module_body_facts(&body)
         });
@@ -397,24 +417,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         });
         let mut module_import_renames = BTreeMap::<String, String>::new();
         let mut module_import_locals = collect_local_binding_names(&body);
-        // Per-moved-module plan: each emitted module body is a
-        // separate ES-module scope, so its import-disambiguation
-        // operates on its own name pool — sharing the chunk_plan
-        // would surface false-positive cross-module collisions on
-        // bindings that two different moved modules independently
-        // import.
-        let mut module_plan = super::lowering_plan::LoweringPlan::new(
-            ModuleId::logical(0),
-            Vec::new(),
-            std::iter::once((
-                Scope::Chunk,
-                module_import_locals
-                    .iter()
-                    .map(|s| Atom::from(s.as_str()))
-                    .collect(),
-            ))
-            .collect(),
-        );
         let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
             let mut ctx = super::imports_cross::RenameContext {
                 plan: &mut module_plan,
