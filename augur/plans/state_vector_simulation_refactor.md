@@ -52,43 +52,193 @@ but the abstractions are missing.
 
 ## The target architecture
 
-### Single working state object
+### Single working state object — agent-centric
 
 ```python
 @dataclass(frozen=True)
 class SimulationState:
     """Working state at one month boundary. All numeric fields are
-    `(rollouts,)` numpy vectors; multi-asset / multi-account state lives
-    in per-(account_id) / per-(asset_id) dicts of vectors. The
-    simulation loop reads/writes `SimulationState` once per month;
-    matrices are *derived* at end-of-simulation from the action log."}
+    `(rollouts,)` numpy vectors. `agents` is keyed by actor_id;
+    `properties` is keyed by property_id and carries the shared
+    real-world facts about each property (every agent sees the same
+    property value, depreciation, live status). The simulation loop
+    reads/writes `SimulationState` once per month; persistent frames
+    are *derived* at end-of-simulation from the action logs."""
 
-    month_index: int  # absolute calendar month
-    # Cash balances per account (account_id → (rollouts,))
-    cash_by_account: pmap[str, np.ndarray]
-    # Asset holdings per asset_id
-    holdings: pmap[str, _AssetHolding]
-    # Liability balances per liability_id
-    liabilities: pmap[str, _LiabilityState]
-    # Property state per property_id (depreciation taken, live mask, etc.)
-    properties: pmap[str, _PropertyState]
-    # Partner equity per agreement_id
-    partner_equity: pmap[str, _PartnerEquityState]
-
+    month_position: int
+    agents: dict[str, AgentState]            # by actor_id
+    properties: dict[str, PropertyState]     # by property_id
 
 @dataclass(frozen=True)
-class _AssetHolding:
+class AgentState:
+    """Per-agent state: accounts they own, assets they hold, debts
+    they owe, stakes they hold in shared properties."""
+    actor_id: str
+    cash_by_account: dict[str, np.ndarray]   # account_id → (rollouts,) balance
+    holdings: dict[str, AssetHolding]        # asset_id → AssetHolding
+    liabilities: dict[str, LiabilityState]   # liability_id → LiabilityState
+    property_stakes: dict[str, PropertyStake] # property_id → PropertyStake
+
+@dataclass(frozen=True)
+class AssetHolding:
     asset_id: str
-    asset_kind: AssetKind   # SP500 | CRYPTO_<symbol> | PRIVATE_EQUITY:<holding>
-    units: np.ndarray       # (rollouts,)
-    basis_usd: np.ndarray   # (rollouts,)
-    # mark-to-market unit price computed on demand from market frame
+    asset_kind: AssetKind  # GENERIC_SP500 | CRYPTO | PRIVATE_EQUITY
+    units: np.ndarray      # (rollouts,)
+    basis_usd: np.ndarray  # (rollouts,)
+
+@dataclass(frozen=True)
+class PropertyState:
+    """Per-property facts shared across all agents at this month."""
+    property_id: str
+    live: np.ndarray                         # (rollouts,) — 1.0 alive, 0.0 post-sale
+    value_usd: np.ndarray                    # current mark-to-market
+    cumulative_depreciation_usd: np.ndarray
+
+@dataclass(frozen=True)
+class PropertyStake:
+    """One agent's relationship to one property at the current month."""
+    property_id: str
+    ownership_pct: np.ndarray
+    contribution_used_usd: np.ndarray
+    equity_ledger_usd: np.ndarray
+
+@dataclass(frozen=True)
+class LiabilityState:
+    """A debt owed by an agent. `property_id` is non-null when the
+    liability is secured against a property (mortgages); None for
+    unsecured liabilities (tax_payable, ...)."""
+    liability_id: str
+    liability_kind: LiabilityKind  # MORTGAGE | TAX_PAYABLE
+    property_id: str | None
+    principal_usd: np.ndarray
+    interest_accrued_this_month_usd: np.ndarray
+    principal_paid_this_month_usd: np.ndarray
 ```
 
-`pmap` is `pyrsistent.pmap` (or plain `dict` if performance allows;
-state is rebuilt at each step). State is **immutable** between steps —
-each month produces a new `SimulationState` from the previous one + the
-month's actions. No mutation in place.
+Plain `dict` for the per-step nesting (state is rebuilt at each step,
+so immutability is structural via the frozen dataclass — not via
+persistent maps). Each step produces a new `SimulationState` from the
+previous one + the month's actions; no in-place mutation.
+
+**Single-actor scenarios** still go through `state.agents` — the dict
+has one entry keyed by `primary_owner_actor_id`. Owner-plus-partner
+scenarios add a second entry for the partner; the partner typically
+has empty `cash_by_account` / `holdings` / `liabilities` and only a
+`property_stakes` entry.
+
+### Derived persistent frames (long-form, one per kind)
+
+The in-memory `SimulationState` is the _working representation_;
+persistent state is held in **long-form polars frames** that
+downstream consumers (materializers, fan charts, the wire
+`ScenarioRunArrays` shape) read from. Each frame is keyed by
+`(rollout_index, month_index, ...entity-id-columns...)` with one row
+per leaf in the `SimulationState` tree:
+
+```
+cash_balance_frame:
+  rollout_index  i64
+  month_index    i64
+  actor_id       str
+  account_id     str
+  balance_usd    f64
+
+asset_holding_frame:
+  rollout_index  i64
+  month_index    i64
+  actor_id       str
+  asset_id       str
+  asset_kind     str   -- SP500 | CRYPTO | PRIVATE_EQUITY (discriminator)
+  units          f64
+  basis_usd      f64
+
+liability_frame:
+  rollout_index                    i64
+  month_index                      i64
+  actor_id                         str
+  liability_id                     str
+  liability_kind                   str  -- MORTGAGE | TAX_PAYABLE
+  property_id                      str? -- non-null when secured
+  principal_usd                    f64
+  interest_accrued_this_month_usd  f64
+  principal_paid_this_month_usd    f64
+
+property_stake_frame:
+  rollout_index          i64
+  month_index            i64
+  actor_id               str
+  property_id            str
+  ownership_pct          f64
+  contribution_used_usd  f64
+  equity_ledger_usd      f64
+
+property_state_frame:
+  rollout_index                 i64
+  month_index                   i64
+  property_id                   str
+  live                          f64
+  value_usd                     f64
+  cumulative_depreciation_usd   f64
+```
+
+**No column duplication per entity.** Adding a partner doesn't widen
+the schema (no `partner_cash_usd` column) — it adds rows where
+`actor_id="partner"`. Adding a second property doesn't widen the
+schema — it adds rows where `property_id="property_2"`. Asset kinds
+(SP500/crypto/PE) don't get their own columns; they're a
+discriminator value in `asset_kind`, and `units` / `basis_usd` carry
+whatever units the kind expresses. Cardinality goes into row count,
+not column count. The schema cost of supporting any number of
+agents/accounts/assets/properties is **one extra key column per
+dimension** — fixed.
+
+### Today's dense matrices are projections
+
+The current `cash` `(rollouts, months)` matrix corresponds to:
+
+```python
+cash_balance_frame
+    .filter(pl.col("actor_id") == primary_owner_actor_id,
+            pl.col("account_id") == "checking")
+    .pivot(values="balance_usd", index="rollout_index", on="month_index")
+    .to_numpy()
+```
+
+i.e. a 2D slice for one specific `(actor_id, account_id)` pair.
+`remaining_sp500_units_by_month` projects out the
+`(actor_id=primary_owner, asset_id="sp500")` slice of
+`asset_holding_frame.units`, and so on. Wire compatibility with
+`ScenarioRunArrays` is preserved by projecting these views at
+materialize time; the frame underneath generalizes to multi-account /
+multi-asset / multi-agent without re-shaping the wire schema.
+
+### From in-memory state to persistent frames
+
+The state-frame schemas above don't need to be built by walking
+`SimulationState` snapshots month-by-month. They get derived once
+at end-of-simulation from the **append-only logs** below, with
+running balances computed by `cum_sum().over(...)`:
+
+```python
+cash_balance_frame = (
+    cashflow_log
+    .group_by(["rollout_index", "actor_id", "account_id", "month_index"])
+    .agg(pl.col("amount_delta_usd").sum())
+    .with_columns(
+        balance_usd=initial_balance_usd
+        + pl.col("amount_delta_usd").cum_sum().over(
+            ["rollout_index", "actor_id", "account_id"]
+        )
+    )
+)
+```
+
+Same shape derivation applies to `asset_holding_frame` (cumulative
+deltas over `asset_change_log`), `liability_frame` (over
+`liability_log`), and `property_stake_frame` (over
+`property_stake_log`). `property_state_frame` is built from scenario
+inputs + market paths, not from a log — its rows are facts, not
+events.
 
 ### Append-only logs (the actual sources of truth)
 
@@ -102,36 +252,47 @@ read from the logs (and from initial state).
 | ------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `rollout_index`    | i64  | 5                                                                                                                                                                 |
 | `month_index`      | i64  | 42                                                                                                                                                                |
+| `actor_id`         | str  | `"owner"`, `"partner"` — owning agent of the account                                                                                                              |
 | `account_id`       | str  | `"checking"`, `"savings"`                                                                                                                                         |
 | `amount_delta_usd` | f64  | +2500 (rental income), −1247.88 (mortgage payment)                                                                                                                |
 | `cause_kind`       | str  | `RENTAL_INCOME`, `MORTGAGE_PAYMENT`, `PROPERTY_TAX_SETTLEMENT`, `SP500_SALE_PROCEEDS`, `PARTNER_CONTRIBUTION`, `OBLIGATION_PAYMENT`, `ANNUAL_TAX_SETTLEMENT`, ... |
 | `cause_id`         | str  | `"obligation:property_tax:rollout:5:month:42"`                                                                                                                    |
-| `actor_id`         | str? | `"owner"`, `null`                                                                                                                                                 |
 | `obligation_id`    | str? | linked obligation, null if not from an obligation                                                                                                                 |
 
-Cash at month M for rollout R, account A:
+Cash at month M for rollout R, agent A, account C:
 
 ```python
-initial_cash[A] + cashflow_log
+initial_cash[A, C] + cashflow_log
     .filter(pl.col("month_index") <= M)
     .filter(pl.col("rollout_index") == R)
-    .filter(pl.col("account_id") == A)
+    .filter(pl.col("actor_id") == A)
+    .filter(pl.col("account_id") == C)
     .select(pl.col("amount_delta_usd").sum())
 ```
 
-In vector form (matrix derivation):
+In vector form (running-balance derivation):
 
 ```python
-cash_matrix = (cashflow_log
-    .group_by(["rollout_index", "account_id", "month_index"])
+cash_balance_frame = (cashflow_log
+    .group_by(["rollout_index", "actor_id", "account_id", "month_index"])
     .agg(pl.col("amount_delta_usd").sum())
-    .sort(["rollout_index", "account_id", "month_index"])
+    .sort(["rollout_index", "actor_id", "account_id", "month_index"])
     .with_columns(
-        balance_usd=pl.col("amount_delta_usd").cum_sum().over(["rollout_index", "account_id"])
+        balance_usd=pl.col("amount_delta_usd").cum_sum().over(
+            ["rollout_index", "actor_id", "account_id"]
+        )
         + pl.col("initial_balance_usd")
     )
 )
 ```
+
+> **Phase 2 caveat.** The Phase 2 cashflow log scaffold in
+> `augur/core/action_log.py` does _not_ yet include the `actor_id`
+> column — scheduled cashflows fold to a single-account log keyed by
+> `account_id` only. Add `actor_id` as a non-null column (and rebuild
+> the fold + `derive_cash_matrix` to group by it) before Phase 5
+> wires emission from the policy chain, since by then multi-agent
+> scenarios start producing rows for different actors.
 
 #### `asset_change_log` — every change to an asset position
 
@@ -139,8 +300,9 @@ cash_matrix = (cashflow_log
 | ------------------- | ---- | ------------------------------------------------------------------------------------ |
 | `rollout_index`     | i64  | 5                                                                                    |
 | `month_index`       | i64  | 42                                                                                   |
+| `actor_id`          | str  | `"owner"` — owning agent of the asset                                                |
 | `asset_id`          | str  | `"sp500_brokerage"`, `"pe_holding_1"`                                                |
-| `asset_kind`        | str  | `SP500`, `CRYPTO`, `PRIVATE_EQUITY`                                                  |
+| `asset_kind`        | str  | `GENERIC_SP500`, `CRYPTO`, `PRIVATE_EQUITY`                                          |
 | `delta_units`       | f64  | −12.5 (sold) or +3.4 (bought)                                                        |
 | `delta_basis_usd`   | f64  | −5000 (sold) or +1700 (bought)                                                       |
 | `cash_proceeds_usd` | f64  | +5247 (sale) or −1700 (purchase)                                                     |
@@ -167,17 +329,39 @@ asset_type]).
 | ---------------------- | ---- | -------------------------------------------- |
 | `rollout_index`        | i64  |                                              |
 | `month_index`          | i64  |                                              |
+| `actor_id`             | str  | `"owner"` — agent who owes this liability    |
 | `liability_id`         | str  | `"mortgage:property_1"`                      |
 | `liability_kind`       | str  | `MORTGAGE`, `TAX_PAYABLE`                    |
+| `property_id`          | str? | non-null when secured against a property     |
 | `delta_principal_usd`  | f64  | −1247.88 (amortization), +1.5M (origination) |
 | `interest_accrued_usd` | f64  | per-month interest                           |
 | `interest_paid_usd`    | f64  | settled interest portion of payment          |
 | `cause_kind`           | str  |                                              |
 | `cause_id`             | str  |                                              |
 
-Mortgage balance at month M = initial + cum_sum(delta_principal).
+Mortgage balance at month M = initial + `cum_sum(delta_principal).over(
+"rollout_index", "actor_id", "liability_id")`.
 
-#### `property_state_log` — depreciation taken, owner-occupied mask
+#### `property_stake_log` — partner-equity-style stake changes per (agent, property)
+
+| column                        | type | example                                     |
+| ----------------------------- | ---- | ------------------------------------------- |
+| `rollout_index`               | i64  |                                             |
+| `month_index`                 | i64  |                                             |
+| `actor_id`                    | str  | `"owner"`, `"partner"`                      |
+| `property_id`                 | str  |                                             |
+| `delta_contribution_used_usd` | f64  | this-month change in contribution           |
+| `delta_equity_ledger_usd`     | f64  | this-month change in equity ledger          |
+| `ownership_pct_after`         | f64  | snapshot after the event (rebased on sale)  |
+| `cause_kind`                  | str  | `PARTNER_CONTRIBUTION`, `STAKE_SALE_REBASE` |
+| `cause_id`                    | str  |                                             |
+
+`ownership_pct` is logged as a snapshot rather than a delta because the
+post-sale `_settle_partner_equity_on_property_sale(...)` mutation
+rebases the ledger rather than additively adjusting it — additive
+deltas don't compose cleanly across the sale boundary.
+
+#### `property_state_log` — depreciation taken, occupancy, value
 
 | column                    | type | notes                             |
 | ------------------------- | ---- | --------------------------------- |
@@ -191,9 +375,13 @@ Mortgage balance at month M = initial + cum_sum(delta_principal).
 | `rental_active`           | bool |                                   |
 | `unit_value_usd`          | f64  | current mark                      |
 
+No `actor_id` — properties are shared real-world objects, not
+agent-owned. Multi-agent ownership is captured by per-agent
+`property_stake_log` rows, not by replicating property facts.
 Property-cashflow effects (rental income, expenses, mortgage payment)
-land in `cashflow_log` as separate rows; `property_state_log` is just
-the depreciation/value/occupancy state.
+land in `cashflow_log` as separate rows with the receiving agent's
+`actor_id`; `property_state_log` is just the
+depreciation/value/occupancy state.
 
 #### `accounting_trace` — kept
 
@@ -460,6 +648,17 @@ At end of simulation, build the `cash` matrix from the log via
 `cum_sum().over(...)` and assert it matches the maintained version
 (under `--check-derive`). Once stable, remove the maintained version
 and use the derived one.
+
+> **Followup before Phase 5 emission lands.** The Phase 2 scaffold
+> shipped (`augur/core/action_log.py`) without an `actor_id` column —
+> scheduled cashflows fold to a single-account log keyed only by
+> `account_id`. Add `actor_id` to `CASHFLOW_LOG_SCHEMA` (non-null),
+> thread it through `build_cashflow_log_from_scheduled(...)` and
+> `derive_cash_matrix(...)` (group by it in the `cum_sum`), and do
+> the same up-front for `asset_change_log` / `liability_log` /
+> `property_stake_log` when those land. Without it, Phase 5 hits
+> multi-agent scenarios producing rows for different actors and the
+> derivation collapses them.
 
 ### Phase 3: PE + properties + liabilities
 
