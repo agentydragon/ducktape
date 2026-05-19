@@ -206,119 +206,19 @@ mock browser bundle. Extend to:
 - Unusual dynamic import forms.
 - HTML/runtime asset layouts outside the current corpus.
 
-## Rename pipeline: collect → validate → execute _once_
+## Rename + lowering pipeline: collect → validate → execute _once_
 
-The naturalizer / lowerer currently mutates identifiers in place across
-several independently-discovered passes and lets every downstream consumer
-(import planning, cross-module binding lookup, fact collection,
-source-map fragment emission, export tables) read whatever name happens
-to exist when _it_ runs. PR #1627 (`object_literal_import_collapse_test`,
-fixed by e0b9c7f) and PR #1631
-(`object_literal_return_shorthand_drops_import_test`, fixed by the
-heuristic-rename reverse-lookup at
-`lowering/plan_references.rs::plan_module_reference_needs`) are both symptoms of
-the same shape: a rename happened in one layer and a downstream layer
-keyed off the wrong-era name. Each fix has been a localized defensive
-patch on the consumer side, which leaves the same trap waiting for the
-next consumer that doesn't yet know about the rename.
+Design fleshed out at <../../../plans/debundler_rename_lowering_pipeline.md>.
+Generalises beyond renames to cover declaration moves, import-specifier
+rewrites, export additions, and hoist reordering — same plan-check-execute
+seam for every lowering mutation. Tracks the migration path from today's
+scattered in-place mutators (PR #1627 / PR #1631 are the canonical
+"wrong-era name" symptoms) to a single plan value collected across all
+contributors and consumed by a single execute pass.
 
-The proposed architectural fix is a single **collect → validate → execute
-(once)** rename pipeline:
-
-- **Collect**: every rename contributor submits _intents_ into a single
-  buffer instead of mutating the AST. Contributors include explicit
-  spec-specified renames, naturalizer heuristics (return-object alias
-  inference, shorthand-collapse readback, future readable-name
-  autonaming), import-induced renames (`{ sA as propKeyA }`),
-  collision-resolution renames, and chunk-level renames produced by
-  factorize. Each intent is `(scope, original_name, new_name, reason,
-priority, invariants_it_assumes)`.
-
-- **Validate**: resolve conflicts deterministically before any AST
-  mutation. Priority order is explicit > import-induced > heuristic.
-  Surface contradictions (`sA → propKeyA` _and_ `sA → propKeyB` in the
-  same scope) as hard errors at validation time, not as silent
-  last-write-wins behavior at AST mutation time. Output is a stable,
-  read-only mapping `(scope, original_name) → final_name` and the
-  inverse `(scope, final_name) → original_name`.
-
-- **Execute once**: one pass applies the resolved mapping to the AST
-  _and_ updates every fact table (`runtime_imports`, `referenced_idents`,
-  export tables, source-map fragments, cross-module binding indexes) in
-  lockstep, keyed by the original name. After execute, no later pass
-  invents a rename — every consumer that needs to bridge between
-  pre-rename and post-rename names consults the same finalized mapping.
-
-Direct consequence: the family of "X-layer renamed it, Y-layer didn't
-notice" bugs collapses to one architectural seam. The
-`plan_module_reference_needs` reverse-lookup that fixes #1631 becomes
-dead code (the final mapping makes both the body AST and the
-`runtime_imports` map agree on a single set of names before planning
-runs), and similarly `normalize_relative_module_specifier` from the
-#1627 fix could rejoin a normal path-building step rather than living as
-a defensive sanitizer at the usage site.
-
-Prerequisite work before designing the pipeline:
-
-1. Inventory every current rename contributor in `lowering/` and
-   adjacent files. Examples already known:
-   `collect_return_object_alias_renames` and
-   `collect_naturalization_renames_from_function` in
-   `lowering/naturalize.rs`; `RenameAndShorthandNaturalizer` and
-   `naturalize_object_literal_shorthand` in `lowering/visitors.rs`;
-   `disambiguate_import_locals` in `lowering/util.rs`; the chunk-level
-   `chunk_renames` map that flows out of factorize; and any
-   collision-resolution code path that mutates `module_import_renames`
-   at the orchestration site. Capture each contributor's _kind_
-   (explicit / heuristic / collision / chunk-level), _scope_ (function
-   / module / chunk / cross-chunk), and _current side-effect surface_.
-
-2. Inventory every downstream consumer that today reads identifier
-   names off the AST or off pre-rename fact maps. Same call sites that
-   currently need defensive bridging.
-
-3. Decide on the scope model. Per-function naturalizer renames don't
-   need to be visible at chunk scope; chunk_renames don't need to
-   reach per-function naturalizer collection. The intent buffer should
-   reject cross-scope writes by construction.
-
-4. Design must not block on landing #1631-style defensive fixes — those
-   should land case by case as they're discovered, with this TODO
-   updated to note when a defensive patch becomes architecturally
-   redundant. Removing the defensive patches is part of the
-   pipeline-landing cleanup, not the architecture work itself.
-
-Likely multiple PRs.
-
-## RenameLedger (PR2) open questions
-
-Before implementing the "Rename pipeline: collect → validate →
-execute _once_" architecture above, pin these three design questions:
-
-1. **Conflict policy for same-priority heuristic disagreements.** When
-   two heuristic contributors propose conflicting renames at the same
-   priority (e.g. `collect_return_object_alias_renames` says `sA →
-propKeyA` and `collect_naturalization_renames_from_function` says
-   `sA → propKeyB`), does the ledger panic at seal citing both
-   submitters, or silently suppress the lower one? Default proposal:
-   panic loudly, with both contributors named in the error — silent
-   suppression is the trap PR2 is meant to close.
-2. **Disambiguation name minter.** `disambiguate_import_locals` today
-   appends `_1`, `_2`, ... suffixes until a free name is found. When
-   that becomes a `RenameLedger` method (so the ledger owns "what
-   names are taken in this chunk"), does the scheme stay as-is, or
-   switch to something more readable (`name_from_module`, etc.)?
-   Default proposal: keep `_N` scheme; readability is a separate
-   concern best handled by a later naturalizer pass.
-3. **Structural mutations during COLLECT.** Today
-   `materialize_logical_modules` moves declarations between modules
-   in-place during the collect phase. Tighten the contract to either:
-   - "no structural moves between seal and execute" (pragmatic — most
-     moves already happen pre-seal, and the type-level barrier
-     `&Module` in non-execute passes lands cleanly), or
-   - "all structural moves pre-COLLECT" (cleaner architecturally but
-     requires reordering the materializer to compute a final body
-     order before any rename intents are submitted).
+Cross-references PR1631's `plan_module_reference_needs` reverse-lookup
+and PR1627's `normalize_relative_module_specifier` as the two defensive
+patches the pipeline retires.
 
 <!--
 The "Migrate BindingName = String → swc's hygiene-preserving Id"
