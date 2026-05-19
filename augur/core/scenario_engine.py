@@ -1979,13 +1979,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
 
     state = _build_state(month_position=-1, month_col=0)
 
-    # Phase 4b: TaxActor + obligation accumulators constructed before
-    # the main loop. Estimated and annual tax obligations emit at their
-    # natural months inside the loop (quarterly markers + year-end
-    # true-up), routed through the same
+    # TaxActor + obligation accumulators constructed before the main
+    # loop. Estimated and annual tax obligations emit at their natural
+    # months inside the loop (quarterly markers + year-end true-up),
+    # routed through the same
     # `_settle_required_cash_obligation_at_month_position` path used
-    # for property-cost obligations. Replaces the post-loop
-    # `_settle_required_cash_obligations` sweep.
+    # for property-cost obligations.
     #
     # Year-0 behavior: when `tax_profile.prior_year_tax_usd` is None,
     # no quarterly obligations emit for year 0; the year-end true-up
@@ -2030,12 +2029,9 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         amount_due_usd=np.zeros((rollout_count, month_count), dtype="float64"),
     )
-    # Mortgage / special-assessment / outside-rent obligations: today's
-    # post-loop `_settle_required_cash_obligations(...)` calls are
-    # equivalent to per-iteration inline settlement (each iterates
-    # months internally; settlement order within a month was always
-    # main-loop-property-cost → mortgage → special_assessment →
-    # outside_rent). Move inline so the engine is a single forward DAG.
+    # Mortgage / special-assessment / outside-rent obligation accumulators
+    # constructed pre-loop; per-month settlement happens inline in the main
+    # month loop in the order property-cost → tax → partner.
     mortgage_payment_due = property_cash_flow.column("mortgage_payment_usd") * property_live_mask
     mortgage_accumulator: _ObligationFundingAccumulator | None = None
     if scenario.property_selection.property_id is not None:
@@ -4629,7 +4625,14 @@ class _SaleDecisionMatrices:
 
 @dataclass
 class _ObligationFundingAccumulator:
-    """Per-`_settle_required_cash_obligations` call state.
+    """Per-obligation-kind state aggregated across the main month loop.
+
+    One accumulator per obligation kind (mortgage / special / outside_rent /
+    estimated tax / annual tax / partner contribution). The engine settles
+    each month inline via `_settle_required_cash_obligation_at_month_position`,
+    which writes per-month decisions into the accumulator's
+    `(rollouts, months)` matrices. Post-loop the accumulator emits its
+    full row block to the obligation + funding-decision event streams.
 
     The outer per-month loop is sequential, but every settlement op
     inside it is `(rollouts,)` numpy-vectorized — `paid_from_cash =
@@ -4864,9 +4867,7 @@ class _ObligationSettlementResult:
     """1D per-rollout state returned by
     `_settle_required_cash_obligation_at_month_position`. All fields are
     `(rollouts,)` numpy vectors. The main month loop threads these back into
-    its 1D `current_cash` / `remaining_*` locals; the post-loop wrapper
-    `_settle_required_cash_obligations` writes them into matrix `[:, M]`
-    snapshots and forward-propagates to later months explicitly."""
+    its 1D `current_cash` / `remaining_*` locals for the next iteration."""
 
     cash_usd: np.ndarray
     remaining_sp500_units: np.ndarray
@@ -4979,7 +4980,7 @@ class _PartnerSettlementContext:
 class _ObligationFundingSources:
     """Per-actor lookups for cash/SP500/crypto/PE sources used in obligation settlement.
 
-    Cached once at the top of `_settle_required_cash_obligations` so the per-month
+    Cached once per obligation accumulator (pre-main-loop) so the per-month
     helper does not re-scan the balance sheet for every month/obligation pair.
     `pe_public_market_regime` is set only when the scenario's PE positions share a
     `PublicMarket` regime, which is the only regime that can fund obligations via
@@ -5046,9 +5047,7 @@ def _settle_required_cash_obligation_at_month_position(
     Takes 1D `(rollouts,)` state vectors for cash/units/basis/value as the
     pre-settlement balance at `month_position`; returns the post-settlement
     balance as `_ObligationSettlementResult`. The caller threads the result
-    back into its working state (1D locals in the main month loop; matrix
-    columns + explicit forward propagation in
-    `_settle_required_cash_obligations`).
+    back into its 1D working-state locals for the next iteration.
 
     Single-month accumulator matrices (`crypto_sale_usd`,
     `crypto_sale_basis_usd`, `checking_floor_shortfall_usd`,
@@ -5231,13 +5230,14 @@ def _settle_required_cash_obligation_at_month_position(
                 basis_sold = np.maximum(
                     0.0, pe_state.remaining_basis_by_month[:, month_position] - pe_application.remaining_basis_usd
                 )
-                # PE state stays matrix-backed because the post-loop
-                # `_settle_required_cash_obligations` wrapper reads
-                # `pe_state.remaining_*_by_month[:, M+1]` at the next iteration
-                # (and successive settlement calls for other obligation kinds
-                # read these matrices too). Forward-propagate units/basis and
-                # multiplier-scaled value here so the next consumer sees the
-                # post-sale state.
+                # PE state is matrix-backed (TODO G5: migrate to 1D state-in/out
+                # like cash/SP500/crypto). Successive settlement calls within
+                # the same main-loop iteration read `pe_state.remaining_*_by_month
+                # [:, month_position]` to see prior settlement's post-sale state,
+                # so forward-propagate units/basis and multiplier-scaled value
+                # here. The `[:, M+1:]` slice writes are scratchpad and the
+                # main-loop's end-of-month snapshot overwrites `[:, M]` from
+                # the engine's PE 1D locals.
                 pe_state.remaining_units_by_month[:, month_position:] = np.maximum(
                     0.0, pe_state.remaining_units_by_month[:, month_position:] - units_sold[:, None]
                 )
@@ -5669,8 +5669,8 @@ def _property_cash_flow_arrays(
     horizon_months = n_months_plus_one - 1
     zeros = np.zeros_like(property_value_usd, dtype="float64")
     mortgage_payment = mortgage_interest_usd + mortgage_principal_usd
-    # Mortgage payments are settled through the obligation pipeline in
-    # _settle_required_cash_obligations, not directly through net_property_cash_flow_usd.
+    # Mortgage payments are settled inline in the main month loop via the
+    # obligation pipeline, not directly through net_property_cash_flow_usd.
     # The mortgage_payment_usd is retained on this array for reporting parity, but the
     # operating cash flow stops at carrying cost minus rental income.
     if scenario.property_selection.property_id is None:

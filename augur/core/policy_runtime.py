@@ -602,7 +602,7 @@ def apply_property_operating_cash_flows(
     """Emit the property operating-cash-flow JE for rental income net of rental fees.
 
     Property tax, HOA, insurance, and maintenance are required cash demands that
-    settle through the obligation pipeline (`_settle_required_cash_obligations`),
+    settle through the obligation pipeline inline in the main month loop,
     not directly through this JE. Each of those four cost lines becomes its own
     `ObligationType` variant so the trace explains who owes what to whom and the
     actor's funding-policy chain can attempt to rescue a shortfall. The cost

@@ -1,6 +1,5 @@
 """Per-actor tax accumulator that emits tax obligations during the main
-month loop, replacing the post-loop `_settle_required_cash_obligations`
-sweep for estimated and annual taxes.
+month loop.
 
 The state-vector simulation refactor (Phase 4) treats taxes as an actor
 that observes taxable events month by month and emits obligations at

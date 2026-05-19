@@ -875,8 +875,9 @@ def _property_obligation_scenario(
 ) -> Scenario:
     """A minimal property scenario that exercises the property carrying-cost
     obligation pipeline. Per-line costs (property tax, HOA, insurance,
-    maintenance) settle through `_settle_required_cash_obligations` and may
-    fail the rollout if cash and funding policies cannot cover them.
+    maintenance) settle inline in the main month loop via the obligation
+    pipeline and may fail the rollout if cash and funding policies cannot
+    cover them.
 
     `hoa_monthly_usd` is conveyed via a `PropertyPurchaseEvent` (the canonical
     HOA-monthly knob); 0 means HOA stays at the location default.
