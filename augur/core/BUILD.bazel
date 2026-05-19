@@ -196,6 +196,27 @@ py_library(
     ],
 )
 
+py_library(
+    name = "action_log_py",
+    srcs = ["action_log.py"],
+    deps = [
+        ":scheduled_cashflows_py",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "action_log_test",
+    srcs = ["action_log_test.py"],
+    deps = [
+        ":action_log_py",
+        ":scheduled_cashflows_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "simulation_state_test",
     srcs = ["simulation_state_test.py"],
