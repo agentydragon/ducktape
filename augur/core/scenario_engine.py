@@ -4235,7 +4235,8 @@ class _ObligationFundingAccumulator:
 
     @property
     def unpaid_amount_usd(self) -> np.ndarray:
-        return np.maximum(0.0, self.amount_due_usd - self.amount_paid_usd)
+        unpaid: np.ndarray = np.maximum(0.0, self.amount_due_usd - self.amount_paid_usd)
+        return unpaid
 
     def record_cash_decision(self, *, month_position: int, available_cash: np.ndarray, funded_cash: np.ndarray) -> None:
         self.cash_available_usd[:, month_position] = available_cash
