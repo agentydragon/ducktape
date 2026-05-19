@@ -425,6 +425,9 @@ _MONTHLY_COLUMN_SPECS = (
     MonthlyColumnSpec(ReportMetric.CRYPTO_SALE_BASIS_USD, MonthlyColumnSource.LEDGER_ENTRY, "basis/crypto_sale_basis"),
     MonthlyColumnSpec(ReportMetric.CRYPTO_SALE_GAIN_USD, MonthlyColumnSource.REPORT_PROJECTION, "sale - basis"),
     MonthlyColumnSpec(
+        ReportMetric.CRYPTO_SALE_TAX_USD, MonthlyColumnSource.LEDGER_ENTRY, "tax/generic_crypto_sale_tax"
+    ),
+    MonthlyColumnSpec(
         ReportMetric.CHECKING_FLOOR_ACTION_USD, MonthlyColumnSource.LEDGER_ENTRY, "asset/generic_sp500_sale"
     ),
     MonthlyColumnSpec(
@@ -668,6 +671,7 @@ _TERMINAL_COLUMN_SPECS: tuple[_TerminalSpec, ...] = (
     _TerminalSpec("total_generic_sp500_sale_basis_usd", "generic_sp500_sale_basis_usd", _TerminalAggregation.TOTAL),
     _TerminalSpec("total_generic_sp500_sale_gain_usd", "generic_sp500_sale_gain_usd", _TerminalAggregation.TOTAL),
     _TerminalSpec("total_generic_sp500_sale_tax_usd", "generic_sp500_sale_tax_usd", _TerminalAggregation.TOTAL),
+    _TerminalSpec("total_crypto_sale_tax_usd", "crypto_sale_tax_usd", _TerminalAggregation.TOTAL),
     _TerminalSpec("final_checking_floor_shortfall_usd", "checking_floor_shortfall_usd", _TerminalAggregation.FINAL),
     _TerminalSpec("final_private_equity_value_usd", "private_equity_value_usd", _TerminalAggregation.FINAL),
     _TerminalSpec(
@@ -2380,6 +2384,12 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         for _record in private_equity_sale_action_records[pe_records_idx_at_observe:]:
             if _record.month_position == month:
                 _pe_gain_this_month = _pe_gain_this_month + _record.sale_application.taxable_gain_usd
+        _crypto_gain_this_month = np.zeros(rollout_count, dtype="float64")
+        for _record in crypto_sale_action_records[crypto_records_idx_at_observe:]:
+            if _record.month_position == month:
+                _crypto_gain_this_month = _crypto_gain_this_month + (
+                    _record.column("amount_usd") - _record.column("basis_usd")
+                )
         # Snapshot pre-inline-tax records for this month so post-loop
         # annual_sale_tax_allocation sees the same gains TaxActor used.
         pre_inline_tax_sp500_records.extend(
@@ -2415,6 +2425,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             property_depreciation_recapture_usd=disposition.column("depreciation_recapture_usd")[:, month],
             taxable_property_capital_gain_usd=disposition.column("taxable_property_capital_gain_usd")[:, month],
             generic_sp500_sale_gain_usd=_sp500_gain_this_month,
+            generic_crypto_sale_gain_usd=_crypto_gain_this_month,
             private_equity_sale_taxable_gain_usd=_pe_gain_this_month,
             net_rental_taxable_income_usd=_this_month_rental_taxable_income,
             property_tax_paid_usd=_this_month_property_tax,
@@ -2656,6 +2667,13 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         asset_kind=AssetKindForLog.GENERIC_SP500,
         tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
     )
+    generic_crypto_sale_gain = derive_per_month_taxable_gain_matrix(
+        asset_change_log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_kind=AssetKindForLog.CRYPTO,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
+    )
     private_equity_sale_taxable_gain = derive_per_month_taxable_gain_matrix(
         asset_change_log,
         rollout_count=rollout_count,
@@ -2669,6 +2687,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_depreciation_recapture_usd=disposition.column("depreciation_recapture_usd"),
         taxable_property_capital_gain_usd=disposition.column("taxable_property_capital_gain_usd"),
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
+        generic_crypto_sale_gain_usd=generic_crypto_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
         property_tax_usd=property_tax_for_tax_allocation,
         mortgage_interest_usd=mortgage_interest,
@@ -2676,6 +2695,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         net_rental_taxable_income_usd=net_rental_taxable_income,
     )
     generic_sp500_sale_tax = annual_tax.generic_sp500_sale_tax_usd
+    generic_crypto_sale_tax = annual_tax.generic_crypto_sale_tax_usd
     private_equity_sale_tax = annual_tax.private_equity_sale_tax_usd
     property_sale_tax = annual_tax.property_sale_tax_usd
     # Property sale net proceeds reflect the cash actually received at sale. Tax is
@@ -2771,6 +2791,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         property_depreciation_recapture_usd=disposition.column("depreciation_recapture_usd"),
         taxable_property_capital_gain_usd=disposition.column("taxable_property_capital_gain_usd"),
         generic_sp500_sale_gain_usd=generic_sp500_sale_gain,
+        generic_crypto_sale_gain_usd=generic_crypto_sale_gain,
         private_equity_sale_taxable_gain_usd=private_equity_sale_taxable_gain,
         net_rental_taxable_income_usd=net_rental_taxable_income,
     )
@@ -2804,6 +2825,15 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             shortfall_usd=sp500_sale_action_record.column("shortfall_usd"),
         )
     for crypto_sale_action_record in crypto_sale_action_records:
+        source_tax = _tax_share_for_sale_action(
+            source_tax_usd=generic_crypto_sale_tax[:, crypto_sale_action_record.month_position],
+            action_taxable_income_usd=np.maximum(
+                0.0, crypto_sale_action_record.column("amount_usd") - crypto_sale_action_record.column("basis_usd")
+            ),
+            source_taxable_income_usd=np.maximum(
+                0.0, generic_crypto_sale_gain[:, crypto_sale_action_record.month_position]
+            ),
+        )
         _record_crypto_sale_journal_entries(
             accounting,
             lot_dispositions,
@@ -2813,6 +2843,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             source_asset_id=crypto_sale_action_record.source_asset_id,
             amount_usd=crypto_sale_action_record.column("amount_usd"),
             basis_usd=crypto_sale_action_record.column("basis_usd"),
+            tax_usd=source_tax,
         )
         _record_crypto_sale_effects(
             effects,
@@ -3983,16 +4014,23 @@ def _record_tax_payment_allocation_details(
     property_depreciation_recapture_usd: np.ndarray,
     taxable_property_capital_gain_usd: np.ndarray,
     generic_sp500_sale_gain_usd: np.ndarray,
+    generic_crypto_sale_gain_usd: np.ndarray,
     private_equity_sale_taxable_gain_usd: np.ndarray,
     net_rental_taxable_income_usd: np.ndarray,
 ) -> None:
     property_recapture = np.maximum(0.0, property_depreciation_recapture_usd)
     property_capital_gain = np.maximum(0.0, taxable_property_capital_gain_usd)
     sp500_capital_gain = np.maximum(0.0, generic_sp500_sale_gain_usd)
+    crypto_capital_gain = np.maximum(0.0, generic_crypto_sale_gain_usd)
     private_equity_capital_gain = np.maximum(0.0, private_equity_sale_taxable_gain_usd)
     rental_taxable = np.maximum(0.0, net_rental_taxable_income_usd)
     total_taxable_income = (
-        property_recapture + property_capital_gain + sp500_capital_gain + private_equity_capital_gain + rental_taxable
+        property_recapture
+        + property_capital_gain
+        + sp500_capital_gain
+        + crypto_capital_gain
+        + private_equity_capital_gain
+        + rental_taxable
     )
     active_rollouts, active_month_positions = np.nonzero(
         (annual_tax.total_income_tax_usd != 0) | (total_taxable_income != 0)
@@ -4024,6 +4062,9 @@ def _record_tax_payment_allocation_details(
             "generic_sp500_sale_tax_usd": annual_tax.generic_sp500_sale_tax_usd[rollout_axis, month_axis].astype(
                 np.float64
             ),
+            "generic_crypto_sale_tax_usd": annual_tax.generic_crypto_sale_tax_usd[rollout_axis, month_axis].astype(
+                np.float64
+            ),
             "private_equity_sale_tax_usd": annual_tax.private_equity_sale_tax_usd[rollout_axis, month_axis].astype(
                 np.float64
             ),
@@ -4031,6 +4072,7 @@ def _record_tax_payment_allocation_details(
             "property_depreciation_recapture_usd": property_recapture[rollout_axis, month_axis].astype(np.float64),
             "taxable_property_capital_gain_usd": property_capital_gain[rollout_axis, month_axis].astype(np.float64),
             "generic_sp500_taxable_gain_usd": sp500_capital_gain[rollout_axis, month_axis].astype(np.float64),
+            "generic_crypto_taxable_gain_usd": crypto_capital_gain[rollout_axis, month_axis].astype(np.float64),
             "private_equity_taxable_gain_usd": private_equity_capital_gain[rollout_axis, month_axis].astype(np.float64),
             "net_rental_taxable_income_usd": rental_taxable[rollout_axis, month_axis].astype(np.float64),
             "total_taxable_income_usd": total_taxable_income[rollout_axis, month_axis].astype(np.float64),
@@ -4264,15 +4306,14 @@ def _record_crypto_sale_journal_entries(
     source_asset_id: str,
     amount_usd: np.ndarray,
     basis_usd: np.ndarray,
+    tax_usd: np.ndarray,
 ) -> None:
     """Record crypto sale postings + per-rollout LotDisposition rows.
 
-    The realized gain on the LotDisposition contributes to ordinary income at the
-    annual-tax step; the per-rollout tax_expense_usd is left at 0.0 because the
-    crypto-gain tax does not flow through `annual_sale_tax_allocation` yet — when
-    the tax model grows to allocate crypto gains, this field gets populated the
-    same way the SP500 path does.
-    """
+    The realized gain on the LotDisposition contributes to long-term capital
+    gain at the annual-tax step. `tax_usd` is the per-rollout tax expense
+    attributed to this sale by `annual_sale_tax_allocation` (matching the
+    SP500/PE path)."""
     accounting.record_entry_firings(
         schema=posting_schemas.ASSET_SALE_CRYPTO,
         month_index=month_index,
@@ -4310,7 +4351,7 @@ def _record_crypto_sale_journal_entries(
                 "realized_gain_usd": gains,
                 "taxable_gain_usd": np.maximum(0.0, gains),
                 "quantity_sold": np.full(size, None, dtype=object),
-                "tax_expense_usd": np.zeros(size, dtype=np.float64),
+                "tax_expense_usd": tax_usd[rollouts].astype(np.float64),
             }
         )
 

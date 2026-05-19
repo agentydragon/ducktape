@@ -105,6 +105,7 @@ class ReportMetric(StrEnum):
     CRYPTO_SALE_USD = "crypto_sale_usd"
     CRYPTO_SALE_BASIS_USD = "crypto_sale_basis_usd"
     CRYPTO_SALE_GAIN_USD = "crypto_sale_gain_usd"
+    CRYPTO_SALE_TAX_USD = "crypto_sale_tax_usd"
     CHECKING_FLOOR_ACTION_USD = "checking_floor_action_usd"
     CHECKING_FLOOR_SHORTFALL_USD = "checking_floor_shortfall_usd"
     PRIVATE_EQUITY_VALUE_USD = "private_equity_value_usd"

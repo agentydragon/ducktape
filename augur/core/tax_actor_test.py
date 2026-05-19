@@ -76,6 +76,7 @@ def test_observed_capital_gain_drives_year_end_tax() -> None:
         property_depreciation_recapture_usd=np.array([0.0]),
         taxable_property_capital_gain_usd=np.array([0.0]),
         generic_sp500_sale_gain_usd=np.array([100_000.0]),
+        generic_crypto_sale_gain_usd=np.array([0.0]),
         private_equity_sale_taxable_gain_usd=np.array([0.0]),
         net_rental_taxable_income_usd=np.array([0.0]),
         property_tax_paid_usd=np.array([0.0]),

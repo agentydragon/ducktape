@@ -44,6 +44,7 @@ def _empty_arrays(shape: tuple[int, int]) -> dict[str, np.ndarray]:
         "property_depreciation_recapture_usd": zeros.copy(),
         "taxable_property_capital_gain_usd": zeros.copy(),
         "generic_sp500_sale_gain_usd": zeros.copy(),
+        "generic_crypto_sale_gain_usd": zeros.copy(),
         "private_equity_sale_taxable_gain_usd": zeros.copy(),
         "property_tax_usd": zeros.copy(),
         "mortgage_interest_usd": zeros.copy(),

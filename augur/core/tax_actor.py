@@ -81,6 +81,7 @@ class _TaxYearAccumulator:
     property_depreciation_recapture_usd: np.ndarray
     taxable_property_capital_gain_usd: np.ndarray
     generic_sp500_sale_gain_usd: np.ndarray
+    generic_crypto_sale_gain_usd: np.ndarray
     private_equity_sale_taxable_gain_usd: np.ndarray
     net_rental_taxable_income_usd: np.ndarray
     property_tax_paid_usd: np.ndarray
@@ -95,6 +96,7 @@ class _TaxYearAccumulator:
             property_depreciation_recapture_usd=zeros(),
             taxable_property_capital_gain_usd=zeros(),
             generic_sp500_sale_gain_usd=zeros(),
+            generic_crypto_sale_gain_usd=zeros(),
             private_equity_sale_taxable_gain_usd=zeros(),
             net_rental_taxable_income_usd=zeros(),
             property_tax_paid_usd=zeros(),
@@ -156,6 +158,7 @@ class TaxActor:
         property_depreciation_recapture_usd: np.ndarray,
         taxable_property_capital_gain_usd: np.ndarray,
         generic_sp500_sale_gain_usd: np.ndarray,
+        generic_crypto_sale_gain_usd: np.ndarray,
         private_equity_sale_taxable_gain_usd: np.ndarray,
         net_rental_taxable_income_usd: np.ndarray,
         property_tax_paid_usd: np.ndarray,
@@ -169,6 +172,7 @@ class TaxActor:
         accumulator.property_depreciation_recapture_usd += np.maximum(0.0, property_depreciation_recapture_usd)
         accumulator.taxable_property_capital_gain_usd += np.maximum(0.0, taxable_property_capital_gain_usd)
         accumulator.generic_sp500_sale_gain_usd += np.maximum(0.0, generic_sp500_sale_gain_usd)
+        accumulator.generic_crypto_sale_gain_usd += np.maximum(0.0, generic_crypto_sale_gain_usd)
         accumulator.private_equity_sale_taxable_gain_usd += np.maximum(0.0, private_equity_sale_taxable_gain_usd)
         accumulator.net_rental_taxable_income_usd += np.maximum(0.0, net_rental_taxable_income_usd)
         accumulator.property_tax_paid_usd += property_tax_paid_usd
@@ -267,6 +271,7 @@ class TaxActor:
         long_term_capital_gain = (
             accumulator.taxable_property_capital_gain_usd
             + accumulator.generic_sp500_sale_gain_usd
+            + accumulator.generic_crypto_sale_gain_usd
             + accumulator.private_equity_sale_taxable_gain_usd
         )
         salt_deduction = np.minimum(accumulator.property_tax_paid_usd, FEDERAL_SALT_CAP_USD)

@@ -215,6 +215,7 @@ class AnnualSaleTaxAllocation:
     total_income_tax_usd: np.ndarray
     property_sale_tax_usd: np.ndarray
     generic_sp500_sale_tax_usd: np.ndarray
+    generic_crypto_sale_tax_usd: np.ndarray
     private_equity_sale_tax_usd: np.ndarray
     rental_income_tax_usd: np.ndarray
 
@@ -226,6 +227,7 @@ def annual_sale_tax_allocation(
     property_depreciation_recapture_usd: np.ndarray,
     taxable_property_capital_gain_usd: np.ndarray,
     generic_sp500_sale_gain_usd: np.ndarray,
+    generic_crypto_sale_gain_usd: np.ndarray,
     private_equity_sale_taxable_gain_usd: np.ndarray,
     property_tax_usd: np.ndarray,
     mortgage_interest_usd: np.ndarray,
@@ -248,16 +250,20 @@ def annual_sale_tax_allocation(
     california_income_tax = np.zeros(source_shape, dtype="float64")
     property_sale_tax = np.zeros(source_shape, dtype="float64")
     generic_sp500_sale_tax = np.zeros(source_shape, dtype="float64")
+    generic_crypto_sale_tax = np.zeros(source_shape, dtype="float64")
     private_equity_sale_tax = np.zeros(source_shape, dtype="float64")
     rental_income_tax = np.zeros(source_shape, dtype="float64")
 
     property_recapture = np.maximum(0.0, property_depreciation_recapture_usd)
     property_capital_gain = np.maximum(0.0, taxable_property_capital_gain_usd)
     sp500_capital_gain = np.maximum(0.0, generic_sp500_sale_gain_usd)
+    crypto_capital_gain = np.maximum(0.0, generic_crypto_sale_gain_usd)
     private_equity_capital_gain = np.maximum(0.0, private_equity_sale_taxable_gain_usd)
     rental_taxable_income = np.maximum(0.0, net_rental_taxable_income_usd)
     property_taxable_income = property_recapture + property_capital_gain
-    sale_taxable_income = property_taxable_income + sp500_capital_gain + private_equity_capital_gain
+    sale_taxable_income = (
+        property_taxable_income + sp500_capital_gain + crypto_capital_gain + private_equity_capital_gain
+    )
     source_taxable_income = sale_taxable_income + rental_taxable_income
 
     rollout_count = source_shape[0]
@@ -277,9 +283,13 @@ def annual_sale_tax_allocation(
         year_property_recapture = np.sum(property_recapture[:, year_mask], axis=1)
         year_property_capital_gain = np.sum(property_capital_gain[:, year_mask], axis=1)
         year_sp500_capital_gain = np.sum(sp500_capital_gain[:, year_mask], axis=1)
+        year_crypto_capital_gain = np.sum(crypto_capital_gain[:, year_mask], axis=1)
         year_private_equity_capital_gain = np.sum(private_equity_capital_gain[:, year_mask], axis=1)
         year_long_term_capital_gain = (
-            year_property_capital_gain + year_sp500_capital_gain + year_private_equity_capital_gain
+            year_property_capital_gain
+            + year_sp500_capital_gain
+            + year_crypto_capital_gain
+            + year_private_equity_capital_gain
         )
         year_rental_income = np.sum(rental_taxable_income[:, year_mask], axis=1)
         year_source_taxable_income = np.sum(source_taxable_income[:, year_mask], axis=1)
@@ -333,6 +343,9 @@ def annual_sale_tax_allocation(
         generic_sp500_sale_tax[:, year_mask] = _allocate_tax_to_months(
             year_total_tax, sp500_capital_gain[:, year_mask], year_source_taxable_income
         )
+        generic_crypto_sale_tax[:, year_mask] = _allocate_tax_to_months(
+            year_total_tax, crypto_capital_gain[:, year_mask], year_source_taxable_income
+        )
         private_equity_sale_tax[:, year_mask] = _allocate_tax_to_months(
             year_total_tax, private_equity_capital_gain[:, year_mask], year_source_taxable_income
         )
@@ -346,6 +359,7 @@ def annual_sale_tax_allocation(
         total_income_tax_usd=federal_income_tax + california_income_tax,
         property_sale_tax_usd=property_sale_tax,
         generic_sp500_sale_tax_usd=generic_sp500_sale_tax,
+        generic_crypto_sale_tax_usd=generic_crypto_sale_tax,
         private_equity_sale_tax_usd=private_equity_sale_tax,
         rental_income_tax_usd=rental_income_tax,
     )
