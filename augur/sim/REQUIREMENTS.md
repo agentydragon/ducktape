@@ -1281,6 +1281,44 @@ the design that's worth examining before shipping.
   partner is effectively a non-tax-paying co-owner in single-
   primary-agent scenarios).
 
+## Deferred quality improvements
+
+Lower-priority cleanups that aren't blocking any layer but should
+land before the simulator is treated as production-grade.
+
+- **Fixed-point arithmetic for exact-cent quantities.** Cash
+  balances, tax payments, transfer amounts, lot proceeds, and
+  every other dollar quantity that conceptually has a finite
+  cent-precision representation should be carried as `int64` in
+  the relevant base unit, not `float64`. Concretely:
+  - **Cash / dollar columns**: `int64` cents. Every column whose
+    suffix is `_usd` today becomes `_cents` (or stays `_usd`
+    with the dtype change documented). The replay-invariant
+    helper's float-rounding tolerance disappears — equality
+    becomes bit-exact.
+  - **Tax-form line items**: `int64` whole dollars. IRS Form 1040
+    (and the FTB 540 equivalents) instruct you to round to whole
+    dollars on every line, and quarterly estimated vouchers
+    require it. Bracket-walk outputs and accrual amounts should
+    round to whole dollars before being booked / paid.
+  - **Asset quantities with native indivisible units**: carry in
+    the smallest indivisible unit. Bitcoin in satoshis (1 BTC =
+    10^8 sat), fractional shares at the broker's native precision
+    (typically 10^-6 shares), property in whole-square-foot lot
+    sizes if those ever matter.
+  - **Inherently-float quantities**: market prices, GBM log
+    returns, depreciation fractions, bracket rates. These stay
+    `float64`; the engine multiplies them by the integer unit
+    quantities and rounds the result back to the integer
+    representation at settlement boundaries (e.g. `proceeds_cents
+= round_half_even(quantity_units * price_usd_float * 100)`).
+
+  Splits cleanly across the engine boundary: scenario YAML
+  declares dollar / unit amounts; the engine internalizes them as
+  integers; output formatting converts back for the human-readable
+  surfaces. None of the math changes — only the dtypes and the
+  rounding-at-settlement convention do.
+
 ## Open questions
 
 These are still unresolved and need a decision before the relevant
