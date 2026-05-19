@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -76,18 +75,16 @@ from augur.core.scenario_set import (
     LiquidityEventOnly,
     LiquidNetWorthFloorPrivateEquitySaleRule,
     MarketObservation,
-    MonthlySpendDecision,
     MonthlySpendPolicy,
     Obligation,
     ObligationStatus,
     ObligationType,
     OccupancyMode,
-    PartnerContributionDecision,
     PartnerEquityAccrualPolicy,
     Policy,
     PolicyDecision,
+    PolicyDecisionType,
     PrivateEquityPosition,
-    PrivateEquitySaleDecision,
     PrivateEquitySaleDecisionReason,
     PrivateEquitySalePolicy,
     PrivateEquitySaleRule,
@@ -98,7 +95,6 @@ from augur.core.scenario_set import (
     RolloutStatus,
     RolloutStatusType,
     Scenario,
-    SellPublicStockDecision,
     SettlementResult,
     SpecialAssessmentEvent,
     TaxFilingStatus,
@@ -187,7 +183,7 @@ class ScenarioRunArrays:
     crypto_effects_frame: pl.DataFrame
     private_equity_effects_frame: pl.DataFrame
     settle_property_sale_effects_frame: pl.DataFrame
-    policy_decisions: tuple[PolicyDecision, ...]
+    policy_decisions_frame: pl.DataFrame
     market_path_observations_frame: pl.DataFrame
     pe_sale_opportunity_observations_frame: pl.DataFrame
     accounting_trace: AccountingTrace
@@ -217,6 +213,10 @@ class ScenarioRunArrays:
     @property
     def lot_dispositions(self) -> tuple[LotDisposition, ...]:
         return tuple(event_streams.materialize_lot_dispositions(self.lot_dispositions_frame))
+
+    @property
+    def policy_decisions(self) -> tuple[PolicyDecision, ...]:
+        return tuple(event_streams.materialize_policy_decisions(self.policy_decisions_frame))
 
     @property
     def effects(self) -> tuple[Effect, ...]:
@@ -1421,7 +1421,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
             event_streams.SETTLE_PROPERTY_SALE_EFFECT_SCHEMA
         ),
     }
-    policy_decisions: list[PolicyDecision] = []
+    policy_decisions = event_streams.StreamFrameBuilder(event_streams.POLICY_DECISION_SCHEMA)
     market_path_observations_frame = _market_path_observations_frame(scenario, market_bundle)
     pe_sale_opportunity_observations = event_streams.StreamFrameBuilder(
         event_streams.PE_SALE_OPPORTUNITY_OBSERVATION_SCHEMA
@@ -2586,8 +2586,8 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 effects[EffectType.SETTLE_PROPERTY_SALE].build(), trace_identity_frame
             )
         ),
-        policy_decisions=_sorted_policy_decisions(
-            _with_trajectory_identity(policy_decisions, trace_identity_by_rollout)
+        policy_decisions_frame=event_streams.sort_policy_decisions(
+            event_streams.join_trajectory_identity(policy_decisions.build(), trace_identity_frame)
         ),
         market_path_observations_frame=event_streams.sort_market_path_observations(
             event_streams.join_trajectory_identity(market_path_observations_frame, trace_identity_frame)
@@ -2633,16 +2633,6 @@ def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) 
         }
         for rollout_index, exogenous_path_id in enumerate(market_bundle.metadata.exogenous_path_ids)
     }
-
-
-def _with_trajectory_identity[TraceRecordT](
-    records: list[TraceRecordT], identity_by_rollout: Mapping[int, dict[str, str]]
-) -> list[TraceRecordT]:
-    return [cast(TraceRecordT, _copy_with_trajectory_identity(record, identity_by_rollout)) for record in records]
-
-
-def _copy_with_trajectory_identity(record: Any, identity_by_rollout: Mapping[int, dict[str, str]]) -> Any:
-    return record.model_copy(update=identity_by_rollout[int(record.rollout_index)])
 
 
 def _market_path_observations_frame(scenario: Scenario, market_bundle: MarketBundle) -> pl.DataFrame:
@@ -2792,8 +2782,59 @@ def _record_per_issuer_sale_opportunity_observations(
         )
 
 
+_POLICY_DECISION_VARIANT_ONLY_COLUMNS: frozenset[str] = frozenset(event_streams.POLICY_DECISION_SCHEMA) - {
+    "rollout_index",
+    "month_index",
+    "decision_type",
+    "actor_id",
+    "policy_id",
+    "policy_sequence_index",
+}
+
+
+def _policy_decision_block(
+    *,
+    decision_type: PolicyDecisionType,
+    rollouts: np.ndarray,
+    month_index_value: int | np.ndarray,
+    actor_id_per_row: list[str],
+    policy_id_per_row: list[str],
+    policy_sequence_index_per_row: np.ndarray | int,
+    variant_columns: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the dict-of-columns one `PolicyDecision` row-block needs, padded
+    with `None` for variant-specific columns the caller didn't supply.
+    Single source of truth for the wide POLICY_DECISION_SCHEMA so each
+    recorder only spells out the columns its own variant cares about."""
+
+    size = int(rollouts.size)
+    block: dict[str, Any] = {
+        "rollout_index": rollouts.astype(np.int64),
+        "month_index": (
+            np.full(size, int(month_index_value), dtype=np.int64)
+            if not isinstance(month_index_value, np.ndarray)
+            else month_index_value.astype(np.int64)
+        ),
+        "decision_type": [decision_type.value] * size,
+        "actor_id": actor_id_per_row,
+        "policy_id": policy_id_per_row,
+        "policy_sequence_index": (
+            np.full(size, int(policy_sequence_index_per_row), dtype=np.int64)
+            if not isinstance(policy_sequence_index_per_row, np.ndarray)
+            else policy_sequence_index_per_row.astype(np.int64)
+        ),
+    }
+    unexpected = set(variant_columns) - _POLICY_DECISION_VARIANT_ONLY_COLUMNS
+    if unexpected:
+        raise KeyError(f"unknown variant-specific columns: {sorted(unexpected)}")
+    block.update(variant_columns)
+    for missing in _POLICY_DECISION_VARIANT_ONLY_COLUMNS - set(variant_columns):
+        block[missing] = [None] * size
+    return block
+
+
 def _record_monthly_spend_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2803,25 +2844,29 @@ def _record_monthly_spend_decisions(
     policy = policy_step.policy
     if not isinstance(policy, MonthlySpendPolicy):
         raise TypeError(f"monthly spend decision recorder received {type(policy).__name__}")
-    active_rollouts = np.nonzero(amount_usd > 0)[0].tolist()
-    records.extend(
-        (
-            MonthlySpendDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                amount_usd=float(amount_usd[rollout_index]),
-                inflation_multiplier=float(inflation_multiplier[rollout_index]),
-            )
+    mask = amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.MONTHLY_SPEND,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[policy.actor_id] * size,
+            policy_id_per_row=[policy.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "amount_usd": amount_usd[rollouts].astype(np.float64),
+                "inflation_multiplier": inflation_multiplier[rollouts].astype(np.float64),
+            },
         )
-        for rollout_index in active_rollouts
     )
 
 
 def _record_sell_public_stock_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2831,26 +2876,30 @@ def _record_sell_public_stock_decisions(
     policy = policy_step.policy
     if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
         raise TypeError(f"public stock decision recorder received {type(policy).__name__}")
-    active_rollouts = np.nonzero(requested_amount_usd > 0)[0].tolist()
-    records.extend(
-        (
-            SellPublicStockDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=policy.actor_id,
-                policy_id=policy.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                requested_amount_usd=float(requested_amount_usd[rollout_index]),
-                current_cash_usd=float(current_cash_usd[rollout_index]),
-                target_cash_floor_usd=float(policy.floor_usd),
-            )
+    mask = requested_amount_usd > 0
+    if not mask.any():
+        return
+    rollouts = np.nonzero(mask)[0].astype(np.int64)
+    size = int(rollouts.size)
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.SELL_PUBLIC_STOCK,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[policy.actor_id] * size,
+            policy_id_per_row=[policy.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "requested_amount_usd": requested_amount_usd[rollouts].astype(np.float64),
+                "current_cash_usd": current_cash_usd[rollouts].astype(np.float64),
+                "target_cash_floor_usd": np.full(size, float(policy.floor_usd), dtype=np.float64),
+            },
         )
-        for rollout_index in active_rollouts
     )
 
 
 def _record_private_equity_sale_decisions(
-    records: list[PolicyDecision],
+    policy_decisions: event_streams.StreamFrameBuilder,
     *,
     month_index: int,
     policy_step: ActorPolicyStep[Policy],
@@ -2867,36 +2916,55 @@ def _record_private_equity_sale_decisions(
         if isinstance(policy.sale_rule, LiquidNetWorthFloorPrivateEquitySaleRule)
         else None
     )
-    sale_rule_type = policy.sale_rule.sale_rule_type
+    sale_rule_type_value = policy.sale_rule.sale_rule_type.value
     configured_sale_amount_usd = _private_equity_configured_sale_amount_usd(policy.sale_rule)
-    records.extend(
-        (
-            PrivateEquitySaleDecision(
-                rollout_index=rollout_index,
-                month_index=month_index,
-                actor_id=instruction.actor_id,
-                policy_id=instruction.policy_id,
-                policy_sequence_index=policy_step.sequence_index,
-                decision_reason=_private_equity_sale_decision_reason(
-                    requested_amount_usd=instruction.requested_amount_usd[rollout_index],
-                    sale_opportunity_value_usd=opportunity.sale_opportunity_value_usd[rollout_index],
-                ),
-                source_asset_id=source_asset_id,
-                sale_rule_type=sale_rule_type,
-                configured_sale_amount_usd=configured_sale_amount_usd,
-                opportunity_id=instruction.opportunity_id[rollout_index],
-                opportunity_cause_id=str(instruction.opportunity_cause_id[rollout_index]),
-                requested_amount_usd=float(instruction.requested_amount_usd[rollout_index]),
-                sale_opportunity_value_usd=float(opportunity.sale_opportunity_value_usd[rollout_index]),
-                private_equity_value_before_sale_usd=float(
-                    opportunity.private_equity_value_before_sale_usd[rollout_index]
-                ),
-                liquid_net_worth_usd=float(liquid_net_worth_usd[rollout_index]),
-                target_liquid_net_worth_floor_usd=target_liquid_net_worth_floor_usd,
-                proceeds_destination=instruction.proceeds_destination,
-            )
+    rollouts = np.arange(instruction.requested_amount_usd.shape[0], dtype=np.int64)
+    size = int(rollouts.size)
+    if size == 0:
+        return
+    proceeds_destination_value = (
+        instruction.proceeds_destination.value
+        if hasattr(instruction.proceeds_destination, "value")
+        else str(instruction.proceeds_destination)
+    )
+    requested = instruction.requested_amount_usd[rollouts].astype(np.float64)
+    opportunity_value = opportunity.sale_opportunity_value_usd[rollouts].astype(np.float64)
+    decision_reasons = [
+        _private_equity_sale_decision_reason(
+            requested_amount_usd=float(req), sale_opportunity_value_usd=float(opv)
+        ).value
+        for req, opv in zip(requested.tolist(), opportunity_value.tolist(), strict=True)
+    ]
+    target_floor_col: np.ndarray | list[Any] = (
+        np.full(size, target_liquid_net_worth_floor_usd, dtype=np.float64)
+        if target_liquid_net_worth_floor_usd is not None
+        else [None] * size
+    )
+    policy_decisions.extend(
+        _policy_decision_block(
+            decision_type=PolicyDecisionType.PRIVATE_EQUITY_SALE,
+            rollouts=rollouts,
+            month_index_value=month_index,
+            actor_id_per_row=[instruction.actor_id] * size,
+            policy_id_per_row=[instruction.policy_id] * size,
+            policy_sequence_index_per_row=policy_step.sequence_index,
+            variant_columns={
+                "decision_reason": decision_reasons,
+                "source_asset_id": [source_asset_id] * size,
+                "sale_rule_type": [sale_rule_type_value] * size,
+                "configured_sale_amount_usd": np.full(size, configured_sale_amount_usd, dtype=np.float64),
+                "opportunity_id": [instruction.opportunity_id[r] for r in rollouts],
+                "opportunity_cause_id": [str(instruction.opportunity_cause_id[r]) for r in rollouts],
+                "requested_amount_usd": requested,
+                "sale_opportunity_value_usd": opportunity_value,
+                "private_equity_value_before_sale_usd": opportunity.private_equity_value_before_sale_usd[
+                    rollouts
+                ].astype(np.float64),
+                "liquid_net_worth_usd": liquid_net_worth_usd[rollouts].astype(np.float64),
+                "target_liquid_net_worth_floor_usd": target_floor_col,
+                "proceeds_destination": [proceeds_destination_value] * size,
+            },
         )
-        for rollout_index in range(instruction.requested_amount_usd.shape[0])
     )
 
 
@@ -2919,24 +2987,30 @@ def _private_equity_sale_decision_reason(
 
 
 def _record_partner_contribution_decisions(
-    records: list[PolicyDecision], *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
+    policy_decisions: event_streams.StreamFrameBuilder, *, month_index: np.ndarray, partner_equity: PartnerEquityArrays
 ) -> None:
     for agreement in partner_equity.agreements:
         policy = agreement.policy
-        rollout_indexes, month_positions = np.nonzero(agreement.column("contribution_usd") > 0)
-        for rollout_index, month_position in zip(rollout_indexes.tolist(), month_positions.tolist(), strict=True):
-            records.append(
-                PartnerContributionDecision(
-                    rollout_index=rollout_index,
-                    month_index=int(month_index[month_position]),
-                    actor_id=policy.actor_id,
-                    policy_id=policy.policy_id,
-                    policy_sequence_index=agreement.policy_sequence_index,
-                    recipient_actor_id=agreement.recipient_actor_id,
-                    requested_amount_usd=float(agreement.column("contribution_usd")[rollout_index, month_position]),
-                    property_id=agreement.property_id,
-                )
+        contribution_matrix = agreement.column("contribution_usd")
+        rollout_axis, month_axis = np.nonzero(contribution_matrix > 0)
+        if rollout_axis.size == 0:
+            continue
+        size = int(rollout_axis.size)
+        policy_decisions.extend(
+            _policy_decision_block(
+                decision_type=PolicyDecisionType.PARTNER_CONTRIBUTION,
+                rollouts=rollout_axis,
+                month_index_value=month_index[month_axis],
+                actor_id_per_row=[policy.actor_id] * size,
+                policy_id_per_row=[policy.policy_id] * size,
+                policy_sequence_index_per_row=int(agreement.policy_sequence_index),
+                variant_columns={
+                    "recipient_actor_id": [agreement.recipient_actor_id] * size,
+                    "requested_amount_usd": contribution_matrix[rollout_axis, month_axis].astype(np.float64),
+                    "property_id": [agreement.property_id] * size,
+                },
             )
+        )
 
 
 def _record_journal_entry_batches(
@@ -3373,22 +3447,6 @@ def _record_partner_agreement_accounting_detail(
         return
     _record_journal_entry_batches(accounting, month_index=month_index, entries=partner_equity.journal_entries)
     _record_balance_snapshot_batches(accounting, month_index=month_index, entries=partner_equity.balance_snapshots)
-
-
-def _sorted_policy_decisions(records: list[PolicyDecision]) -> tuple[PolicyDecision, ...]:
-    return tuple(
-        sorted(
-            records,
-            key=lambda decision: (
-                decision.month_index,
-                decision.rollout_index,
-                decision.actor_id,
-                decision.policy_sequence_index,
-                decision.decision_type,
-                decision.policy_id,
-            ),
-        )
-    )
 
 
 def _sorted_tax_lots(records: list[TaxLot]) -> tuple[TaxLot, ...]:

@@ -40,6 +40,10 @@ Migrated so far:
 * **Effects** (four roots) → `Effect` (one frame per variant —
   `SellSp500Effect`, `SellCryptoEffect`, `SellPrivateEquityEffect`,
   `SettlePropertySaleEffect`).
+* **Policy decisions** (five roots) → `PolicyDecision` (one frame per
+  variant — `MonthlySpendDecision`, `SellPublicStockDecision`,
+  `SellCryptoDecision`, `PrivateEquitySaleDecision`,
+  `PartnerContributionDecision`).
 """
 
 from __future__ import annotations
@@ -68,13 +72,22 @@ from augur.core.scenario_set import (
     MarketObservation,
     MarketObservationType,
     MarketPathObservation,
+    MonthlySpendDecision,
     Obligation,
     ObligationStatus,
     ObligationType,
+    PartnerContributionDecision,
+    PolicyDecision,
+    PolicyDecisionType,
+    PrivateEquitySaleDecision,
+    PrivateEquitySaleDecisionReason,
     PrivateEquitySaleOpportunityObservation,
+    PrivateEquitySaleRuleType,
     PropertySaleBasisGainDetail,
+    SellCryptoDecision,
     SellCryptoEffect,
     SellPrivateEquityEffect,
+    SellPublicStockDecision,
     SellSp500Effect,
     SettlementResult,
     SettlementStatus,
@@ -900,6 +913,160 @@ def _coerce_proceeds_destination(value: str) -> AccountType | AssetType:
         return AccountType(value)
     except ValueError:
         return AssetType(value)
+
+
+# -- policy decisions ----------------------------------------------------------
+#
+# Single wide frame discriminated by `decision_type`. Variant-specific columns
+# are nullable. One sort call by `(month, rollout, actor_id,
+# policy_sequence_index, decision_type, policy_id)` reproduces the legacy
+# `_sorted_policy_decisions` tuple key directly — no merge step needed.
+
+POLICY_DECISION_SCHEMA: dict[str, pl.DataType] = {
+    # Common base.
+    "rollout_index": pl.Int64,
+    "month_index": pl.Int64,
+    "decision_type": pl.String,
+    "actor_id": pl.String,
+    "policy_id": pl.String,
+    "policy_sequence_index": pl.Int64,
+    # MonthlySpendDecision-specific.
+    "amount_usd": pl.Float64,
+    "inflation_multiplier": pl.Float64,
+    # SellPublicStockDecision / SellCryptoDecision (shared) / PE / partner.
+    "requested_amount_usd": pl.Float64,
+    "current_cash_usd": pl.Float64,
+    "target_cash_floor_usd": pl.Float64,
+    # SellCryptoDecision / PrivateEquitySaleDecision (shared).
+    "source_asset_id": pl.String,
+    # PrivateEquitySaleDecision-specific.
+    "decision_reason": pl.String,
+    "sale_rule_type": pl.String,
+    "configured_sale_amount_usd": pl.Float64,
+    "opportunity_id": pl.String,
+    "opportunity_cause_id": pl.String,
+    "sale_opportunity_value_usd": pl.Float64,
+    "private_equity_value_before_sale_usd": pl.Float64,
+    "liquid_net_worth_usd": pl.Float64,
+    "target_liquid_net_worth_floor_usd": pl.Float64,
+    "proceeds_destination": pl.String,
+    # PartnerContributionDecision-specific.
+    "recipient_actor_id": pl.String,
+    "property_id": pl.String,
+}
+
+
+def sort_policy_decisions(df: pl.DataFrame) -> pl.DataFrame:
+    return df.sort(["month_index", "rollout_index", "actor_id", "policy_sequence_index", "decision_type", "policy_id"])
+
+
+def materialize_policy_decisions(df: pl.DataFrame) -> Iterator[PolicyDecision]:
+    """Iterate the single wide frame, dispatching to the right Pydantic
+    variant per row by `decision_type`."""
+
+    dispatch: dict[str, Any] = {
+        PolicyDecisionType.MONTHLY_SPEND.value: _build_monthly_spend_decision,
+        PolicyDecisionType.SELL_PUBLIC_STOCK.value: _build_sell_public_stock_decision,
+        PolicyDecisionType.SELL_CRYPTO.value: _build_sell_crypto_decision,
+        PolicyDecisionType.PRIVATE_EQUITY_SALE.value: _build_private_equity_sale_decision,
+        PolicyDecisionType.PARTNER_CONTRIBUTION.value: _build_partner_contribution_decision,
+    }
+    for row in df.iter_rows(named=True):
+        yield dispatch[row["decision_type"]](row)
+
+
+def _build_monthly_spend_decision(row: dict[str, Any]) -> MonthlySpendDecision:
+    return MonthlySpendDecision(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        policy_sequence_index=int(row["policy_sequence_index"]),
+        amount_usd=float(row["amount_usd"]),
+        inflation_multiplier=float(row["inflation_multiplier"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_sell_public_stock_decision(row: dict[str, Any]) -> SellPublicStockDecision:
+    return SellPublicStockDecision(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        policy_sequence_index=int(row["policy_sequence_index"]),
+        requested_amount_usd=float(row["requested_amount_usd"]),
+        current_cash_usd=float(row["current_cash_usd"]),
+        target_cash_floor_usd=row["target_cash_floor_usd"],
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_sell_crypto_decision(row: dict[str, Any]) -> SellCryptoDecision:
+    return SellCryptoDecision(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        policy_sequence_index=int(row["policy_sequence_index"]),
+        source_asset_id=row["source_asset_id"],
+        requested_amount_usd=float(row["requested_amount_usd"]),
+        current_cash_usd=float(row["current_cash_usd"]),
+        target_cash_floor_usd=row["target_cash_floor_usd"],
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_private_equity_sale_decision(row: dict[str, Any]) -> PrivateEquitySaleDecision:
+    return PrivateEquitySaleDecision(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        policy_sequence_index=int(row["policy_sequence_index"]),
+        decision_reason=PrivateEquitySaleDecisionReason(row["decision_reason"]),
+        source_asset_id=row["source_asset_id"],
+        sale_rule_type=PrivateEquitySaleRuleType(row["sale_rule_type"]),
+        configured_sale_amount_usd=float(row["configured_sale_amount_usd"]),
+        opportunity_id=row["opportunity_id"],
+        opportunity_cause_id=row["opportunity_cause_id"],
+        requested_amount_usd=float(row["requested_amount_usd"]),
+        sale_opportunity_value_usd=float(row["sale_opportunity_value_usd"]),
+        private_equity_value_before_sale_usd=float(row["private_equity_value_before_sale_usd"]),
+        liquid_net_worth_usd=float(row["liquid_net_worth_usd"]),
+        target_liquid_net_worth_floor_usd=row["target_liquid_net_worth_floor_usd"],
+        proceeds_destination=_coerce_proceeds_destination(row["proceeds_destination"]),
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
+
+
+def _build_partner_contribution_decision(row: dict[str, Any]) -> PartnerContributionDecision:
+    return PartnerContributionDecision(
+        rollout_index=int(row["rollout_index"]),
+        month_index=int(row["month_index"]),
+        actor_id=row["actor_id"],
+        policy_id=row["policy_id"],
+        policy_sequence_index=int(row["policy_sequence_index"]),
+        recipient_actor_id=row["recipient_actor_id"],
+        requested_amount_usd=float(row["requested_amount_usd"]),
+        property_id=row["property_id"],
+        path_set_id=row.get("path_set_id"),
+        exogenous_path_id=row.get("exogenous_path_id"),
+        scenario_input_id=row.get("scenario_input_id"),
+        projection_trajectory_id=row.get("projection_trajectory_id"),
+    )
 
 
 def materialize_failure_events(df: pl.DataFrame) -> Iterator[FailureEvent]:
