@@ -102,7 +102,16 @@ from augur.core.scenario_set import (
 )
 from augur.core.scheduled_cashflows import ScheduledCashflowKind, build_scheduled_cashflows
 from augur.core.schemas import ColumnarTable
-from augur.core.simulation_state import AssetHolding, AssetKind, SimulationState
+from augur.core.simulation_state import (
+    AgentState,
+    AssetHolding,
+    AssetKind,
+    LiabilityBalance,
+    LiabilityKind,
+    PropertyStake,
+    PropertyState,
+    SimulationState,
+)
 
 MONTHS_PER_YEAR = 12
 MORTGAGE_SERVICING_POLICY_ID = "mortgage_servicing"
@@ -1559,41 +1568,102 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         for due, kind, creditor_id, policy_id in property_cost_obligation_specs
     )
 
-    # Phase 1 of the state-vector simulation refactor: maintain
-    # `SimulationState` in parallel with the existing 1D locals + matrix
-    # snapshots. The state object isn't yet read by the engine — it's a
-    # scaffold proving the per-rollout-per-asset shape. The end-of-month
-    # snapshot block at :~1833 rebuilds it from the locals; future phases
-    # will make state the source of truth and drop the locals.
+    # Agent-centric `SimulationState` maintained in parallel with the
+    # existing 1D locals + matrix snapshots (Phases 1–3b of the
+    # state-vector refactor). State.agents[primary_owner_actor_id]
+    # carries the owner's cash + holdings + liabilities + property
+    # stake; partner-equity scenarios add a second AgentState entry
+    # for the partner. State.properties carries shared per-property
+    # facts. The end-of-month snapshot block at :~1833 reads the
+    # cash / SP500 / crypto / PE matrix columns through `state.agent(
+    # owner).cash(...)` / `.holding(...)`; the rest of the snapshot
+    # block still reads from locals until later phases bring more
+    # state through the object.
     cash_account_id = (
         primary_owner_funding_sources.cash_source_account.account_id
         if primary_owner_funding_sources.cash_source_account is not None
         else "checking"
     )
-    state = SimulationState(
-        month_position=-1,
-        cash_by_account={cash_account_id: current_cash},
-        holdings={
-            "sp500": AssetHolding(
-                asset_id="sp500",
-                asset_kind=AssetKind.GENERIC_SP500,
-                units=remaining_sp500_units,
-                basis_usd=remaining_sp500_basis,
-            ),
-            "crypto": AssetHolding(
-                asset_id="crypto",
-                asset_kind=AssetKind.CRYPTO,
-                units=remaining_crypto_quantity,
-                basis_usd=remaining_crypto_basis,
-            ),
-            "private_equity": AssetHolding(
-                asset_id="private_equity",
-                asset_kind=AssetKind.PRIVATE_EQUITY,
-                units=remaining_private_equity_units,
-                basis_usd=remaining_private_equity_basis,
-            ),
-        },
-    )
+    selected_property_id = scenario.property_selection.property_id
+
+    def _build_state(*, month_position: int, month_col: int) -> SimulationState:
+        """Snapshot SimulationState from the 1D locals + the
+        precomputed matrix columns at `month_col` (the position in the
+        property/mortgage/partner_equity matrices we're snapshotting).
+        `month_position` is the same value, called separately to make
+        the initial-state (-1) case obvious — the property matrices are
+        column-0 entries that represent the start-of-loop state."""
+        owner_liabilities: dict[str, LiabilityBalance] = {}
+        owner_stakes: dict[str, PropertyStake] = {}
+        properties: dict[str, PropertyState] = {}
+        agents: dict[str, AgentState] = {}
+        if selected_property_id is not None:
+            mortgage_id = _mortgage_liability_id(selected_property_id)
+            owner_liabilities[mortgage_id] = LiabilityBalance(
+                liability_id=mortgage_id,
+                liability_kind=LiabilityKind.MORTGAGE,
+                property_id=selected_property_id,
+                principal_usd=mortgage_balance[:, month_col],
+                interest_accrued_this_month_usd=mortgage_interest[:, month_col],
+                principal_paid_this_month_usd=mortgage_principal[:, month_col],
+            )
+            properties[selected_property_id] = PropertyState(
+                property_id=selected_property_id,
+                live=property_live_mask[:, month_col],
+                value_usd=property_value[:, month_col],
+                cumulative_depreciation_usd=disposition.column("cumulative_property_depreciation_usd")[:, month_col],
+            )
+            partner_ownership_pct = partner_equity.column("ownership_pct")[:, month_col]
+            owner_stakes[selected_property_id] = PropertyStake(
+                property_id=selected_property_id,
+                ownership_pct=1.0 - partner_ownership_pct,
+                contribution_used_usd=np.zeros(rollout_count, dtype="float64"),
+                equity_ledger_usd=partner_equity.column("owner_equity_ledger_usd")[:, month_col],
+            )
+            for agreement in partner_equity.agreements:
+                agents[agreement.recipient_actor_id] = AgentState(
+                    actor_id=agreement.recipient_actor_id,
+                    cash_by_account={},
+                    holdings={},
+                    liabilities={},
+                    property_stakes={
+                        selected_property_id: PropertyStake(
+                            property_id=selected_property_id,
+                            ownership_pct=partner_ownership_pct,
+                            contribution_used_usd=partner_equity.column("contribution_used_usd")[:, month_col],
+                            equity_ledger_usd=partner_equity.column("partner_equity_ledger_usd")[:, month_col],
+                        )
+                    },
+                )
+        agents[primary_owner_actor_id] = AgentState(
+            actor_id=primary_owner_actor_id,
+            cash_by_account={cash_account_id: current_cash},
+            holdings={
+                "sp500": AssetHolding(
+                    asset_id="sp500",
+                    asset_kind=AssetKind.GENERIC_SP500,
+                    units=remaining_sp500_units,
+                    basis_usd=remaining_sp500_basis,
+                ),
+                "crypto": AssetHolding(
+                    asset_id="crypto",
+                    asset_kind=AssetKind.CRYPTO,
+                    units=remaining_crypto_quantity,
+                    basis_usd=remaining_crypto_basis,
+                ),
+                "private_equity": AssetHolding(
+                    asset_id="private_equity",
+                    asset_kind=AssetKind.PRIVATE_EQUITY,
+                    units=remaining_private_equity_units,
+                    basis_usd=remaining_private_equity_basis,
+                ),
+            },
+            liabilities=owner_liabilities,
+            property_stakes=owner_stakes,
+        )
+        return SimulationState(month_position=month_position, agents=agents, properties=properties)
+
+    state = _build_state(month_position=-1, month_col=0)
 
     for month in range(month_count):
         current_cash = current_cash + scheduled.amount_at(
@@ -1871,42 +1941,20 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
         # End-of-month snapshot. Rebuild `SimulationState` from the 1D
-        # locals and use it as the source for the per-asset matrix columns
-        # that Phase 1 covers (cash + SP500 + crypto units/basis); the
-        # rest of the snapshot block still reads from locals until later
-        # phases bring more state into the object.
-        state = SimulationState(
-            month_position=month,
-            cash_by_account={cash_account_id: current_cash},
-            holdings={
-                "sp500": AssetHolding(
-                    asset_id="sp500",
-                    asset_kind=AssetKind.GENERIC_SP500,
-                    units=remaining_sp500_units,
-                    basis_usd=remaining_sp500_basis,
-                ),
-                "crypto": AssetHolding(
-                    asset_id="crypto",
-                    asset_kind=AssetKind.CRYPTO,
-                    units=remaining_crypto_quantity,
-                    basis_usd=remaining_crypto_basis,
-                ),
-                "private_equity": AssetHolding(
-                    asset_id="private_equity",
-                    asset_kind=AssetKind.PRIVATE_EQUITY,
-                    units=remaining_private_equity_units,
-                    basis_usd=remaining_private_equity_basis,
-                ),
-            },
-        )
-        cash[:, month] = state.cash(cash_account_id)
-        sp500_holding = state.holding("sp500")
+        # locals and use it as the source for the cash + SP500 + crypto
+        # + PE per-asset matrix columns the state object covers; the
+        # other matrix lines (sale gain, value, PE sale tax) still read
+        # from locals.
+        state = _build_state(month_position=month, month_col=month)
+        owner_agent = state.agent(primary_owner_actor_id)
+        cash[:, month] = owner_agent.cash(cash_account_id)
+        sp500_holding = owner_agent.holding("sp500")
         remaining_sp500_units_by_month[:, month] = sp500_holding.units
         remaining_sp500_basis_by_month[:, month] = sp500_holding.basis_usd
         generic_sp500_value[:, month] = sp500_value_after_sale
         generic_sp500_sale_gain[:, month] = sp500_sale - sp500_basis
         checking_floor_shortfall[:, month] = sp500_shortfall
-        crypto_holding = state.holding("crypto")
+        crypto_holding = owner_agent.holding("crypto")
         remaining_crypto_quantity_by_month[:, month] = crypto_holding.units
         remaining_crypto_basis_by_month[:, month] = crypto_holding.basis_usd
         crypto_value[:, month] = crypto_value_after_sale
@@ -1917,7 +1965,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
         private_equity_value[:, month] = private_equity_value_before_sale - private_equity_sale_month
         private_equity_sale_usd_by_month[:, month] = private_equity_sale_month
-        pe_holding = state.holding("private_equity")
+        pe_holding = owner_agent.holding("private_equity")
         remaining_private_equity_units_by_month[:, month] = pe_holding.units
         remaining_private_equity_basis_by_month[:, month] = pe_holding.basis_usd
 
