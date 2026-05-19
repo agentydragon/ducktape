@@ -1095,6 +1095,314 @@ Delete dead code, simplify signatures, retire intermediate dataclasses
 that were only there to thread state through nested functions. Engine
 shrinks substantially (target: `run_scenario_vectorized` ≤ 400 lines).
 
+## Status: what's landed so far
+
+The Phase 0–4b commits on the working branch shipped scaffolding +
+the unified-gain-log + the inline TaxActor. Concretely:
+
+- `augur/core/scheduled_cashflows.py` — pre-loop scheduled-cashflow
+  frame (property net CF, property sale CF, partner contribution,
+  property-cost accruals).
+- `augur/core/simulation_state.py` — agent-centric `SimulationState`
+  (`AgentState`, `PropertyState`, `PropertyStake`,
+  `LiabilityBalance`, `LiabilityKind`, `AssetKind`, `AssetHolding`).
+  Maintained per-iteration. Phase 1/3a/3b populated cash + SP500 +
+  crypto + PE holdings + property/stake/mortgage views.
+- `augur/core/action_log.py` — `CASHFLOW_LOG_SCHEMA` +
+  `derive_cash_matrix(...)`, `PROPERTY_STATE_SCHEMA` +
+  `build_property_state_frame(...)`, `ASSET_CHANGE_LOG_SCHEMA` +
+  `derive_per_month_taxable_gain_matrix(...)`.
+- `augur/core/tax_actor.py` — `TaxActor` with per-year accumulators,
+  filing-status-aware safe-harbor, quarterly + year-end emit.
+- `augur/core/scenario_engine.py` —
+  - `_build_asset_change_log(...)` emits unified gain rows from
+    `Sp500SaleActionRecord` / `CryptoSaleActionRecord` /
+    `PrivateEquitySaleActionRecord` + `disposition` (two property
+    rows for LT + recapture).
+  - `generic_sp500_sale_gain` and `private_equity_sale_taxable_gain`
+    matrices derived from the log via
+    `derive_per_month_taxable_gain_matrix`. The
+    `[:, month] = sp500_sale - sp500_basis` overwrite + the
+    `pe_state.private_equity_sale_taxable_gain_usd[:, M] +=` in
+    settlement are gone.
+  - Pre-loop construction of `pe_funding_state`, `tax_actor`, two
+    `_ObligationFundingAccumulator` instances (estimated + annual
+    tax). Inline tax obligation emission at end of each iteration's
+    main-loop steps, routed through
+    `_settle_required_cash_obligation_at_month_position`. Post-loop
+    `_settle_required_cash_obligations(estimated_tax)` and
+    `(annual_tax)` calls deleted along with
+    `_quarterly_estimated_tax_obligation_due_usd`,
+    `_year_end_tax_obligation_due_usd`, and
+    `_estimated_payments_credit_per_year_usd`.
+  - **Behavior change shipped**: year 0 with no
+    `tax_profile.prior_year_tax_usd` no longer emits quarterly
+    obligations; year-end true-up settles the full year tax. Users
+    wanting year-0 quarterlies set `prior_year_tax_usd` as a knob.
+
+All 19 augur/core tests green. Bench within tolerance.
+
+## Remaining gaps (enumerated)
+
+After the work above, the engine still falls short of the target
+architecture in several concrete ways. Each is a tractable next-step;
+prioritized in the roadmap below.
+
+### G1. Per-month policy chain is still imperative
+
+The within-month policy block at `scenario_engine.py:~1820+` mutates
+1D locals directly (`current_cash = current_cash + sale_usd`,
+`remaining_sp500_units = sale_application.remaining_units`). No
+`PolicyDecision` is returned that the engine then "applies". The
+settlement function similarly mutates via its return-value rebind.
+Target: each policy returns a `Decision` object; the engine applies
+it to state + emits log rows in one step.
+
+### G2. Cash matrix not log-derived
+
+`cash[:, month] = current_cash` at end-of-month snapshot. The
+`cashflow_log` schema + `derive_cash_matrix(...)` exist but aren't
+wired into the engine — `current_cash` is still the source of truth.
+Same shape for `generic_sp500_value`, `crypto_value`, `crypto_sale_usd`,
+`crypto_sale_basis_usd`, `checking_floor_shortfall` — all imperative
+matrices populated in the main loop.
+
+### G3. Crypto + property gains not migrated to the log
+
+SP500 and PE migrated. Crypto gain still lives in `crypto_sale_usd`
+
+- `crypto_sale_basis_usd` matrices accumulated additively in the
+  settlement function. Property gain comes from `disposition.column(...)`
+  precomputed pre-loop. `_build_asset_change_log` emits crypto +
+  property rows but no downstream consumer reads them via
+  `derive_per_month_taxable_gain_matrix`.
+
+### G4. Crypto sales aren't taxed at all
+
+Pre-existing gap: `annual_sale_tax_allocation` has no crypto input;
+TaxActor's `observe_month` has no `crypto_sale_gain_usd` parameter.
+A comment in the codebase notes this. Real-world crypto is taxed as
+capital gains (mostly LT). The fix is small once G3 lands.
+
+### G5. PE state forward-write scratchpad persists
+
+`_PrivateEquityFundingState.remaining_units_by_month[:, M:] -=
+units_sold[:, None]` and the multiplier-ratio forward-write at
+`scenario_engine.py:~5217` are the same scratchpad pattern called
+out in the earlier "imperative polars" critique. SP500/crypto/cash
+were cleaned up in the predecessor PR (#1676); PE was not.
+
+### G6. Sale-record lists duplicate the asset_change_log
+
+`sp500_sale_action_records`, `crypto_sale_action_records`,
+`private_equity_sale_action_records` are maintained as Python lists
+of dataclasses alongside the unified polars frame. Downstream
+journal-entry / effect-recording loops iterate over them
+per-record. The unified frame can drive those consumers; the lists
+become a legacy artifact.
+
+### G7. Partner contribution / special assessment / outside rent still post-loop sweeps
+
+`_settle_required_cash_obligations(...)` is called post-loop for
+these 3 obligation kinds at `:~2750+`. Each is an "actor with a
+schedule": PartnerActor emits per-month contribution-due,
+SpecialAssessmentActor emits at scheduled months, LandlordActor
+emits monthly rent. Same shape as TaxActor — none migrated yet.
+
+### G8. No regression test for the SP500 gain bug fix
+
+Phase 4a removed the `generic_sp500_sale_gain[:, month] = sp500_sale
+
+- sp500_basis` overwrite and replaced it with derive-from-log,
+  which fixes the bug where property-cost-driven SP500 sales' gains
+  were silently dropped from year tax. No existing test exercises
+  this path with assertions, and no focused regression test was added.
+  Could regress silently.
+
+### G9. `LiabilityKind.TAX_PAYABLE` declared but unused
+
+The seam exists in `simulation_state.py` but TaxActor doesn't
+populate `LiabilityBalance` rows for accrued-but-unpaid tax. The
+engine has no `tax_payable` liability tracking surfaced through the
+state object.
+
+### G10. Per-month tax allocation duplicated
+
+TaxActor computes year tax internally for obligation sizing;
+`annual_sale_tax_allocation` (still called post-loop) computes the
+same year tax for per-month reporting (federal/CA/SP500/PE/property/
+rental tax matrices). Two implementations of the same per-year math.
+Could unify by having TaxActor emit the per-month allocation matrices
+too — kills `annual_sale_tax_allocation`.
+
+### G11. State object isn't the source of truth
+
+`SimulationState` is built FROM the 1D locals each iteration; the
+locals are upstream. Reads happen via `state.agent(...).cash(...)`
+in only one place (the snapshot block). All other engine code uses
+locals directly. Target: `state` is the source, locals fall away.
+
+### G12. Most state matrices still maintained imperatively in the loop
+
+20-ish `(rollouts, months)` matrices are allocated at top of
+`run_scenario_vectorized` and written column-by-column in the
+snapshot block at `:~2280+`. Phase 5 was supposed to derive them
+from logs at end-of-simulation; not done.
+
+### G13. Engine still ~1500 lines
+
+`run_scenario_vectorized` hasn't shrunk. Target was ≤400. Falls out
+of G2 + G5 + G11 + G12.
+
+## Re-prioritized roadmap
+
+Ordered by (value × risk-of-silent-regression) descending; later
+items depend on earlier ones where noted.
+
+### Wave 1 — verify + finish the unified gains migration
+
+**1.1 SP500 gain bug regression test (G8).** Single test: a scenario
+where property-cost obligations force SP500 sales, assertion that
+the year's TOTAL_INCOME_TAX_USD includes those sales' gains. Single
+test, ~30 min. Proves the Phase 4a claim. **Blocks: nothing.**
+
+**1.2 Crypto + property gain via unified log (G3).** Migrate
+`crypto_sale_usd` / `crypto_sale_basis_usd` accumulation and
+`disposition.column("taxable_property_capital_gain_usd")` /
+`...depreciation_recapture_usd` reads to `derive_per_month_taxable_gain_matrix`
+calls. Remove the additive matrix writes in the settlement function.
+~1 day. **Blocks: 1.3, 4.1.**
+
+**1.3 Tax crypto sales (G4).** Add `generic_crypto_sale_gain_usd`
+parameter to `annual_sale_tax_allocation` (or its TaxActor
+equivalent); plumb through long-term-capital treatment on the log.
+Half day. **Blocks: nothing.**
+
+### Wave 2 — wire the cashflow log
+
+**2.1 Cashflow log from the engine (G2 — partial).** Wire every
+`current_cash += X` site in the main loop (scheduled cashflows,
+property-cost obligation settlement, PE acquisition proceeds,
+monthly spend policy, asset sale proceeds) to emit a `cashflow_log`
+row. Derive `cash` matrix from log + initial cash at end of
+simulation; assert parity vs the maintained `cash[:, month] =
+current_cash` snapshot, gated by a `--check-derive` flag for one
+release. ~2 days. **Blocks: 2.2, 5.1.**
+
+**2.2 Drop maintained `cash` matrix (G2 — completion).** Once the
+parity check has been stable, replace the snapshot block's `cash[:,
+month] = current_cash` with the derived-from-log matrix. `current_cash`
+becomes a transient per-iteration local; the matrix is built at
+end-of-sim. ~half day. **Blocks: 5.x.**
+
+### Wave 3 — PE scratchpad + property/crypto matrix migration
+
+**3.1 PE state matrices to derive-from-log (G5).** Replace
+`pe_state.remaining_units_by_month[:, M:] -= units_sold[:, None]`
+and the multiplier-ratio forward-write with derive-at-end from
+`asset_change_log` (PE asset_kind, summed). Same shape as the
+SP500/crypto cash settlement-1D refactor (PR #1676) but applied to
+the PE matrices. **Effort:** Moderate (PE has unit + basis + value
+matrices each with its own logic). ~2 days. **Blocks: nothing.**
+
+**3.2 `generic_sp500_value` / `crypto_value` matrices to derive-from-log
+(G12 — partial).** These are `remaining_units × multiplier` per
+month. Derive at end-of-simulation from `asset_holding_frame` (units
+matrix) × the market multiplier path. Drop the per-month imperative
+writes. ~half day. **Blocks: nothing.**
+
+**3.3 `crypto_sale_usd` / `crypto_sale_basis_usd` / `private_equity_
+sale_usd_by_month` matrices to derive-from-log (G12 — partial).**
+All are per-month sums over events the asset_change_log already has.
+~half day. **Blocks: nothing.**
+
+### Wave 4 — actor-ify the remaining post-loop obligations
+
+**4.1 PartnerActor / SpecialAssessmentActor / OutsideRentActor (G7).**
+Each watches its own schedule and emits an obligation at the right
+month. Settlement inline via the same path TaxActor uses. Delete
+the 3 remaining post-loop `_settle_required_cash_obligations(...)`
+calls. ~2 days total. **Behavioral risk:** settlement ordering
+within a month matters for cash-strapped rollouts; today's order is
+{property-cost, then tax-via-TaxActor, then partner/special/outside_rent}.
+Preserve by emitting in that order inside the iteration. **Blocks:
+4.2.**
+
+**4.2 Delete `_settle_required_cash_obligations` post-loop wrapper
+(part of G7).** Once 4.1 lands and no post-loop callers remain, the
+helper and its support code (the
+`amount_due_usd`-per-month-matrix-iteration loop pattern) can go.
+~half day. **Blocks: nothing.**
+
+### Wave 5 — kill the duplication + populate TAX_PAYABLE
+
+**5.1 Unify per-month tax allocation through TaxActor (G10).**
+TaxActor already computes year tax; extend to emit the per-month
+allocation matrices (federal / CA / SP500 / PE / property / rental
+tax). Delete `annual_sale_tax_allocation` from the engine; the
+materializer reads per-month tax from TaxActor's output. ~1 day.
+**Blocks: nothing.**
+
+**5.2 Surface `TAX_PAYABLE` in `LiabilityBalance` (G9).** TaxActor
+exposes per-month tax-payable balance (= cumulative accrued −
+cumulative paid). Engine populates
+`agent.liabilities["tax_payable"]` from it. ~half day. **Blocks:
+nothing.**
+
+### Wave 6 — structural: state-object-as-truth + policies-as-actions
+
+**6.1 State object as source-of-truth for reads (G11).** Switch the
+engine's intra-iteration reads from 1D locals to
+`state.agent(...).cash(...)` / `state.agent(...).holding(...)`. The
+`state` object becomes the working representation; the locals fall
+away. Snapshot block goes — `state` IS the snapshot. ~3 days.
+**Blocks: 6.2, 7.x.**
+
+**6.2 Drop the 1D locals (G11 — completion).** Once all reads go
+through state, the locals (`current_cash`, `remaining_sp500_units`,
+etc.) can be deleted. Engine simplifies significantly. ~1 day.
+**Blocks: 7.x.**
+
+**6.3 Policies return Decisions; engine applies them (G1).** Each
+policy's `apply(...)` returns a `Decision` (or list of them); the
+engine threads them into state + emits the appropriate log rows.
+No more in-policy state mutation. Substantial refactor of every
+policy class. ~3-5 days. **Blocks: 7.x.**
+
+### Wave 7 — kill the sale-record lists + final cleanup
+
+**7.1 Drop `sp500_sale_action_records` / `crypto_sale_action_records`
+/ `private_equity_sale_action_records` (G6).** Journal-entry /
+effect-recording loops migrate to consume from the
+`asset_change_log` frame. ~2 days. **Blocks: 7.2.**
+
+**7.2 Engine ≤400 lines (G13).** Falls out of the above. Cleanup
+pass to remove now-dead imports, helpers, dataclasses. ~1 day.
+
+## Total remaining effort
+
+Roughly 20-25 days of focused work, achievable in 8-10 PRs. The big
+unknowns are 6.x (policies-return-actions) — that's a structural
+shift across the policy library that may surface design questions
+not visible from the engine side.
+
+## How to choose what's next
+
+If the goal is **architectural cleanness with low risk**, do Wave 1
+
+- Wave 3 first — those are append-only cleanups with no behavior
+  change. Wave 4 + Wave 5 are next-cleanest; settlement ordering is
+  the only behavioral risk and is preserved by construction.
+
+If the goal is **proving the simulation is honest**, Wave 1.1
+first (regression test) + Wave 5.2 (surface TAX_PAYABLE so the
+simulation state honestly shows tax owed).
+
+If the goal is **the user's original "for month in months: state →
+policy → action → state' " shape**, Wave 6 is the gating work.
+Everything before just sharpens the data structures; Wave 6 is the
+control-flow shift.
+
 ## Test strategy
 
 Each phase preserves `ScenarioRunArrays` bit-for-bit on the existing
@@ -1133,14 +1441,24 @@ Each phase preserves `ScenarioRunArrays` bit-for-bit on the existing
   more than that, address with column-major bulk inserts before
   landing the phase.
 
-## Effort estimate
+## Original effort estimate (historical, for Phases 0–6 as
 
-- Phase 0: 1 PR, ~2 days
-- Phase 1: 2 PRs (cash, then holdings), ~3 days each
-- Phase 2: 1 PR, ~3 days (log infra + parity check)
-- Phase 3: 2 PRs (PE, properties+liabilities), ~3 days each
-- Phase 4: 1 PR, ~4 days (most behaviorally risky)
-- Phase 5: 1 PR, ~2 days (deletion + matrix derivation)
-- Phase 6: 1 PR, ~2 days (cleanup)
+written above)
 
-Total: ~9 PRs over ~3 weeks.
+- Phase 0: 1 PR, ~2 days ✅ landed
+- Phase 1: 2 PRs (cash, then holdings), ~3 days each ✅ landed
+- Phase 2: 1 PR, ~3 days (log infra + parity check) — partial:
+  schemas + helpers landed, engine wiring deferred to Wave 2
+- Phase 3: 2 PRs (PE, properties+liabilities), ~3 days each ✅
+  landed
+- Phase 4: 1 PR, ~4 days (most behaviorally risky) ✅ landed (4a
+  unified gains + bug fix; 4b inline TaxActor with behavior change)
+- Phase 5: 1 PR, ~2 days (deletion + matrix derivation) — not
+  started; superseded by Waves 2, 3, 5, 6 in the re-prioritized
+  roadmap.
+- Phase 6: 1 PR, ~2 days (cleanup) — superseded by Wave 7.
+
+The re-prioritized roadmap above carries forward the remaining work
+in Waves 1–7 (~8–10 PRs, ~20–25 days). The phases-as-originally-
+written are kept as a historical record of how the work was scoped
+going in.
