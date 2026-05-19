@@ -308,6 +308,38 @@ into the same template-level rules. Adding a new state is a new
 TaxJurisdiction record + a new Location record (or two) referencing
 it; the engine doesn't notice.
 
+### Configuration data lives in YAML, not Python
+
+The jurisdiction and location records — federal + California
+brackets, deductions, NIIT thresholds, SALT cap, qualified-residence
+interest cap, LTCG threshold tables, residential-rental depreciation
+schedule, §1250 rate, §121 exclusion amount, county property-tax
+rates, city transfer-tax schedules, Mello-Roos defaults — are
+**configuration data, not code**. They live in checked-in YAML files
+that the engine reads at startup. A new tax year's bracket update
+is a YAML edit; a new Bay Area location is a YAML edit; correcting
+the SF transfer-tax schedule is a YAML edit. The engine never has
+literal bracket boundaries or rate values inline.
+
+Pydantic models in code validate the YAML's shape (so a typo in a
+tax-bracket boundary fails at startup rather than silently doing
+something wrong), but the **values** are externalized. The same
+data files feed any per-jurisdiction sanity checks, golden-test
+fixtures, and external auditability — there's one canonical source
+for "what the law says in 2026".
+
+This applies to anything that is "the law says" or "this place
+charges X". It does **not** apply to scenario-specific
+configuration (the agents in this scenario, their initial holdings,
+their policies, the market paths). Scenarios are constructed
+programmatically or via their own user-facing config; jurisdiction
++ location data are repo-checked-in reference data.
+
+Existing precedent: `augur/core/annual_tax_parameters.yaml` already
+holds the legacy engine's federal + CA bracket data. The new sim
+extends the pattern to locations and any other "static reference
+data" that varies with real-world law and place.
+
 ## Scenarios — bottom up
 
 Each scenario adds one new capability. The simulator must handle all
