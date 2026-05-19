@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use binding_targets::strip_parens;
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
@@ -940,14 +941,6 @@ fn is_ts_enum_iife_body_block(block: &BlockStmt, param: &str) -> bool {
         return false;
     };
     is_ts_enum_iife_body_expr(strip_parens(arg), param)
-}
-
-fn strip_parens(expr: &Expr) -> &Expr {
-    let mut cur = expr;
-    while let Expr::Paren(p) = cur {
-        cur = &p.expr;
-    }
-    cur
 }
 
 /// One step of the IIFE body:

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
     TargetAccessRecorder, binding_names, record_assign_target, record_pat_write,
-    record_update_target,
+    record_update_target, strip_parens,
 };
 use serde::{Deserialize, Serialize};
 use swc_common::{Span, Spanned};
@@ -619,14 +619,6 @@ fn decorate_property_key_is_static(expr: &Expr) -> bool {
 
 fn decorate_flags_are_static(expr: &Expr) -> bool {
     matches!(strip_parens(expr), Expr::Lit(Lit::Num(_)))
-}
-
-fn strip_parens(expr: &Expr) -> &Expr {
-    let mut cur = expr;
-    while let Expr::Paren(paren) = cur {
-        cur = &paren.expr;
-    }
-    cur
 }
 
 fn var_decl_of_item(item: &ModuleItem) -> Option<&VarDecl> {

@@ -361,3 +361,94 @@ that yields `Id` for each binding in a `Pat`. `swc_ecma_utils` ships
 `find_pat_ids::<Pat, Id>` which does the same. Worth swapping once
 `swc_ecma_utils` is otherwise in the analysis crate's deps (no good
 reason today — the local walker is small and equivalent).
+
+## Reinvented-wheel audit findings (recorded, no immediate action)
+
+A high-level audit (see chat session
+01VmZmgJmMUXFECyQGtsrBMd, after the `ModuleQuotient` Deref-newtype
+refactor) surveyed the debundler for places where we hand-roll
+something a stdlib / petgraph / swc helper provides. Most findings
+came back "appropriate / not actually a reinvention". The ones
+below are recorded for visibility, with the explicit decision
+that they're not worth doing right now.
+
+### `ChunkTable` interner stays
+
+`ids.rs`'s `ChunkTable` maps chunk paths (`String`) → dense
+`ChunkId(usize)` handles. Superficially looks like the same shape
+as the retired `BindingTable`, but the value proposition is
+different:
+
+- `ChunkId(usize)` is `Copy`, 8 bytes — flows through ~106 sites
+  by value. Swapping to `Atom` (the `BindingName → Id` migration's
+  natural answer) loses `Copy` semantics: `Atom` is `Clone`-not-
+  `Copy` (Arc-backed), forcing `.clone()` at every handle-passing
+  site.
+- swc's `Atom` global interning is tuned for short repeated JS
+  identifiers, not 30-character file paths. The interning win
+  evaporates for the actual chunk-key shape.
+- The dense indexing is used by storage like
+  `Vec<JsChunk>`-indexed-by-`ChunkId.0` and by stable round-trip
+  ordering in `ChunkBundle.chunk_order`.
+
+Keep `ChunkTable` as-is.
+
+### `OwnerGraph` hand-rolled CSR stays
+
+`graph.rs`'s `OwnerGraph` stores `Vec<OwnerEdge>` plus
+`Vec<Vec<OwnerEdgeId>>` (out_edges / in_edges) CSR adjacency. This
+isn't directly replaceable by petgraph because the design
+intentionally carries **multiple reasons per `(from, to)` pair as
+separate edges**, deterministically sorted by
+`(from, to, reason.kind, statement_ordinal, binding)` for stable
+report output. petgraph's `DiGraph`/`DiGraphMap` would force a
+single edge per pair or push the multi-reason list into a single
+edge weight (which is what `ModuleQuotient` does at the quotient
+level, where dedup is wanted). Keep the owner-level CSR.
+
+### `LazyBoundary` + `lazy_visit_*` helpers stay
+
+`facts.rs`'s `LazyBoundary` trait and `descend_lazy` /
+`lazy_visit_function` / `lazy_visit_class_member` family aren't a
+reinvention of `swc_ecma_visit::Visit` — they're a layer **on top
+of** `Visit` that lets the collector track lazy vs eager scope
+context (function bodies, class instance fields, getter/setter
+bodies) without each visitor re-implementing the boundary logic.
+The visitor merge (#1671) already collapsed the per-collector
+boilerplate to one shared collector that uses the helpers; no
+further win available without a generic-walker macro that wouldn't
+read cleaner than the current shape.
+
+### Manual `VisitMut` impls in `lowering/` stay
+
+`IdentifierRenamer`, `RenameAndShorthandNaturalizer`,
+`ShorthandNaturalizer`, etc. each implement custom `VisitMut`
+visitors. These are domain-specific transformations swc doesn't
+expose — the right use of swc's `VisitMut` trait, not a wheel
+reinvention.
+
+### Dense-int newtypes stay
+
+`OwnerId`, `OwnerEdgeId`, `StatementOrdinal`, `LogicalModuleIndex`,
+`ModuleId`, `ChunkId` are all `pub struct Foo(pub usize)` newtypes.
+Crates like `typed_index_collections` / `slotmap` would provide
+marginal type-system safety on `Vec` indexing, at the cost of a
+dep + per-storage-site conversion. Plain newtypes are standard
+compiler-IR practice; keep.
+
+### String-based ID round-tripping (`"owner:N"`, `"logical:N"`) stays
+
+`reports.rs`'s `owner_key` / `module_key` / `module_id_from_key`
+serialize typed IDs to human-readable strings for JSON reports
+and parse them back. Reasonable for the
+serialization-boundary use; not gymnastics.
+
+### `HashMap` + post-hoc `sort()` patterns
+
+~40 sites collect into a `HashMap` / `Vec` and `.sort()` for
+deterministic output. `BTreeMap` / `IndexMap` would eliminate
+the sort at the cost of slightly different iteration semantics.
+Most sites are one-shot init / report generation (not hot path);
+worth converting a few specific report-generation sites to
+`BTreeMap` for semantic clarity (the sorted order is the point,
+not an afterthought), but no urgent action.
