@@ -99,11 +99,13 @@ py_library(
     name = "market_bundle_py",
     srcs = ["market_bundle.py"],
     deps = [
+        ":event_streams_py",
         ":local_regulation_py",
         ":provenance_py",
         ":scenario_set_py",
         ":schemas_py",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )

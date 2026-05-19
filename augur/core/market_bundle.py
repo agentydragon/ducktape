@@ -4,8 +4,10 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
+import polars as pl
 from pydantic import Field, computed_field
 
+from augur.core import event_streams
 from augur.core.provenance import (
     CalibrationArtifact,
     CalibrationRun,
@@ -323,6 +325,45 @@ class MarketBundle:
 
     def crypto_value_multiplier(self, symbol: str) -> np.ndarray:
         return self._keyed_path(self.crypto_value_multipliers_by_symbol, symbol, factor_name="crypto_value")
+
+    def market_path_observations_frame(self, *, location_id: str | None, pe_issuer_key: str | None) -> pl.DataFrame:
+        """Build the dense `(rollouts × (months+1))` `MarketPathObservation`
+        frame for one scenario's keys, with the legacy fallbacks: `None`
+        location → all-ones home/rent multipliers; `None` issuer → all-ones
+        PE multipliers + no sale-opportunity events.
+
+        The engine used to assemble this on its own side; centralising the
+        per-key lookups + fallbacks here keeps the bundle as the source of
+        truth for what 'no scenario keys' means. Pure projection, no
+        scenario-shaped logic — the engine still owns scenario→key
+        translation (e.g. picking the first PE issuer for the path frame)."""
+
+        shape = (self.rollout_count, self.horizon_months + 1)
+        if location_id is None:
+            home_multiplier = np.ones(shape, dtype="float64")
+            rent_multiplier = np.ones(shape, dtype="float64")
+        else:
+            home_multiplier = self.home_value_multipliers(location_id)
+            rent_multiplier = self.rent_multipliers(location_id)
+        if pe_issuer_key is None:
+            pe_value_multipliers = np.ones(shape, dtype="float64")
+            pe_sale_mask = np.zeros(shape, dtype=np.bool_)
+        else:
+            pe_value_multipliers = self.private_equity_value_multiplier(pe_issuer_key)
+            pe_sale_mask = self.private_equity_sale_opportunity_mask_for(pe_issuer_key)
+        return event_streams.build_market_path_observations_frame(
+            rollout_count=self.rollout_count,
+            horizon_months=self.horizon_months,
+            month_index=self.month_index,
+            location_id=location_id,
+            inflation_multipliers=self.inflation_multipliers,
+            sp500_multipliers=self.generic_sp500_multipliers,
+            pe_value_multipliers=pe_value_multipliers,
+            home_value_multipliers=home_multiplier,
+            rent_multipliers=rent_multiplier,
+            mortgage_30y_rate_pct=self.mortgage_30y_rate_pct,
+            pe_sale_opportunity_mask=pe_sale_mask,
+        )
 
     @staticmethod
     def _keyed_path(paths: dict[str, np.ndarray], key: str, *, factor_name: str) -> np.ndarray:

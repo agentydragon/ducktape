@@ -2656,38 +2656,15 @@ def _trace_identity_by_rollout(scenario: Scenario, market_bundle: MarketBundle) 
 
 
 def _market_path_observations_frame(scenario: Scenario, market_bundle: MarketBundle) -> pl.DataFrame:
-    """Build the dense market-path frame in one shot from the bundle's
-    multiplier matrices. Replaces the legacy
-    `rollouts × (months+1)` per-cell `MarketPathObservation` Pydantic loop
-    that ran at scenario start (~11k Pydantic constructions for the bench
-    workload alone)."""
+    """Pick the per-scenario market-path keys (location, first PE issuer
+    if any) and hand them to the bundle to assemble the dense
+    `(rollouts × (months+1))` frame. Scenario→key translation lives in
+    the engine; per-key lookup + fallback to all-ones for absent keys
+    lives in `MarketBundle.market_path_observations_frame`."""
 
-    shape = (market_bundle.rollout_count, market_bundle.horizon_months + 1)
-    if scenario.location_id is None:
-        home_multiplier = np.ones(shape, dtype="float64")
-        rent_multiplier = np.ones(shape, dtype="float64")
-    else:
-        home_multiplier = market_bundle.home_value_multipliers(scenario.location_id)
-        rent_multiplier = market_bundle.rent_multipliers(scenario.location_id)
     pe_issuer_keys = _private_equity_issuer_routing_keys(scenario)
-    if not pe_issuer_keys:
-        pe_value_multipliers = np.ones(shape, dtype="float64")
-        pe_sale_mask = np.zeros(shape, dtype=np.bool_)
-    else:
-        pe_value_multipliers = market_bundle.private_equity_value_multiplier(pe_issuer_keys[0])
-        pe_sale_mask = market_bundle.private_equity_sale_opportunity_mask_for(pe_issuer_keys[0])
-    return event_streams.build_market_path_observations_frame(
-        rollout_count=market_bundle.rollout_count,
-        horizon_months=market_bundle.horizon_months,
-        month_index=market_bundle.month_index,
-        location_id=scenario.location_id,
-        inflation_multipliers=market_bundle.inflation_multipliers,
-        sp500_multipliers=market_bundle.generic_sp500_multipliers,
-        pe_value_multipliers=pe_value_multipliers,
-        home_value_multipliers=home_multiplier,
-        rent_multipliers=rent_multiplier,
-        mortgage_30y_rate_pct=market_bundle.mortgage_30y_rate_pct,
-        pe_sale_opportunity_mask=pe_sale_mask,
+    return market_bundle.market_path_observations_frame(
+        location_id=scenario.location_id, pe_issuer_key=pe_issuer_keys[0] if pe_issuer_keys else None
     )
 
 
