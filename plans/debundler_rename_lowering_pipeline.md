@@ -28,7 +28,7 @@ through.
 | ---- | ----------- | -------------------------------------------------------------------------------------------------- |
 | 1    | DONE        | Inventory contributors and consumers — captured in "Inventory before starting" section below       |
 | 2    | DONE        | `LoweringOp` + `LoweringPlan` + submit/readback API in `lowering/lowering_plan.rs` (13 unit tests) |
-| 3    | NOT STARTED | Flesh out `seal()` → `CheckedPlan` with cross-op + realizability checks                            |
+| 3    | IN PROGRESS | `seal()` cross-op coherence check landed; realizability gate deferred (needs `OwnerGraph` access)  |
 | 4    | NOT STARTED | Single-pass `execute()` driving AST + side-table updates                                           |
 | 5    | NOT STARTED | Migrate `chunk_renames` consumer onto plan; delete shim                                            |
 | 6    | NOT STARTED | Migrate naturalizer collect-funcs onto plan                                                        |

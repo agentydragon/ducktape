@@ -440,9 +440,59 @@ impl LoweringPlan {
     }
 
     /// Snapshot the plan into a [`CheckedPlan`] consumable by the
-    /// executor. Phase 2 only emits the rename + move indexes;
-    /// Phase 3 adds cross-op coherence and realizability checks.
+    /// executor.
+    ///
+    /// Runs cross-op coherence checks that submit-time can't catch
+    /// (because they depend on *combinations* of ops, not single
+    /// submissions):
+    ///
+    /// - **Rename/move scope coherence.** If a binding has a
+    ///   `MoveBinding { to: M }`, every `Rename` op on that binding
+    ///   must apply where the binding lives — `Scope::Chunk` is
+    ///   always OK; `Scope::Module(N)` for `N != M` is not.
+    ///   `Scope::Function(F)` cases are deferred until function
+    ///   scopes carry an enclosing-module link (Phase 6).
+    ///
+    /// Errors collected across the whole pass; on failure the
+    /// returned [`anyhow::Error`] embeds every violation so spec
+    /// authors see the full set in one round-trip rather than
+    /// fixing one error at a time. Realizability of the cumulative
+    /// move set is checked here too in a follow-up — needs
+    /// `OwnerGraph` access plumbed into the plan first.
     pub fn seal(self) -> Result<CheckedPlan> {
+        let mut errors: Vec<String> = Vec::new();
+        for ((scope, original), rename) in &self.renames {
+            if let Some(committed_move) = self.moves.get(original) {
+                let move_to = committed_move.to;
+                let coherent = match scope {
+                    Scope::Chunk => true,
+                    Scope::Module(m) => *m == move_to,
+                    // Phase 2 doesn't track which module a function
+                    // scope is enclosed in. Conservative: accept,
+                    // and Phase 6 tightens this when function scopes
+                    // carry their enclosing module.
+                    Scope::Function(_) => true,
+                };
+                if !coherent {
+                    let rename_reason = rename.reason;
+                    let move_reason = committed_move.reason;
+                    let new_name = &rename.new_name;
+                    let orig_atom = &original.0;
+                    errors.push(format!(
+                        "rename/move incoherence: binding {orig_atom:?} moves to module \
+                         {move_to:?} (by {move_reason}) but {rename_reason} renamed it \
+                         to {new_name} at {scope:?}"
+                    ));
+                }
+            }
+        }
+        if !errors.is_empty() {
+            return Err(anyhow!(
+                "lowering plan seal rejected {} violation(s):\n  - {}",
+                errors.len(),
+                errors.join("\n  - ")
+            ));
+        }
         let rename_index = self
             .renames
             .into_iter()
@@ -792,5 +842,124 @@ mod tests {
         assert!(p.is_name_taken(Scope::Function(f), &Atom::from("outer")));
         assert!(p.is_name_taken(Scope::Function(f), &Atom::from("modlocal")));
         assert!(!p.is_name_taken(Scope::Function(f), &Atom::from("nope")));
+    }
+
+    #[test]
+    fn seal_accepts_chunk_scope_rename_with_move() {
+        let mut p = plan();
+        p.submit(
+            LoweringOp::Rename {
+                scope: Scope::Chunk,
+                original: id("foo"),
+                name: NamePolicy::Required(Atom::from("foo_renamed")),
+                reason: "chunk_renames",
+                priority: Priority::Explicit,
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        p.submit(
+            LoweringOp::MoveBinding {
+                id: id("foo"),
+                to: module(1),
+                reason: "spec",
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        p.seal().unwrap();
+    }
+
+    #[test]
+    fn seal_accepts_module_rename_in_destination_module() {
+        let mut p = plan();
+        p.submit(
+            LoweringOp::Rename {
+                scope: Scope::Module(module(1)),
+                original: id("foo"),
+                name: NamePolicy::Required(Atom::from("foo_renamed")),
+                reason: "naturalizer",
+                priority: Priority::Heuristic,
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        p.submit(
+            LoweringOp::MoveBinding {
+                id: id("foo"),
+                to: module(1),
+                reason: "spec",
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        p.seal().unwrap();
+    }
+
+    #[test]
+    fn seal_rejects_module_rename_in_wrong_module() {
+        let mut p = plan();
+        p.submit(
+            LoweringOp::Rename {
+                scope: Scope::Module(module(0)),
+                original: id("foo"),
+                name: NamePolicy::Required(Atom::from("foo_renamed")),
+                reason: "stale_naturalizer",
+                priority: Priority::Heuristic,
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        p.submit(
+            LoweringOp::MoveBinding {
+                id: id("foo"),
+                to: module(1),
+                reason: "spec",
+            },
+            SubmitPolicy::Fail,
+        )
+        .unwrap();
+        let err = p.seal().unwrap_err().to_string();
+        assert!(err.contains("rename/move incoherence"));
+        assert!(err.contains("stale_naturalizer"));
+        assert!(err.contains("spec"));
+    }
+
+    #[test]
+    fn seal_batches_multiple_coherence_errors() {
+        let mut p = LoweringPlan::new(
+            module(0),
+            vec![module(0), module(1), module(2)],
+            HashMap::new(),
+        );
+        for (binding, scope) in [
+            ("a", Scope::Module(module(0))),
+            ("b", Scope::Module(module(0))),
+        ] {
+            p.submit(
+                LoweringOp::Rename {
+                    scope,
+                    original: id(binding),
+                    name: NamePolicy::Required(Atom::from(format!("{binding}_x").as_str())),
+                    reason: "test",
+                    priority: Priority::Heuristic,
+                },
+                SubmitPolicy::Fail,
+            )
+            .unwrap();
+            p.submit(
+                LoweringOp::MoveBinding {
+                    id: id(binding),
+                    to: module(2),
+                    reason: "spec",
+                },
+                SubmitPolicy::Fail,
+            )
+            .unwrap();
+        }
+        let err = p.seal().unwrap_err().to_string();
+        assert!(err.contains("2 violation(s)"));
+        assert!(err.contains("\"a\""));
+        assert!(err.contains("\"b\""));
     }
 }
