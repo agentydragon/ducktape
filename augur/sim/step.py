@@ -68,12 +68,12 @@ def _emit_transfers(scenario: Scenario, month: int, rollout_count: int) -> pl.Da
     their configured month; recurring transfers fire every month in
     `[start_month, end_month]` (or through horizon end). One row per
     (transfer, rollout)."""
-    scheduled = [t for t in scenario.scheduled_transfers if t.month == month]
-    recurring = [t for t in scenario.recurring_transfers if t.is_active_at(month)]
-    if not scheduled and not recurring:
+    active: list[ScheduledTransfer | RecurringTransfer] = [t for t in scenario.scheduled_transfers if t.month == month]
+    active.extend(t for t in scenario.recurring_transfers if t.is_active_at(month))
+    if not active:
         return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
     rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-    blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in (*scheduled, *recurring)]
+    blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in active]
     return pl.concat(blocks).select(list(TRANSFER_EVENT_SCHEMA.keys()))
 
 
