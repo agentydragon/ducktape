@@ -695,8 +695,8 @@ fn run_node_script(path: &Path) -> CommandResult {
 
 /// Parse `source` as an ESM module and return the SWC AST. Tests use this
 /// when the substring-on-emit checks aren't precise enough — e.g. when
-/// they need to walk specifiers to disambiguate `aH$1 as aH` (correct)
-/// from `aH$1 as aH$1` (corrupt).
+/// they need to walk specifiers to disambiguate `aH_1 as aH` (correct)
+/// from `aH_1 as aH_1` (corrupt).
 pub fn parse_module(source: &str) -> Module {
     let cm: Lrc<swc_common::SourceMap> = Default::default();
     let fm = cm.new_source_file(
@@ -746,8 +746,8 @@ pub fn assert_unique_import_locals(source: &str) {
 /// Parse `source` and assert exactly one `export { ... }` specifier has
 /// `orig.sym == expected_orig`, with its `exported` either absent (when
 /// `expected_exported_as` is `None`) or `Ident { sym: expected_exported_as }`.
-/// Walks the parsed specifier tree so a corrupted `export { aH$1 as aH$1 }`
-/// fails — a substring check on `aH$1 as aH` would accept both shapes.
+/// Walks the parsed specifier tree so a corrupted `export { aH_1 as aH_1 }`
+/// fails — a substring check on `aH_1 as aH` would accept both shapes.
 pub fn assert_export_named_specifier(
     source: &str,
     expected_orig: &str,

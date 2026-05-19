@@ -437,8 +437,13 @@ to re-derive them:
    submit-time once the stratified-phases model landed —
    `SubmitPolicy::SkipIfClaimed` only suppresses strictly higher
    priority claims, never same-priority.)
-2. **Disambiguation naming scheme.** Keep `_N` suffixing for the
-   first implementation, as `NamePolicy::MintOrSuffix`. Readability
+2. **Disambiguation naming scheme.** Phase 7 unifies on `_N`
+   suffixing for `NamePolicy::MintOrSuffix`. `mint_fresh_local_name`
+   in `lowering/util.rs` switched from `$N` to `_N` to match —
+   that's a wire-shape change for chunks whose import
+   disambiguation currently emits `foo$1`-style names (none of the
+   existing tests pin the suffix character; e2e fixtures don't
+   exercise import-disambiguation collisions). Readability
    heuristics (e.g. `name_from_module`) are a follow-up Plan
    _contributor_ submitting `NamePolicy::Required("name_from_module")`
    at heuristic priority — not a change to the `MintOrSuffix`

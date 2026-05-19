@@ -284,7 +284,7 @@ export { aH };
     );
     assert_export_named_specifier(&entry, "readableA", Some("aH"));
     assert!(
-        !entry.contains("aH$1"),
+        !entry.contains("aH_1"),
         "no fresh-suffix should appear when there is no collision; entry was:\n{entry}",
     );
     assert_entry_output(&fixture, "7\n");
@@ -313,11 +313,11 @@ export { aH, bC };
     .expect("read residual module");
 
     assert!(
-        residual.contains(r#"import { readableA as readableA$1 } from "../mod_a.js""#),
+        residual.contains(r#"import { readableA as readableA_1 } from "../mod_a.js""#),
         "expected import local to avoid nested readableA binding; residual was:\n{residual}",
     );
     assert!(
-        residual.contains("return readableA$1 + readableA"),
+        residual.contains("return readableA_1 + readableA"),
         "expected imported binding refs to use fresh local and parameter refs to stay local; residual was:\n{residual}",
     );
     assert_entry_output(&fixture, "3\n");
@@ -363,11 +363,11 @@ export { a, b, c };
     parse_module(&consumer);
     assert_unique_lexical_decls_per_scope(&consumer, "sharedReadableName");
     assert!(
-        consumer.contains("sharedReadableName as sharedReadableName$1"),
+        consumer.contains("sharedReadableName as sharedReadableName_1"),
         "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
     );
     assert!(
-        consumer.contains("sharedReadableName$1() + \":\" + sharedReadableName()"),
+        consumer.contains("sharedReadableName_1() + \":\" + sharedReadableName()"),
         "expected provider refs to use import alias and local refs to stay local; got:\n{consumer}",
     );
     assert_entry_output(&fixture, "provider:local\n");

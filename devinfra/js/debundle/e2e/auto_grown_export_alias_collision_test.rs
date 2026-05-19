@@ -54,7 +54,7 @@
 //!   fixture build fails at pipeline time.
 //! - **After the fix**: `auto_grown_residual_exports` either
 //!   renames the new export to a non-colliding public name
-//!   (e.g. `av$1`) or skips it (forcing the peeled module to
+//!   (e.g. `av_1`) or skips it (forcing the peeled module to
 //!   reach `av` by some other path the upstream invariant
 //!   allows). The fixture build succeeds and the entry runs.
 

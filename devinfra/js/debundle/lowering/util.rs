@@ -413,7 +413,7 @@ pub(super) fn preserve_export_specifier_names(
 pub(super) fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
     let mut suffix = 1usize;
     loop {
-        let candidate = format!("{base}${suffix}");
+        let candidate = format!("{base}_{suffix}");
         if !occupied.contains(&candidate) {
             return candidate;
         }
