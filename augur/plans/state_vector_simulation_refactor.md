@@ -1211,6 +1211,29 @@ All 19 augur/core tests green. Bench within tolerance.
   `CheckingFloorSellPublicStockPolicy` on a zero-basis position)
   produce non-zero year tax matching the sum of
   `GENERIC_SP500_SALE_TAX_USD`.
+- **PE settlement-funding infrastructure deleted (Wave 3.1, G5).**
+  The PE branch inside
+  `_settle_required_cash_obligation_at_month_position` carried the
+  last surviving `[:, M+1:]` forward-write scratchpad in the engine
+  (matrix updates on `pe_state.remaining_*_by_month` and
+  `pe_state.private_equity_value_usd`). It was also dead code in
+  practice: the matrix backing started at zeros and the forward
+  write `[:, M:] = matrix[:, M:] - units_sold` computed
+  `0 - 0 = 0` at every month because the engine's end-of-month
+  snapshot wrote `[:, M]` (not `[:, M+1]`), so settlement always
+  read zero PE units. Deleted the PE branch, the
+  `_PrivateEquityFundingState` dataclass, the
+  `_apply_pe_checking_floor_obligation_funding_policy` helper, the
+  `PrivateEquityObligationFundingPolicyApplication` dataclass, the
+  `pe_funding_state` engine construction, the `pe_state` parameter
+  on the settlement function, and every `pe_state=pe_funding_state`
+  call-site argument; updated the `sale_asset_preference`
+  Pydantic validator to reject `PRIVATE_EQUITY` (it was previously
+  in the allow-list with a silent no-op runtime path).
+  scenario_engine.py: 6571 → 6308 LOC. PE still participates via
+  `PrivateEquitySalePolicy` (PublicMarket / LiquidityEventOnly tender)
+  and `Acquisition`-regime events — only the never-functional
+  obligation-funding-chain PE path is gone.
 
 ## Remaining gaps (enumerated)
 
