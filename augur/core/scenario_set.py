@@ -382,10 +382,9 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
         for asset_type in self.sale_asset_preference:
             if asset_type in seen:
                 raise ValueError(f"sale_asset_preference contains duplicate {asset_type}")
-            if asset_type not in (AssetType.GENERIC_SP500_STOCK, AssetType.CRYPTO, AssetType.PRIVATE_EQUITY):
+            if asset_type not in (AssetType.GENERIC_SP500_STOCK, AssetType.CRYPTO):
                 raise ValueError(
-                    f"sale_asset_preference only supports GENERIC_SP500_STOCK, CRYPTO, and PRIVATE_EQUITY; "
-                    f"got {asset_type}"
+                    f"sale_asset_preference only supports GENERIC_SP500_STOCK and CRYPTO; got {asset_type}"
                 )
             seen.add(asset_type)
         return self

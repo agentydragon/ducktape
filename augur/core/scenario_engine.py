@@ -1311,29 +1311,6 @@ class CryptoObligationFundingPolicyApplication:
     remaining_basis_usd: np.ndarray
 
 
-@dataclass(frozen=True)
-class PrivateEquityObligationFundingPolicyApplication:
-    """Result of funding an obligation by selling a `PublicMarket`-regime PE position.
-
-    Realized gain feeds the existing annual PE sale-tax allocation (long-term
-    capital gain treatment), and the lot disposition / journal entries are
-    recorded through the standard PE sale recorder.
-    """
-
-    policy_step: ActorPolicyStep[Policy]
-    instruction: SellAssetInstructionBatch
-    sale_usd: np.ndarray
-    basis_usd: np.ndarray
-    taxable_gain_usd: np.ndarray
-    funded_cash_usd: np.ndarray
-    shortfall_usd: np.ndarray
-    remaining_due_usd: np.ndarray
-    remaining_units: np.ndarray
-    remaining_basis_usd: np.ndarray
-    sold_units: np.ndarray
-    sold_fraction: np.ndarray
-
-
 def _trace_row_id(prefix: str, *, rollout_index: int, month_index: int) -> str:
     return f"{prefix}:rollout:{rollout_index}:month:{month_index}"
 
@@ -1993,16 +1970,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     # supply `prior_year_tax_usd` as a user-settable knob (changed
     # from today's forward-looking-90%-of-actual behavior, which
     # required two-pass simulation to honor honestly).
-    pe_funding_state = _PrivateEquityFundingState(
-        private_equity_value_usd=private_equity_value,
-        remaining_units_by_month=remaining_private_equity_units_by_month,
-        remaining_basis_by_month=remaining_private_equity_basis_by_month,
-        private_equity_sale_usd=private_equity_sale_usd_by_month,
-        pe_value_multipliers=pe_value_multipliers,
-        initial_private_equity=initial_private_equity,
-        source_holding_id=private_equity_source_holding_id,
-        sale_action_records=private_equity_sale_action_records,
-    )
     tax_actor = TaxActor(tax_profile=scenario.tax_profile, rollout_count=rollout_count)
     _tax_obligation_cash_source_account_id = (
         primary_owner_funding_sources.cash_source_account.account_id
@@ -2416,7 +2383,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 accounting=accounting,
                 sp500_sale_action_records=sp500_sale_action_records,
                 crypto_sale_action_records=crypto_sale_action_records,
-                pe_state=pe_funding_state,
             )
             current_cash = _ob_settled.cash_usd
             remaining_sp500_units = _ob_settled.remaining_sp500_units
@@ -2540,7 +2506,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 accounting=accounting,
                 sp500_sale_action_records=sp500_sale_action_records,
                 crypto_sale_action_records=crypto_sale_action_records,
-                pe_state=pe_funding_state,
             )
             current_cash = _tax_settled.cash_usd
             remaining_sp500_units = _tax_settled.remaining_sp500_units
@@ -2756,21 +2721,14 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
     annual_tax_accumulator.emit_obligations(obligations)
     annual_tax_accumulator.emit_funding_decisions(funding_decisions)
 
-    # Re-derive the gain matrices from the (now-final) action records.
-    # The post-loop tax settlement above may have appended more PE
-    # (and possibly SP500) sale records via the obligation-funding
-    # chain; the downstream `_tax_share_for_sale_action` loops at
-    # :~2519 / :~2570 read these matrices as denominators per (rollout,
-    # month). Today's behavior includes post-loop sales in the PE
-    # denominator (via the now-removed `pe_state.private_equity_sale
-    # _taxable_gain_usd[:, M] +=` in settlement); the SP500 denominator
-    # only ever had main-loop sales (today's `[:, month] = sp500_sale -
-    # sp500_basis` overwrite limited it to within-month-policy locals,
-    # and post-loop settlement never updated this matrix). Match both
-    # by re-building the asset_change_log over all records and
-    # re-deriving PE; SP500 stays at its main-loop value so existing
-    # consumers don't see a behavior change from including post-loop
-    # SP500 sales in the denominator.
+    # Re-derive the PE gain matrix from the full action-record list
+    # (including tax-driven PE sales appended during inline tax
+    # settlement). The downstream `_tax_share_for_sale_action` loops
+    # below read this matrix as the per-(rollout, month) denominator
+    # when attributing tax-share to individual sale records; for that
+    # attribution to be consistent the denominator must cover every
+    # sale being attributed, including ones the pre-tax snapshot
+    # excluded.
     asset_change_log = _build_asset_change_log(
         sp500_records=sp500_sale_action_records,
         crypto_records=crypto_sale_action_records,
@@ -4867,33 +4825,6 @@ class _ObligationSettlementResult:
 
 
 @dataclass
-class _PrivateEquityFundingState:
-    """Mutable PE state shared with the obligation funding chain.
-
-    The PE state is per-portfolio (the engine aggregates positions into one
-    `private_equity_*` path). When a `PublicMarket`-regime PE position funds
-    an obligation, this state updates the per-month matrices for downstream
-    rows (cash, PE value, sale-tax recording, etc.) and appends a
-    `PrivateEquitySaleActionRecord` to the action-record list so the same
-    journal-entry / lot-disposition / effect recorder used by
-    `PrivateEquitySalePolicy` covers the funding sale.
-
-    All matrices are shaped `(rollout, month)`. The 1D `remaining_units` /
-    `remaining_basis_usd` vectors track end-of-month state and are kept in
-    sync with the matrices.
-    """
-
-    private_equity_value_usd: np.ndarray
-    remaining_units_by_month: np.ndarray
-    remaining_basis_by_month: np.ndarray
-    private_equity_sale_usd: np.ndarray
-    pe_value_multipliers: np.ndarray
-    initial_private_equity: float
-    source_holding_id: str
-    sale_action_records: list[PrivateEquitySaleActionRecord]
-
-
-@dataclass
 class _PartnerSettlementContext:
     """Per-agreement state for inline partner-contribution settlement.
 
@@ -5027,7 +4958,6 @@ def _settle_required_cash_obligation_at_month_position(
     accounting: AccountingTraceBuilder,
     sp500_sale_action_records: list[Sp500SaleActionRecord],
     crypto_sale_action_records: list[CryptoSaleActionRecord],
-    pe_state: _PrivateEquityFundingState | None = None,
 ) -> _ObligationSettlementResult:
     """Settle one obligation at a single month position.
 
@@ -5038,11 +4968,8 @@ def _settle_required_cash_obligation_at_month_position(
 
     Single-month accumulator matrices (`crypto_sale_usd`,
     `crypto_sale_basis_usd`, `checking_floor_shortfall_usd`,
-    `accumulator.*`, and `pe_state.private_equity_sale_*`) are still
-    written `[:, month_position]` in place — they record per-month decisions,
-    not state that flows forward. The PE branch additionally forward-propagates
-    `pe_state.remaining_*` and `pe_state.private_equity_value_usd` so the
-    next iteration / next settlement call sees the post-sale state.
+    `accumulator.*`) are still written `[:, month_position]` in place —
+    they record per-month decisions, not state that flows forward.
     """
     obligation_type = obligation_kind.obligation_type
     due = obligation_amount_usd
@@ -5183,126 +5110,6 @@ def _settle_required_cash_obligation_at_month_position(
                                 "shortfall_usd": remaining_due.copy(),
                             },
                             _CRYPTO_SALE_ACTION_COLUMNS,
-                        ),
-                    )
-                )
-            elif asset_type is AssetType.PRIVATE_EQUITY:
-                if sources.pe_public_market_regime is None or pe_state is None:
-                    # A scenario opted into PE funding by listing PRIVATE_EQUITY in
-                    # sale_asset_preference, but the position is not PublicMarket
-                    # (or the engine code path has no PE state available). Skip
-                    # rather than raise: the preference is a soft fallback chain.
-                    continue
-                # Unit price = current month's value / current month's units (whenever
-                # units > 0). This is the same spot mark the LiquidityEventOnly tender
-                # path uses and accurately reflects the market multiplier at this month.
-                pe_units_now = pe_state.remaining_units_by_month[:, month_position]
-                pe_value_now = pe_state.private_equity_value_usd[:, month_position]
-                pe_unit_price_now = np.where(pe_units_now > 0, pe_value_now / np.maximum(pe_units_now, 1e-12), 0.0)
-                pe_application = _apply_pe_checking_floor_obligation_funding_policy(
-                    policy_step,
-                    due_usd=due,
-                    remaining_due_usd=remaining_due,
-                    cash_usd=cash_usd,
-                    remaining_units=pe_units_now,
-                    remaining_basis_usd=pe_state.remaining_basis_by_month[:, month_position],
-                    pe_unit_price_usd=pe_unit_price_now,
-                    pe_regime=sources.pe_public_market_regime,
-                    current_month_index=int(due_month_index),
-                    source_holding_id=sources.pe_source_holding_id,
-                )
-                if pe_application is None:
-                    continue
-                units_sold = np.maximum(0.0, pe_units_now - pe_application.remaining_units)
-                basis_sold = np.maximum(
-                    0.0, pe_state.remaining_basis_by_month[:, month_position] - pe_application.remaining_basis_usd
-                )
-                # PE state is matrix-backed (TODO G5: migrate to 1D state-in/out
-                # like cash/SP500/crypto). Successive settlement calls within
-                # the same main-loop iteration read `pe_state.remaining_*_by_month
-                # [:, month_position]` to see prior settlement's post-sale state,
-                # so forward-propagate units/basis and multiplier-scaled value
-                # here. The `[:, M+1:]` slice writes are scratchpad and the
-                # main-loop's end-of-month snapshot overwrites `[:, M]` from
-                # the engine's PE 1D locals.
-                pe_state.remaining_units_by_month[:, month_position:] = np.maximum(
-                    0.0, pe_state.remaining_units_by_month[:, month_position:] - units_sold[:, None]
-                )
-                pe_state.remaining_basis_by_month[:, month_position:] = np.maximum(
-                    0.0, pe_state.remaining_basis_by_month[:, month_position:] - basis_sold[:, None]
-                )
-                pe_state.private_equity_value_usd[:, month_position] = np.maximum(
-                    0.0, pe_value_now - pe_application.sale_usd
-                )
-                if month_position + 1 < pe_state.private_equity_value_usd.shape[1]:
-                    multiplier_at_month = pe_state.pe_value_multipliers[:, month_position]
-                    forward_ratios = np.where(
-                        multiplier_at_month[:, None] > 0,
-                        pe_state.pe_value_multipliers[:, month_position + 1 :]
-                        / np.maximum(multiplier_at_month[:, None], 1e-12),
-                        0.0,
-                    )
-                    pe_state.private_equity_value_usd[:, month_position + 1 :] = np.maximum(
-                        0.0, pe_state.private_equity_value_usd[:, month_position, None] * forward_ratios
-                    )
-                cash_usd = cash_usd + pe_application.sale_usd
-                pe_state.private_equity_sale_usd[:, month_position] = (
-                    pe_state.private_equity_sale_usd[:, month_position] + pe_application.sale_usd
-                )
-                # `pe_state.private_equity_sale_taxable_gain_usd[:, M] +=`
-                # used to be done here for the post-loop tax settlement
-                # path; the PE gain matrix is now derived from the unified
-                # `asset_change_log` (which already records every PE sale
-                # via `sp500_sale_action_records`-style `sale_action_records`
-                # append below). Removed to keep one source of truth.
-                remaining_due = pe_application.remaining_due_usd
-                checking_floor_shortfall_usd[:, month_position] = np.maximum(
-                    checking_floor_shortfall_usd[:, month_position], remaining_due
-                )
-                accumulator.record_sale_decision(
-                    month_position=month_position,
-                    policy_step_index=policy_step.sequence_index,
-                    asset_type=AssetType.PRIVATE_EQUITY,
-                    decision_type=FundingDecisionType.SELL_PRIVATE_EQUITY,
-                    policy_id=policy.policy_id,
-                    source_type=FundingSourceType.PRIVATE_EQUITY_ASSET,
-                    source_asset_id=sources.pe_source_holding_id,
-                    source_asset_type=AssetType.PRIVATE_EQUITY,
-                    requested_sale=pe_application.instruction.requested_amount_usd,
-                    funded_cash=pe_application.funded_cash_usd,
-                    shortfall=pe_application.shortfall_usd,
-                )
-                # Mirror PrivateEquitySaleApplication shape for the existing
-                # journal-entry/lot-disposition/effect recorder.
-                pe_state.sale_action_records.append(
-                    PrivateEquitySaleActionRecord(
-                        month_position=month_position,
-                        month_index=due_month_index,
-                        instruction=PrivateEquitySaleInstructionBatch(
-                            actor_id=policy.actor_id,
-                            policy_id=policy.policy_id,
-                            requested_amount_usd=pe_application.instruction.requested_amount_usd,
-                            proceeds_destination=AccountType.CHECKING,
-                            opportunity_id=np.array([None] * cash_usd.shape[0], dtype=object),
-                            opportunity_cause_id=np.array(
-                                [
-                                    f"policy:{policy.policy_id}:{obligation_type.value}:funding_pe_sale:rollout:{i}:"
-                                    f"month:{due_month_index}"
-                                    for i in range(cash_usd.shape[0])
-                                ],
-                                dtype=object,
-                            ),
-                        ),
-                        sale_application=PrivateEquitySaleApplication(
-                            sale_usd=pe_application.sale_usd,
-                            basis_usd=pe_application.basis_usd,
-                            taxable_gain_usd=pe_application.taxable_gain_usd,
-                            sold_units=pe_application.sold_units,
-                            sold_fraction=pe_application.sold_fraction,
-                            remaining_units=pe_application.remaining_units,
-                            remaining_basis_usd=pe_application.remaining_basis_usd,
-                            remaining_fraction=np.zeros_like(pe_application.sold_fraction),
-                            journal_entries=(),
                         ),
                     )
                 )
@@ -5514,76 +5321,6 @@ def _apply_checking_floor_obligation_funding_policy(
         remaining_due_usd=remaining_due_after_sale,
         remaining_units=sale_application.remaining_units,
         remaining_basis_usd=sale_application.remaining_basis_usd,
-    )
-
-
-def _apply_pe_checking_floor_obligation_funding_policy(
-    policy_step: ActorPolicyStep[Policy],
-    *,
-    due_usd: np.ndarray,
-    remaining_due_usd: np.ndarray,
-    cash_usd: np.ndarray,
-    remaining_units: np.ndarray,
-    remaining_basis_usd: np.ndarray,
-    pe_unit_price_usd: np.ndarray,
-    pe_regime: PublicMarket,
-    current_month_index: int,
-    source_holding_id: str,
-) -> PrivateEquityObligationFundingPolicyApplication | None:
-    """Sell a `PublicMarket` PE position to fund a cash obligation.
-
-    Returns `None` if the lockup has not expired or the policy did not request
-    a sale (no rollouts both short of the floor and unfunded). The caller
-    threads `remaining_units`/`remaining_basis_usd` (1D per-rollout arrays) and
-    updates them with the application's `remaining_*` fields.
-    """
-    policy = policy_step.policy
-    if not isinstance(policy, CheckingFloorSellPublicStockPolicy):
-        raise TypeError(f"checking-floor PE obligation funding handler received {type(policy).__name__}")
-    if pe_regime.lockup_end_month is not None and current_month_index < int(pe_regime.lockup_end_month):
-        return None
-    projected_cash_after_obligation = cash_usd - due_usd
-    requested_sale = np.where(
-        (remaining_due_usd > 0) & (projected_cash_after_obligation < float(policy.floor_usd)),
-        # As with crypto: cap the requested sale at remaining_due. PE is a
-        # discretionary funding source; selling more than needed leaks tax
-        # liability without further benefit.
-        np.minimum(float(policy.sale_amount_usd), remaining_due_usd),
-        0.0,
-    )
-    instruction = SellAssetInstructionBatch(
-        actor_id=policy.actor_id,
-        policy_id=policy.policy_id,
-        asset_type=AssetType.PRIVATE_EQUITY,
-        requested_amount_usd=requested_sale,
-        target_cash_floor_usd=float(policy.floor_usd),
-        source_asset_id=source_holding_id,
-    )
-    value_usd = remaining_units * pe_unit_price_usd
-    sale_usd = np.minimum(requested_sale, value_usd)
-    sold_fraction = np.divide(sale_usd, value_usd, out=np.zeros_like(sale_usd), where=value_usd > 0)
-    basis_usd = remaining_basis_usd * sold_fraction
-    taxable_gain_usd = np.maximum(0.0, sale_usd - basis_usd)
-    sold_units = remaining_units * sold_fraction
-    cash_after_sale = cash_usd + sale_usd
-    shortfall_usd = np.maximum(0.0, float(policy.floor_usd) - cash_after_sale)
-    if not np.any((requested_sale > 0) | (shortfall_usd > 0)):
-        return None
-    funded_cash = np.minimum(remaining_due_usd, sale_usd)
-    remaining_due_after_sale = np.maximum(0.0, remaining_due_usd - funded_cash)
-    return PrivateEquityObligationFundingPolicyApplication(
-        policy_step=policy_step,
-        instruction=instruction,
-        sale_usd=sale_usd,
-        basis_usd=basis_usd,
-        taxable_gain_usd=taxable_gain_usd,
-        funded_cash_usd=funded_cash,
-        shortfall_usd=remaining_due_after_sale,
-        remaining_due_usd=remaining_due_after_sale,
-        remaining_units=np.maximum(0.0, remaining_units - sold_units),
-        remaining_basis_usd=np.maximum(0.0, remaining_basis_usd - basis_usd),
-        sold_units=sold_units,
-        sold_fraction=sold_fraction,
     )
 
 
