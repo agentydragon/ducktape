@@ -724,23 +724,73 @@ they are not maintained alongside as separate state.
   0"). If the scenario does not configure it, the engine raises at
   scenario-validation time — the user has to make the call.
 
+## Stretch goals (signs of good design)
+
+These are not critical-path requirements but they are diagnostic.
+If the design comes out clean, they fall out for free; if achieving
+them requires intrusive engine changes, that points at a smell in
+the design that's worth examining before shipping.
+
+- **Tax math applies to any tax-paying agent, not a hardwired
+  "primary owner".** The critical floor is that one primary agent
+  pays their federal + CA income taxes correctly (S6, S7). The
+  stretch goal is that the engine has no special-case path for that
+  one agent: the year-tax template (see [Asset templates and rule
+  routing](#asset-templates-and-rule-routing)) runs once per
+  (rollout, year), grouped over every agent the scenario marks as
+  tax-paying. If the scenario configures two tax-paying agents,
+  both get year-tax computations, both get quarterly + year-end
+  obligations, both settle from their own cash + funding chains —
+  with no engine-level changes. If achieving this requires more
+  than scenario configuration, the design has a `primary_owner`
+  hardcoded somewhere it shouldn't be.
+
+  This stretches naturally to a hypothetical scenario where Alice
+  and Auragon are both individual tax-paying agents in the same
+  rollout (each with their own filing status, own income streams,
+  own holdings, own deductions). Owner-plus-partner property
+  scenarios should not need to invent a special "second agent
+  pathway" — the second agent is just a second `tax_payer=true` row
+  in the agents frame.
+
+  Single-agent tax math is **critical**; multi-agent tax math is
+  **stretch**. If multi-agent doesn't work but single-agent does,
+  that's a shippable state; the engine's structure should make
+  multi-agent a small follow-up, not a redesign.
+
+- **Adding a new inter-agent loan instance is configuration.**
+  Today the only inter-agent loan type the simulator must handle is
+  a mortgage between an individual (Alice) and a lender (Bank Bob).
+  The amortizing-loan template (see [Asset templates and rule
+  routing](#asset-templates-and-rule-routing)) is written to cover
+  ANY fixed-payment debt between two agents — the same code path
+  serves an intra-family personal loan, a partner-equity loan, a
+  car loan, an HELOC, etc. The stretch goal is that adding such a
+  loan to a scenario is **scenario configuration**, not engine
+  code: pick the template, supply the principal / rate / term /
+  borrower / lender / deductibility-flag parameters, and the loan
+  works.
+
+  If adding "Alice borrows \$20k from her mom" to a scenario
+  requires touching engine code, the amortizing-loan template
+  isn't generic enough.
+
 ## Open questions
 
 These are still unresolved and need a decision before the relevant
 layer lands. They aren't blocking the earlier layers.
 
-- **Tax household scope.** Tax computation today is single-agent.
-  Joint filers with separate cash accounts but a single tax return —
-  is the tax computation on an "agent" or on a "tax household"
-  abstraction that aggregates one or more agents? Either works; the
-  decision affects how filing status, joint deductions, and combined
-  brackets are modeled.
+- **Tax household scope.** A "tax-paying agent" is the unit of tax
+  computation as established above. Joint filers — two people who
+  share a single tax return but possibly maintain separate cash
+  accounts and holdings — is a separate question on top: is a
+  married-filing-jointly couple modeled as one tax-paying agent
+  whose holdings span the joint estate, or as two cash-account-
+  owning agents that get joined at tax time into a tax-household
+  abstraction? The first is simpler; the second is closer to how
+  real joint filing works. Decision affects how MFJ filing status
+  and the joint standard deduction are wired but does not block
+  any single-filer scenario.
 - **Agent-to-agent gifting tax treatment.** S1.2 establishes that
   transfers can carry an income classification. Gift tax,
   exclusions, lifetime exemption — out of scope here, or modeled?
-- **Inter-agent loans beyond mortgages.** S8 describes one specific
-  contract type. Should the simulator support arbitrary inter-agent
-  loans (e.g. partner equity loans, intra-family lending), or is
-  mortgage the only template? The amortizing-loan template above
-  is written to cover both; whether scenarios actually configure
-  non-mortgage instances is the open question.
