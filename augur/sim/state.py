@@ -45,6 +45,19 @@ TAX_LIABILITIES_SCHEMA: dict[str, pl.DataType] = {
     "amount_owed_usd": pl.Float64(),
 }
 
+# Running total of net capital gains for the current tax year, per
+# `(rollout_index, agent_id, classification)` where `classification`
+# is one of {"ltcg", "stcg"}. Reset at year-end alongside ordinary
+# income. The split is determined at the lot_disposition level by
+# `holding_period = sale_month - purchase_month` against the 12-
+# month LTCG threshold.
+CAPITAL_GAINS_YTD_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "agent_id": pl.Utf8(),
+    "classification": pl.Utf8(),
+    "gain_usd": pl.Float64(),
+}
+
 # An asset lot is a tax-relevant unit-of-acquisition: a quantity of
 # some asset bought at a specific time at a specific per-unit cost
 # basis. Sales consume from lots in some order (FIFO for spike 1);
@@ -73,4 +86,5 @@ class StateCrossSection:
     cash_balances: pl.DataFrame
     asset_lots: pl.DataFrame
     ordinary_income_ytd: pl.DataFrame
+    capital_gains_ytd: pl.DataFrame
     tax_liabilities: pl.DataFrame

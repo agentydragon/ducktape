@@ -32,6 +32,7 @@ from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.state import (
     ASSET_LOT_SCHEMA,
+    CAPITAL_GAINS_YTD_SCHEMA,
     CASH_BALANCES_SCHEMA,
     ORDINARY_INCOME_YTD_SCHEMA,
     TAX_LIABILITIES_SCHEMA,
@@ -67,6 +68,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         cash_balances=_stack_cash_balances(cross_sections),
         asset_lots=_stack_asset_lots(cross_sections),
         ordinary_income_ytd=_stack_income_ytd(cross_sections),
+        capital_gains_ytd=_stack_capital_gains(cross_sections),
         tax_liabilities=_stack_tax_liabilities(cross_sections),
         market_prices=market.prices,
         events_log=_concat_events(events_by_month),
@@ -91,11 +93,13 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
     cash = _initial_cash(scenario, rollouts)
     asset_lots = _initial_asset_lots(scenario, rollouts)
     ordinary_income_ytd = _initial_ordinary_income_ytd(scenario, rollouts)
+    capital_gains_ytd = pl.DataFrame(schema=CAPITAL_GAINS_YTD_SCHEMA)
     tax_liabilities = pl.DataFrame(schema=TAX_LIABILITIES_SCHEMA)
     return StateCrossSection(
         cash_balances=cash,
         asset_lots=asset_lots,
         ordinary_income_ytd=ordinary_income_ytd,
+        capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
     )
 
@@ -192,6 +196,14 @@ def _stack_income_ytd(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
         for month, cs in enumerate(cross_sections)
     ]
     return pl.concat(blocks).select(["rollout_index", "month_index", "agent_id", "ordinary_income_usd"])
+
+
+def _stack_capital_gains(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
+    blocks = [
+        cs.capital_gains_ytd.with_columns(pl.lit(month, dtype=pl.Int64()).alias("month_index"))
+        for month, cs in enumerate(cross_sections)
+    ]
+    return pl.concat(blocks).select(["rollout_index", "month_index", "agent_id", "classification", "gain_usd"])
 
 
 def _stack_tax_liabilities(cross_sections: list[StateCrossSection]) -> pl.DataFrame:

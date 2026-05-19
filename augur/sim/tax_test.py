@@ -8,7 +8,7 @@ import numpy as np
 import pytest_bazel
 
 from augur.sim.jurisdictions import TaxBracket, load_jurisdiction
-from augur.sim.tax import apply_brackets
+from augur.sim.tax import apply_brackets, apply_ltcg_brackets
 
 
 def test_apply_brackets_hand_computed_federal_single_50k() -> None:
@@ -57,6 +57,53 @@ def test_apply_brackets_california_single_100k() -> None:
     ca = load_jurisdiction("california")
     tax = apply_brackets(np.array([100_000.0]), ca.ordinary_income_brackets["single"])
     assert math.isclose(tax[0], 5952.85, abs_tol=0.01)
+
+
+def test_ltcg_brackets_zero_when_total_taxable_below_threshold() -> None:
+    """Ordinary $30k + LTCG $10k = $40k total. The federal 0% LTCG
+    bracket extends to $47,025 so all $10k of LTCG falls in it →
+    zero tax."""
+    fed = load_jurisdiction("federal_us")
+    assert fed.ltcg_brackets is not None
+    tax = apply_ltcg_brackets(np.array([10_000.0]), np.array([30_000.0]), fed.ltcg_brackets["single"])
+    assert math.isclose(tax[0], 0.0, abs_tol=1e-6)
+
+
+def test_ltcg_brackets_split_across_zero_and_fifteen_percent() -> None:
+    """Ordinary $30k + LTCG $20k = $50k total. The 0% bracket ends
+    at $47,025; LTCG occupies $30k-$50k.
+    0% rate on $30k-$47,025 = $17,025 → $0.
+    15% rate on $47,025-$50,000 = $2,975 → $446.25.
+    Total LTCG tax = $446.25."""
+    fed = load_jurisdiction("federal_us")
+    assert fed.ltcg_brackets is not None
+    tax = apply_ltcg_brackets(np.array([20_000.0]), np.array([30_000.0]), fed.ltcg_brackets["single"])
+    assert math.isclose(tax[0], 446.25, abs_tol=1e-6)
+
+
+def test_ltcg_brackets_pure_fifteen_when_ordinary_already_in_15pct_band() -> None:
+    """Ordinary income $100k already past the 0% LTCG threshold.
+    LTCG $50k sits entirely in the 15% bracket → $7500."""
+    fed = load_jurisdiction("federal_us")
+    assert fed.ltcg_brackets is not None
+    tax = apply_ltcg_brackets(np.array([50_000.0]), np.array([100_000.0]), fed.ltcg_brackets["single"])
+    assert math.isclose(tax[0], 7500.0, abs_tol=1e-6)
+
+
+def test_ltcg_brackets_vectorized() -> None:
+    """One call, four rollouts, each with its own ordinary + LTCG
+    combination — all bracket walks share the same schedule."""
+    fed = load_jurisdiction("federal_us")
+    assert fed.ltcg_brackets is not None
+    tax = apply_ltcg_brackets(
+        np.array([10_000.0, 20_000.0, 50_000.0, 0.0]),
+        np.array([30_000.0, 30_000.0, 100_000.0, 0.0]),
+        fed.ltcg_brackets["single"],
+    )
+    assert math.isclose(tax[0], 0.0, abs_tol=1e-6)
+    assert math.isclose(tax[1], 446.25, abs_tol=1e-6)
+    assert math.isclose(tax[2], 7500.0, abs_tol=1e-6)
+    assert math.isclose(tax[3], 0.0, abs_tol=1e-6)
 
 
 if __name__ == "__main__":

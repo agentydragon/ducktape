@@ -32,12 +32,13 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     cross-section. Pure: does not mutate inputs.
 
     Order matters: income-carrying transfers increment
-    `ordinary_income_ytd` first, then asset sales credit cash and
-    consume lots, then year-end tax accruals book a liability and
-    zero out the year-to-date income."""
+    `ordinary_income_ytd` first, asset sales both credit cash and
+    bucket capital gains into ltcg/stcg, then year-end tax accruals
+    book a liability and zero out the year-to-date totals."""
     cash_balances = state.cash_balances
     asset_lots = state.asset_lots
     ordinary_income_ytd = state.ordinary_income_ytd
+    capital_gains_ytd = state.capital_gains_ytd
     tax_liabilities = state.tax_liabilities
 
     if not events.asset_purchases.is_empty():
@@ -45,17 +46,20 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     if not events.lot_dispositions.is_empty():
         asset_lots = _apply_lot_dispositions_to_lots(asset_lots, events.lot_dispositions)
         cash_balances = _apply_lot_dispositions_to_cash(cash_balances, events.lot_dispositions)
+        capital_gains_ytd = _apply_dispositions_to_capital_gains_ytd(capital_gains_ytd, events.lot_dispositions)
     if not events.transfers.is_empty():
         cash_balances = _apply_transfers(cash_balances, events.transfers)
         ordinary_income_ytd = _apply_income_to_ytd(ordinary_income_ytd, events.transfers)
     if not events.tax_accruals.is_empty():
         tax_liabilities = _apply_tax_accruals_to_liabilities(tax_liabilities, events.tax_accruals)
         ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
+        capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
 
     return StateCrossSection(
         cash_balances=cash_balances,
         asset_lots=asset_lots,
         ordinary_income_ytd=ordinary_income_ytd,
+        capital_gains_ytd=capital_gains_ytd,
         tax_liabilities=tax_liabilities,
     )
 
@@ -169,6 +173,31 @@ def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accrua
     return pl.concat([tax_liabilities, new_rows])
 
 
+def _apply_dispositions_to_capital_gains_ytd(
+    capital_gains_ytd: pl.DataFrame, dispositions: pl.DataFrame
+) -> pl.DataFrame:
+    """Bucket each lot disposition's `gain_usd = proceeds_usd -
+    cost_basis_consumed_usd` into LTCG (holding period ≥ 12 months)
+    or STCG, aggregate per (rollout, agent, classification), and
+    add to the running YTD. Rollouts × agents that have no
+    pre-existing row are appended; existing rows accumulate."""
+    classified = dispositions.with_columns(
+        gain_usd=pl.col("proceeds_usd") - pl.col("cost_basis_consumed_usd"),
+        classification=pl.when(pl.col("month_index") - pl.col("purchase_month_index") >= 12)
+        .then(pl.lit("ltcg"))
+        .otherwise(pl.lit("stcg")),
+    )
+    deltas = classified.group_by(["rollout_index", "agent_id", "classification"]).agg(
+        pl.col("gain_usd").sum().alias("_delta")
+    )
+    merged = capital_gains_ytd.join(
+        deltas, on=["rollout_index", "agent_id", "classification"], how="full", coalesce=True
+    )
+    return merged.with_columns(gain_usd=pl.col("gain_usd").fill_null(0.0) + pl.col("_delta").fill_null(0.0)).drop(
+        "_delta"
+    )
+
+
 def _reset_ytd_for_taxed_agents(ordinary_income_ytd: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
     """Zero `ordinary_income_usd` for every (rollout, agent) that
     has a tax accrual fired this month — that's "year closed, start
@@ -183,5 +212,16 @@ def _reset_ytd_for_taxed_agents(ordinary_income_ytd: pl.DataFrame, tax_accruals:
             .then(0.0)
             .otherwise(pl.col("ordinary_income_usd"))
         )
+        .drop("_reset")
+    )
+
+
+def _reset_capital_gains_for_taxed_agents(capital_gains_ytd: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
+    """Year-end reset of LTCG / STCG running totals — same pattern
+    as the ordinary-income reset, keyed by (rollout, agent)."""
+    affected = tax_accruals.select("rollout_index", "agent_id").unique().with_columns(pl.lit(True).alias("_reset"))
+    return (
+        capital_gains_ytd.join(affected, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(gain_usd=pl.when(pl.col("_reset").fill_null(False)).then(0.0).otherwise(pl.col("gain_usd")))
         .drop("_reset")
     )

@@ -35,7 +35,7 @@ from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.market import MarketContext
 from augur.sim.scenario import RecurringTransfer, Scenario, ScheduledAssetSale, ScheduledTransfer, TaxProfile
 from augur.sim.state import StateCrossSection
-from augur.sim.tax import apply_brackets
+from augur.sim.tax import apply_brackets, apply_ltcg_brackets
 
 
 def step_emit_events(
@@ -52,7 +52,12 @@ def step_emit_events(
     transfers = _emit_transfers(scenario, month, rollout_count)
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
     tax_accruals = _emit_year_end_tax_accruals(
-        state=state, scenario=scenario, jurisdictions=jurisdictions, month=month, transfers=transfers
+        state=state,
+        scenario=scenario,
+        jurisdictions=jurisdictions,
+        month=month,
+        transfers=transfers,
+        dispositions=dispositions,
     )
     return EventLog(
         transfers=transfers,
@@ -193,68 +198,112 @@ def _emit_year_end_tax_accruals(
     jurisdictions: dict[str, Jurisdiction],
     month: int,
     transfers: pl.DataFrame,
+    dispositions: pl.DataFrame,
 ) -> pl.DataFrame:
     """At year-end emit one `tax_accrual` row per (taxed agent,
-    jurisdiction, rollout). Tax = bracket-walk(
-    end_of_year_ordinary_income - standard_deduction) where
-    `end_of_year_ordinary_income` is the pre-month YTD from state
-    plus the income arriving this month (which the step is emitting
-    itself, so it can sum without round-tripping through apply)."""
+    jurisdiction, rollout). Federal tax = ordinary_bracket_walk
+    (ordinary_income + STCG  - std_ded) + LTCG_bracket_walk(LTCG
+    stacked above ordinary_taxable). California tax = ordinary
+    bracket walk on (ordinary_income + LTCG + STCG  - std_ded) —
+    CA does not have a separate LTCG schedule.
+
+    Like ordinary income, capital gains are summed as `state YTD +
+    this-month's dispositions` since `apply_events` will produce
+    that same YTD before the year closes."""
     if not _is_year_end(month) or not scenario.tax_profiles:
         return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
-    end_of_year_income = _compute_end_of_year_ordinary_income(state, transfers, scenario.tax_profiles)
-    blocks = [
-        _tax_accruals_for_profile(profile, end_of_year_income, jurisdictions, month)
-        for profile in scenario.tax_profiles
-    ]
+    eoy = _compute_end_of_year_taxable_components(state, transfers, dispositions, scenario.tax_profiles, month)
+    blocks = [_tax_accruals_for_profile(profile, eoy, jurisdictions, month) for profile in scenario.tax_profiles]
     blocks = [b for b in blocks if not b.is_empty()]
     if not blocks:
         return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
     return pl.concat(blocks).select(list(TAX_ACCRUAL_EVENT_SCHEMA.keys()))
 
 
-def _compute_end_of_year_ordinary_income(
-    state: StateCrossSection, transfers: pl.DataFrame, profiles: list[TaxProfile]
+def _compute_end_of_year_taxable_components(
+    state: StateCrossSection,
+    transfers: pl.DataFrame,
+    dispositions: pl.DataFrame,
+    profiles: list[TaxProfile],
+    month: int,
 ) -> pl.DataFrame:
-    """Return a frame of `(rollout_index, agent_id,
-    ordinary_income_usd)` for every taxed agent. The value is the
-    pre-month YTD plus this month's incoming ordinary transfers
-    (so apply_events would produce the same YTD before the year
-    closes)."""
-    taxed_agents = {p.agent_id for p in profiles}
-    pre_month = state.ordinary_income_ytd.filter(pl.col("agent_id").is_in(list(taxed_agents)))
-    this_month = (
-        transfers.filter((pl.col("income_category") == "ordinary") & pl.col("to_agent_id").is_in(list(taxed_agents)))
+    """Return one row per (rollout, agent) with columns
+    `ordinary_income_usd`, `ltcg_usd`, `stcg_usd` — the end-of-year
+    totals matching what apply_events will materialize. Computed
+    as `pre-month state YTD + this-month's emitted events` so the
+    step can compose the tax accrual without round-tripping."""
+    taxed_agents = [p.agent_id for p in profiles]
+    pre_ord = state.ordinary_income_ytd.filter(pl.col("agent_id").is_in(taxed_agents))
+    pre_cg = state.capital_gains_ytd.filter(pl.col("agent_id").is_in(taxed_agents))
+    pre_ltcg = pre_cg.filter(pl.col("classification") == "ltcg").select(
+        "rollout_index", "agent_id", pl.col("gain_usd").alias("ltcg_usd")
+    )
+    pre_stcg = pre_cg.filter(pl.col("classification") == "stcg").select(
+        "rollout_index", "agent_id", pl.col("gain_usd").alias("stcg_usd")
+    )
+    this_month_ord = (
+        transfers.filter((pl.col("income_category") == "ordinary") & pl.col("to_agent_id").is_in(taxed_agents))
         .group_by(["rollout_index", "to_agent_id"])
-        .agg(pl.col("amount_usd").sum().alias("_this_month_income"))
+        .agg(pl.col("amount_usd").sum().alias("_this_month_ord"))
         .rename({"to_agent_id": "agent_id"})
     )
+    classified_dispositions = dispositions.filter(pl.col("agent_id").is_in(taxed_agents)).with_columns(
+        gain_usd=pl.col("proceeds_usd") - pl.col("cost_basis_consumed_usd"),
+        is_ltcg=(pl.lit(month) - pl.col("purchase_month_index")) >= 12,
+    )
+    this_month_ltcg = (
+        classified_dispositions.filter(pl.col("is_ltcg"))
+        .group_by(["rollout_index", "agent_id"])
+        .agg(pl.col("gain_usd").sum().alias("_this_month_ltcg"))
+    )
+    this_month_stcg = (
+        classified_dispositions.filter(~pl.col("is_ltcg"))
+        .group_by(["rollout_index", "agent_id"])
+        .agg(pl.col("gain_usd").sum().alias("_this_month_stcg"))
+    )
     return (
-        pre_month.join(this_month, on=["rollout_index", "agent_id"], how="left")
-        .with_columns(ordinary_income_usd=pl.col("ordinary_income_usd") + pl.col("_this_month_income").fill_null(0.0))
-        .drop("_this_month_income")
+        pre_ord.join(this_month_ord, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(ordinary_income_usd=pl.col("ordinary_income_usd") + pl.col("_this_month_ord").fill_null(0.0))
+        .drop("_this_month_ord")
+        .join(pre_ltcg, on=["rollout_index", "agent_id"], how="left")
+        .join(this_month_ltcg, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(ltcg_usd=pl.col("ltcg_usd").fill_null(0.0) + pl.col("_this_month_ltcg").fill_null(0.0))
+        .drop("_this_month_ltcg")
+        .join(pre_stcg, on=["rollout_index", "agent_id"], how="left")
+        .join(this_month_stcg, on=["rollout_index", "agent_id"], how="left")
+        .with_columns(stcg_usd=pl.col("stcg_usd").fill_null(0.0) + pl.col("_this_month_stcg").fill_null(0.0))
+        .drop("_this_month_stcg")
     )
 
 
 def _tax_accruals_for_profile(
-    profile: TaxProfile, end_of_year_income: pl.DataFrame, jurisdictions: dict[str, Jurisdiction], month: int
+    profile: TaxProfile, eoy: pl.DataFrame, jurisdictions: dict[str, Jurisdiction], month: int
 ) -> pl.DataFrame:
-    """Compute one row per jurisdiction in the profile by walking
-    that jurisdiction's bracket schedule against
-    `max(income - standard_deduction, 0)`. The walk is vectorized
-    via numpy across the rollout dimension."""
-    income_rows = end_of_year_income.filter(pl.col("agent_id") == profile.agent_id).sort("rollout_index")
-    if income_rows.is_empty():
+    """Compute one row per jurisdiction in the profile. Federal vs
+    California is distinguished by whether the jurisdiction has its
+    own LTCG schedule: federal stacks LTCG above ordinary+STCG;
+    California flattens everything into ordinary brackets."""
+    eoy_rows = eoy.filter(pl.col("agent_id") == profile.agent_id).sort("rollout_index")
+    if eoy_rows.is_empty():
         return pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA)
-    rollout_idx = income_rows.get_column("rollout_index").to_numpy()
-    income = income_rows.get_column("ordinary_income_usd").to_numpy()
+    rollout_idx = eoy_rows.get_column("rollout_index").to_numpy()
+    ordinary = eoy_rows.get_column("ordinary_income_usd").to_numpy()
+    ltcg = eoy_rows.get_column("ltcg_usd").to_numpy()
+    stcg = eoy_rows.get_column("stcg_usd").to_numpy()
     blocks = []
     for jurisdiction_id in profile.jurisdiction_ids:
         jurisdiction = jurisdictions[jurisdiction_id]
         deduction = jurisdiction.standard_deduction[profile.filing_status]
-        taxable = np.maximum(income - deduction, 0.0)
-        brackets = jurisdiction.ordinary_income_brackets[profile.filing_status]
-        tax = apply_brackets(taxable, brackets)
+        ord_brackets = jurisdiction.ordinary_income_brackets[profile.filing_status]
+        if jurisdiction.ltcg_brackets is not None:
+            ltcg_brackets = jurisdiction.ltcg_brackets[profile.filing_status]
+            ordinary_taxable = np.maximum(ordinary + stcg - deduction, 0.0)
+            tax = apply_brackets(ordinary_taxable, ord_brackets) + apply_ltcg_brackets(
+                ltcg, ordinary_taxable, ltcg_brackets
+            )
+        else:
+            total_taxable = np.maximum(ordinary + ltcg + stcg - deduction, 0.0)
+            tax = apply_brackets(total_taxable, ord_brackets)
         cause_id = f"{profile.agent_id}_{jurisdiction_id}_year_end_accrual_m{month}"
         blocks.append(
             pl.DataFrame(

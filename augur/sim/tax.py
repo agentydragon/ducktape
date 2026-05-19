@@ -36,3 +36,26 @@ def apply_brackets(amounts_per_rollout: np.ndarray, brackets: list[TaxBracket]) 
         tax += in_bracket * bracket.rate
         prev_upper = bracket.upper_usd
     return tax
+
+
+def apply_ltcg_brackets(
+    ltcg_amount: np.ndarray, ordinary_taxable: np.ndarray, ltcg_brackets: list[TaxBracket]
+) -> np.ndarray:
+    """Walk a federal-style LTCG bracket schedule where rates depend
+    on where the gain sits in the combined ordinary+LTCG stack
+    (§1(h)). Conceptually: ordinary income occupies brackets first;
+    LTCG fills the brackets above it at the LTCG rates.
+
+    For each bracket, the LTCG slice in it is
+    `clip(min(ordinary + ltcg, upper) - max(ordinary, prev_upper),
+    0, ∞)`. Vectorized across the rollout dimension."""
+    tax = np.zeros_like(ltcg_amount, dtype=np.float64)
+    prev_upper = 0.0
+    total_taxable = ordinary_taxable + ltcg_amount
+    for bracket in ltcg_brackets:
+        slice_top = np.minimum(total_taxable, bracket.upper_usd)
+        slice_bottom = np.maximum(ordinary_taxable, prev_upper)
+        in_bracket = np.maximum(slice_top - slice_bottom, 0.0)
+        tax += in_bracket * bracket.rate
+        prev_upper = bracket.upper_usd
+    return tax

@@ -888,6 +888,87 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert ytd_values[12] == 0.0
 
 
+def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule() -> None:
+    """L8 — Alice gets $50k W-2 wages, plus sells a long-held VTI
+    lot (24 months pre-horizon) for a $20k gain at month 6.
+
+    Federal taxable ordinary = 50000 - 14600 = 35400.
+      10% × 11600 + 12% × 23800 = 1160 + 2856 = 4016.
+    LTCG stacks above ordinary. The 0% bracket ends at 47025, so
+    11625 of LTCG falls in 0%; the remaining 8375 falls in 15%.
+      LTCG tax = 8375 × 0.15 = 1256.25.
+    Federal total = 4016 + 1256.25 = 5272.25.
+
+    California taxes LTCG as ordinary income.
+      Total CA taxable = 50000 + 20000 - 5363 = 64637.
+      1% × 10412 + 2% × 14272 + 4% × 14275 + 6% × 15122 + 8% × 10556
+      = 104.12 + 285.44 + 571.00 + 907.32 + 844.48 = 2712.36."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_long_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=10.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=50_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=6,
+                cause_id="alice_long_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=10.0,
+                price_per_unit_usd=280.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+            )
+        ],
+        horizon_months=12,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
+    assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
+    assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
+
+    # YTD captured the LTCG ($20k) before year-end reset.
+    cg_at_month_11 = result.capital_gains_ytd.filter((pl.col("month_index") == 11) & (pl.col("agent_id") == "alice"))
+    assert cg_at_month_11.height == 1
+    row = cg_at_month_11.row(0, named=True)
+    assert row["classification"] == "ltcg"
+    assert row["gain_usd"] == pytest.approx(20_000.0, abs=1e-6)
+
+
 def test_no_tax_profile_means_no_year_end_accrual() -> None:
     """If no agent has a tax profile, the year-end accrual emits
     nothing — confirms the engine doesn't tax non-taxed agents."""
