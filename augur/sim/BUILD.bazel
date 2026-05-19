@@ -1,0 +1,85 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "state_py",
+    srcs = ["state.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "events_py",
+    srcs = ["events.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "scenario_py",
+    srcs = ["scenario.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "apply_py",
+    srcs = ["apply.py"],
+    deps = [
+        ":events_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "step_py",
+    srcs = ["step.py"],
+    deps = [
+        ":events_py",
+        ":scenario_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "run_py",
+    srcs = ["run.py"],
+    deps = [
+        ":events_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "simulate_py",
+    srcs = ["simulate.py"],
+    deps = [
+        ":apply_py",
+        ":events_py",
+        ":run_py",
+        ":scenario_py",
+        ":state_py",
+        ":step_py",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "simulate_test",
+    srcs = ["simulate_test.py"],
+    deps = [
+        ":apply_py",
+        ":scenario_py",
+        ":simulate_py",
+        ":state_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
