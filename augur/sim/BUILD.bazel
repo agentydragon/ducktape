@@ -28,6 +28,31 @@ py_library(
     ],
 )
 
+filegroup(
+    name = "jurisdiction_data",
+    srcs = glob(["data/jurisdictions/*.yaml"]),
+)
+
+py_library(
+    name = "jurisdictions_py",
+    srcs = ["jurisdictions.py"],
+    data = [":jurisdiction_data"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "jurisdictions_test",
+    srcs = ["jurisdictions_test.py"],
+    deps = [
+        ":jurisdictions_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "scenario_py",
     srcs = ["scenario.py"],
