@@ -196,6 +196,54 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
     assert balances == [0.0, 100.0, 200.0, 300.0, 400.0, 500.0, 500.0, 500.0, 500.0, 500.0, 500.0]
 
 
+def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
+    """L3: scale the rollout dimension to 1000. With deterministic
+    inputs (no market path, same scenario), every rollout produces
+    the same trajectory. Exercises the polars cross-join expansion
+    of the rollout column at scale; asserts the engine has no
+    Python loop over rollouts (otherwise this would be too slow)."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="employer")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="alice_paycheck",
+                from_agent_id="employer",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=2000.0,
+            )
+        ],
+        horizon_months=24,
+    )
+    rollout_count = 1000
+
+    result = simulate(scenario, rollout_count=rollout_count)
+
+    # Every rollout: Alice ends at 1000 + 24×2000 = 49000.
+    alice_final = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 24)).sort(
+        "rollout_index"
+    )
+    assert alice_final.height == rollout_count
+    assert alice_final.get_column("balance_usd").to_list() == [49000.0] * rollout_count
+
+    # Event log expands rollouts × months: 1000 × 24 = 24000 events.
+    assert result.events_log.transfers.height == rollout_count * 24
+
+    # Conservation at every month, across every rollout.
+    totals = (
+        result.cash_balances.group_by(["rollout_index", "month_index"])
+        .agg(pl.col("balance_usd").sum().alias("total"))
+        .sort(["rollout_index", "month_index"])
+    )
+    assert totals.get_column("total").unique().to_list() == [1000.0]
+
+
 def test_combined_one_off_and_recurring() -> None:
     """A scenario with both a recurring monthly paycheck and a
     one-off bonus transfer at month 5. Both fire through the same
