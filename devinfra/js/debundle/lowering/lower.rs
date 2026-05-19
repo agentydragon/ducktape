@@ -52,6 +52,13 @@ pub(super) struct LowerChunkInputs<'a> {
     /// emit a `Duplicate export of 'name'` clash with an existing
     /// source export.
     pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
+    /// **Public** names entry already uses — the `exported` side of
+    /// the same `export { … }` block plus the declared name of any
+    /// `export const/function/class` declaration. Consulted by
+    /// `auto_grown_residual_exports` so the grown public name
+    /// suffix-mints (`<base>$1`) past any source-level alias
+    /// collision instead of emitting a duplicate.
+    pub(super) pre_existing_public_export_names: &'a HashSet<String>,
 }
 
 pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
@@ -73,6 +80,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         runtime_import_facts,
         chunk_renames,
         pre_existing_entry_exports,
+        pre_existing_public_export_names,
     } = inputs;
     let mut timings = PhaseTimings::default();
     let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
@@ -334,6 +342,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             declaration_by_name,
             binding_assignment,
             pre_existing_entry_exports,
+            pre_existing_public_export_names,
             &entry_binding_renames,
         );
         if !auto_grow.is_empty() {

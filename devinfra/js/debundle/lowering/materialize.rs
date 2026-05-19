@@ -106,6 +106,7 @@ pub(super) fn materialize_logical_chunk(
         declaration_by_name,
         destructure_siblings,
         pre_existing_entry_exports,
+        pre_existing_public_export_names,
     } = chunk_ast_analysis;
     let requests = time_phase!(timings, "build_requests", {
         logical_requests_for_chunk(
@@ -650,6 +651,7 @@ pub(super) fn materialize_logical_chunk(
             chunk_renames: &chunk_renames_map,
             runtime_import_facts: &runtime_import_facts,
             pre_existing_entry_exports: &pre_existing_entry_exports,
+            pre_existing_public_export_names: &pre_existing_public_export_names,
         })
     })?;
     let LoweredChunk {

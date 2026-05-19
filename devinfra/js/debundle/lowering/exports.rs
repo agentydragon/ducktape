@@ -173,6 +173,7 @@ pub(super) fn auto_grown_residual_exports(
     declaration_by_name: &HashMap<Id, usize>,
     binding_assignment: &HashMap<Id, usize>,
     pre_existing_entry_exports: &HashSet<Id>,
+    pre_existing_public_export_names: &HashSet<String>,
     entry_renames: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     let mut needed = BTreeSet::<String>::new();
@@ -194,6 +195,19 @@ pub(super) fn auto_grown_residual_exports(
             needed.insert(id.0.as_ref().to_string());
         }
     }
+    // `taken_public_names` accumulates every public name already
+    // committed to entry's export list — the source-level set we
+    // were handed, plus each new grown public name as we mint it.
+    // When a candidate's natural public name collides, suffix-mint
+    // a fresh `<name>$<n>` instead of skipping: skipping forces the
+    // peeled module's body reference to resolve as an unexported
+    // residual binding and `residual_entry_imports_for_moved_body`
+    // would bail with "moved module references residual entry
+    // binding(s) not exported by entry". The peeled module's
+    // importer side renames the import back to the original local
+    // sym via `EntryExport.{local_name, exported_name}`, so the
+    // mint is invisible to the moved body.
+    let mut taken_public_names = pre_existing_public_export_names.clone();
     needed
         .into_iter()
         .map(|name| {
@@ -201,7 +215,22 @@ pub(super) fn auto_grown_residual_exports(
                 .get(&name)
                 .cloned()
                 .unwrap_or_else(|| name.clone());
-            (final_local, name)
+            let public_name = mint_unique_public_name(&name, &mut taken_public_names);
+            (final_local, public_name)
         })
         .collect()
+}
+
+fn mint_unique_public_name(base: &str, taken: &mut HashSet<String>) -> String {
+    if taken.insert(base.to_string()) {
+        return base.to_string();
+    }
+    let mut suffix = 1usize;
+    loop {
+        let candidate = format!("{base}${suffix}");
+        if taken.insert(candidate.clone()) {
+            return candidate;
+        }
+        suffix += 1;
+    }
 }

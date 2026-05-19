@@ -37,12 +37,25 @@ pub(super) struct ChunkAstAnalysis {
     /// existing source-level export — emitting a duplicate would be
     /// a `SyntaxError: Duplicate export of 'name'` at load time.
     pub(super) pre_existing_entry_exports: HashSet<Id>,
+    /// **Public** names the source chunk's entry already uses (the
+    /// `exported` side of `export { orig as exported }` specifiers
+    /// and the declared name of `export const foo = …` style
+    /// declarations). Distinct from `pre_existing_entry_exports`,
+    /// which is the **local** side. Consulted by
+    /// `auto_grown_residual_exports` so the auto-grown `export {
+    /// local as public }` doesn't reuse a public name that's
+    /// already taken — e.g. when entry has `export { X as av }` and
+    /// a peeled module references a different local binding named
+    /// `av`, growing the export under the same public name would
+    /// produce a duplicate-export `SyntaxError` at load time.
+    pub(super) pre_existing_public_export_names: HashSet<String>,
 }
 
 pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut imports = HashMap::<Id, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = HashSet::<Id>::new();
+    let mut pre_existing_public_export_names = HashSet::<String>::new();
     let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
     for (ordinal, item) in module.body.iter().enumerate() {
         let (names, exported) = top_level_declaration_names(item);
@@ -50,6 +63,10 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         if !names.is_empty() {
             if exported {
                 pre_existing_entry_exports.extend(ids.iter().cloned());
+                // `export const foo = …` / `export function foo()` /
+                // `export class Foo {}` — the declared name is also
+                // the public name.
+                pre_existing_public_export_names.extend(names.iter().cloned());
             }
             declarations.push(TopLevelDecl {
                 ordinal,
@@ -60,7 +77,11 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         }
         record_destructure_sibling_groups(item, &mut destructure_siblings);
         record_runtime_imports(item, &mut imports);
-        record_pre_existing_named_exports(item, &mut pre_existing_entry_exports);
+        record_pre_existing_named_exports(
+            item,
+            &mut pre_existing_entry_exports,
+            &mut pre_existing_public_export_names,
+        );
     }
     let declaration_by_name = declarations
         .iter()
@@ -72,6 +93,7 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         declaration_by_name,
         destructure_siblings,
         pre_existing_entry_exports,
+        pre_existing_public_export_names,
     }
 }
 
@@ -111,7 +133,21 @@ pub(super) fn record_destructure_sibling_groups(
 /// because those don't bind a local name in entry. `ExportDecl`
 /// (e.g. `export const foo = …`) is already covered by
 /// `top_level_declaration_ids` returning `(ids, exported = true)`.
-pub(super) fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut HashSet<Id>) {
+///
+/// Populates two parallel sets:
+/// - `local_out` — the `orig` (local-binding) side of each
+///   specifier, keyed on hygiene-aware `Id` so the emit-resolvability
+///   check in `auto_grown_residual_exports` matches the binding cells
+///   the analysis records.
+/// - `public_out` — the `exported` (public-name) side of each
+///   specifier (falls back to `orig`'s sym when no `as` rename is
+///   present). Keyed on bare `String` because export names are pure
+///   labels, not bound to a hygienic scope.
+pub(super) fn record_pre_existing_named_exports(
+    item: &ModuleItem,
+    local_out: &mut HashSet<Id>,
+    public_out: &mut HashSet<String>,
+) {
     let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
         return;
     };
@@ -122,12 +158,16 @@ pub(super) fn record_pre_existing_named_exports(item: &ModuleItem, out: &mut Has
         let ExportSpecifier::Named(specifier) = specifier else {
             continue;
         };
-        // The exported value is the local binding (`orig`); the
-        // public name (`exported`) is irrelevant to the
-        // emit-resolvability check, which keys off the local name.
-        if let ModuleExportName::Ident(ident) = &specifier.orig {
-            out.insert(ident.to_id());
-        }
+        let ModuleExportName::Ident(orig_ident) = &specifier.orig else {
+            continue;
+        };
+        local_out.insert(orig_ident.to_id());
+        let public_name = match &specifier.exported {
+            Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
+            Some(ModuleExportName::Str(_)) => continue,
+            None => orig_ident.sym.to_string(),
+        };
+        public_out.insert(public_name);
     }
 }
 
