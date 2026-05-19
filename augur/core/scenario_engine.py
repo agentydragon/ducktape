@@ -2383,12 +2383,66 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         crypto_multiplier = crypto_value_multipliers[:, month]
         crypto_value_after_sale = remaining_crypto_quantity * crypto_multiplier
 
+        # Mortgage + special-assessment + outside-rent obligations settle
+        # BEFORE the tax block so that any property-cost-driven asset
+        # sales (the funding chain may sell SP500/crypto/PE when the
+        # contributing actor's cash dips below the obligation amount)
+        # are visible to TaxActor.observe_month + the snapshot extends
+        # below. Order within the iteration: policy-step proactive sales
+        # → mortgage → special_assessment → outside_rent → tax →
+        # partner. Tax-driven sales (sales triggered DURING tax
+        # settlement to fund the tax obligation) come AFTER the
+        # snapshot extends and are filtered out of `pre_inline_tax_*_records`
+        # to avoid recursive taxation of tax-funding sales.
+        for _ob_due, _ob_acc, _ob_creditor, _ob_policy_id in (
+            (mortgage_payment_due, mortgage_accumulator, "mortgage_lender", MORTGAGE_SERVICING_POLICY_ID),
+            (special_assessment_due, special_assessment_accumulator, "hoa", SPECIAL_ASSESSMENT_POLICY_ID),
+            (outside_rent_due, outside_rent_accumulator, "landlord", OUTSIDE_RENT_POLICY_ID),
+        ):
+            if _ob_acc is None:
+                continue
+            _ob_month_due = _ob_due[:, month]
+            if not np.any(_ob_month_due > 0):
+                continue
+            _ob_settled = _settle_required_cash_obligation_at_month_position(
+                market_bundle=market_bundle,
+                month_position=month,
+                due_month_index=int(month_index[month]),
+                policy_steps=policy_steps,
+                obligation_amount_usd=_ob_month_due,
+                obligation_kind=_ob_acc.obligation_kind,
+                creditor_id=_ob_creditor,
+                source_policy_id=_ob_policy_id,
+                actor_id=primary_owner_actor_id,
+                sources=primary_owner_funding_sources,
+                cash_usd=current_cash,
+                generic_sp500_value_usd=remaining_sp500_units * sp500_multiplier,
+                remaining_sp500_units=remaining_sp500_units,
+                remaining_sp500_basis=remaining_sp500_basis,
+                crypto_value_usd=remaining_crypto_quantity * crypto_multiplier,
+                remaining_crypto_quantity=remaining_crypto_quantity,
+                remaining_crypto_basis=remaining_crypto_basis,
+                crypto_sale_usd=crypto_sale_usd,
+                crypto_sale_basis_usd=crypto_sale_basis_usd,
+                checking_floor_shortfall_usd=checking_floor_shortfall,
+                accumulator=_ob_acc,
+                accounting=accounting,
+                sp500_sale_action_records=sp500_sale_action_records,
+                crypto_sale_action_records=crypto_sale_action_records,
+                pe_state=pe_funding_state,
+            )
+            current_cash = _ob_settled.cash_usd
+            remaining_sp500_units = _ob_settled.remaining_sp500_units
+            remaining_sp500_basis = _ob_settled.remaining_sp500_basis
+            remaining_crypto_quantity = _ob_settled.remaining_crypto_quantity
+            remaining_crypto_basis = _ob_settled.remaining_crypto_basis
+
         # Phase 4b — TaxActor observes this month's taxable events,
         # then checks quarterly/year-end markers and settles tax
         # obligations inline via the same settlement function that
         # handles property-cost obligations. Observation EXCLUDES
         # tax-driven sales (which append to records during the inline
-        # settlement below); those don't recurse-tax themselves.
+        # tax settlement below); those don't recurse-tax themselves.
         _sp500_gain_this_month = np.zeros(rollout_count, dtype="float64")
         for _sp500_record in sp500_sale_action_records[sp500_records_idx_at_observe:]:
             if _sp500_record.month_position == month:
@@ -2510,54 +2564,6 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 tax_actor.record_estimated_paid(
                     month_index=int(month_index[month]), paid_usd=_accumulator.amount_paid_usd[:, month]
                 )
-        # Mortgage + special-assessment + outside-rent obligations: same
-        # inline-settlement pattern as the tax block above. Order
-        # within the iteration: property-cost → tax → mortgage →
-        # special_assessment → outside_rent, matching today's
-        # post-loop order to preserve cash-priority behavior for
-        # cash-strapped rollouts.
-        for _ob_due, _ob_acc, _ob_creditor, _ob_policy_id in (
-            (mortgage_payment_due, mortgage_accumulator, "mortgage_lender", MORTGAGE_SERVICING_POLICY_ID),
-            (special_assessment_due, special_assessment_accumulator, "hoa", SPECIAL_ASSESSMENT_POLICY_ID),
-            (outside_rent_due, outside_rent_accumulator, "landlord", OUTSIDE_RENT_POLICY_ID),
-        ):
-            if _ob_acc is None:
-                continue
-            _ob_month_due = _ob_due[:, month]
-            if not np.any(_ob_month_due > 0):
-                continue
-            _ob_settled = _settle_required_cash_obligation_at_month_position(
-                market_bundle=market_bundle,
-                month_position=month,
-                due_month_index=int(month_index[month]),
-                policy_steps=policy_steps,
-                obligation_amount_usd=_ob_month_due,
-                obligation_kind=_ob_acc.obligation_kind,
-                creditor_id=_ob_creditor,
-                source_policy_id=_ob_policy_id,
-                actor_id=primary_owner_actor_id,
-                sources=primary_owner_funding_sources,
-                cash_usd=current_cash,
-                generic_sp500_value_usd=remaining_sp500_units * sp500_multiplier,
-                remaining_sp500_units=remaining_sp500_units,
-                remaining_sp500_basis=remaining_sp500_basis,
-                crypto_value_usd=remaining_crypto_quantity * crypto_multiplier,
-                remaining_crypto_quantity=remaining_crypto_quantity,
-                remaining_crypto_basis=remaining_crypto_basis,
-                crypto_sale_usd=crypto_sale_usd,
-                crypto_sale_basis_usd=crypto_sale_basis_usd,
-                checking_floor_shortfall_usd=checking_floor_shortfall,
-                accumulator=_ob_acc,
-                accounting=accounting,
-                sp500_sale_action_records=sp500_sale_action_records,
-                crypto_sale_action_records=crypto_sale_action_records,
-                pe_state=pe_funding_state,
-            )
-            current_cash = _ob_settled.cash_usd
-            remaining_sp500_units = _ob_settled.remaining_sp500_units
-            remaining_sp500_basis = _ob_settled.remaining_sp500_basis
-            remaining_crypto_quantity = _ob_settled.remaining_crypto_quantity
-            remaining_crypto_basis = _ob_settled.remaining_crypto_basis
         # Partner-contribution obligations: per-agreement settlement on the
         # contributing actor's checking cash. Each agreement has its own
         # 1D state vectors (independent of the primary owner's cash path);
