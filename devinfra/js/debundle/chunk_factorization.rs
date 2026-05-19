@@ -232,7 +232,7 @@ fn compute_linker_order(
     for idx in 0..logical_modules.len() {
         graph.add_node(ModuleId(LogicalModuleIndex(idx)));
     }
-    for (from, to, weight) in dep_graph.iter_edges() {
+    for (from, to, weight) in dep_graph.all_edges() {
         if !weight.constrains_init_order() {
             continue;
         }
@@ -273,7 +273,7 @@ fn compute_source_import_order(
     logical_modules: &[LogicalModule],
     linker_position_by_module: &HashMap<ModuleId, usize>,
 ) -> Vec<ModuleId> {
-    let sccs = tarjan_scc(&dep_graph.graph);
+    let sccs = tarjan_scc(&dep_graph.0);
     let mut scc_of: HashMap<ModuleId, usize> = HashMap::new();
     let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
     for (idx, scc) in sccs.iter().enumerate() {
@@ -293,7 +293,7 @@ fn compute_source_import_order(
     let mut nodes: Vec<ModuleId> = (0..logical_modules.len())
         .map(|idx| ModuleId(LogicalModuleIndex(idx)))
         .collect();
-    for (from, to, _) in dep_graph.iter_edges() {
+    for (from, to, _) in dep_graph.all_edges() {
         if !nodes.contains(&from) {
             nodes.push(from);
         }

@@ -800,7 +800,6 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         assert!(
             factorization
                 .dep_graph
-                .graph
                 .contains_edge(logical(0), ModuleId::logical(1)),
             "the quotient should expose the logical-module -> residual read",
         );
@@ -3432,14 +3431,14 @@ mutable = mutable + 1;"#,
         let mod_0 = ModuleId(LogicalModuleIndex(0));
         let mod_1 = ModuleId(LogicalModuleIndex(1));
         assert!(
-            !factorization.dep_graph.graph.contains_edge(mod_0, mod_1),
+            !factorization.dep_graph.contains_edge(mod_0, mod_1),
             "no edge mod_0 → mod_1 expected, got: {:?}",
-            factorization.dep_graph.graph.edge_weight(mod_0, mod_1),
+            factorization.dep_graph.edge_weight(mod_0, mod_1),
         );
         assert!(
-            !factorization.dep_graph.graph.contains_edge(mod_1, mod_0),
+            !factorization.dep_graph.contains_edge(mod_1, mod_0),
             "no edge mod_1 → mod_0 expected, got: {:?}",
-            factorization.dep_graph.graph.edge_weight(mod_1, mod_0),
+            factorization.dep_graph.edge_weight(mod_1, mod_0),
         );
     }
 

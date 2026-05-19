@@ -247,15 +247,39 @@ impl EdgeMetadata {
 /// Module dep graph built from per-statement facts and a binding →
 /// module assignment.
 ///
-/// Backed by `petgraph::DiGraphMap`: one edge per directed
-/// `(from, to)` pair, weight = `EdgeMetadata`. Multiple reasons
-/// for the same physical edge (e.g. several at-init reads of
-/// bindings owned by the same target module) accumulate into the
-/// edge's reason list. Cycle detection runs through petgraph's
-/// `tarjan_scc`.
+/// Thin newtype around `petgraph::DiGraphMap<ModuleId,
+/// EdgeMetadata>`: one edge per directed `(from, to)` pair, weight =
+/// `EdgeMetadata`. Multiple reasons for the same physical edge (e.g.
+/// several at-init reads of bindings owned by the same target
+/// module) accumulate into the edge's reason list. Cycle detection
+/// runs through petgraph's `tarjan_scc`.
+///
+/// `Deref` / `DerefMut` to the inner graph lets callers reach
+/// `petgraph` methods (`all_edges`, `edge_weight`, `nodes`,
+/// `contains_edge`, …) directly: `dep_graph.all_edges()` instead of
+/// `dep_graph.graph.all_edges()`. The newtype is kept (rather than a
+/// bare type alias) so the semantic name "the I∪S module-dep
+/// quotient" stays distinct from arbitrary
+/// `DiGraphMap<ModuleId, EdgeMetadata>` instances.
+///
+/// For `petgraph::algo::tarjan_scc` (a generic function whose
+/// inference doesn't trigger `Deref` coercion), callers reach for
+/// the inner graph with `&dep_graph.0` or `&*dep_graph`.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleQuotient {
-    pub graph: DiGraphMap<ModuleId, EdgeMetadata>,
+pub struct ModuleQuotient(pub DiGraphMap<ModuleId, EdgeMetadata>);
+
+impl std::ops::Deref for ModuleQuotient {
+    type Target = DiGraphMap<ModuleId, EdgeMetadata>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ModuleQuotient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 impl ModuleQuotient {
@@ -263,32 +287,10 @@ impl ModuleQuotient {
         if from == to {
             return;
         }
-        if !self.graph.contains_edge(from, to) {
-            self.graph.add_edge(from, to, EdgeMetadata::default());
+        if !self.contains_edge(from, to) {
+            self.add_edge(from, to, EdgeMetadata::default());
         }
-        self.graph
-            .edge_weight_mut(from, to)
-            .unwrap()
-            .reasons
-            .push(reason);
-    }
-
-    /// Iterate edges as `(from, to, &EdgeMetadata)`.
-    pub fn iter_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId, &EdgeMetadata)> + '_ {
-        self.graph.all_edges()
-    }
-
-    /// Edge metadata, if the edge exists.
-    pub fn edge(&self, from: ModuleId, to: ModuleId) -> Option<&EdgeMetadata> {
-        self.graph.edge_weight(from, to)
-    }
-
-    /// `true` if the directed edge `(from, to)` is present and at
-    /// least one of its reasons is an at-init read.
-    pub fn has_eager_use_edge(&self, from: ModuleId, to: ModuleId) -> bool {
-        self.graph
-            .edge_weight(from, to)
-            .is_some_and(EdgeMetadata::has_eager_use)
+        self.edge_weight_mut(from, to).unwrap().reasons.push(reason);
     }
 
     /// `true` if the edge `(from, to)` exists and constrains
@@ -296,8 +298,7 @@ impl ModuleQuotient {
     /// ordering). Used by the realizability gate to decide
     /// whether an `I ∪ S` SCC is unrealizable.
     pub fn has_init_order_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
-        self.graph
-            .edge_weight(from, to)
+        self.edge_weight(from, to)
             .is_some_and(EdgeMetadata::constrains_init_order)
     }
 }
@@ -778,9 +779,7 @@ fn promote_at_init_calls(
 /// public construction path; peelability and reports both go through
 /// this for any non-hypothetical quotient.
 pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
-    let mut graph = ModuleQuotient {
-        graph: DiGraphMap::new(),
-    };
+    let mut graph = ModuleQuotient(DiGraphMap::new());
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in &owner_graph.edges {
         let from = partition.of(edge.from);

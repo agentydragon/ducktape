@@ -93,7 +93,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     for (_, module) in factorization.partition.iter() {
         modules.insert(module);
     }
-    for (from, to, _) in factorization.dep_graph.iter_edges() {
+    for (from, to, _) in factorization.dep_graph.all_edges() {
         modules.insert(from);
         modules.insert(to);
     }
@@ -142,9 +142,9 @@ fn build_quotient_scc_reports(
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in tarjan_scc(&factorization.dep_graph.graph) {
+    for scc in tarjan_scc(&factorization.dep_graph.0) {
         let is_cycle = scc.len() > 1
-            || (scc.len() == 1 && factorization.dep_graph.graph.contains_edge(scc[0], scc[0]));
+            || (scc.len() == 1 && factorization.dep_graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }

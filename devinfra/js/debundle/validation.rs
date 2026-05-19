@@ -172,12 +172,11 @@ pub fn validate_factorization(
         };
     }
     let graph = &build_module_quotient(owner_graph, partition);
-    let sccs = tarjan_scc(&graph.graph);
+    let sccs = tarjan_scc(&graph.0);
     let mut cycles = Vec::new();
     for scc in sccs {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
-        let is_cycle =
-            scc.len() > 1 || (scc.len() == 1 && graph.graph.contains_edge(scc[0], scc[0]));
+        let is_cycle = scc.len() > 1 || (scc.len() == 1 && graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {
             continue;
         }
@@ -197,7 +196,7 @@ pub fn validate_factorization(
             continue;
         }
         let mut evidence = Vec::new();
-        for (from, to, weight) in graph.iter_edges() {
+        for (from, to, weight) in graph.all_edges() {
             if !in_scc.contains(&from) || !in_scc.contains(&to) {
                 continue;
             }
@@ -327,7 +326,7 @@ fn compute_realizability_cut(
     for &m in scc {
         working.add_node(m);
     }
-    for (from, to, weight) in graph.iter_edges() {
+    for (from, to, weight) in graph.all_edges() {
         if !in_scc.contains(&from) || !in_scc.contains(&to) || from == to {
             continue;
         }
