@@ -2663,6 +2663,11 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         asset_kind=AssetKindForLog.PRIVATE_EQUITY,
         tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
     )
+    # Reuse the federal+CA year totals TaxActor already computed inline
+    # (one set of `federal_income_tax_due_usd` / `california_income_tax_due_usd`
+    # calls per year) — annual_sale_tax_allocation reads them back via
+    # `precomputed_year_tax_usd` and skips its own per-year computation,
+    # so the year-tax math runs exactly once per scenario per year.
     annual_tax = annual_sale_tax_allocation(
         scenario.tax_profile,
         month_index=month_index,
@@ -2675,6 +2680,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         mortgage_interest_usd=mortgage_interest,
         mortgage_principal_balance_usd=mortgage_balance * property_live_mask,
         net_rental_taxable_income_usd=net_rental_taxable_income,
+        precomputed_year_tax_usd={
+            year: (federal, tax_actor.year_california_tax_usd[year])
+            for year, federal in tax_actor.year_federal_tax_usd.items()
+        },
     )
     generic_sp500_sale_tax = annual_tax.generic_sp500_sale_tax_usd
     generic_crypto_sale_tax = annual_tax.generic_crypto_sale_tax_usd

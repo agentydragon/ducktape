@@ -233,6 +233,7 @@ def annual_sale_tax_allocation(
     mortgage_interest_usd: np.ndarray,
     mortgage_principal_balance_usd: np.ndarray,
     net_rental_taxable_income_usd: np.ndarray,
+    precomputed_year_tax_usd: dict[int, tuple[np.ndarray, np.ndarray]] | None = None,
 ) -> AnnualSaleTaxAllocation:
     """Allocate annual federal and California tax created by simulated income and sale gains.
 
@@ -310,25 +311,28 @@ def annual_sale_tax_allocation(
             0.0, ordinary_income + year_rental_income - year_qualified_interest_deduction
         )
 
-        year_federal_tax = np.maximum(
-            0.0,
-            federal_income_tax_due_usd(
-                tax_profile,
-                ordinary_income_usd=year_federal_ordinary,
-                unrecaptured_1250_gain_usd=year_property_recapture,
-                long_term_capital_gain_usd=year_long_term_capital_gain,
+        if precomputed_year_tax_usd is not None and int(tax_year) in precomputed_year_tax_usd:
+            year_federal_tax, year_california_tax = precomputed_year_tax_usd[int(tax_year)]
+        else:
+            year_federal_tax = np.maximum(
+                0.0,
+                federal_income_tax_due_usd(
+                    tax_profile,
+                    ordinary_income_usd=year_federal_ordinary,
+                    unrecaptured_1250_gain_usd=year_property_recapture,
+                    long_term_capital_gain_usd=year_long_term_capital_gain,
+                )
+                - baseline_federal,
             )
-            - baseline_federal,
-        )
-        year_california_tax = np.maximum(
-            0.0,
-            california_income_tax_due_usd(
-                tax_profile,
-                ordinary_income_usd=year_california_ordinary,
-                capital_income_usd=year_property_recapture + year_long_term_capital_gain,
+            year_california_tax = np.maximum(
+                0.0,
+                california_income_tax_due_usd(
+                    tax_profile,
+                    ordinary_income_usd=year_california_ordinary,
+                    capital_income_usd=year_property_recapture + year_long_term_capital_gain,
+                )
+                - baseline_california,
             )
-            - baseline_california,
-        )
         year_total_tax = year_federal_tax + year_california_tax
 
         federal_income_tax[:, year_mask] = _allocate_tax_to_months(

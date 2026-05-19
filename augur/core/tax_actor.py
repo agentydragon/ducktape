@@ -118,7 +118,12 @@ class TaxActor:
     rollout_count: int
     # Per-year running totals (year_index → accumulator).
     years: dict[int, _TaxYearAccumulator] = field(default_factory=dict)
-    # Per-year closed-out actual tax (filled at year-end).
+    # Per-year closed-out actual tax (filled at year-end). Federal + CA
+    # are stored separately so post-loop per-month allocation can use
+    # them without re-running `federal_income_tax_due_usd` /
+    # `california_income_tax_due_usd`.
+    year_federal_tax_usd: dict[int, np.ndarray] = field(default_factory=dict)
+    year_california_tax_usd: dict[int, np.ndarray] = field(default_factory=dict)
     year_actual_tax_usd: dict[int, np.ndarray] = field(default_factory=dict)
     # Per-year sum of estimated payments actually made (running, updated
     # by `record_estimated_paid`).
@@ -238,7 +243,10 @@ class TaxActor:
             return None
         year = month_index // MONTHS_PER_YEAR
         accumulator = self._year_accumulator(year)
-        actual_tax = self._compute_year_actual_tax(accumulator)
+        federal_tax, california_tax = self._compute_year_actual_tax(accumulator)
+        self.year_federal_tax_usd[year] = federal_tax
+        self.year_california_tax_usd[year] = california_tax
+        actual_tax = federal_tax + california_tax
         self.year_actual_tax_usd[year] = actual_tax
         # Credit estimated paid so far PLUS scheduled-but-not-yet-paid
         # quarterlies (Q4 lands Jan 15 of next year, after this year-end
@@ -264,11 +272,11 @@ class TaxActor:
         self._year_accumulator(credit_year)  # ensure initialized
         self.year_estimated_paid_usd[credit_year] = self.year_estimated_paid_usd[credit_year] + paid_usd
 
-    def _compute_year_actual_tax(self, accumulator: _TaxYearAccumulator) -> np.ndarray:
+    def _compute_year_actual_tax(self, accumulator: _TaxYearAccumulator) -> tuple[np.ndarray, np.ndarray]:
         """Compute the year's actual incremental federal+CA tax from the
-        accumulated events. Mirrors `annual_sale_tax_allocation`'s
-        year-loop body, but operating on the actor's per-year
-        accumulators rather than full per-month matrices."""
+        accumulated events. Returns `(federal_tax, california_tax)` so
+        the caller can store / report them separately. Mirrors
+        `annual_sale_tax_allocation`'s year-loop body."""
         long_term_capital_gain = (
             accumulator.taxable_property_capital_gain_usd
             + accumulator.generic_sp500_sale_gain_usd
@@ -321,5 +329,4 @@ class TaxActor:
             )
             - self._baseline_california_usd,
         )
-        total: np.ndarray = federal_tax + california_tax
-        return total
+        return federal_tax, california_tax
