@@ -2375,20 +2375,20 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         # tax-driven sales (which append to records during the inline
         # settlement below); those don't recurse-tax themselves.
         _sp500_gain_this_month = np.zeros(rollout_count, dtype="float64")
-        for _record in sp500_sale_action_records[sp500_records_idx_at_observe:]:
-            if _record.month_position == month:
+        for _sp500_record in sp500_sale_action_records[sp500_records_idx_at_observe:]:
+            if _sp500_record.month_position == month:
                 _sp500_gain_this_month = _sp500_gain_this_month + (
-                    _record.column("amount_usd") - _record.column("basis_usd")
+                    _sp500_record.column("amount_usd") - _sp500_record.column("basis_usd")
                 )
         _pe_gain_this_month = np.zeros(rollout_count, dtype="float64")
-        for _record in private_equity_sale_action_records[pe_records_idx_at_observe:]:
-            if _record.month_position == month:
-                _pe_gain_this_month = _pe_gain_this_month + _record.sale_application.taxable_gain_usd
+        for _pe_record in private_equity_sale_action_records[pe_records_idx_at_observe:]:
+            if _pe_record.month_position == month:
+                _pe_gain_this_month = _pe_gain_this_month + _pe_record.sale_application.taxable_gain_usd
         _crypto_gain_this_month = np.zeros(rollout_count, dtype="float64")
-        for _record in crypto_sale_action_records[crypto_records_idx_at_observe:]:
-            if _record.month_position == month:
+        for _crypto_record in crypto_sale_action_records[crypto_records_idx_at_observe:]:
+            if _crypto_record.month_position == month:
                 _crypto_gain_this_month = _crypto_gain_this_month + (
-                    _record.column("amount_usd") - _record.column("basis_usd")
+                    _crypto_record.column("amount_usd") - _crypto_record.column("basis_usd")
                 )
         # Snapshot pre-inline-tax records for this month so post-loop
         # annual_sale_tax_allocation sees the same gains TaxActor used.
@@ -2501,28 +2501,10 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         # special_assessment → outside_rent, matching today's
         # post-loop order to preserve cash-priority behavior for
         # cash-strapped rollouts.
-        for _ob_due, _ob_acc, _ob_kind, _ob_creditor, _ob_policy_id in (
-            (
-                mortgage_payment_due,
-                mortgage_accumulator,
-                mortgage_accumulator.obligation_kind if mortgage_accumulator is not None else None,
-                "mortgage_lender",
-                MORTGAGE_SERVICING_POLICY_ID,
-            ),
-            (
-                special_assessment_due,
-                special_assessment_accumulator,
-                special_assessment_accumulator.obligation_kind,
-                "hoa",
-                SPECIAL_ASSESSMENT_POLICY_ID,
-            ),
-            (
-                outside_rent_due,
-                outside_rent_accumulator,
-                outside_rent_accumulator.obligation_kind,
-                "landlord",
-                OUTSIDE_RENT_POLICY_ID,
-            ),
+        for _ob_due, _ob_acc, _ob_creditor, _ob_policy_id in (
+            (mortgage_payment_due, mortgage_accumulator, "mortgage_lender", MORTGAGE_SERVICING_POLICY_ID),
+            (special_assessment_due, special_assessment_accumulator, "hoa", SPECIAL_ASSESSMENT_POLICY_ID),
+            (outside_rent_due, outside_rent_accumulator, "landlord", OUTSIDE_RENT_POLICY_ID),
         ):
             if _ob_acc is None:
                 continue
@@ -2535,7 +2517,7 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 due_month_index=int(month_index[month]),
                 policy_steps=policy_steps,
                 obligation_amount_usd=_ob_month_due,
-                obligation_kind=_ob_kind,
+                obligation_kind=_ob_acc.obligation_kind,
                 creditor_id=_ob_creditor,
                 source_policy_id=_ob_policy_id,
                 actor_id=primary_owner_actor_id,
