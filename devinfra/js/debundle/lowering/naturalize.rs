@@ -3,9 +3,10 @@
 //! heuristic renames derived from the AST (return-object aliases,
 //! destructure unpacks, constructor `this.x = param` mappings).
 //!
-//! `naturalize_module_body` is the public entry; everything else is a
-//! contributor of rename intents submitted to the per-module
-//! `LoweringPlan` for conflict resolution.
+//! `submit_naturalize_renames` is the public entry; every contributor
+//! emits `(Id, Atom)` pairs (hygiene-preserving) so the plan's
+//! `is_name_taken` check and the plan-aware execute visitor can match
+//! function-local bindings as precisely as chunk-top-level ones.
 
 use swc_atoms::Atom;
 use swc_common::Mark;
@@ -16,23 +17,23 @@ use super::lowering_plan::{
 use super::util::is_identifier_like;
 use super::*;
 
-/// Phase 6: naturalize a moved module's body via the per-module
-/// `LoweringPlan`. Spec-driven renames from `module_spec.bindings`
-/// flow in at `Priority::Explicit`; heuristic renames inferred
-/// from AST shape flow in at `Priority::Heuristic` with
-/// `SubmitPolicy::SkipIfClaimed` so they defer to spec-driven
-/// claims and to chunk-wide `occupied` collisions. The plan's
-/// `is_name_taken` check replaces the legacy
-/// `drop_target_collisions` logic.
-pub(super) fn naturalize_module_body(
-    body: &mut [ModuleItem],
+/// Phase 6: submit spec-driven (Explicit) + heuristic (Heuristic /
+/// SkipIfClaimed) naturalize renames to the per-module
+/// `LoweringPlan`. Does NOT mutate `body`; the caller applies via
+/// `apply_plan_renames_and_naturalize` after every per-module
+/// rename contributor has submitted.
+///
+/// Returns the accepted rename map (atom → atom, for callers that
+/// still need a `local → exported` view — notably
+/// `plan_module_reference_needs`'s reverse-lookup, Phase 9
+/// retires it).
+pub(super) fn submit_naturalize_renames(
+    body: &[ModuleItem],
     module_spec: &ModulePlan,
     plan: &mut LoweringPlan,
     chunk_top_level_mark: Mark,
 ) -> Result<BTreeMap<String, String>> {
     let mut renames = BTreeMap::<String, String>::new();
-    // Stable iteration over `module_spec.bindings` (a HashMap) so
-    // the order doesn't vary by hash seed.
     let mut sorted_bindings: Vec<(&String, &String)> = module_spec.bindings.iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
     for (local, exported) in sorted_bindings {
@@ -63,31 +64,26 @@ pub(super) fn naturalize_module_body(
                 "unexpected submit outcome for module-spec rename \
                  ({local} → {exported}): {other:?}"
             ),
-            // Target-name collision (the spec asks for a name that
-            // collides with an existing local). Legacy
-            // `naturalize_module_body` silently dropped the
-            // rename in this case via the `is_identifier_like`
-            // filter combined with `drop_target_collisions`;
-            // match that lenient behavior here too.
             Err(_) => continue,
         }
     }
-    let mut heuristic = BTreeMap::<String, String>::new();
-    for item in body.iter() {
+    // Heuristic renames: collect (Id, Atom) pairs and submit each
+    // with `SkipIfClaimed` so they defer to spec-driven claims.
+    let mut heuristic = BTreeMap::<Id, Atom>::new();
+    for item in body {
         collect_naturalization_renames_from_item(item, &mut heuristic);
     }
-    let mut sorted_heuristic: Vec<(&String, &String)> = heuristic.iter().collect();
-    sorted_heuristic.sort_by(|a, b| a.0.cmp(b.0));
-    for (local, target) in sorted_heuristic {
-        if renames.contains_key(local) {
+    let mut sorted_heuristic: Vec<(&Id, &Atom)> = heuristic.iter().collect();
+    sorted_heuristic.sort_by(|a, b| (&a.0.0, a.0.1).cmp(&(&b.0.0, b.0.1)));
+    for (original_id, target) in sorted_heuristic {
+        if renames.contains_key(original_id.0.as_str()) {
             continue;
         }
-        let original = top_level_id(local, chunk_top_level_mark);
         match plan.submit(
             LoweringOp::Rename {
                 scope: Scope::Chunk,
-                original,
-                name: NamePolicy::Required(Atom::from(target.as_str())),
+                original: original_id.clone(),
+                name: NamePolicy::Required(target.clone()),
                 reason: "naturalize_heuristic",
                 priority: Priority::Heuristic,
             },
@@ -100,26 +96,15 @@ pub(super) fn naturalize_module_body(
                         ..
                     },
             }) => {
-                renames.insert(local.clone(), atom.to_string());
+                renames.insert(original_id.0.to_string(), atom.to_string());
             }
             Ok(SubmitOutcome::Skipped { .. }) => {}
             Ok(other) => bail!(
                 "unexpected submit outcome for heuristic naturalize rename \
-                 ({local} → {target}): {other:?}"
+                 ({:?} → {target}): {other:?}",
+                original_id.0
             ),
-            // Target-name collision: skip the heuristic (legacy
-            // `drop_target_collisions` parity).
             Err(_) => continue,
-        }
-    }
-    if renames.is_empty() {
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut ShorthandNaturalizer);
-        }
-    } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer { renames: &renames };
-        for item in body.iter_mut() {
-            item.visit_mut_with(&mut naturalizer);
         }
     }
     Ok(renames)
@@ -127,7 +112,7 @@ pub(super) fn naturalize_module_body(
 
 pub(super) fn collect_naturalization_renames_from_item(
     item: &ModuleItem,
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     match item {
         ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
@@ -165,7 +150,7 @@ pub(super) fn collect_naturalization_renames_from_item(
 
 pub(super) fn collect_naturalization_renames_from_expr(
     expr: &Expr,
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     match expr {
         Expr::Fn(function) => {
@@ -183,7 +168,7 @@ pub(super) fn collect_naturalization_renames_from_expr(
 
 pub(super) fn collect_naturalization_renames_from_function(
     function: &Function,
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     for param in &function.params {
         collect_naturalization_renames_from_pattern(&param.pat, renames);
@@ -196,32 +181,32 @@ pub(super) fn collect_naturalization_renames_from_function(
 
 pub(super) fn collect_naturalization_renames_from_class(
     class: &Class,
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     for member in &class.body {
         let ClassMember::Constructor(constructor) = member else {
             continue;
         };
-        let mut param_names = BTreeSet::new();
+        let mut param_ids = BTreeMap::<String, Id>::new();
         for param in &constructor.params {
             if let ParamOrTsParamProp::Param(param) = param
                 && let Pat::Ident(ident) = &param.pat
             {
-                param_names.insert(ident.id.sym.to_string());
+                param_ids.insert(ident.id.sym.to_string(), ident.id.to_id());
             }
         }
         let Some(body) = constructor.body.as_ref() else {
             continue;
         };
         for statement in &body.stmts {
-            collect_constructor_assignment_renames(statement, &param_names, renames);
+            collect_constructor_assignment_renames(statement, &param_ids, renames);
         }
     }
 }
 
 pub(super) fn collect_naturalization_renames_from_pattern(
     pat: &Pat,
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     match pat {
         Pat::Object(object) => {
@@ -231,9 +216,9 @@ pub(super) fn collect_naturalization_renames_from_pattern(
                         if let PropName::Ident(key) = &key_value.key
                             && let Pat::Ident(value) = &*key_value.value
                         {
-                            let from = value.id.sym.to_string();
-                            let to = key.sym.to_string();
-                            if from != to && is_identifier_like(&to) {
+                            let from = value.id.to_id();
+                            let to = key.sym.clone();
+                            if from.0 != to && is_identifier_like(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -258,7 +243,7 @@ pub(super) fn collect_naturalization_renames_from_pattern(
 
 pub(super) fn collect_return_object_alias_renames(
     stmts: &[Stmt],
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     for stmt in stmts {
         match stmt {
@@ -272,9 +257,9 @@ pub(super) fn collect_return_object_alias_renames(
                             && let PropName::Ident(key) = &key_value.key
                             && let Expr::Ident(value) = &*key_value.value
                         {
-                            let from = value.sym.to_string();
-                            let to = key.sym.to_string();
-                            if from != to && is_identifier_like(&to) {
+                            let from = value.to_id();
+                            let to = key.sym.clone();
+                            if from.0 != to && is_identifier_like(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -289,8 +274,8 @@ pub(super) fn collect_return_object_alias_renames(
 
 pub(super) fn collect_constructor_assignment_renames(
     stmt: &Stmt,
-    param_names: &BTreeSet<String>,
-    renames: &mut BTreeMap<String, String>,
+    param_ids: &BTreeMap<String, Id>,
+    renames: &mut BTreeMap<Id, Atom>,
 ) {
     let Stmt::Expr(expr_stmt) = stmt else {
         return;
@@ -307,9 +292,19 @@ pub(super) fn collect_constructor_assignment_renames(
     let Expr::Ident(value) = &*assign.right else {
         return;
     };
-    let from = value.sym.to_string();
-    if param_names.contains(&from) && from != target_name && is_identifier_like(&target_name) {
-        renames.insert(from, target_name);
+    let value_id = value.to_id();
+    let Some(param_id) = param_ids.get(value_id.0.as_str()) else {
+        return;
+    };
+    // Require the assignment's RHS Id to match the param's Id (hygiene)
+    // — guards against shadowing where a different binding with the
+    // same atom appears in the constructor body.
+    if param_id != &value_id {
+        return;
+    }
+    let target_atom = Atom::from(target_name.as_str());
+    if value_id.0 != target_atom && is_identifier_like(&target_atom) {
+        renames.insert(value_id, target_atom);
     }
 }
 
@@ -321,13 +316,7 @@ pub(super) fn this_property_name(target: &AssignTarget) -> Option<String> {
         return None;
     }
     match &member.prop {
-        MemberProp::Ident(ident) => Some(ident.sym.to_string()),
-        MemberProp::Computed(computed) => match &*computed.expr {
-            Expr::Lit(Lit::Str(value)) if is_identifier_like(&str_value(value)) => {
-                Some(str_value(value))
-            }
-            _ => None,
-        },
+        MemberProp::Ident(name) => Some(name.sym.to_string()),
         _ => None,
     }
 }

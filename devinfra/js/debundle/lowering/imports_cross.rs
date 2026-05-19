@@ -66,6 +66,7 @@ pub(super) fn cross_module_imports_for_plan(
             from_file,
             &provider.target_file,
             &resolved,
+            ctx.chunk_top_level_mark,
         ));
     }
     Ok(items)
@@ -103,7 +104,12 @@ pub(super) fn residual_entry_imports_for_moved_body(
         ctx.renames,
         ctx.chunk_top_level_mark,
     )?;
-    Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
+    Ok(vec![import_decl_for_plan(
+        from_file,
+        entry_file,
+        &resolved,
+        ctx.chunk_top_level_mark,
+    )])
 }
 
 pub(super) fn collect_entry_exports_by_original_local(

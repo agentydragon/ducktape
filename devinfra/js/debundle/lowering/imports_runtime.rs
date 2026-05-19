@@ -62,8 +62,10 @@ pub(super) fn resolve_imported_binding(
 /// mixing `NameSpaceImport` with `NamedImports` in a single
 /// `ImportClause`. First-occurrence order is preserved both for the
 /// source groups and for specifiers within each group.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn source_chunk_imports_for_moved_body(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
+    chunk_top_level_mark: Mark,
     source_chunk_id: &str,
     source_runtime_file: &str,
     dest_target_file: &str,
@@ -103,7 +105,7 @@ pub(super) fn source_chunk_imports_for_moved_body(
             // Bare specifier (npm package etc.) — pass through unchanged.
             info.src.clone()
         };
-        let specifier = runtime_reimport_specifier(&local, info);
+        let specifier = runtime_reimport_specifier(&local, info, chunk_top_level_mark);
         let group_index = *index_by_source
             .entry(rewritten_source.clone())
             .or_insert_with(|| {

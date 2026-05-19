@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
-use swc_common::{DUMMY_SP, EqIgnoreSpan, GLOBALS, SyntaxContext};
+use swc_common::{DUMMY_SP, EqIgnoreSpan, GLOBALS, Mark, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
@@ -74,7 +74,7 @@ use materialize::{
     MaterializeLogicalChunkInputs, aggregate_logical_timings, apply_materialized_logical_chunks,
     materialize_logical_chunk,
 };
-use naturalize::naturalize_module_body;
+use naturalize::submit_naturalize_renames;
 use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
     collect_imported_reexports_by_module, plan_module_reference_needs,
@@ -92,7 +92,10 @@ use util::{
     normalize_optional_relative_dir, prepare_output_dir, prune_artifact_to_chunk_ids,
     write_chunk_report_json,
 };
-use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
+// Legacy `IdentifierRenamer` / `RenameAndShorthandNaturalizer` /
+// `ShorthandNaturalizer` retired by the executor migration —
+// `lowering_execute.rs::PlanRenameVisitor` is now the unified
+// Id-based renamer driving every body mutation.
 
 const LOWERING_FILE_PRAGMA: &str =
     "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";

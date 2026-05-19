@@ -318,38 +318,14 @@ pub(super) fn collect_local_binding_names(body: &[ModuleItem]) -> BTreeSet<Strin
     collector.names
 }
 
-/// Pre-fill `exported` on `export { local }` re-export specifiers whose
-/// `local` is about to be renamed, so the public export name survives.
-pub(super) fn preserve_export_specifier_names(
-    item: &mut ModuleItem,
-    renames: &BTreeMap<String, String>,
-) {
-    let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
-        return;
-    };
-    for specifier in &mut named.specifiers {
-        let ExportSpecifier::Named(spec) = specifier else {
-            continue;
-        };
-        if spec.exported.is_some() {
-            continue;
-        }
-        let ModuleExportName::Ident(orig) = &spec.orig else {
-            continue;
-        };
-        if !renames.contains_key(&orig.sym.to_string()) {
-            continue;
-        }
-        spec.exported = Some(spec.orig.clone());
-    }
-}
-
 pub(super) fn import_decl_for_plan(
     entry_file: &str,
     target_file: &str,
     bindings: &BTreeMap<String, String>,
+    chunk_top_level_mark: Mark,
 ) -> ModuleItem {
     let source = relative_source(entry_file, target_file);
+    let local_ctxt = SyntaxContext::empty().apply_mark(chunk_top_level_mark);
     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
         span: DUMMY_SP,
         specifiers: bindings
@@ -357,7 +333,7 @@ pub(super) fn import_decl_for_plan(
             .map(|(local, exported)| {
                 ImportSpecifier::Named(ImportNamedSpecifier {
                     span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
+                    local: Ident::new(local.clone().into(), DUMMY_SP, local_ctxt),
                     imported: if local == exported {
                         None
                     } else {

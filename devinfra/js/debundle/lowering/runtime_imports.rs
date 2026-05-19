@@ -86,14 +86,35 @@ pub(super) enum RuntimeImportKind {
     Namespace,
 }
 
-pub(super) fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) -> ImportSpecifier {
+/// Construct a synthetic top-level import-binding Ident with the
+/// chunk's top-level `SyntaxContext`. Synthetic imports built
+/// during lowering need this so the plan-aware visitor's
+/// Id-based rename lookup matches references in the body
+/// (which carry `chunk_top_level_mark` from the source AST's
+/// resolver pass).
+fn synthetic_top_level_ident(name: &str, chunk_top_level_mark: Mark) -> Ident {
+    Ident::new(
+        name.into(),
+        DUMMY_SP,
+        SyntaxContext::empty().apply_mark(chunk_top_level_mark),
+    )
+}
+
+pub(super) fn runtime_reimport_specifier(
+    local: &str,
+    info: &RuntimeImportInfo,
+    chunk_top_level_mark: Mark,
+) -> ImportSpecifier {
     match &info.kind {
         RuntimeImportKind::Named { imported } => ImportSpecifier::Named(ImportNamedSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            local: synthetic_top_level_ident(local, chunk_top_level_mark),
             imported: if imported == local {
                 None
             } else {
+                // `imported` is a label string (source-module's
+                // exported name), not a local binding — DUMMY ctxt
+                // is correct here.
                 Some(ModuleExportName::Ident(Ident::new_no_ctxt(
                     imported.clone().into(),
                     DUMMY_SP,
@@ -103,11 +124,11 @@ pub(super) fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) 
         }),
         RuntimeImportKind::Default => ImportSpecifier::Default(ImportDefaultSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            local: synthetic_top_level_ident(local, chunk_top_level_mark),
         }),
         RuntimeImportKind::Namespace => ImportSpecifier::Namespace(ImportStarAsSpecifier {
             span: DUMMY_SP,
-            local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+            local: synthetic_top_level_ident(local, chunk_top_level_mark),
         }),
     }
 }
@@ -116,10 +137,14 @@ pub(super) fn runtime_reimport_specifier(local: &str, info: &RuntimeImportInfo) 
 /// `{ <local> }` when local == imported) for an ImportSpecifier-bound
 /// reexport. Callers group same-source specifiers and wrap the list in
 /// one `ImportDecl` via [`import_decl_module_item`].
-pub(super) fn imported_binding_named_specifier(local: &str, imported: &str) -> ImportSpecifier {
+pub(super) fn imported_binding_named_specifier(
+    local: &str,
+    imported: &str,
+    chunk_top_level_mark: Mark,
+) -> ImportSpecifier {
     ImportSpecifier::Named(ImportNamedSpecifier {
         span: DUMMY_SP,
-        local: Ident::new_no_ctxt(local.into(), DUMMY_SP),
+        local: synthetic_top_level_ident(local, chunk_top_level_mark),
         imported: if local == imported {
             None
         } else {

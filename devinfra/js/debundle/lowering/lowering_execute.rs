@@ -1,49 +1,185 @@
-//! Apply a sealed [`CheckedPlan`] to a module's AST.
-//!
-//! Phase 4a deliverable: rename application. Walks a `Module`
-//! and rewrites every `Ident` whose `(Scope::Chunk, to_id())` is
-//! in `plan.rename_index` to the resolved final name. Per-module
-//! and per-function scope renames are not applied here yet —
-//! Phase 6 (naturalizer migration) extends this visitor with
-//! scope tracking. Move application (Phase 4b) lives in a
-//! sibling pass that consumes `plan.move_index`.
+//! Apply a sealed [`CheckedPlan`] to a module's AST via a single
+//! visitor walk. Replaces the legacy `IdentifierRenamer`,
+//! `RenameAndShorthandNaturalizer`, and `ShorthandNaturalizer`:
+//! the visitor renames by hygiene-preserving `Id` (matching the
+//! plan's rename_index), preserves public export names, adds
+//! `as` aliases on import-named-specifiers when the local is
+//! renamed, leaves property-name labels alone, and collapses
+//! object literal/pattern shorthand.
 
-use swc_ecma_ast::{Ident, Module, ModuleItem};
+use std::collections::HashMap;
+
+use swc_atoms::Atom;
+use swc_common::DUMMY_SP;
+use swc_ecma_ast::{
+    ExportNamedSpecifier, ExportSpecifier, Id, Ident, ImportNamedSpecifier, MemberProp, Module,
+    ModuleDecl, ModuleExportName, ModuleItem, NamedExport, ObjectLit, ObjectPat, PropName,
+};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use super::lowering_plan::{CheckedPlan, Scope};
+use super::visitors::{naturalize_object_literal_shorthand, naturalize_object_pattern_shorthand};
 
-/// Rewrite every `Ident` in `module` whose `(Scope::Chunk, to_id())`
-/// is in `plan.rename_index` to its resolved final name.
-///
-/// Walks the whole module tree — declarations and references
-/// alike. swc's hygiene means a binding's declaration and its
-/// references share the same `Id`, so this visitor handles both
-/// in one walk.
+/// Apply chunk-scope renames from `plan` to `module`. Walks the
+/// tree once.
 pub fn apply_chunk_renames(module: &mut Module, plan: &CheckedPlan) {
-    let mut v = ChunkRenameVisitor { plan };
+    let renames = chunk_rename_map(plan);
+    preserve_export_specifier_names_for_renamed(&mut module.body, &renames);
+    let mut v = PlanRenameVisitor {
+        renames: &renames,
+        naturalize_shorthand: false,
+    };
     module.visit_mut_with(&mut v);
 }
 
-/// Same as [`apply_chunk_renames`] but operates on a slice of
-/// `ModuleItem`s — `lower.rs` carries the entry body as a
-/// `Vec<ModuleItem>` rather than a `Module`, and re-wrapping it
-/// just to apply renames is unnecessary work.
+/// Slice variant for callers that carry the body as
+/// `Vec<ModuleItem>`. Renames only; no shorthand collapse.
 pub fn apply_chunk_renames_to_items(items: &mut [ModuleItem], plan: &CheckedPlan) {
-    let mut v = ChunkRenameVisitor { plan };
+    let renames = chunk_rename_map(plan);
+    preserve_export_specifier_names_for_renamed(items, &renames);
+    let mut v = PlanRenameVisitor {
+        renames: &renames,
+        naturalize_shorthand: false,
+    };
     for item in items.iter_mut() {
         item.visit_mut_with(&mut v);
     }
 }
 
-struct ChunkRenameVisitor<'a> {
-    plan: &'a CheckedPlan,
+/// Apply chunk-scope renames AND collapse object literal/pattern
+/// shorthand. Used for moved-module bodies that previously ran
+/// through the legacy `RenameAndShorthandNaturalizer`.
+pub fn apply_plan_renames_and_naturalize(items: &mut [ModuleItem], plan: &CheckedPlan) {
+    let renames = chunk_rename_map(plan);
+    preserve_export_specifier_names_for_renamed(items, &renames);
+    let mut v = PlanRenameVisitor {
+        renames: &renames,
+        naturalize_shorthand: true,
+    };
+    for item in items.iter_mut() {
+        item.visit_mut_with(&mut v);
+    }
 }
 
-impl VisitMut for ChunkRenameVisitor<'_> {
+/// Apply only shorthand collapse — for the case where a body has
+/// no renames to apply but still needs `{ x: x }` normalized to
+/// `{ x }`.
+pub fn apply_shorthand_only(items: &mut [ModuleItem]) {
+    let empty: HashMap<Id, Atom> = HashMap::new();
+    let mut v = PlanRenameVisitor {
+        renames: &empty,
+        naturalize_shorthand: true,
+    };
+    for item in items.iter_mut() {
+        item.visit_mut_with(&mut v);
+    }
+}
+
+fn chunk_rename_map(plan: &CheckedPlan) -> HashMap<Id, Atom> {
+    plan.rename_index
+        .iter()
+        .filter_map(|((scope, id), atom)| match scope {
+            Scope::Chunk => Some((id.clone(), atom.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Pre-fill `exported` on `export { local }` re-export specifiers
+/// whose `local` is about to be renamed, so the public export
+/// name survives the rename. Id-based variant of the legacy
+/// `preserve_export_specifier_names` helper.
+fn preserve_export_specifier_names_for_renamed(
+    items: &mut [ModuleItem],
+    renames: &HashMap<Id, Atom>,
+) {
+    for item in items.iter_mut() {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
+            continue;
+        };
+        if named.src.is_some() {
+            continue;
+        }
+        for specifier in &mut named.specifiers {
+            let ExportSpecifier::Named(spec) = specifier else {
+                continue;
+            };
+            if spec.exported.is_some() {
+                continue;
+            }
+            let ModuleExportName::Ident(orig) = &spec.orig else {
+                continue;
+            };
+            if !renames.contains_key(&orig.to_id()) {
+                continue;
+            }
+            spec.exported = Some(spec.orig.clone());
+        }
+    }
+}
+
+struct PlanRenameVisitor<'a> {
+    renames: &'a HashMap<Id, Atom>,
+    naturalize_shorthand: bool,
+}
+
+impl VisitMut for PlanRenameVisitor<'_> {
     fn visit_mut_ident(&mut self, ident: &mut Ident) {
-        if let Some(new_name) = self.plan.rename_index.get(&(Scope::Chunk, ident.to_id())) {
+        if let Some(new_name) = self.renames.get(&ident.to_id()) {
             ident.sym = new_name.clone();
+        }
+    }
+
+    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
+        let original = spec.local.to_id();
+        let Some(new_name) = self.renames.get(&original).cloned() else {
+            return;
+        };
+        if new_name == original.0 {
+            return;
+        }
+        if spec.imported.is_none() {
+            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                original.0.clone(),
+                DUMMY_SP,
+            )));
+        }
+        spec.local.sym = new_name;
+    }
+
+    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
+        if named.src.is_none() {
+            named.specifiers.visit_mut_with(self);
+        }
+    }
+
+    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
+        spec.orig.visit_mut_with(self);
+    }
+
+    fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
+        if let PropName::Computed(computed) = prop_name {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
+        if let MemberProp::Computed(computed) = member_prop {
+            computed.visit_mut_children_with(self);
+        }
+    }
+
+    fn visit_mut_object_lit(&mut self, object: &mut ObjectLit) {
+        object.visit_mut_children_with(self);
+        if self.naturalize_shorthand {
+            naturalize_object_literal_shorthand(object);
+        }
+    }
+
+    fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
+        object.visit_mut_children_with(self);
+        if self.naturalize_shorthand {
+            naturalize_object_pattern_shorthand(object);
         }
     }
 }
@@ -63,8 +199,6 @@ mod tests {
     use swc_ecma_transforms_base::resolver;
     use swc_ecma_visit::{Visit, VisitMutWith, VisitWith};
 
-    /// Collect every `Ident` atom that appears in the module, in
-    /// source order. Helper for `assert_idents_eq` below.
     struct IdentCollector {
         atoms: Vec<String>,
     }
@@ -81,10 +215,10 @@ mod tests {
         c.atoms
     }
 
-    fn first_ident_id(module: &Module, name: &str) -> swc_ecma_ast::Id {
+    fn first_ident_id(module: &Module, name: &str) -> Id {
         struct Finder<'a> {
             needle: &'a str,
-            found: Option<swc_ecma_ast::Id>,
+            found: Option<Id>,
         }
         impl Visit for Finder<'_> {
             fn visit_ident(&mut self, ident: &Ident) {
@@ -102,8 +236,6 @@ mod tests {
             .unwrap_or_else(|| panic!("identifier {name} not found in module"))
     }
 
-    /// Parse + resolve a module so every Ident carries its
-    /// canonical `SyntaxContext`.
     fn parse_and_resolve(src: &str) -> Module {
         let mut module = parse_js_module_ast("test.js", src).unwrap();
         let unresolved_mark = Mark::new();
@@ -135,9 +267,6 @@ mod tests {
             .unwrap();
             let checked = plan.seal().unwrap();
             apply_chunk_renames(&mut module, &checked);
-            // `foo` is a free variable (unresolved mark), so it
-            // stays put even if its atom matches a renamed binding
-            // — distinct `Id`s.
             assert_eq!(idents(&module), vec!["renamed", "foo", "renamed"]);
         });
     }
@@ -188,9 +317,6 @@ mod tests {
     #[test]
     fn function_local_binding_with_same_atom_is_distinct() {
         with_swc_globals(|| {
-            // Top-level `x` and function-local `x` get different
-            // SyntaxContexts after resolver. Renaming the top-level
-            // one should NOT touch the function-local — distinct Ids.
             let mut module =
                 parse_and_resolve("var x = 1; function f() { var x = 2; return x; } f(x);");
             let top_level_x = first_ident_id(&module, "x");
@@ -212,9 +338,6 @@ mod tests {
             .unwrap();
             let checked = plan.seal().unwrap();
             apply_chunk_renames(&mut module, &checked);
-            // Identifiers in order: `renamed` (decl), `f` (decl),
-            // `x` (function-local decl), `x` (function-local
-            // return), `f` (call), `renamed` (call arg).
             assert_eq!(
                 idents(&module),
                 vec!["renamed", "f", "x", "x", "f", "renamed"]
