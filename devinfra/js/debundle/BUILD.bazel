@@ -199,6 +199,7 @@ rust_library(
     deps = [
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_utils",
     ],
 )
 

@@ -1,5 +1,6 @@
 use swc_atoms::Atom;
 use swc_ecma_ast::*;
+use swc_ecma_utils::find_pat_ids;
 
 pub trait TargetAccessRecorder {
     /// Called for update expressions like `a++`, where the target binding is
@@ -15,42 +16,12 @@ pub trait TargetAccessRecorder {
 }
 
 /// Yield the hygiene-preserving `Id` of every binding the pattern
-/// declares. `swc_ecma_utils::find_pat_ids::<Pat, Id>` does the
-/// same; this handwritten walker is kept to avoid an extra crate
-/// dep and to surface order deterministically.
+/// declares. Thin wrapper around `swc_ecma_utils::find_pat_ids`
+/// with the `Id = (Atom, SyntaxContext)` instantiation — same
+/// semantics as the previous handwritten walker, drives the
+/// shared swc destructure-finding visitor.
 pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = Id> + '_ {
-    enum Work<'a> {
-        Pat(&'a Pat),
-        BindIdent(&'a BindingIdent),
-    }
-    let mut stack = vec![Work::Pat(pattern)];
-    std::iter::from_fn(move || {
-        loop {
-            match stack.pop()? {
-                Work::BindIdent(id) => return Some(id.to_id()),
-                Work::Pat(pat) => match pat {
-                    Pat::Ident(id) => return Some(id.to_id()),
-                    Pat::Array(arr) => {
-                        for elem in arr.elems.iter().flatten().rev() {
-                            stack.push(Work::Pat(elem));
-                        }
-                    }
-                    Pat::Object(obj) => {
-                        for prop in obj.props.iter().rev() {
-                            match prop {
-                                ObjectPatProp::KeyValue(kv) => stack.push(Work::Pat(&kv.value)),
-                                ObjectPatProp::Assign(a) => stack.push(Work::BindIdent(&a.key)),
-                                ObjectPatProp::Rest(rest) => stack.push(Work::Pat(&rest.arg)),
-                            }
-                        }
-                    }
-                    Pat::Rest(rest) => stack.push(Work::Pat(&rest.arg)),
-                    Pat::Assign(assign) => stack.push(Work::Pat(&assign.left)),
-                    _ => {}
-                },
-            }
-        }
-    })
+    find_pat_ids::<Pat, Id>(pattern).into_iter()
 }
 
 pub fn record_assign_target(target: &AssignTarget, recorder: &mut impl TargetAccessRecorder) {

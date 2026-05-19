@@ -329,14 +329,6 @@ reports keep their wire shape via `Atom: Serialize` (atom-only,
 SyntaxContext dropped at the JSON boundary).
 -->
 
-## Adopt `swc_ecma_utils::find_pat_ids` for `binding_names`
-
-`binding_targets.rs::binding_names` is a handwritten work-stack walker
-that yields `Id` for each binding in a `Pat`. `swc_ecma_utils` ships
-`find_pat_ids::<Pat, Id>` which does the same. Worth swapping once
-`swc_ecma_utils` is otherwise in the analysis crate's deps (no good
-reason today — the local walker is small and equivalent).
-
 ## Reinvented-wheel audit findings (recorded, no immediate action)
 
 A high-level audit (see chat session
