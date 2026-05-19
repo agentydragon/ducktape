@@ -252,3 +252,65 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "ready\n");
 }
+
+#[test]
+fn peeled_method_reassigning_top_level_let_executes_under_node() {
+    // ★ RED test: minimal reproduction of the
+    // `Assignment to constant variable` runtime crash hit
+    // when peeling Tana's `ComputedViewRunner` class.
+    //
+    // Tana shape (paraphrased):
+    //
+    //   let isSearchBeingRefreshedForNode = (n) => false;
+    //   class ComputedViewRunner {
+    //     static setIsSearchBeingRefreshedForNodeHandler(e) {
+    //       isSearchBeingRefreshedForNode = e;           // ← write
+    //     }
+    //   }
+    //
+    // Before peeling `ComputedViewRunner`, the write lives in
+    // the same module as the `let` declaration: legal. After
+    // peeling `ComputedViewRunner` into its own module, the
+    // emitted file looks like:
+    //
+    //   import { isSearchBeingRefreshedForNode } from "../entry.js";
+    //   class ComputedViewRunner {
+    //     static setIsSearchBeingRefreshedForNodeHandler(e) {
+    //       isSearchBeingRefreshedForNode = e;
+    //     }
+    //   }
+    //
+    // Imported bindings are immutable per ESM — the method
+    // throws `TypeError: Assignment to constant variable` the
+    // first time it's called.
+    //
+    // Ducktape's realizability gate today accepts this peel
+    // because the write is inside a method body (lazy
+    // position). The fix must either reject any peel whose
+    // emitted module assigns to a binding declared in another
+    // module, or rewrite the write through a setter exported
+    // from the declaring module.
+    let mut opts = FixtureOpts::new(
+        r#"let counter = 0;
+class Counter {
+  bump(b) { counter = b; }
+  read() { return counter; }
+}
+const c = new Counter();
+c.bump(1);
+console.log(c.read());
+export { counter, Counter, c };
+"#,
+        vec![
+            // Peel the class + its instance into a separate
+            // module. `counter` (the let) stays in residual.
+            logical_module(
+                "mod_counter_class",
+                &[Member::new("Counter"), Member::new("c")],
+            ),
+        ],
+    );
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    assert_entry_output(&fixture, "1\n");
+}
