@@ -2026,6 +2026,57 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         month_index=month_index,
         amount_due_usd=np.zeros((rollout_count, month_count), dtype="float64"),
     )
+    # Mortgage / special-assessment / outside-rent obligations: today's
+    # post-loop `_settle_required_cash_obligations(...)` calls are
+    # equivalent to per-iteration inline settlement (each iterates
+    # months internally; settlement order within a month was always
+    # main-loop-property-cost → mortgage → special_assessment →
+    # outside_rent). Move inline so the engine is a single forward DAG.
+    mortgage_payment_due = property_cash_flow.column("mortgage_payment_usd") * property_live_mask
+    mortgage_accumulator: _ObligationFundingAccumulator | None = None
+    if scenario.property_selection.property_id is not None:
+        mortgage_accumulator = _ObligationFundingAccumulator.new(
+            obligation_kind=_MortgageObligationKind(
+                interest_usd=mortgage_interest,
+                principal_usd=mortgage_principal,
+                property_id=scenario.property_selection.property_id,
+            ),
+            creditor_id="mortgage_lender",
+            source_policy_id=MORTGAGE_SERVICING_POLICY_ID,
+            actor_id=primary_owner_actor_id,
+            cash_source_account_id=_tax_obligation_cash_source_account_id,
+            rollout_count=rollout_count,
+            month_index=month_index,
+            amount_due_usd=mortgage_payment_due,
+        )
+    special_assessment_due = _special_assessment_obligation_due_usd(
+        scenario, rollout_count=rollout_count, month_index=month_index
+    )
+    special_assessment_accumulator = _ObligationFundingAccumulator.new(
+        obligation_kind=_CashDebitObligationKind(
+            obligation_type=ObligationType.SPECIAL_ASSESSMENT, expense_role=ChartAccountRole.HOA_EXPENSE
+        ),
+        creditor_id="hoa",
+        source_policy_id=SPECIAL_ASSESSMENT_POLICY_ID,
+        actor_id=primary_owner_actor_id,
+        cash_source_account_id=_tax_obligation_cash_source_account_id,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        amount_due_usd=special_assessment_due,
+    )
+    outside_rent_due = _outside_rent_obligation_due_usd(scenario, rollout_count=rollout_count, month_index=month_index)
+    outside_rent_accumulator = _ObligationFundingAccumulator.new(
+        obligation_kind=_CashDebitObligationKind(
+            obligation_type=ObligationType.OUTSIDE_RENT, expense_role=ChartAccountRole.OUTSIDE_RENT_EXPENSE
+        ),
+        creditor_id="landlord",
+        source_policy_id=OUTSIDE_RENT_POLICY_ID,
+        actor_id=primary_owner_actor_id,
+        cash_source_account_id=_tax_obligation_cash_source_account_id,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        amount_due_usd=outside_rent_due,
+    )
     # Pre-inline-tax record lists feed `annual_sale_tax_allocation`'s
     # gain inputs so the per-month tax reporting matrices reflect the
     # same gains TaxActor used to size the inline obligation amounts
@@ -2433,6 +2484,72 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
                 tax_actor.record_estimated_paid(
                     month_index=int(month_index[month]), paid_usd=_accumulator.amount_paid_usd[:, month]
                 )
+        # Mortgage + special-assessment + outside-rent obligations: same
+        # inline-settlement pattern as the tax block above. Order
+        # within the iteration: property-cost → tax → mortgage →
+        # special_assessment → outside_rent, matching today's
+        # post-loop order to preserve cash-priority behavior for
+        # cash-strapped rollouts.
+        for _ob_due, _ob_acc, _ob_kind, _ob_creditor, _ob_policy_id in (
+            (
+                mortgage_payment_due,
+                mortgage_accumulator,
+                mortgage_accumulator.obligation_kind if mortgage_accumulator is not None else None,
+                "mortgage_lender",
+                MORTGAGE_SERVICING_POLICY_ID,
+            ),
+            (
+                special_assessment_due,
+                special_assessment_accumulator,
+                special_assessment_accumulator.obligation_kind,
+                "hoa",
+                SPECIAL_ASSESSMENT_POLICY_ID,
+            ),
+            (
+                outside_rent_due,
+                outside_rent_accumulator,
+                outside_rent_accumulator.obligation_kind,
+                "landlord",
+                OUTSIDE_RENT_POLICY_ID,
+            ),
+        ):
+            if _ob_acc is None:
+                continue
+            _ob_month_due = _ob_due[:, month]
+            if not np.any(_ob_month_due > 0):
+                continue
+            _ob_settled = _settle_required_cash_obligation_at_month_position(
+                market_bundle=market_bundle,
+                month_position=month,
+                due_month_index=int(month_index[month]),
+                policy_steps=policy_steps,
+                obligation_amount_usd=_ob_month_due,
+                obligation_kind=_ob_kind,
+                creditor_id=_ob_creditor,
+                source_policy_id=_ob_policy_id,
+                actor_id=primary_owner_actor_id,
+                sources=primary_owner_funding_sources,
+                cash_usd=current_cash,
+                generic_sp500_value_usd=remaining_sp500_units * sp500_multiplier,
+                remaining_sp500_units=remaining_sp500_units,
+                remaining_sp500_basis=remaining_sp500_basis,
+                crypto_value_usd=remaining_crypto_quantity * crypto_multiplier,
+                remaining_crypto_quantity=remaining_crypto_quantity,
+                remaining_crypto_basis=remaining_crypto_basis,
+                crypto_sale_usd=crypto_sale_usd,
+                crypto_sale_basis_usd=crypto_sale_basis_usd,
+                checking_floor_shortfall_usd=checking_floor_shortfall,
+                accumulator=_ob_acc,
+                accounting=accounting,
+                sp500_sale_action_records=sp500_sale_action_records,
+                crypto_sale_action_records=crypto_sale_action_records,
+                pe_state=pe_funding_state,
+            )
+            current_cash = _ob_settled.cash_usd
+            remaining_sp500_units = _ob_settled.remaining_sp500_units
+            remaining_sp500_basis = _ob_settled.remaining_sp500_basis
+            remaining_crypto_quantity = _ob_settled.remaining_crypto_quantity
+            remaining_crypto_basis = _ob_settled.remaining_crypto_basis
         # Recompute the per-asset values after any inline tax sales for
         # the snapshot block below.
         sp500_value_after_sale = remaining_sp500_units * sp500_multiplier
@@ -2734,103 +2851,17 @@ def run_scenario_vectorized(scenario: Scenario, market_bundle: MarketBundle) -> 
         )
     _record_partner_contribution_decisions(policy_decisions, month_index=month_index, partner_equity=partner_equity)
     _record_partner_agreement_accounting_detail(accounting, month_index=month_index, partner_equity=partner_equity)
-    mortgage_payment_due = property_cash_flow.column("mortgage_payment_usd") * property_live_mask
-    if scenario.property_selection.property_id is not None:
-        _settle_required_cash_obligations(
-            scenario=scenario,
-            market_bundle=market_bundle,
-            month_index=month_index,
-            policy_steps=policy_steps,
-            obligation_amount_usd=mortgage_payment_due,
-            obligation_kind=_MortgageObligationKind(
-                interest_usd=mortgage_interest,
-                principal_usd=mortgage_principal,
-                property_id=scenario.property_selection.property_id,
-            ),
-            creditor_id="mortgage_lender",
-            source_policy_id=MORTGAGE_SERVICING_POLICY_ID,
-            cash_usd=cash,
-            generic_sp500_value_usd=generic_sp500_value,
-            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
-            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
-            crypto_value_usd=crypto_value,
-            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
-            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
-            crypto_sale_usd=crypto_sale_usd,
-            crypto_sale_basis_usd=crypto_sale_basis_usd,
-            checking_floor_shortfall_usd=checking_floor_shortfall,
-            obligations=obligations,
-            funding_decisions=funding_decisions,
-            accounting=accounting,
-            sp500_sale_action_records=sp500_sale_action_records,
-            crypto_sale_action_records=crypto_sale_action_records,
-            pe_state=pe_funding_state,
-        )
-    special_assessment_due = _special_assessment_obligation_due_usd(
-        scenario, rollout_count=rollout_count, month_index=month_index
-    )
-    if np.any(special_assessment_due > 0):
-        _settle_required_cash_obligations(
-            scenario=scenario,
-            market_bundle=market_bundle,
-            month_index=month_index,
-            policy_steps=policy_steps,
-            obligation_amount_usd=special_assessment_due,
-            obligation_kind=_CashDebitObligationKind(
-                obligation_type=ObligationType.SPECIAL_ASSESSMENT, expense_role=ChartAccountRole.HOA_EXPENSE
-            ),
-            creditor_id="hoa",
-            source_policy_id=SPECIAL_ASSESSMENT_POLICY_ID,
-            cash_usd=cash,
-            generic_sp500_value_usd=generic_sp500_value,
-            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
-            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
-            crypto_value_usd=crypto_value,
-            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
-            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
-            crypto_sale_usd=crypto_sale_usd,
-            crypto_sale_basis_usd=crypto_sale_basis_usd,
-            checking_floor_shortfall_usd=checking_floor_shortfall,
-            obligations=obligations,
-            funding_decisions=funding_decisions,
-            accounting=accounting,
-            sp500_sale_action_records=sp500_sale_action_records,
-            crypto_sale_action_records=crypto_sale_action_records,
-            pe_state=pe_funding_state,
-        )
-    # Outside-rent obligations: when occupancy_mode is OWNER_RENTS_ELSEWHERE, the
-    # primary owner pays a flat monthly rent for each month in the occupancy span.
-    # Settled through the same pipeline so a cash-strapped renter (no rescue
-    # policy) flips the rollout to FAILED.
-    outside_rent_due = _outside_rent_obligation_due_usd(scenario, rollout_count=rollout_count, month_index=month_index)
-    if np.any(outside_rent_due > 0):
-        _settle_required_cash_obligations(
-            scenario=scenario,
-            market_bundle=market_bundle,
-            month_index=month_index,
-            policy_steps=policy_steps,
-            obligation_amount_usd=outside_rent_due,
-            obligation_kind=_CashDebitObligationKind(
-                obligation_type=ObligationType.OUTSIDE_RENT, expense_role=ChartAccountRole.OUTSIDE_RENT_EXPENSE
-            ),
-            creditor_id="landlord",
-            source_policy_id=OUTSIDE_RENT_POLICY_ID,
-            cash_usd=cash,
-            generic_sp500_value_usd=generic_sp500_value,
-            remaining_sp500_units_by_month=remaining_sp500_units_by_month,
-            remaining_sp500_basis_by_month=remaining_sp500_basis_by_month,
-            crypto_value_usd=crypto_value,
-            remaining_crypto_quantity_by_month=remaining_crypto_quantity_by_month,
-            remaining_crypto_basis_by_month=remaining_crypto_basis_by_month,
-            crypto_sale_usd=crypto_sale_usd,
-            crypto_sale_basis_usd=crypto_sale_basis_usd,
-            checking_floor_shortfall_usd=checking_floor_shortfall,
-            obligations=obligations,
-            funding_decisions=funding_decisions,
-            accounting=accounting,
-            sp500_sale_action_records=sp500_sale_action_records,
-            crypto_sale_action_records=crypto_sale_action_records,
-        )
+    # Mortgage / special_assessment / outside_rent settlements happen
+    # inline in the main month loop above (at the per-iteration block
+    # at :~2484). Here we just flush the per-accumulator obligation +
+    # funding-decision row blocks to the event streams.
+    if mortgage_accumulator is not None:
+        mortgage_accumulator.emit_obligations(obligations)
+        mortgage_accumulator.emit_funding_decisions(funding_decisions)
+    special_assessment_accumulator.emit_obligations(obligations)
+    special_assessment_accumulator.emit_funding_decisions(funding_decisions)
+    outside_rent_accumulator.emit_obligations(obligations)
+    outside_rent_accumulator.emit_funding_decisions(funding_decisions)
     # Partner contribution obligations: each PartnerEquityAccrualPolicy emits a
     # required monthly PARTNER_CONTRIBUTION obligation on the contributing actor.
     # Settlement is a cross-actor transfer (debit owner CHECKING_CASH, credit
