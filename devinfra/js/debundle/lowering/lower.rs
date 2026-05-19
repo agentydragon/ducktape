@@ -173,6 +173,27 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // collisions (chunk_renames vs. import-disambiguation vs.
     // residual-entry imports) are caught by one validation pass.
     let mut chunk_plan = new_chunk_plan(&entry_body);
+    // Phase 8 (tracking-only): submit every binding-assignment
+    // entry as a `MoveBinding` op so the plan's `move_index`
+    // records every declaration's destination module. The actual
+    // body-splitting still flows through
+    // `remaining_item_after_selection` driven by
+    // `binding_assignment`; the executor migration replaces that
+    // in a follow-up.
+    {
+        let mut sorted_moves: Vec<(&Id, &usize)> = binding_assignment.iter().collect();
+        sorted_moves.sort_by(|a, b| (&a.0.0, a.0.1).cmp(&(&b.0.0, b.0.1)));
+        for (id, module_index) in sorted_moves {
+            chunk_plan.submit(
+                super::lowering_plan::LoweringOp::MoveBinding {
+                    id: id.clone(),
+                    to: ModuleId::logical(*module_index),
+                    reason: "binding_assignment",
+                },
+                super::lowering_plan::SubmitPolicy::Fail,
+            )?;
+        }
+    }
     // Phase 5: chunk_renames body-level validation runs through
     // the shared plan. Identifier validity, target-vs-body-local
     // collisions, and duplicate-target conflicts are all enforced
@@ -631,6 +652,13 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             });
         });
     }
+
+    // Seal the chunk plan once every rename + move contributor
+    // has submitted. The seal runs the cross-op coherence check
+    // (a `Scope::Module(N)` rename on a binding moved to a
+    // different module, etc.), surfacing it as a chunk-level
+    // error rather than a confusing emit-time mismatch.
+    chunk_plan.seal()?;
 
     Ok(LoweredChunk {
         files,
