@@ -7,12 +7,16 @@ import polars as pl
 import pytest_bazel
 
 from augur.core.action_log import (
+    ASSET_CHANGE_LOG_SCHEMA,
     CASHFLOW_LOG_SCHEMA,
     PROPERTY_STATE_SCHEMA,
+    AssetKindForLog,
     CashflowCause,
+    TaxTreatment,
     build_cashflow_log_from_scheduled,
     build_property_state_frame,
     derive_cash_matrix,
+    derive_per_month_taxable_gain_matrix,
 )
 from augur.core.scheduled_cashflows import build_scheduled_cashflows
 
@@ -162,6 +166,199 @@ def test_build_property_state_frame_shapes_match_inputs() -> None:
     assert sold_row["live"] == 0.0
     assert sold_row["value_usd"] == 0.0
     assert sold_row["cumulative_depreciation_usd"] == 1000.0
+
+
+def _empty_asset_change_log() -> pl.DataFrame:
+    return pl.DataFrame(schema=ASSET_CHANGE_LOG_SCHEMA)
+
+
+def _asset_change_log_with_rows(rows: list[dict]) -> pl.DataFrame:
+    if not rows:
+        return _empty_asset_change_log()
+    return pl.DataFrame(rows, schema=ASSET_CHANGE_LOG_SCHEMA)
+
+
+def test_derive_per_month_taxable_gain_groups_by_asset_kind_and_treatment() -> None:
+    rollout_count = 2
+    month_index = np.array([0, 1, 2, 3], dtype=np.int64)
+    log = _asset_change_log_with_rows(
+        [
+            # Rollout 0: SP500 long-term gain in month 1
+            {
+                "rollout_index": 0,
+                "month_index": 1,
+                "actor_id": "owner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -10.0,
+                "delta_basis_usd": -1000.0,
+                "cash_proceeds_usd": 1500.0,
+                "taxable_gain_usd": 500.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "cause:0",
+            },
+            # Rollout 0: PE long-term gain in month 1 (different asset_kind)
+            {
+                "rollout_index": 0,
+                "month_index": 1,
+                "actor_id": "owner",
+                "asset_id": "pe",
+                "asset_kind": AssetKindForLog.PRIVATE_EQUITY.value,
+                "delta_units": -5.0,
+                "delta_basis_usd": -2000.0,
+                "cash_proceeds_usd": 3000.0,
+                "taxable_gain_usd": 1000.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "cause:1",
+            },
+            # Rollout 1: SP500 short-term gain in month 1 (different treatment)
+            {
+                "rollout_index": 1,
+                "month_index": 1,
+                "actor_id": "owner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -3.0,
+                "delta_basis_usd": -100.0,
+                "cash_proceeds_usd": 200.0,
+                "taxable_gain_usd": 100.0,
+                "tax_treatment": TaxTreatment.SHORT_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "cause:2",
+            },
+            # Rollout 1: property recapture in month 2
+            {
+                "rollout_index": 1,
+                "month_index": 2,
+                "actor_id": "owner",
+                "asset_id": "home",
+                "asset_kind": AssetKindForLog.PROPERTY.value,
+                "delta_units": -1.0,
+                "delta_basis_usd": -100_000.0,
+                "cash_proceeds_usd": 200_000.0,
+                "taxable_gain_usd": 30_000.0,
+                "tax_treatment": TaxTreatment.DEPRECIATION_RECAPTURE_1250.value,
+                "cause_kind": "PROPERTY_SALE",
+                "cause_id": "cause:3",
+            },
+        ]
+    )
+    # SP500 long-term only — rollout 0 gets 500 at month 1, rollout 1 zero everywhere.
+    sp500_lt = derive_per_month_taxable_gain_matrix(
+        log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        asset_kind=AssetKindForLog.GENERIC_SP500,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
+    )
+    np.testing.assert_array_equal(sp500_lt, [[0.0, 500.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
+
+    # Property recapture only — rollout 1 month 2.
+    recapture = derive_per_month_taxable_gain_matrix(
+        log,
+        rollout_count=rollout_count,
+        month_index=month_index,
+        tax_treatment=TaxTreatment.DEPRECIATION_RECAPTURE_1250,
+    )
+    np.testing.assert_array_equal(recapture, [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 30_000.0, 0.0]])
+
+
+def test_derive_per_month_taxable_gain_sums_multiple_events_per_month() -> None:
+    log = _asset_change_log_with_rows(
+        [
+            {
+                "rollout_index": 0,
+                "month_index": 5,
+                "actor_id": "owner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -1.0,
+                "delta_basis_usd": -100.0,
+                "cash_proceeds_usd": 200.0,
+                "taxable_gain_usd": 100.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "OBLIGATION_SALE",
+                "cause_id": "obligation:property_tax",
+            },
+            # Same rollout, same month, same asset_kind+treatment — different cause.
+            # The bug we're fixing: today these are tracked in different code paths and
+            # the second one (e.g. policy-chain) overwrites the first (e.g. obligation).
+            {
+                "rollout_index": 0,
+                "month_index": 5,
+                "actor_id": "owner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -2.0,
+                "delta_basis_usd": -150.0,
+                "cash_proceeds_usd": 300.0,
+                "taxable_gain_usd": 150.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "policy:checking_floor",
+            },
+        ]
+    )
+    sp500 = derive_per_month_taxable_gain_matrix(
+        log,
+        rollout_count=1,
+        month_index=np.array([0, 5, 10], dtype=np.int64),
+        asset_kind=AssetKindForLog.GENERIC_SP500,
+        tax_treatment=TaxTreatment.LONG_TERM_CAPITAL,
+    )
+    # 100 + 150 = 250, both events accumulate; no overwrite.
+    np.testing.assert_array_equal(sp500, [[0.0, 250.0, 0.0]])
+
+
+def test_derive_per_month_taxable_gain_filter_by_actor_id() -> None:
+    log = _asset_change_log_with_rows(
+        [
+            {
+                "rollout_index": 0,
+                "month_index": 1,
+                "actor_id": "owner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -1.0,
+                "delta_basis_usd": -100.0,
+                "cash_proceeds_usd": 200.0,
+                "taxable_gain_usd": 100.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "c0",
+            },
+            {
+                "rollout_index": 0,
+                "month_index": 1,
+                "actor_id": "partner",
+                "asset_id": "sp500",
+                "asset_kind": AssetKindForLog.GENERIC_SP500.value,
+                "delta_units": -1.0,
+                "delta_basis_usd": -100.0,
+                "cash_proceeds_usd": 999.0,
+                "taxable_gain_usd": 999.0,
+                "tax_treatment": TaxTreatment.LONG_TERM_CAPITAL.value,
+                "cause_kind": "POLICY_SALE",
+                "cause_id": "c1",
+            },
+        ]
+    )
+    owner_only = derive_per_month_taxable_gain_matrix(
+        log, rollout_count=1, month_index=np.array([0, 1, 2], dtype=np.int64), actor_id="owner"
+    )
+    np.testing.assert_array_equal(owner_only, [[0.0, 100.0, 0.0]])
+
+
+def test_derive_per_month_taxable_gain_empty_log_returns_zeros() -> None:
+    matrix = derive_per_month_taxable_gain_matrix(
+        _empty_asset_change_log(),
+        rollout_count=2,
+        month_index=np.array([0, 1, 2], dtype=np.int64),
+        asset_kind=AssetKindForLog.GENERIC_SP500,
+    )
+    np.testing.assert_array_equal(matrix, np.zeros((2, 3)))
 
 
 if __name__ == "__main__":

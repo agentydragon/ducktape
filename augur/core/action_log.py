@@ -6,27 +6,26 @@ month) state evolution. State matrices (`cash`,
 initial state. See `augur/plans/state_vector_simulation_refactor.md` for
 the full plan.
 
-Phase 2 of the refactor introduces:
+This module exposes:
 
   - `CASHFLOW_LOG_SCHEMA` — one row per (rollout, month, actor_id,
     account_id, cause) cash delta.
   - `build_cashflow_log_from_scheduled(...)` — fold a `ScheduledCashflows`
-    frame's cash-flow kinds into the log shape, attributed to one
-    (actor_id, account_id) pair. Today the engine still maintains the
-    `cash` matrix from its 1D `current_cash` local;
-    `derive_cash_matrix(...)` reconstructs that matrix from the log +
-    initial cash and downstream phases will assert parity then drop the
-    matrix maintenance.
+    frame's cash-flow kinds into the log shape.
+  - `derive_cash_matrix(...)` — running-balance reconstruction.
+  - `PROPERTY_STATE_SCHEMA` and `build_property_state_frame(...)` —
+    long-form per-(rollout, month, property) facts (live, value,
+    cumulative depreciation).
+  - `ASSET_CHANGE_LOG_SCHEMA` and `derive_per_month_taxable_gain_matrix(...)`
+    — unified sale-event log replacing today's three parallel
+    per-asset-class record lists. Capital gains across SP500 /
+    crypto / PE / property all share this shape, with `asset_kind`
+    and `tax_treatment` discriminators. Year-end tax is a group-by
+    on `tax_treatment`; the per-month per-asset-class gain matrices
+    (`generic_sp500_sale_gain`, etc.) become filter+group_by views
+    over this log instead of imperative accumulators in the engine.
 
-This module also exposes `PROPERTY_STATE_SCHEMA` and
-`build_property_state_frame(...)` — the per-(rollout, month, property)
-long-form frame whose rows are *facts* about each property
-(live mask, value, cumulative depreciation), built once from the
-precomputed property matrices. Not a log (no events accumulate);
-included here because the rest of the long-form derived frames are
-also defined here.
-
-Asset-change and liability logs come in later phases.
+Liability and stake logs come in later phases.
 """
 
 from __future__ import annotations
@@ -140,6 +139,102 @@ def derive_cash_matrix(
         deltas[int(row["rollout_index"]), position] = row["amount_delta_usd"]
     cumulative = np.cumsum(deltas, axis=1)
     return initial_balance_per_rollout[:, None] + cumulative
+
+
+class AssetKindForLog(StrEnum):
+    """Asset-kind discriminator on the `asset_change_log` events frame.
+
+    Mirrors `augur.core.simulation_state.AssetKind` plus `PROPERTY` for
+    property dispositions. Kept here (rather than imported) to avoid a
+    circular dep with simulation_state — the values are stable strings
+    that downstream consumers (tax math, materializers) filter on."""
+
+    GENERIC_SP500 = "generic_sp500"
+    CRYPTO = "crypto"
+    PRIVATE_EQUITY = "private_equity"
+    PROPERTY = "property"
+
+
+class TaxTreatment(StrEnum):
+    """Tax-treatment bucket on a capital-gain event. Drives how
+    `taxable_gain_usd` feeds the year-end tax computation.
+
+    LONG_TERM_CAPITAL: held >1y, federal LTCG rates + state.
+    SHORT_TERM_CAPITAL: held ≤1y, ordinary rates.
+    DEPRECIATION_RECAPTURE_1250: federal §1250 unrecaptured gain, capped
+        at 25%. Today only emitted from property sale events.
+    """
+
+    LONG_TERM_CAPITAL = "long_term_capital"
+    SHORT_TERM_CAPITAL = "short_term_capital"
+    DEPRECIATION_RECAPTURE_1250 = "depreciation_recapture_1250"
+
+
+ASSET_CHANGE_LOG_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "actor_id": pl.Utf8(),
+    "asset_id": pl.Utf8(),
+    "asset_kind": pl.Utf8(),
+    "delta_units": pl.Float64(),
+    "delta_basis_usd": pl.Float64(),
+    "cash_proceeds_usd": pl.Float64(),
+    "taxable_gain_usd": pl.Float64(),
+    "tax_treatment": pl.Utf8(),  # null for purchases / non-taxable changes
+    "cause_kind": pl.Utf8(),
+    "cause_id": pl.Utf8(),
+}
+
+
+def derive_per_month_taxable_gain_matrix(
+    events: pl.DataFrame,
+    *,
+    rollout_count: int,
+    month_index: np.ndarray,
+    asset_kind: AssetKindForLog | None = None,
+    tax_treatment: TaxTreatment | None = None,
+    actor_id: str | None = None,
+) -> np.ndarray:
+    """Group taxable-gain events by `(rollout, month)` and sum, producing
+    a `(rollouts, len(month_index))` matrix that replaces today's
+    imperative per-asset-class gain matrices.
+
+    Filters narrow the events frame before the group-by:
+
+      - `asset_kind`: filter to one asset class (e.g. SP500 only).
+      - `tax_treatment`: filter to one tax bucket (e.g. recapture only).
+      - `actor_id`: filter to one agent (single-actor scenarios pass
+        the primary owner; multi-actor scenarios materialize per-actor
+        tax separately).
+
+    Pass none of these to sum all gains across everything (rare —
+    typically year-end tax math filters by `tax_treatment` per bucket).
+    """
+    month_count = int(month_index.size)
+    if events.height == 0:
+        return np.zeros((rollout_count, month_count), dtype=np.float64)
+    filtered = events
+    if asset_kind is not None:
+        filtered = filtered.filter(pl.col("asset_kind") == asset_kind.value)
+    if tax_treatment is not None:
+        filtered = filtered.filter(pl.col("tax_treatment") == tax_treatment.value)
+    if actor_id is not None:
+        filtered = filtered.filter(pl.col("actor_id") == actor_id)
+    if filtered.height == 0:
+        return np.zeros((rollout_count, month_count), dtype=np.float64)
+    per_month = (
+        filtered.group_by(["rollout_index", "month_index"])
+        .agg(pl.col("taxable_gain_usd").sum())
+        .sort(["rollout_index", "month_index"])
+    )
+    month_position_lookup = {int(m): idx for idx, m in enumerate(month_index.tolist())}
+    matrix = np.zeros((rollout_count, month_count), dtype=np.float64)
+    for row in per_month.iter_rows(named=True):
+        position = month_position_lookup.get(int(row["month_index"]))
+        if position is None:
+            continue
+        matrix[int(row["rollout_index"]), position] = row["taxable_gain_usd"]
+    return matrix
 
 
 PROPERTY_STATE_SCHEMA: dict[str, pl.DataType] = {
