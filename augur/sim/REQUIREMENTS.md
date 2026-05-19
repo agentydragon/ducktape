@@ -119,19 +119,38 @@ applies to a template, not to a name.
   based on its own acquisition date vs the sale date; per-lot gains
   flow into the LTCG or ordinary-income tax buckets accordingly.
   Buying more of the same position adds a new lot (or extends an
-  existing lot, in the average-cost case). Covers everything one
-  would call a stock-like, crypto-like, ETF-like, or single-issuer
-  position. Scenarios configure as many named positions as needed
-  (e.g. `"sp500_etf"`, `"individual_aapl"`, `"bitcoin"`, `"ethereum"`)
-  and the engine treats them uniformly — the lot structure lives
-  inside the template, not as a per-asset-class concept.
-- **Depreciable real-property holding.** Capital-gains-eligible plus
-  a depreciation schedule, an §1250 recapture rule on sale, a SALT-
-  cap-eligible property-tax stream, and a qualified-residence
-  interest seam (when the property is the agent's primary residence).
-  One template per legal treatment (e.g. owner-occupied vs rental);
-  multiple properties of the same legal treatment in one scenario
-  are multiple rows on the same template.
+  existing lot, in the average-cost case). The position also carries
+  a **sellability mask** parameter (per-rollout per-month boolean,
+  default "always sellable"); sales fire only in months where the
+  mask permits, otherwise the engine queues the policy's behavior
+  per its configured fallback (wait, fail, fall through to next
+  funding source). PE-style lockup-and-tender positions, IPO
+  lockups, and similar liquidity constraints come out of this one
+  parameter without a new template. Covers everything one would
+  call a stock-like, crypto-like, ETF-like, single-issuer, or
+  private-equity position. Scenarios configure as many named
+  positions as needed (e.g. `"sp500_etf"`, `"individual_aapl"`,
+  `"bitcoin"`, `"ethereum"`, `"alice_private_equity"`) and the
+  engine treats them uniformly — the lot structure, sellability,
+  and basis method all live inside the template, not as
+  per-asset-class concepts.
+- **Depreciable real-property holding.** Capital-gains-eligible
+  plus a depreciation schedule, an §1250 recapture rule on sale,
+  a §121 primary-residence exclusion eligibility tracker
+  (ownership + use clocks), a SALT-cap-eligible property-tax
+  stream, and a qualified-residence interest seam (when the
+  property is the agent's primary residence and finances it via
+  an amortizing-loan template instance). Carries an
+  **occupancy mode** field (primary residence / rental / vacant)
+  that determines whether depreciation accrues, whether rental
+  income/expenses are collected, and whether §121 eligibility is
+  accruing. Mode can change mid-simulation via scheduled events.
+  References a **location** (see [Locations and tax jurisdictions](#locations-and-tax-jurisdictions))
+  for property-tax rate, transfer-tax rate, and applicable tax
+  jurisdictions. Multiple properties — owned by the same agent
+  or different agents, in the same location or different locations
+  — are multiple instances of the same template. The engine does
+  not branch on count.
 - **Amortizing loan.** Carries outstanding principal, an
   amortization schedule, an interest rate, two counterparties
   (borrower agent and lender agent), and an interest-deductibility
@@ -207,6 +226,58 @@ with a `template_id` column, **one** sale recorder that consumes
 rows of any template, **one** taxable-gain aggregator that filters by
 the template's tax-treatment column. Adding a 4th capital-gains-
 eligible asset class is a config change.
+
+## Locations and tax jurisdictions
+
+Property carrying costs, sale-side transfer taxes, and the
+applicable income-tax law all vary by where the property (or the
+agent) is located. The engine handles location-specific variation
+via two configurable concepts wired into the templates above:
+
+- **Tax jurisdiction.** A parameter set capturing one body of tax
+  law: filing-status-keyed brackets, deductions, NIIT thresholds,
+  LTCG vs ordinary treatment of capital gains, SALT cap, qualified-
+  residence interest cap, depreciation schedule (e.g. 27.5-year
+  residential rental), §1250 recapture rate, §121 primary-residence
+  exclusion amount, deductibility rules — whatever varies between
+  jurisdictions. Federal-US is one jurisdiction; California is
+  another; New York is another; a hypothetical foreign jurisdiction
+  is another. The tax-liability-instrument template **runs once
+  per applicable jurisdiction per (agent, year)**, taking the
+  jurisdiction's parameter set as input. Adding another state is
+  adding another parameter set, not new code.
+
+- **Location.** A named place (e.g. `"san_francisco_ca"`,
+  `"manhattan_ny"`, `"austin_tx"`) carrying:
+  - the ordered list of tax jurisdictions that apply to property
+    or income at that location (federal-US + california for SF;
+    federal-US + new-york-state + nyc-municipal for Manhattan;
+    federal-US + texas for Austin),
+  - the property tax rate (or a more elaborate formula),
+  - the transfer-tax rate that lands on sale-side closing costs,
+  - any other location-specific parameters scenarios need (e.g.
+    rent-control rules, special-assessment defaults, location-
+    specific deduction caps).
+
+  A scenario declares the location of each property and of each
+  agent's residence. Property tax on property X uses X's location's
+  rate. Agent A's income tax uses the jurisdictions of A's
+  residence-location. **One agent owning two properties in
+  different locations** is routine: each property's carrying
+  costs and sale-side transfer tax follow its own location's
+  rates; aggregate deductions (e.g. SALT) sum across all the
+  agent's properties subject to the federal cap. The engine does
+  not need a multi-location code path — the per-property and
+  per-agent location parameters route into the same per-template
+  rule.
+
+This DRYs out "renting properties in different places" exactly the
+same way the asset-template structure DRYs out asset classes:
+location-specific variation is **configuration in the scenario**;
+the engine routes by `location_id` on each property / agent row
+into the same template-level rules. Adding a new state is a new
+TaxJurisdiction record + a new Location record (or two) referencing
+it; the engine doesn't notice.
 
 ## Scenarios — bottom up
 
@@ -654,6 +725,34 @@ fires every month; the sale fires only in rollouts where the
 post-spend cash is below the floor. Different rollouts (different
 market paths affecting stock value) make different decisions.
 
+#### S9.6 — Fixed monthly spend.
+
+The standalone case: Alice spends \$3500 every month on living
+expenses. One recurring-obligation instance with `cadence=monthly`
+and a fixed amount, classified as `spending` (not income; not
+deductible; non-tax-paying expense). Each month: cash drops by
+\$3500; if insufficient cash, the funding chain may sell assets to
+cover (same chain as any other obligation); if still short, the
+month's spend obligation is unfundable and a failure-event row is
+emitted.
+
+#### S9.7 — Variable monthly spend from the market model.
+
+Same template as S9.6, but the monthly amount is supplied by a
+market-model "spending-variance" path: per-rollout per-month
+amounts that differ across rollouts. The recurring-obligation
+template's amount source is either a scenario-configured fixed
+value (S9.6) or a market-model path (this scenario) — the engine
+doesn't branch on the source; it just reads `amount_due[rollout,
+month]` and settles. Different rollouts diverge endogenously
+because higher-spend months drain cash faster and trigger
+floor-policy sales earlier.
+
+This is the seam that lets a scenario model "Alice's spending is
+volatile" without an engine change. The same seam supports
+market-driven variable rental income (S13.2) and any other
+recurring obligation whose amount is rollout-dependent.
+
 ### Layer 10: Market model integration
 
 #### S10.1 — Per-rollout sampled market paths.
@@ -707,6 +806,224 @@ succeeds, the rollout does not enter failure — it continues
 normally. Failure is "obligation went unpaid"; sale-driven
 recovery is not failure.
 
+### Layer 12: Housing — primary residence
+
+#### S12.1 — Buy a house with a mortgage.
+
+Alice buys a house in `"san_francisco_ca"` at month 0. Purchase
+price \$500k. Buy-side closing costs \$5k (configurable per-location
+percentage or absolute amount). Down payment \$100k from Alice's
+cash. Bank Bob originates a 30-year fixed mortgage at 6% for the
+remaining \$400k (the same amortizing-loan-template instance from
+S8.1).
+
+Per S8.1's bookkeeping: Alice's checking debits \$105k (down + buy
+closing). Closing costs roll into the property's **adjusted basis**
+(not deductible) → the depreciable-real-property-holding instance
+records `adjusted_basis = $505k`. Mortgage originates simultaneously.
+The location is `"san_francisco_ca"`; the property tax rate, transfer
+tax (sell side), and applicable tax jurisdictions are pulled from
+that location's config.
+
+#### S12.2 — Monthly carrying costs while owner-occupied.
+
+Each month while Alice lives in the house: property tax accrues
+(location's rate × current property value, billed monthly or annually
+per the location's cadence), HOA dues, insurance premium,
+maintenance. Each is a recurring-obligation instance settling from
+Alice's cash. Property-tax accruals are flagged SALT-cap-eligible
+for federal itemized deduction at year-end.
+
+#### S12.3 — Property tax + SALT cap deduction.
+
+In a tax year where Alice pays \$12k of property tax, the federal
+itemized deduction picks up \$10k (SALT cap) for federal purposes,
+\$12k for CA. Combined with mortgage interest and any state-income-
+tax paid, the year's itemized-deduction total is compared against
+the standard deduction; the larger wins.
+
+#### S12.4 — Qualified-residence mortgage interest deduction.
+
+Mortgage interest paid in a year is deductible — federally up to the
+interest on the first \$750k of principal (post-TCJA), CA with its
+own equivalent cap. Above the cap, the deduction is proportionally
+reduced (`deductible_interest = total_interest × min(1, $750k /
+average_principal_balance_during_year)`). One function consumes the
+amortizing-loan-template instance's principal-balance schedule and
+the year's interest-paid total to produce the deductible portion.
+
+#### S12.5 — Sell primary residence, §121 exclusion fully covers gain.
+
+Alice sells the house at month 60 (5 years of ownership + primary-
+residence use). Sale price \$700k. Sell-side closing costs \$35k
+(transfer tax + agent commissions, per the location). Adjusted
+basis \$505k. Realized gain = \$700k − \$35k − \$505k = \$160k.
+
+§121 exclusion (single filer, ≥2 of last 5 years as primary residence)
+allows excluding the first \$250k of gain from federal LTCG. The
+\$160k gain is fully excluded; no federal LTCG accrues. California
+mirrors §121. Mortgage payoff at closing (per S8.6) settles the
+remaining principal back to Bank Bob.
+
+#### S12.6 — Sell primary residence with gain above §121 cap.
+
+Same setup as S12.5 but sale price is \$900k. Gain = \$900k − \$35k
+− \$505k = \$360k. §121 excludes \$250k; the remaining \$110k is
+taxable as LTCG (federal + CA), routed through the year-tax
+computation alongside any other LTCG bucket entries.
+
+#### S12.7 — Special assessment.
+
+The HOA issues a \$20k special assessment at month 36. Recurring-
+obligation instance with cadence "one-off at month 36". Settles via
+Alice's configured funding chain the same way any obligation does.
+
+### Layer 13: Housing — rental, occupancy modes, multiple properties
+
+#### S13.1 — Convert primary residence to rental.
+
+At month 24 Alice moves out and starts renting the house to a
+tenant. The depreciable-real-property-holding instance's
+`occupancy_mode` flips from `primary_residence` to `rental`.
+Effects, all driven by the mode flip:
+
+- Monthly depreciation starts accruing on the building portion of
+  adjusted basis (residential rental: 27.5-year straight-line; the
+  applicable jurisdiction's schedule).
+- A rental-income stream and a rental-expense pipeline begin
+  (mgmt fee, leasing fee, …).
+- The §121 ownership clock keeps running but the use clock stops —
+  later sale eligibility depends on how recent the primary-residence
+  usage was.
+
+#### S13.2 — Rental income, expenses, depreciation, net rental income.
+
+While the house is rented (months 24-83 in our running example):
+
+- Rental gross income (e.g. \$3000/month, possibly market-path-
+  driven so different rollouts see different rents) lands in Alice's
+  cash each month.
+- Rental expenses (mgmt fee = 8% of gross rent; one-month leasing
+  fee on the first month; the same property-tax / HOA / insurance /
+  maintenance recurring obligations as S12.2) reduce taxable rental
+  income.
+- Accrued depreciation (computed by the depreciable-real-property
+  template) reduces taxable rental income further, separately from
+  cash (depreciation does not move cash; it's a tax artifact).
+
+Net rental income for the year = `Σ(gross_income) − Σ(rental_expenses)
+− Σ(depreciation)`. Folds into the year's ordinary-income bucket via
+the tax-liability-instrument template. Passive-activity loss
+limitations apply when net rental income is negative (modeled per
+the applicable jurisdiction's rules).
+
+#### S13.3 — Sell a rental property: §1250 depreciation recapture.
+
+Alice sells the rental at month 84 for \$900k. Adjusted basis
+\$505k. Cumulative depreciation over months 24-83 = \$50k. Sell-side
+closing \$35k. Realized gain = \$900k − \$35k − \$505k = \$360k.
+
+§1250 recapture: the portion of the gain attributable to prior
+depreciation is taxed at the federal §1250 rate (capped 25%) rather
+than the LTCG rate. CA: ordinary income. Recapture amount = `min(
+realized_gain, cumulative_depreciation)` = \$50k. The remaining
+\$310k is LTCG. §121 may not apply (or only partially apply) because
+the recent primary-residence usage test fails for this timeline —
+the simulator computes §121 eligibility from the ownership / use
+clocks and routes the rest of the gain accordingly.
+
+The year-tax computation must:
+
+- Walk one federal §1250 bracket once on the recapture portion across
+  all the agent's §1250-eligible property sales this year.
+- Walk one federal LTCG bracket once on the LTCG portion across all
+  LTCG-eligible asset sales this year (Layer 6 rules).
+- Walk one CA ordinary bracket once on the combined recapture + LTCG
+  amount, plus any non-rental ordinary income.
+
+#### S13.4 — Outside rent: agent is the tenant.
+
+Alice owns a house she rents out (S13.1-S13.3 timeline) and
+simultaneously rents a place to live in. Monthly outside-rent is a
+recurring-obligation instance on Alice as tenant — settles from
+Alice's cash via the same funding chain as any other obligation. Not
+deductible for federal personal income tax (rent paid by a non-
+business individual isn't a deduction). The simulator records it on
+the transaction log and decrements cash; no tax effect.
+
+#### S13.5 — Multiple properties at different locations.
+
+Alice owns two properties: a primary residence in
+`"san_francisco_ca"` and a rental in `"austin_tx"`. Each carries its
+own location's property-tax rate, transfer-tax rate, and applicable
+tax jurisdictions. The SF property's income (none — primary
+residence) and sale gain run through federal + CA; the Austin
+property's rental income and sale gain run through federal + TX
+(which has no state income tax). At year-end, Alice's federal
+itemized SALT deduction sums property tax paid across **both**
+properties subject to the federal \$10k cap. The simulator must
+not double-count, drop a property, or hard-code the count.
+
+#### S13.6 — Occupancy mode switching over a multi-year timeline.
+
+Alice's house: months 0-23 primary residence, 24-83 rental, sold
+month 84. The simulator handles the full timeline:
+
+- Depreciation accrues only months 24-83.
+- Carrying costs (property tax, HOA, insurance, maintenance) accrue
+  every month regardless of mode (they're owner-paid in both modes).
+- Rental income / expense streams accrue only months 24-83.
+- §121 eligibility at month 84: requires 24 months of primary-
+  residence use within the prior 60 (months 24-83). Alice's primary-
+  residence use during that window = 0 months. §121 does not apply;
+  full gain is taxable per S13.3's split.
+
+#### S13.7 — One agent owning multiple properties simultaneously.
+
+A separate variant: Alice owns three properties at month 30 — one
+primary residence, two rentals at different locations. Each is its
+own depreciable-real-property-holding instance with its own location,
+its own carrying-cost obligations, its own depreciation schedule
+(rentals only), its own occupancy-mode timeline. The engine carries
+N rows of the same template and runs each rule against all N rows
+in one bulk operation per rule. Adding a 4th property at month 48
+is a configuration change: a new property row created at that
+month via a configured purchase event.
+
+### Layer 14: Constrained sellability
+
+#### S14.1 — Position with tender-only liquidity.
+
+Alice's position `"alice_private_equity"` is a capital-gains-eligible
+holding configured with a `sellability_mask` derived from a market-
+model "tender opportunity" path: false except at the specific months
+where a tender is offered to the rollout. A floor-triggered sale
+policy (S9.1-style) attempts to sell in month M:
+
+- If `sellability_mask[rollout, M]` is true, the sale fires.
+- If false, the sale falls through to the next funding source per
+  the policy's preference chain (S9.2). The position is not sold;
+  the policy is not silently no-op'd — the failure-to-sell-this-
+  asset is recorded so the decision log shows that this asset was
+  considered and skipped.
+
+#### S14.2 — Mixed-liquidity positions in one scenario.
+
+Alice holds three capital-gains-eligible positions:
+
+- `"sp500_etf"` — sellability_mask = all true (default).
+- `"alice_preipo"` — sellability_mask = false until month 36
+  (lockup), then true. Represents an IPO lockup.
+- `"alice_private_equity"` — sellability_mask sampled from the
+  market-model tender path per rollout (S14.1 style).
+
+All three are instances of the same capital-gains-eligible-holding
+template. The engine does not have a "PE sale" code path separate
+from a "stock sale" code path — sales route through one function
+that filters by `sellability_mask[rollout, M]` and skips ineligible
+rollouts. Different rollouts may execute the same scheduled sale
+on different positions depending on which masks permit it.
+
 ## Outputs the simulator must produce
 
 For any run (scenario + market bundle + rollout count + horizon
@@ -733,10 +1050,26 @@ months):
   walks, NIIT calculation, federal/CA totals. Enough to audit any
   rollout's tax math.
 - **Per-obligation lifecycle**: every obligation (mortgage payment,
-  property tax, quarterly tax, year-end tax) with its accrual month,
-  amount due, amount paid, settlement month(s), unpaid balance.
+  property tax, quarterly tax, year-end tax, HOA, special assessment,
+  outside rent, monthly spend) with its accrual month, amount due,
+  amount paid, settlement month(s), unpaid balance.
+- **Lot disposition log**: every sale of a capital-gains-eligible
+  position emits one row per consumed lot, carrying `(rollout,
+  month, agent_id, position_id, lot_id, units_sold, proceeds_usd,
+  basis_consumed_usd, realized_gain_usd, holding_period_days,
+  tax_classification)`. Sales that consume two lots emit two rows;
+  the lot identity carries through from the lot's acquisition.
+  This is the audit trail for every tax-relevant capital event and
+  the primary input to per-month tax allocation.
+- **Failure-event log**: every unfunded required obligation emits a
+  row carrying `(rollout, month, obligation_id, obligation_type,
+  amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
+  sources)`. The same agent can recover in a later month (see
+  S11.3) — failure-event rows do not retroactively delete; they
+  record the moment.
 - **Rollout status**: active vs failed, with failure month and the
-  obligation that triggered the failure.
+  obligation that triggered the failure (joinable to the failure-
+  event log).
 
 These outputs are projections of the state series and transaction log;
 they are not maintained alongside as separate state.
@@ -850,6 +1183,39 @@ the design that's worth examining before shipping.
   If adding "Alice borrows \$20k from her mom" to a scenario
   requires touching engine code, the amortizing-loan template
   isn't generic enough.
+
+- **Partner equity / co-ownership of an asset.** The existing legacy
+  engine has a "partner equity accrual" feature: a second agent
+  contributes a fixed monthly cash amount toward a shared property
+  and builds up an equity stake over time per a configured
+  equity-per-dollar-contributed formula; at sale, the partner
+  receives their share of net proceeds. This is genuinely
+  multi-agent — two agents have stakes in one property — and ties
+  the multi-agent-tax stretch goal (above) to a concrete scenario.
+
+  Critical floor: single-owner properties work. Stretch: a property
+  can carry a "co-ownership ledger" — rows on a `property_stake`
+  frame, one per (agent, property) pair — that tracks each agent's
+  contribution + equity share over time. Sale proceeds split across
+  the ledger. The depreciable-real-property template already
+  references a stake column (per [Asset templates and rule
+  routing](#asset-templates-and-rule-routing)); making it
+  multi-row-per-property is the stretch.
+
+  If achieving this requires inventing a separate "partner
+  contribution" obligation pathway with its own state matrices and
+  its own settlement logic (which the legacy engine has), the
+  generic obligation + recurring-cash-transfer machinery isn't
+  generic enough — partner contributions should be a recurring
+  transfer between two agents, recorded against the partner's
+  stake row at the receiving agent, settled via the contributing
+  agent's funding chain like any other recurring obligation.
+
+  Lower priority than the multi-agent tax stretch above; landing
+  this without it requires the partner stake but not the partner's
+  own tax computation (which simplifies somewhat, since the
+  partner is effectively a non-tax-paying co-owner in single-
+  primary-agent scenarios).
 
 ## Open questions
 
