@@ -141,23 +141,26 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
 /// non-self-loop SCCs are dropped.
 ///
-/// The validator uses the **strict** rule: any quotient SCC carrying
-/// a constraining cross-module edge is unrealizable. This is more
-/// conservative than the realizability primitive's relaxed rule
-/// (constraining-edge subgraph has no multi-module SCC) because the
-/// materializer does not currently implement DESIGN.md "Lemma 2"
-/// (steering the ESM linker's import-source order to land on a
-/// topological linearization of `I ∪ S`). Mixed cycles the relaxed
-/// rule would accept can still TDZ at runtime under the current
-/// materializer.
+/// Validator + proposer + primitive now share one verdict:
+/// [`crate::realizability::check_realizability`] gates this whole
+/// function (early return when its verdict is empty), and the
+/// proposer (`evaluate_peel_candidate` in `peelability.rs`) calls
+/// the same primitive for advisory peel classification. The
+/// historical asymmetry between a "strict" validator and a "relaxed"
+/// primitive is gone: the primitive's tightened clause-3 rule
+/// rejects both the symmetric-constraining-cycle case (any
+/// multi-module SCC in the constraining subgraph) and the
+/// residual-in-cycle case (any multi-module SCC in `I` containing
+/// residual with a constraining edge whose target is residual), and
+/// `lower_chunk` realizes Lemma 2's source-import-order steering for
+/// every spec that makes it past the gate. See DESIGN.md "Lemma 2:
+/// entry-side import ordering" for the order-steering algorithm and
+/// the residual-in-cycle carve-out.
 ///
-/// The proposer (`evaluate_peel_candidate` in `peelability.rs`) uses
-/// the relaxed rule via [`crate::realizability::check_realizability`]
-/// for advisory peel classification. The at-init call promotion in
-/// `build_owner_graph` narrows the gap between the two predicates by
-/// catching the canonical `console.log(readB())` shape, but the
-/// asymmetry persists until either Lemma 2 lands in the materializer
-/// or the proposer is also tightened.
+/// The cycle reports this function emits are advisory evidence for
+/// spec authors — when the primitive rejects, this function walks
+/// the quotient and prints which modules + edges are involved so
+/// the author can pick a colocation or move that breaks the cycle.
 pub fn validate_factorization(
     owner_graph: &OwnerGraph,
     partition: &Partition,

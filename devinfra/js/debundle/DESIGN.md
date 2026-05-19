@@ -552,13 +552,33 @@ produces entry imports `[mod_b, mod_a]` so the linker DFS visits
 mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
 mod_b. mod_b's at-init read of A succeeds.
 
-Because Lemma 2 is implemented, the validator
-(`validate_schedule` in `devinfra/js/debundle/validation.rs`) and
-the proposer (`evaluate_peel_candidate` in
-`devinfra/js/debundle/peelability.rs`) share the realizability
-primitive's verdict — a `peelable_now` from the proposer is a peel
-the gate will accept and the bundle will execute correctly at
-runtime.
+**Residual-in-cycle carve-out.** Lemma 2's "DFS unwinds via the
+dependency" only works when the cycle sits **below** the chunk's
+runtime entry (= the residual module emitted as `entry.js`). When
+residual is itself a cycle member, residual is the ESM DFS root —
+post-order evaluates every other cycle member first, then residual.
+Any constraining edge whose **target** is residual reads residual's
+not-yet-evaluated `class`/`const`/`let` bindings in their temporal
+dead zone. No source-order trick can fix this: ESM hoists every
+`import` above any statement, so residual's class declaration can't
+run before the imports' deps are evaluated.
+
+The realizability primitive (`check_realizability`) catches this
+shape with a second Tarjan pass over the full `I`-graph: any
+multi-module SCC containing residual with at least one constraining
+edge whose target is residual is rejected outright. The
+`(at-init forward, lazy back)` cycles that Lemma 2 _does_ satisfy —
+between non-residual modules — continue to pass.
+
+Because Lemma 2 is implemented (`ChunkFactorization::source_import_position`,
+consumed by `lowering::lower_chunk` when sorting entry's import list)
+and the residual-in-cycle carve-out is enforced by the gate, the
+validator (`validate_factorization` in
+`devinfra/js/debundle/validation.rs`) and the proposer
+(`evaluate_peel_candidate` in `devinfra/js/debundle/peelability.rs`)
+share the realizability primitive's verdict — a `peelable_now` from
+the proposer is a peel the gate will accept and the bundle will
+execute correctly at runtime.
 
 ## The realizability theorem
 
@@ -798,10 +818,10 @@ runs its body after the recursive calls return — that's
 post-order DFS. Acyclic `I` ensures every recursive descent
 terminates without revisiting a still-evaluating module. ∎
 
-**Lemma 2 (Author choice — capability, not current behavior).**
-The materializer's emit construction _can_ author each emitted
+**Lemma 2 (Author-side import-order steering).**
+The materializer's emit construction authors each emitted
 module's `import` directive list in an order that makes ECMA-262
-reach any chosen topological linearization `L` of `I` rooted at
+reach a chosen topological linearization `L` of `I` rooted at
 the entry.
 
 _Proof._ The DFS in `InnerModuleEvaluation` visits requested
@@ -813,25 +833,24 @@ in `I`, sort the import list so that the earliest-in-`L` successor
 appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
-The current emitter does not actually steer for a specific `L` —
-imports come out in module-plan order. **For acyclic `I` alone,
-this is sufficient**: every `L` produced by the linker's default
-DFS is a topological linearization of `I`, so L3 and L4 hold under
-any of them. **`L` selection is only required when `S` adds
-constraints** that the default DFS doesn't already satisfy — and
-the validator's strict gate on `I ∪ S` rejects specs whose `S`
-constraints aren't already implied by `I`. Specs that satisfy
-`I ∪ S` acyclicity but require `L`-steering for `S` do exist in
-principle (a chunk where two side-effecting top-level statements
-in different modules have no read dependency between them); for
-those, the materializer would need to actually realize the choice
-this lemma proves possible. **Known impl gap**: the emitter does
-not steer for a specific `L` today. The realizability gate still
-rejects SCCs containing constraining edges, but if an otherwise
-valid acyclic spec ever requires `L`-steering for `S` to satisfy a
-constraint that's invisible to ESM's default DFS, the emit would
-silently violate it. Tracked as a follow-up if a real spec exposes
-it.
+**Implementation.** `ChunkFactorization::source_import_position`
+(see "Lemma 2: entry-side import ordering" above) computes `L` from
+the constraining-edge subgraph's toposort, reversed within each
+`I ∪ S` SCC so that the cycle dependent is imported first and DFS
+unwinds through the dependency. `lowering::lower_chunk` sorts
+entry's emitted `import` directives by this position. The validator
+rejects any spec the primitive's tightened clause-3 rule does not
+accept, so every spec the materializer reaches `lower_chunk` for has
+an `L` Lemma 2 can realize.
+
+The remaining principled gap is the `(at-init forward, lazy back)`
+shape **where residual itself is a cycle member**. Lemma 2's
+"unwind through the dependency" fails there — residual is the ESM
+DFS root, so post-order evaluates every other cycle member first,
+and a constraining read into residual TDZs. The primitive's
+tightened rule rejects this shape outright (see the residual-in-
+cycle carve-out under "Lemma 2: entry-side import ordering"); the
+emitter never sees one.
 
 **Lemma 3 (At-init read correctness).**
 Under any evaluation order `L` respecting `I`, every at-init read
