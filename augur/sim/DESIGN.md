@@ -44,7 +44,7 @@ Practical consequences of this discipline:
   single testable site where "this event changes state this way"
   is enforced.
 - The replay invariant is a property: `state_at(M) ==
-  apply_events(initial_state, log.filter(month ≤ M))` for every M.
+apply_events(initial_state, log.filter(month ≤ M))` for every M.
   Easy to assert in tests; opt-in `--check-replay` flag asserts it
   per-month at runtime. If it ever fails, the bug is in
   `apply_events` and the fix is in one place.
@@ -114,40 +114,40 @@ engine's "five overlapping representations" problem.
      jurisdiction).
 
    All event-sourced state at month M is `apply_events(initial_
-   state, events_log.filter(month ≤ M))`. The log is what survives
+state, events_log.filter(month ≤ M))`. The log is what survives
    if working-state-layer 5 is dropped.
 
 5. **Working state — the incremental materialization of layer 4**
    (polars, six frames). The simulator's current view of the
    world. Six long-form frames keyed by `(rollout_index,
-   month_index)` plus entity-id columns:
+month_index)` plus entity-id columns:
    - `cash_balances` — `(rollout, month, agent_id, account_id,
-     balance_usd)`. **Event-sourced** — cumulative cash deltas.
+balance_usd)`. **Event-sourced** — cumulative cash deltas.
    - `asset_lots` — `(rollout, month, agent_id, position_id,
-     lot_id, template_id, units, basis_usd, acquired_month,
-     cost_basis_method, sellability_mask_ref, current_unit_price_
-     usd, current_market_value_usd)`. **Mixed**: units + basis +
+lot_id, template_id, units, basis_usd, acquired_month,
+cost_basis_method, sellability_mask_ref, current_unit_price_
+usd, current_market_value_usd)`. **Mixed**: units + basis +
      acquired_month are event-sourced; current_unit_price_usd and
      current_market_value_usd are market-derived (refreshed each
      month from the market bundle).
    - `liabilities` — `(rollout, month, agent_id, liability_id,
-     template_id, counterparty_agent_id, principal_usd,
-     interest_accrued_this_month_usd, principal_paid_this_month_
-     usd, deductibility_flag, …)`. Event-sourced.
+template_id, counterparty_agent_id, principal_usd,
+interest_accrued_this_month_usd, principal_paid_this_month_
+usd, deductibility_flag, …)`. Event-sourced.
    - `property_state` — `(rollout, month, property_id, location_
-     id, occupancy_mode, adjusted_basis_usd, cumulative_
-     depreciation_usd, owned_since_month, current_market_value_
-     usd, …)`. Mixed: occupancy_mode + adjusted_basis_usd +
+id, occupancy_mode, adjusted_basis_usd, cumulative_
+depreciation_usd, owned_since_month, current_market_value_
+usd, …)`. Mixed: occupancy_mode + adjusted_basis_usd +
      cumulative_depreciation_usd + owned_since_month are
      event-sourced; current_market_value_usd is market-derived.
      §121 use-clock + ownership-tenure-clock are derived on demand
      from the occupancy-change event history (not stored).
    - `property_stakes` — `(rollout, month, agent_id, property_id,
-     ownership_pct, contribution_used_usd, equity_ledger_usd)`.
+ownership_pct, contribution_used_usd, equity_ledger_usd)`.
      Event-sourced. Single-row-per-property for single-owner;
      multi-row for partner-equity stretch.
    - `rollout_status` — `(rollout, month, status, failure_event_
-     id, failure_month)`. Event-sourced.
+id, failure_month)`. Event-sourced.
 
    These frames **grow forward** as the loop advances; at month M
    they hold rows for months `0..M`. The state at month M is
@@ -406,7 +406,7 @@ layer):
   on the agent's books for the year's actual tax minus already-
   paid estimated. Subsequent tax-payment events settle it.
 - **Depreciation accrual** — property's `cumulative_
-  depreciation_usd` increases by `monthly_depreciation_amount`.
+depreciation_usd` increases by `monthly_depreciation_amount`.
   Year-end tax computation reads the year's sum.
 - **Occupancy-mode change** — property's `occupancy_mode` flips
   from one value to another at this month. Drives whether
@@ -421,8 +421,8 @@ layer):
   if origination is standalone.
 - **Failure event** — a required obligation went unfunded after
   the funding chain ran. Row carries `(rollout, month,
-  obligation_id, obligation_type, amount_due, amount_paid,
-  shortfall, attempted_funding_sources)`.
+obligation_id, obligation_type, amount_due, amount_paid,
+shortfall, attempted_funding_sources)`.
 - **Rollout-status change** — `rollout_status` flips from
   `active` to `failed` (or back). Event-sourced; the
   `rollout_status` frame is the per-month materialization.
@@ -434,20 +434,22 @@ layer):
   for these.
 - **Tax-year breakdown (diagnostic)** — at each year-end, a
   snapshot of the year-tax computation: per `(rollout, agent,
-  year, jurisdiction)` the income totals, deduction amounts,
+year, jurisdiction)` the income totals, deduction amounts,
   bracket walks, NIIT, totals. Doesn't itself drive state
   (the tax accrual + tax payment events do that), but is a
   first-class diagnostic on the log.
 
 Composite events (Property purchase / sale, Mortgage origination
-+ down-payment in one logical purchase, etc.) emit multiple
-atomic event rows sharing a `cause_id`. Each atomic row is
-balance-checked on its own. The materialize step can
-`group_by(cause_id)` to produce a coarse-grained "one mortgage
-payment with P+I split" view when the user wants that.
+
+- down-payment in one logical purchase, etc.) emit multiple
+  atomic event rows sharing a `cause_id`. Each atomic row is
+  balance-checked on its own. The materialize step can
+  `group_by(cause_id)` to produce a coarse-grained "one mortgage
+  payment with P+I split" view when the user wants that.
 
 The `apply_events` function dispatches on event `kind` to update
 the right frame:
+
 - Cash-bearing events → update `cash_balances`.
 - Asset purchase / sale → update `asset_lots`.
 - Mortgage payment / origination → update `liabilities`.
@@ -484,13 +486,14 @@ Concretely:
   - `"tax_payable"` for accrued-but-unpaid tax.
 
 Per-template rules live in code as functions over polars frames:
+
 - `apply_mark_to_market_capital_gains_eligible_holding(frames,
-  market)` — filters asset_lots by `template_id =
-  "capital_gains_eligible_holding"`, joins market prices, returns
+market)` — filters asset_lots by `template_id =
+"capital_gains_eligible_holding"`, joins market prices, returns
   updated rows.
 - `apply_depreciation_accrual_depreciable_real_property(frames,
-  jurisdiction)` — filters property_state by `template_id =
-  "depreciable_real_property"` + `occupancy_mode = "rental"`,
+jurisdiction)` — filters property_state by `template_id =
+"depreciable_real_property"` + `occupancy_mode = "rental"`,
   applies the jurisdiction's residential-rental schedule, returns
   updated rows.
 - `apply_amortization_amortizing_loan(frames, month)` — filters
@@ -506,6 +509,7 @@ filter functions; the rest of the engine doesn't change.
 
 **Jurisdictions** are Pydantic records loaded from YAML at
 startup:
+
 - `JurisdictionId` is a string (`"federal_us"`, `"california"`).
 - A `Jurisdiction` record carries: brackets per filing status,
   standard deduction per filing status, NIIT params, SALT cap,
@@ -517,6 +521,7 @@ startup:
   entry.
 
 **Locations** are Pydantic records loaded from YAML at startup:
+
 - `LocationId` is a string (`"san_francisco"`, `"palo_alto"`).
 - A `Location` record carries: applicable jurisdiction ids (list,
   ordered), property tax rate / formula, transfer tax schedule,

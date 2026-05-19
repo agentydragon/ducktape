@@ -69,7 +69,7 @@ One tax-paying agent (Alice, single filer, located `"san_francisco"`):
    column with no Python rollout loop.
 2. **Replay invariant holds.** For every M,
    `state_at(M).event_sourced == apply_events(initial,
-   log.filter(month ≤ M))`. Asserted in tests; opt-in
+log.filter(month ≤ M))`. Asserted in tests; opt-in
    `--check-replay` flag for production.
 3. **Tax math correctness.** The deterministic-market single-
    rollout case computes federal + CA year tax to within 1¢ of a

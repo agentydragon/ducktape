@@ -34,29 +34,19 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     Order matters: income-carrying transfers increment
     `ordinary_income_ytd` first, asset sales both credit cash and
     bucket capital gains into ltcg/stcg, then year-end tax accruals
-    book a liability and zero out the year-to-date totals."""
-    cash_balances = state.cash_balances
-    asset_lots = state.asset_lots
-    ordinary_income_ytd = state.ordinary_income_ytd
-    capital_gains_ytd = state.capital_gains_ytd
-    tax_liabilities = state.tax_liabilities
-    rollout_status = state.rollout_status
-
-    if not events.asset_purchases.is_empty():
-        asset_lots = _apply_asset_purchases(asset_lots, events.asset_purchases)
-    if not events.lot_dispositions.is_empty():
-        asset_lots = _apply_lot_dispositions_to_lots(asset_lots, events.lot_dispositions)
-        cash_balances = _apply_lot_dispositions_to_cash(cash_balances, events.lot_dispositions)
-        capital_gains_ytd = _apply_dispositions_to_capital_gains_ytd(capital_gains_ytd, events.lot_dispositions)
-    if not events.transfers.is_empty():
-        cash_balances = _apply_transfers(cash_balances, events.transfers)
-        ordinary_income_ytd = _apply_income_to_ytd(ordinary_income_ytd, events.transfers)
-    if not events.tax_accruals.is_empty():
-        tax_liabilities = _apply_tax_accruals_to_liabilities(tax_liabilities, events.tax_accruals)
-        ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
-        capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
-    if not events.rollout_failures.is_empty():
-        rollout_status = _apply_rollout_failures(rollout_status, events.rollout_failures)
+    book a liability and zero out the year-to-date totals. Each
+    `_apply_*` helper is a polars no-op on an empty event frame, so
+    no per-kind guards are needed at this layer."""
+    asset_lots = _apply_asset_purchases(state.asset_lots, events.asset_purchases)
+    asset_lots = _apply_lot_dispositions_to_lots(asset_lots, events.lot_dispositions)
+    cash_balances = _apply_lot_dispositions_to_cash(state.cash_balances, events.lot_dispositions)
+    capital_gains_ytd = _apply_dispositions_to_capital_gains_ytd(state.capital_gains_ytd, events.lot_dispositions)
+    cash_balances = _apply_transfers(cash_balances, events.transfers)
+    ordinary_income_ytd = _apply_income_to_ytd(state.ordinary_income_ytd, events.transfers)
+    tax_liabilities = _apply_tax_accruals_to_liabilities(state.tax_liabilities, events.tax_accruals)
+    ordinary_income_ytd = _reset_ytd_for_taxed_agents(ordinary_income_ytd, events.tax_accruals)
+    capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
+    rollout_status = _apply_rollout_failures(state.rollout_status, events.rollout_failures)
 
     return StateCrossSection(
         cash_balances=cash_balances,
@@ -97,11 +87,9 @@ def _apply_income_to_ytd(ordinary_income_ytd: pl.DataFrame, transfers: pl.DataFr
     """Increment per-(rollout, recipient) ordinary_income_ytd by
     the sum of transfer amounts whose `income_category == "ordinary"`.
     Transfers without that tag don't touch YTD."""
-    ordinary_transfers = transfers.filter(pl.col("income_category") == "ordinary")
-    if ordinary_transfers.is_empty():
-        return ordinary_income_ytd
     deltas = (
-        ordinary_transfers.group_by(["rollout_index", "to_agent_id"])
+        transfers.filter(pl.col("income_category") == "ordinary")
+        .group_by(["rollout_index", "to_agent_id"])
         .agg(pl.col("amount_usd").sum().alias("_delta"))
         .rename({"to_agent_id": "agent_id"})
     )
@@ -116,7 +104,9 @@ def _apply_asset_purchases(asset_lots: pl.DataFrame, purchases: pl.DataFrame) ->
     """Append purchase events as new lot rows. Each purchase row
     becomes one lot with `remaining_quantity = quantity`. Lots are
     keyed by `(rollout_index, lot_id)`; the scenario is responsible
-    for assigning unique `lot_id` strings."""
+    for assigning unique `lot_id` strings. Both inputs share the
+    ASSET_LOT-shaped schema after projection, so concat-on-empty
+    cases naturally no-op."""
     new_lots = purchases.select(
         pl.col("rollout_index"),
         pl.col("lot_id"),
@@ -126,8 +116,6 @@ def _apply_asset_purchases(asset_lots: pl.DataFrame, purchases: pl.DataFrame) ->
         pl.col("cost_basis_per_unit_usd"),
         pl.col("quantity").alias("remaining_quantity"),
     ).select(list(ASSET_LOT_SCHEMA.keys()))
-    if asset_lots.is_empty():
-        return new_lots
     return pl.concat([asset_lots, new_lots])
 
 
@@ -163,8 +151,8 @@ def _apply_lot_dispositions_to_cash(cash_balances: pl.DataFrame, dispositions: p
 
 def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accruals: pl.DataFrame) -> pl.DataFrame:
     """Append each accrual as a new liability row. Liabilities are
-    additive — paying them down is a later (step-9) concern that
-    reduces `amount_owed_usd` via tax-payment events."""
+    additive — paying them down is a later concern that reduces
+    `amount_owed_usd` via tax-payment events."""
     new_rows = tax_accruals.select(
         pl.col("rollout_index"),
         pl.col("agent_id"),
@@ -172,8 +160,6 @@ def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accrua
         pl.col("tax_year_end_month"),
         pl.col("amount_usd").alias("amount_owed_usd"),
     )
-    if tax_liabilities.is_empty():
-        return new_rows
     return pl.concat([tax_liabilities, new_rows])
 
 

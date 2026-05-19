@@ -333,7 +333,8 @@ charges X". It does **not** apply to scenario-specific
 configuration (the agents in this scenario, their initial holdings,
 their policies, the market paths). Scenarios are constructed
 programmatically or via their own user-facing config; jurisdiction
-+ location data are repo-checked-in reference data.
+
+- location data are repo-checked-in reference data.
 
 Existing precedent: `augur/core/annual_tax_parameters.yaml` already
 holds the legacy engine's federal + CA bracket data. The new sim
@@ -616,7 +617,7 @@ The simulator must:
 - Settle each obligation from Alice's cash, drawing on her funding
   policies (e.g. sell stock to cover) if cash is short.
 - True up at year-end: the year-end obligation is `actual_year_tax
-  − sum_of_quarterlies`, never producing a payment greater than the
+− sum_of_quarterlies`, never producing a payment greater than the
   actual year tax across all five settlement events.
 
 #### S6.5 — Net investment income tax.
@@ -1119,16 +1120,16 @@ months):
   amount paid, settlement month(s), unpaid balance.
 - **Lot disposition log**: every sale of a capital-gains-eligible
   position emits one row per consumed lot, carrying `(rollout,
-  month, agent_id, position_id, lot_id, units_sold, proceeds_usd,
-  basis_consumed_usd, realized_gain_usd, holding_period_days,
-  tax_classification)`. Sales that consume two lots emit two rows;
+month, agent_id, position_id, lot_id, units_sold, proceeds_usd,
+basis_consumed_usd, realized_gain_usd, holding_period_days,
+tax_classification)`. Sales that consume two lots emit two rows;
   the lot identity carries through from the lot's acquisition.
   This is the audit trail for every tax-relevant capital event and
   the primary input to per-month tax allocation.
 - **Failure-event log**: every unfunded required obligation emits a
   row carrying `(rollout, month, obligation_id, obligation_type,
-  amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
-  sources)`. The same agent can recover in a later month (see
+amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
+sources)`. The same agent can recover in a later month (see
   S11.3) — failure-event rows do not retroactively delete; they
   record the moment.
 - **Rollout status**: active vs failed, with failure month and the
