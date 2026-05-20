@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{VisitMut, VisitMutWith};
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
@@ -2294,157 +2294,92 @@ fn rewrite_partial_swap_in_file(
     let mut emitted_member_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
 
-    let original_body = std::mem::take(&mut module.body);
-    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
-
-    for item in original_body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(mut import_decl)) = item else {
-            new_body.push(item);
-            continue;
-        };
-        let source = str_value(&import_decl.src);
-        let Some(target_chunk_id) = resolve_partial_swap_import_target(
-            &source,
-            job.caller_chunk_id,
-            &job.file_path,
-            references,
-            chunk_table,
-        ) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        };
-        if target_chunk_id == job.caller_chunk_id {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        }
-        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
-        let Some(chunk_mapping) = mappings.get(&target_chunk_name) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        };
-
-        let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
-        // Imports introduced by this decl; emitted in front of the
-        // residual decl below to preserve relative source order.
-        let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
-        for specifier in std::mem::take(&mut import_decl.specifiers) {
-            let imported_name_lookup = match &specifier {
-                ImportSpecifier::Named(named) => named
-                    .imported
-                    .as_ref()
-                    .map(module_export_name)
-                    .unwrap_or_else(|| named.local.sym.to_string()),
-                _ => {
-                    retained_specifiers.push(specifier);
-                    continue;
-                }
+    module.body = rewrite_swap_import_decls(
+        std::mem::take(&mut module.body),
+        job.caller_chunk_id,
+        &job.file_path,
+        references,
+        chunk_table,
+        |target_chunk_name, imported_name_lookup, local_sym| {
+            let Some(chunk_mapping) = mappings.get(target_chunk_name) else {
+                return None;
             };
-            let Some(target) = chunk_mapping.symbols.get(&imported_name_lookup) else {
-                retained_specifiers.push(specifier);
-                continue;
-            };
-            let Some(package_coords) = chunk_mapping.packages.get(&target.package) else {
-                retained_specifiers.push(specifier);
-                continue;
-            };
-            let ImportSpecifier::Named(named) = specifier else {
-                unreachable!("classified named above");
-            };
-            let local_sym = named.local.sym.to_string();
+            let target = chunk_mapping.symbols.get(imported_name_lookup)?;
+            let package_coords = chunk_mapping.packages.get(&target.package)?;
+            let mut imports = Vec::new();
             match target.kind {
                 PartialSwapKind::Member => {
-                    let upstream_export = target
-                        .upstream_export
-                        .as_deref()
-                        .expect("kind=member validated to carry upstream_export");
-                    let namespace = package_coords
-                        .namespace
-                        .as_deref()
-                        .expect("kind=member validated to have package.namespace");
+                    let upstream_export = target.upstream_export.as_deref()?;
+                    let namespace = package_coords.namespace.as_deref()?;
                     bindings.insert(
-                        local_sym,
+                        local_sym.to_string(),
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
                             chunk_name: chunk_mapping.chunk_id.clone(),
-                            chunk_export: imported_name_lookup.clone(),
+                            chunk_export: imported_name_lookup.to_string(),
                         },
                     );
-                    // One member-mode namespace import per (file, package).
                     if emitted_member_namespace_for.insert(target.package.clone()) {
-                        decl_local_imports.push(DeferredImport::Namespace {
+                        imports.push(DeferredImport::Namespace {
                             source: target.package.clone(),
                             local: namespace.to_string(),
                         });
                     }
                 }
                 PartialSwapKind::Namespace => {
-                    decl_local_imports.push(DeferredImport::Namespace {
+                    imports.push(DeferredImport::Namespace {
                         source: target.package.clone(),
-                        local: local_sym,
+                        local: local_sym.to_string(),
                     });
-                    // Count one "reference rewrite" per import so the
-                    // manifest can show progress per chunk_export.
                     *references_by_symbol
-                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .entry((
+                            chunk_mapping.chunk_id.clone(),
+                            imported_name_lookup.to_string(),
+                        ))
                         .or_insert(0) += 1;
                 }
                 PartialSwapKind::Default => {
-                    decl_local_imports.push(DeferredImport::Default {
+                    imports.push(DeferredImport::Default {
                         source: target.package.clone(),
-                        local: local_sym,
+                        local: local_sym.to_string(),
                     });
                     *references_by_symbol
-                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .entry((
+                            chunk_mapping.chunk_id.clone(),
+                            imported_name_lookup.to_string(),
+                        ))
                         .or_insert(0) += 1;
                 }
                 PartialSwapKind::Named => {
-                    let upstream_export = target
-                        .upstream_export
-                        .as_deref()
-                        .expect("kind=named validated to carry upstream_export");
-                    // Always emit `import { <upstream_export> } from "<pkg>"`
-                    // (no alias). If the caller's original local binding
-                    // already matched the upstream export name, no further
-                    // rewrite is needed; otherwise queue an identifier
-                    // rename so every `<local_sym>` reference in the file
-                    // becomes `<upstream_export>`.
-                    decl_local_imports.push(DeferredImport::Named {
+                    let upstream_export = target.upstream_export.as_deref()?;
+                    imports.push(DeferredImport::Named {
                         source: target.package.clone(),
                         local: upstream_export.to_string(),
                         upstream_export: upstream_export.to_string(),
                     });
                     if local_sym != upstream_export {
                         bindings.insert(
-                            local_sym,
+                            local_sym.to_string(),
                             IdentRewriteTarget::Rename {
                                 upstream_export: upstream_export.to_string(),
                                 chunk_name: chunk_mapping.chunk_id.clone(),
-                                chunk_export: imported_name_lookup.clone(),
+                                chunk_export: imported_name_lookup.to_string(),
                             },
                         );
                     } else {
                         *references_by_symbol
-                            .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                            .entry((
+                                chunk_mapping.chunk_id.clone(),
+                                imported_name_lookup.to_string(),
+                            ))
                             .or_insert(0) += 1;
                     }
                 }
             }
-        }
-
-        // Emit the deferred imports introduced by this decl in front
-        // of the residual import (if any). Source-order preserved.
-        for deferred in decl_local_imports.drain(..) {
-            new_body.push(deferred.into_module_item());
-        }
-
-        if !retained_specifiers.is_empty() {
-            import_decl.specifiers = retained_specifiers;
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-        }
-    }
-
-    module.body = new_body;
+            Some(imports)
+        },
+    );
 
     // Pass B: rewrite every Expr::Ident reference to a tracked local
     // binding into `<namespace>.<upstream_export>`. Only kind=member
@@ -2477,117 +2412,86 @@ fn rewrite_bundled_partial_swap_in_file(
     let mut bindings: BTreeMap<String, IdentRewriteTarget> = BTreeMap::new();
     let mut emitted_default_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut prelude_imports: Vec<DeferredImport> = Vec::new();
+    seed_bundled_partial_swap_self_rewrites(
+        module,
+        mappings.get(chunk_table.name(job.caller_chunk_id)),
+        chunk_table,
+        job.caller_chunk_id,
+        &job.file_path,
+        SelfRewriteOutputs {
+            bindings: &mut bindings,
+            prelude_imports: &mut prelude_imports,
+            references_by_symbol: &mut references_by_symbol,
+        },
+    );
 
-    let original_body = std::mem::take(&mut module.body);
-    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
-
-    for item in original_body {
-        let ModuleItem::ModuleDecl(ModuleDecl::Import(mut import_decl)) = item else {
-            new_body.push(item);
-            continue;
-        };
-        let source = str_value(&import_decl.src);
-        let Some(target_chunk_id) = resolve_partial_swap_import_target(
-            &source,
-            job.caller_chunk_id,
-            &job.file_path,
-            references,
-            chunk_table,
-        ) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        };
-        if target_chunk_id == job.caller_chunk_id {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        }
-        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
-        let Some(chunk_mapping) = mappings.get(&target_chunk_name) else {
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-            continue;
-        };
-
-        let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
-        let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
-        for specifier in std::mem::take(&mut import_decl.specifiers) {
-            let imported_name_lookup = match &specifier {
-                ImportSpecifier::Named(named) => named
-                    .imported
-                    .as_ref()
-                    .map(module_export_name)
-                    .unwrap_or_else(|| named.local.sym.to_string()),
-                _ => {
-                    retained_specifiers.push(specifier);
-                    continue;
-                }
+    let new_body = rewrite_swap_import_decls(
+        std::mem::take(&mut module.body),
+        job.caller_chunk_id,
+        &job.file_path,
+        references,
+        chunk_table,
+        |target_chunk_name, imported_name_lookup, local_sym| {
+            let Some(chunk_mapping) = mappings.get(target_chunk_name) else {
+                return None;
             };
-            let Some(target) = chunk_mapping.symbols.get(&imported_name_lookup) else {
-                retained_specifiers.push(specifier);
-                continue;
-            };
-            let Some(package_coords) = chunk_mapping.packages.get(&target.package) else {
-                retained_specifiers.push(specifier);
-                continue;
-            };
-            let ImportSpecifier::Named(named) = specifier else {
-                unreachable!("classified named above");
-            };
-            let local_sym = named.local.sym.to_string();
+            let target = chunk_mapping.symbols.get(imported_name_lookup)?;
+            let package_coords = chunk_mapping.packages.get(&target.package)?;
             let import_source = bundled_facade_import_source(
                 chunk_table,
                 job.caller_chunk_id,
                 &job.file_path,
                 &package_coords.facade_app_path,
             );
+            let mut imports = Vec::new();
             match target.kind {
                 PartialSwapKind::Member | PartialSwapKind::Named => {
-                    let upstream_export = target
-                        .upstream_export
-                        .as_deref()
-                        .expect("kind=member/named validated to carry upstream_export");
-                    let namespace = package_coords
-                        .namespace
-                        .as_deref()
-                        .expect("kind=member/named validated to have package.namespace");
+                    let upstream_export = target.upstream_export.as_deref()?;
+                    let namespace = package_coords.namespace.as_deref()?;
                     bindings.insert(
-                        local_sym,
+                        local_sym.to_string(),
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
                             chunk_name: chunk_mapping.chunk_id.clone(),
-                            chunk_export: imported_name_lookup.clone(),
+                            chunk_export: imported_name_lookup.to_string(),
                         },
                     );
                     if emitted_default_namespace_for.insert(target.package.clone()) {
-                        decl_local_imports.push(DeferredImport::Default {
+                        imports.push(DeferredImport::Default {
                             source: import_source,
                             local: namespace.to_string(),
                         });
                     }
                 }
                 PartialSwapKind::Namespace | PartialSwapKind::Default => {
-                    decl_local_imports.push(DeferredImport::Default {
+                    imports.push(DeferredImport::Default {
                         source: import_source,
-                        local: local_sym,
+                        local: local_sym.to_string(),
                     });
                     *references_by_symbol
-                        .entry((chunk_mapping.chunk_id.clone(), imported_name_lookup.clone()))
+                        .entry((
+                            chunk_mapping.chunk_id.clone(),
+                            imported_name_lookup.to_string(),
+                        ))
                         .or_insert(0) += 1;
                 }
             }
-        }
+            Some(imports)
+        },
+    );
 
-        for deferred in decl_local_imports.drain(..) {
-            new_body.push(deferred.into_module_item());
-        }
-
-        if !retained_specifiers.is_empty() {
-            import_decl.specifiers = retained_specifiers;
-            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-        }
+    if !prelude_imports.is_empty() {
+        let mut prefixed = prelude_imports
+            .drain(..)
+            .map(DeferredImport::into_module_item)
+            .collect::<Vec<_>>();
+        prefixed.extend(new_body);
+        module.body = prefixed;
+    } else {
+        module.body = new_body;
     }
-
-    module.body = new_body;
 
     if !bindings.is_empty() {
         let mut rewriter = PartialSwapIdentRewriter {
@@ -2603,6 +2507,202 @@ fn rewrite_bundled_partial_swap_in_file(
         ast: job.ast,
         references_by_symbol,
     }
+}
+
+fn rewrite_swap_import_decls<F>(
+    original_body: Vec<ModuleItem>,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    references: &ArtifactIndexes,
+    chunk_table: &ChunkTable,
+    mut rewrite_one: F,
+) -> Vec<ModuleItem>
+where
+    F: FnMut(&str, &str, &str) -> Option<Vec<DeferredImport>>,
+{
+    let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
+    for item in original_body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(mut import_decl)) = item else {
+            new_body.push(item);
+            continue;
+        };
+        let source = str_value(&import_decl.src);
+        let Some(target_chunk_id) = resolve_partial_swap_import_target(
+            &source,
+            caller_chunk_id,
+            caller_file_path,
+            references,
+            chunk_table,
+        ) else {
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
+            continue;
+        };
+        if target_chunk_id == caller_chunk_id {
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
+            continue;
+        }
+        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
+        let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
+        let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
+        for specifier in std::mem::take(&mut import_decl.specifiers) {
+            let imported_name_lookup = match &specifier {
+                ImportSpecifier::Named(named) => named
+                    .imported
+                    .as_ref()
+                    .map(module_export_name)
+                    .unwrap_or_else(|| named.local.sym.to_string()),
+                _ => {
+                    retained_specifiers.push(specifier);
+                    continue;
+                }
+            };
+            let ImportSpecifier::Named(named) = specifier else {
+                unreachable!("classified named above");
+            };
+            if let Some(imports) = rewrite_one(
+                &target_chunk_name,
+                &imported_name_lookup,
+                &named.local.sym.to_string(),
+            ) {
+                decl_local_imports.extend(imports);
+            } else {
+                retained_specifiers.push(ImportSpecifier::Named(named));
+            }
+        }
+        for deferred in decl_local_imports.drain(..) {
+            new_body.push(deferred.into_module_item());
+        }
+        if !retained_specifiers.is_empty() {
+            import_decl.specifiers = retained_specifiers;
+            new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
+        }
+    }
+    new_body
+}
+
+fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
+            continue;
+        };
+        if named.src.is_some() {
+            continue;
+        }
+        for spec in &named.specifiers {
+            let ExportSpecifier::Named(named_spec) = spec else {
+                continue;
+            };
+            let ModuleExportName::Ident(orig) = &named_spec.orig else {
+                continue;
+            };
+            let export_name = named_spec
+                .exported
+                .as_ref()
+                .map(module_export_name)
+                .unwrap_or_else(|| orig.sym.to_string());
+            out.insert(export_name, orig.sym.to_string());
+        }
+    }
+    out
+}
+
+struct SelfRewriteOutputs<'a> {
+    bindings: &'a mut BTreeMap<String, IdentRewriteTarget>,
+    prelude_imports: &'a mut Vec<DeferredImport>,
+    references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
+}
+
+fn seed_bundled_partial_swap_self_rewrites(
+    module: &Module,
+    chunk_mapping: Option<&ChunkBundledPartialSwapMapping>,
+    chunk_table: &ChunkTable,
+    caller_chunk_id: ChunkId,
+    caller_file_path: &str,
+    outputs: SelfRewriteOutputs<'_>,
+) {
+    let Some(chunk_mapping) = chunk_mapping else {
+        return;
+    };
+    let exported_locals = collect_local_idents_by_export_name(module);
+    let mut used_idents = module_used_idents(module);
+    for (chunk_export, target) in &chunk_mapping.symbols {
+        let Some(local_sym) = exported_locals.get(chunk_export) else {
+            continue;
+        };
+        let Some(package_coords) = chunk_mapping.packages.get(&target.package) else {
+            continue;
+        };
+        let import_source = bundled_facade_import_source(
+            chunk_table,
+            caller_chunk_id,
+            caller_file_path,
+            &package_coords.facade_app_path,
+        );
+        let local = unique_synthetic_ident("__debundle_bps", chunk_export, &mut used_idents);
+        match target.kind {
+            PartialSwapKind::Member | PartialSwapKind::Named => {
+                let upstream_export = target
+                    .upstream_export
+                    .as_deref()
+                    .expect("kind=member/named validated to carry upstream_export");
+                outputs.bindings.insert(
+                    local_sym.clone(),
+                    IdentRewriteTarget::Member {
+                        namespace: local.clone(),
+                        upstream_export: upstream_export.to_string(),
+                        chunk_name: chunk_mapping.chunk_id.clone(),
+                        chunk_export: chunk_export.clone(),
+                    },
+                );
+            }
+            PartialSwapKind::Namespace | PartialSwapKind::Default => {
+                outputs.bindings.insert(
+                    local_sym.clone(),
+                    IdentRewriteTarget::Rename {
+                        upstream_export: local.clone(),
+                        chunk_name: chunk_mapping.chunk_id.clone(),
+                        chunk_export: chunk_export.clone(),
+                    },
+                );
+                *outputs
+                    .references_by_symbol
+                    .entry((chunk_mapping.chunk_id.clone(), chunk_export.clone()))
+                    .or_insert(0) += 1;
+            }
+        }
+        outputs.prelude_imports.push(DeferredImport::Default {
+            source: import_source,
+            local,
+        });
+    }
+}
+
+fn unique_synthetic_ident(prefix: &str, export_name: &str, used: &mut BTreeSet<String>) -> String {
+    let base = format!("{prefix}_{export_name}");
+    if used.insert(base.clone()) {
+        return base;
+    }
+    let mut i = 2usize;
+    loop {
+        let candidate = format!("{base}_{i}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        i += 1;
+    }
+}
+
+fn module_used_idents(module: &Module) -> BTreeSet<String> {
+    struct UsedIdentCollector(BTreeSet<String>);
+    impl Visit for UsedIdentCollector {
+        fn visit_ident(&mut self, ident: &Ident) {
+            self.0.insert(ident.sym.to_string());
+        }
+    }
+    let mut collector = UsedIdentCollector(BTreeSet::new());
+    module.visit_with(&mut collector);
+    collector.0
 }
 
 fn bundled_facade_import_source(
