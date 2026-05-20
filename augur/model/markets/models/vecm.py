@@ -487,7 +487,7 @@ def _observation_value(observation: Any, key: str) -> float:
 
 class VecmMarketProviderConfig(FrozenModel):
     """Pre-trained VECM provider config — points at the trained-state blob
-    written by `bb run //augur/model/train:train`. The model is loaded at server
+    written by `bb run //augur/fit:train`. The model is loaded at server
     startup; no fitting happens on the request path."""
 
     type: Literal["vecm"] = "vecm"

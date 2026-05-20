@@ -18,16 +18,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from augur.model.location_market_sources import LocationMarketSources
-from augur.model.markets.scenarios import HistoricalSeries
-from augur.model.train.market_config import MarketConfig, load_market_config
-from augur.model.train.market_data import (
+from augur.fit.market_config import MarketConfig, load_market_config
+from augur.fit.market_data import (
     MarketEvidence,
     PeriodReturns,
     calibrate_market_path_priors,
     load_market_evidence,
     resolve_path,
 )
+from augur.model.location_market_sources import LocationMarketSources
+from augur.model.markets.scenarios import HistoricalSeries
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
 

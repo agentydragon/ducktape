@@ -63,7 +63,7 @@ Today that means:
   `HistoricalSeries` plus `MarketEvidence`. `MarketEvidence` carries aligned
   monthly log returns, marginal return evidence, calibrated path priors, current
   mortgage-rate evidence, and latest-observation metadata.
-- Calibration/fitting happens offline through `augur.model.train`; runtime
+- Calibration/fitting happens offline through `augur.fit`; runtime
   config points at the persisted trained VECM blob.
 - Sampled-bundle generation happens when `VecmJointMarketModel` calls the fitted
   model's `simulate(...)` and emits native sampled levels/events.

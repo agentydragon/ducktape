@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.model.train.market_config import load_market_config, parse_market_config
+from augur.fit.market_config import load_market_config, parse_market_config
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
 EXPECTED_TOP_LEVEL_KEYS = frozenset({"source_data", "location_market_sources"})

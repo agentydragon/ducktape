@@ -15,25 +15,60 @@ import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
+from augur.fit.main import main as train_main
 from augur.model.market_api import MarketSamplingRequest
 from augur.model.market_provider_config import MarketProviderConfig, SimpleMarketProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
-from augur.model.train.main import main as train_main
 from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[MarketProviderConfig] = TypeAdapter(MarketProviderConfig)
-_MARKET_CONFIG_RUNFILE = "_main/augur/model/train/config/market_config.example.json"
+
+
+def _write_market_config(path: Path) -> None:
+    source_root = "_main/augur/data/market/source"
+
+    def _source(name: str) -> str:
+        return str(get_required_path(f"{source_root}/{name}"))
+
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "source_data": {
+                    "fred_sp500_csv": _source("fred_sp500.csv"),
+                    "yahoo_spy_adjusted_json": _source("yahoo_spy_chart_adjusted.json"),
+                    "fred_cpi_us_csv": _source("fred_cpi_us.csv"),
+                    "fred_sf_rent_cpi_csv": _source("fred_sf_rent_cpi.csv"),
+                    "fred_sfxrsa_csv": _source("fred_sfxrsa.csv"),
+                    "fred_fhfa_sf_oakland_berkeley_csv": _source("fred_fhfa_sf_oakland_berkeley.csv"),
+                    "fred_mortgage30_csv": _source("fred_mortgage30.csv"),
+                    "zillow_city_zhvi_csv": _source("zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"),
+                    "zillow_home_value_regions": {
+                        "home": {"region_name": "San Francisco"},
+                        "vallejo_home": {"region_name": "Vallejo"},
+                    },
+                },
+                "location_market_sources": {
+                    "home_value": {"san_francisco_ca": "home", "vallejo_ca": "vallejo_home"},
+                    "rent": {"san_francisco_ca": "rent", "vallejo_ca": "rent"},
+                },
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     out_manifest = tmp_path / "market_provider.yaml"
     out_blob = tmp_path / f"trained_{model_label}.npz"
+    market_config = tmp_path / "market_config.yaml"
+    _write_market_config(market_config)
 
     train_main(
         [
             "--market-config",
-            str(get_required_path(_MARKET_CONFIG_RUNFILE)),
+            str(market_config),
             "--model",
             model_label,
             "--out-provider-config",

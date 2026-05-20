@@ -8,8 +8,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
-from augur.model.train.metrics import (
+from augur.fit.metrics import (
     ScoredHeldOutLogDensity,
     ScoredMultiStepLogDensityRow,
     ScoredRollingOriginLogDensity,
@@ -20,6 +19,7 @@ from augur.model.train.metrics import (
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
 )
+from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
 
 def _gaussian_log_density(x: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> float:

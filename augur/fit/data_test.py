@@ -7,8 +7,8 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 
-from augur.model.train.data import load_evidence, load_fred_only_evidence
-from augur.model.train.market_config import load_market_config
+from augur.fit.data import load_evidence, load_fred_only_evidence
+from augur.fit.market_config import load_market_config
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
 

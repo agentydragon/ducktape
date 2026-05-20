@@ -10,7 +10,7 @@ runtime.
 
 Usage:
 
-    bb run //augur/model/train:train -- \\
+    bb run //augur/fit:train -- \\
         --market-config augur/model/train/config/market_config.example.json \\
         --model vecm \\
         --out-provider-config /path/to/market_provider.yaml \\
@@ -24,10 +24,10 @@ from pathlib import Path
 
 import yaml
 
+from augur.fit.data import load_evidence
+from augur.fit.market_config import load_market_config
 from augur.model.market_provider_config import VecmMarketProviderConfig
 from augur.model.markets.models.vecm import VecmConfig, VecmModel
-from augur.model.train.data import load_evidence
-from augur.model.train.market_config import load_market_config
 
 _SUPPORTED_MODEL_LABELS = ("vecm",)
 

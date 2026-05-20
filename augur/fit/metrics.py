@@ -13,8 +13,8 @@ import statistics
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from augur.fit.market_model import MarketModel
 from augur.model.markets.scenarios import HistoricalSeries
-from augur.model.train.market_model import MarketModel
 
 
 def _summarise_scores(scores: list[float]) -> tuple[float, float, float]:
