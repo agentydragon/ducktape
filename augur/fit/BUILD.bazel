@@ -139,7 +139,6 @@ py_test(
         "//augur/model:market_api_py",
         "//augur/model:market_provider_config_py",
         "//augur/model:series_py",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
