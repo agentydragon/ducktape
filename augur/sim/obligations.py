@@ -14,6 +14,7 @@ from augur.sim.amounts import amount_by_rollout
 from augur.sim.events import EVENT_FRAMES
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.locations import Location
+from augur.sim.runtime import estimated_tax_quarter
 from augur.sim.scenario import PropertyTaxPolicy, RecurringObligation, Scenario, ScheduledObligation, TaxProfile
 from augur.sim.state import StateCrossSection
 
@@ -198,7 +199,7 @@ def _emit_tax_payment_obligations(
         return _empty_tax_payment_obligation_events()
     obligation_blocks: list[pl.DataFrame] = []
     settlement_blocks: list[pl.DataFrame] = []
-    quarter = _estimated_tax_quarter(month)
+    quarter = estimated_tax_quarter(month)
     for profile in profiles:
         if quarter in {1, 2, 3}:
             amount = profile.prior_year_tax_usd / 4.0
@@ -236,21 +237,6 @@ def _empty_tax_payment_obligation_events() -> _TaxPaymentObligationEvents:
     return _TaxPaymentObligationEvents(
         obligation_accruals=EVENT_FRAMES.obligation_accruals.empty(), settlements=EVENT_FRAMES.tax_settlements.empty()
     )
-
-
-def _estimated_tax_quarter(month: int) -> int | None:
-    """Calendar-month markers in a zero-based monthly simulation."""
-
-    month_in_year = month % 12
-    if month_in_year == 3:
-        return 1
-    if month_in_year == 5:
-        return 2
-    if month_in_year == 8:
-        return 3
-    if month_in_year == 0 and month > 0:
-        return 4
-    return None
 
 
 def _final_estimated_and_true_up_events(

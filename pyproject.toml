@@ -184,6 +184,7 @@ dependencies = [
     "supervisor>=4.2",
 
     "numpy",
+    "numba>=0.64",
     "polars>=1",
 
     # augur (financial-futures simulator) — DCC-GARCH market model uses arch

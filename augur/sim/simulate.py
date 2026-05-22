@@ -22,14 +22,16 @@ the concatenation of the per-month cross-sections with
 
 from __future__ import annotations
 
+import os
+from typing import Literal, cast
+
 import polars as pl
 
 from augur.sim.apply import apply_events
 from augur.sim.events import EventLog
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
-from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
-from augur.sim.locations import Location, load_location
 from augur.sim.run import SimulationRun
+from augur.sim.runtime import load_jurisdictions_for, load_locations_for
 from augur.sim.scenario import Scenario
 from augur.sim.state import (
     ASSET_LOT_FRAME,
@@ -45,25 +47,57 @@ from augur.sim.state import (
 )
 from augur.sim.step import step_emit_policy_events, step_emit_scheduled_events
 
+type SimulationEngineName = Literal["polars", "numba"]
 
-def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
+
+def simulate(scenario: Scenario, *, rollout_count: int, engine: SimulationEngineName | None = None) -> SimulationRun:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
     external_series = materialize_external_series(
         scenario.external_series, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
-    return simulate_with_external_series(scenario, rollout_count=rollout_count, external_series=external_series)
+    return simulate_with_external_series(
+        scenario, rollout_count=rollout_count, external_series=external_series, engine=engine
+    )
 
 
 def simulate_with_external_series(
-    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+    scenario: Scenario,
+    *,
+    rollout_count: int,
+    external_series: ExternalSeriesContext,
+    engine: SimulationEngineName | None = None,
 ) -> SimulationRun:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
-    jurisdictions = _load_jurisdictions_for(scenario)
-    locations = _load_locations_for(scenario)
+    engine = _resolve_engine(engine)
+    if engine == "numba":
+        from augur.sim.numba.engine import simulate_with_external_series_numba  # noqa: PLC0415
+
+        return simulate_with_external_series_numba(
+            scenario, rollout_count=rollout_count, external_series=external_series
+        )
+    if engine != "polars":
+        msg = f"unsupported simulation engine: {engine!r}"
+        raise ValueError(msg)
+    return _simulate_with_external_series_polars(scenario, rollout_count=rollout_count, external_series=external_series)
+
+
+def _resolve_engine(engine: SimulationEngineName | None) -> SimulationEngineName:
+    selected = engine or os.environ.get("AUGUR_SIM_ENGINE") or "polars"
+    if selected not in ("polars", "numba"):
+        msg = f"unsupported simulation engine: {selected!r}"
+        raise ValueError(msg)
+    return cast(SimulationEngineName, selected)
+
+
+def _simulate_with_external_series_polars(
+    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+) -> SimulationRun:
+    jurisdictions = load_jurisdictions_for(scenario)
+    locations = load_locations_for(scenario)
     state_t = _initial_state(scenario, rollout_count)
     cross_sections: list[StateCrossSection] = [state_t]
     events_by_month: list[EventLog] = []
@@ -98,25 +132,6 @@ def simulate_with_external_series(
         series_values=external_series.series_values,
         events_log=EventLog.concat(events_by_month),
     )
-
-
-def _load_jurisdictions_for(scenario: Scenario) -> dict[str, Jurisdiction]:
-    """Load every jurisdiction referenced by any tax profile.
-    Loaded once at sim start; the step closes over the dict."""
-    ids = {jid for profile in scenario.tax_profiles for jid in profile.jurisdiction_ids}
-    return {jid: load_jurisdiction(jid) for jid in ids}
-
-
-def _load_locations_for(scenario: Scenario) -> dict[str, Location]:
-    tax_policy_properties = {
-        policy.property_id for policy in scenario.property_tax_policies if policy.annual_tax_rate is None
-    }
-    ids = {
-        purchase.location_id
-        for purchase in scenario.scheduled_property_purchases
-        if purchase.property_id in tax_policy_properties
-    }
-    return {location_id: load_location(location_id) for location_id in ids}
 
 
 def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:

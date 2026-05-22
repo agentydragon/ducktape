@@ -77,3 +77,17 @@ and prints the top cumulative functions. The target is guarded by
 `--max-seconds=60`; retune request size with `--rollout-count`,
 `--horizon-months`, `--metric`, and `--percentiles` when profiling a different
 shape.
+
+Set `AUGUR_SIM_ENGINE=numba` to profile the Numba simulator backend. Cold Numba
+startup is dominated by JIT compilation, so use an explicit cache directory and
+warm it with a tiny request before collecting steady-state timings:
+
+```bash
+NUMBA_CACHE_DIR=/tmp/augur_numba_cache AUGUR_SIM_ENGINE=numba \
+  bazelisk run --config=nolint --remote_executor= //augur/api:profile_metric_fan -- \
+  --horizon-months=1 --rollout-count=1 --max-seconds=180
+
+NUMBA_CACHE_DIR=/tmp/augur_numba_cache AUGUR_SIM_ENGINE=numba \
+  bazelisk run --config=nolint --remote_executor= //augur/api:profile_metric_fan -- \
+  --profile-output=/tmp/augur_metric_fan_numba.prof
+```

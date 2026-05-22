@@ -24,6 +24,7 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.events import EventLog
+from augur.sim.runtime import capital_gain_classification_expr
 from augur.sim.state import (
     ASSET_LOT_FRAME,
     LIABILITY_FRAME,
@@ -325,9 +326,7 @@ def _apply_dispositions_to_capital_gains_ytd(
     pre-existing row are appended; existing rows accumulate."""
     classified = dispositions.with_columns(
         gain_usd=pl.col("proceeds_usd") - pl.col("cost_basis_consumed_usd"),
-        classification=pl.when(pl.col("month_index") - pl.col("purchase_month_index") >= 12)
-        .then(pl.lit("ltcg"))
-        .otherwise(pl.lit("stcg")),
+        classification=capital_gain_classification_expr(),
     )
     deltas = classified.group_by(["rollout_index", "agent_id", "classification"]).agg(
         pl.col("gain_usd").sum().alias("_delta")

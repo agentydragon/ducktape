@@ -113,6 +113,17 @@ py_library(
 )
 
 py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":jurisdictions",
+        ":locations",
+        ":scenario",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
     name = "amounts",
     srcs = ["amounts.py"],
     deps = [
@@ -127,6 +138,7 @@ py_library(
     srcs = ["apply.py"],
     deps = [
         ":events",
+        ":runtime",
         ":state",
         "@pypi//polars",
     ],
@@ -153,6 +165,7 @@ py_library(
         ":events",
         ":external_series",
         ":locations",
+        ":runtime",
         ":scenario",
         ":state",
         "@pypi//polars",
@@ -181,6 +194,7 @@ py_library(
         ":liquidity",
         ":locations",
         ":obligations",
+        ":runtime",
         ":scenario",
         ":settlement",
         ":state",
@@ -219,10 +233,35 @@ py_library(
         ":external_series",
         ":jurisdictions",
         ":locations",
+        ":numba_engine",
         ":run",
+        ":runtime",
         ":scenario",
         ":state",
         ":step",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "numba_engine",
+    srcs = [
+        "numba/compiler.py",
+        "numba/engine.py",
+        "numba/kernels.py",
+    ],
+    tags = ["no-mypy"],
+    deps = [
+        ":events",
+        ":external_series",
+        ":jurisdictions",
+        ":locations",
+        ":run",
+        ":runtime",
+        ":scenario",
+        ":state",
+        "@pypi//numba",
+        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
@@ -251,22 +290,33 @@ py_library(
     ],
 )
 
+SIMULATE_TEST_DEPS = [
+    ":conftest",
+    ":external_series",
+    ":replay",
+    ":scenario",
+    ":simulate",
+    "//augur/model:gbm_py",
+    "//augur/model:series_model_py",
+    "@pypi//polars",
+    "@pypi//pydantic",
+    "@pypi//pytest",
+    "@pypi//pytest_bazel",
+]
+
 py_test(
     name = "simulate_test",
     srcs = ["simulate_test.py"],
-    deps = [
-        ":conftest",
-        ":external_series",
-        ":replay",
-        ":scenario",
-        ":simulate",
-        "//augur/model:gbm_py",
-        "//augur/model:series_model_py",
-        "@pypi//polars",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
+    deps = SIMULATE_TEST_DEPS,
+)
+
+py_test(
+    name = "simulate_numba_test",
+    size = "medium",
+    srcs = ["simulate_test.py"],
+    env = {"AUGUR_SIM_ENGINE": "numba"},
+    main = "simulate_test.py",
+    deps = SIMULATE_TEST_DEPS,
 )
 
 py_test(
