@@ -201,6 +201,34 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
         )
 
 
+def test_transfer_income_category_allows_only_ordinary() -> None:
+    scheduled_data = {
+        "month": 0,
+        "cause_id": "gift",
+        "from_agent_id": "bob",
+        "from_account_id": "checking",
+        "to_agent_id": "alice",
+        "to_account_id": "checking",
+        "amount_usd": 100.0,
+        "income_category": "gift",
+    }
+    recurring_data = {
+        "start_month": 0,
+        "cause_id": "gift",
+        "from_agent_id": "bob",
+        "from_account_id": "checking",
+        "to_agent_id": "alice",
+        "to_account_id": "checking",
+        "amount_usd": 100.0,
+        "income_category": "gift",
+    }
+
+    with pytest.raises(ValidationError, match=r"Input should be 'ordinary'"):
+        ScheduledTransfer.model_validate(scheduled_data)
+    with pytest.raises(ValidationError, match=r"Input should be 'ordinary'"):
+        RecurringTransfer.model_validate(recurring_data)
+
+
 def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
     with pytest.raises(ValidationError, match=r"scheduled asset sale 'late_sale'.*outside scenario horizon"):
         Scenario(

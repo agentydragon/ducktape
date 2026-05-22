@@ -108,6 +108,7 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = float | AmountSchedule
+type TransferIncomeCategory = Literal["ordinary"]
 
 
 class ScheduledTransfer(BaseModel):
@@ -115,9 +116,9 @@ class ScheduledTransfer(BaseModel):
     month. Emitted by the engine as a Transfer event at that month;
     the amount may be fixed or derived from a series-indexed schedule.
 
-    `income_category` tags the transfer for downstream tax
-    classification. The canonical value at spike 1 is `"ordinary"`
-    (W-2-style wages for the recipient). When set, the recipient's
+    `income_category` tags the transfer for downstream tax classification.
+    Currently the only supported value is `"ordinary"` (W-2-style wages for the
+    recipient). When set, the recipient's
     `ordinary_income_ytd` increments by the transferred amount at
     apply time."""
 
@@ -128,7 +129,7 @@ class ScheduledTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: AmountSpec
-    income_category: str | None = None
+    income_category: TransferIncomeCategory | None = None
 
 
 class RecurringTransfer(BaseModel):
@@ -152,7 +153,7 @@ class RecurringTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: AmountSpec
-    income_category: str | None = None
+    income_category: TransferIncomeCategory | None = None
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
