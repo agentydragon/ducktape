@@ -298,7 +298,13 @@ def _emit_lot_dispositions(
     if not sales:
         return EVENT_FRAMES.lot_dispositions.empty()
     series_at_month = external_series.series_at(month)
-    blocks = [_fifo_dispositions_for_sale(state, sale, series_at_month, month) for sale in sales]
+    planning_state = state
+    blocks: list[pl.DataFrame] = []
+    for sale in sales:
+        sale_dispositions = _fifo_dispositions_for_sale(planning_state, sale, series_at_month, month)
+        if not sale_dispositions.is_empty():
+            blocks.append(sale_dispositions)
+            planning_state = _state_after_scheduled_lot_dispositions(planning_state, sale_dispositions)
     return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
@@ -358,6 +364,23 @@ def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, series_at_m
         return lots.with_columns(pl.lit(sale.price_per_unit_usd, dtype=pl.Float64()).alias("_unit_price"))
     values_for_asset = series_at_month.filter(pl.col("series_id") == sale.asset_id).rename({"value": "_unit_price"})
     return lots.join(values_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
+
+
+def _state_after_scheduled_lot_dispositions(state: StateCrossSection, dispositions: pl.DataFrame) -> StateCrossSection:
+    deltas = dispositions.group_by(["rollout_index", "lot_id"]).agg(pl.col("units_sold").sum().alias("_units_sold"))
+    return StateCrossSection(
+        cash_balances=state.cash_balances,
+        asset_lots=state.asset_lots.join(deltas, on=["rollout_index", "lot_id"], how="left")
+        .with_columns(remaining_quantity=pl.col("remaining_quantity") - pl.col("_units_sold").fill_null(0.0))
+        .drop("_units_sold"),
+        ordinary_income_ytd=state.ordinary_income_ytd,
+        capital_gains_ytd=state.capital_gains_ytd,
+        tax_liabilities=state.tax_liabilities,
+        property_state=state.property_state,
+        property_stakes=state.property_stakes,
+        liabilities=state.liabilities,
+        rollout_status=state.rollout_status,
+    )
 
 
 def _emit_year_end_tax_events(

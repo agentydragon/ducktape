@@ -722,6 +722,71 @@ def test_fifo_sale_crossing_two_lots() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
+def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="old",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            ),
+            InitialLot(
+                lot_id="new",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-6,
+                quantity=100.0,
+                cost_basis_per_unit_usd=100.0,
+            ),
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="first_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=70.0,
+                price_per_unit_usd=150.0,
+                proceeds_account_id="checking",
+            ),
+            ScheduledAssetSale(
+                month=1,
+                cause_id="second_sale",
+                agent_id="alice",
+                asset_id="vti",
+                quantity=70.0,
+                price_per_unit_usd=150.0,
+                proceeds_account_id="checking",
+            ),
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    dispositions = result.events_log.lot_dispositions.sort(["cause_id", "purchase_month_index"])
+    assert dispositions.select("cause_id", "lot_id", "units_sold").to_dicts() == [
+        {"cause_id": "first_sale", "lot_id": "old", "units_sold": pytest.approx(70.0)},
+        {"cause_id": "second_sale", "lot_id": "old", "units_sold": pytest.approx(30.0)},
+        {"cause_id": "second_sale", "lot_id": "new", "units_sold": pytest.approx(40.0)},
+    ]
+
+    end_lots = result.asset_lots.filter(pl.col("month_index") == 2).sort("lot_id")
+    assert end_lots.select("lot_id", "remaining_quantity").to_dicts() == [
+        {"lot_id": "new", "remaining_quantity": pytest.approx(60.0)},
+        {"lot_id": "old", "remaining_quantity": pytest.approx(0.0)},
+    ]
+    final_cash = result.cash_balances.filter(pl.col("month_index") == 2).get_column("balance_usd").item()
+    assert final_cash == pytest.approx(21_000.0)
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
 def test_fifo_holding_period_classification_per_disposition() -> None:
     """The disposition log carries `purchase_month_index` and
     sale-time `month_index` so downstream tax classification can

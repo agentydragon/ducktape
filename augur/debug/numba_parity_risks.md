@@ -5,19 +5,6 @@ backend before making it the default engine. Series-indexed amount validation
 and duplicate liquidity policies are handled separately by the shared simulator
 input checks.
 
-## Same-month scheduled asset sales
-
-Polars emits every scheduled sale for a month from the same pre-month lot state.
-If two same-month sales target the same asset, both can size against the same
-available units before `apply_events` consumes them. Numba mutates lot balances
-between scheduled sales in the kernel, so later same-month sales see earlier
-sales' consumption.
-
-Pin this with a parity test containing two same-month sales over the same lot
-stack, ideally with combined requested units greater than available units. Then
-choose the intended all-at-once or sequential semantics and align the other
-backend.
-
 ## FIFO lot tie-break order
 
 Polars sorts candidate lots by `purchase_month_index` and lexical `lot_id`.
