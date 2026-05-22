@@ -54,6 +54,11 @@ evaluation, or response semantics.
       remains compatible with `gaffer-private` deployment YAML.
 - [ ] Continue the staged rollout after the backend sim smoke: broaden the
       fixture slice and keep browser smoke coverage on the backend.
+- [ ] Make liquidity policies an account-keyed simulator program internally.
+      The config/wire shape can remain list-friendly, but the runtime/compiler
+      should consume something typed like `{(agent_id, account_id): policy}` so
+      "one liquidity policy per cash account" is encoded by the data shape
+      rather than only by a duplicate-check validator.
 
 ## Frontend/API Integration Blockers
 

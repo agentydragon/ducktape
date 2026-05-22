@@ -32,7 +32,7 @@ from augur.sim.events import EventLog
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from augur.sim.run import SimulationRun
 from augur.sim.runtime import load_jurisdictions_for, load_locations_for
-from augur.sim.scenario import Scenario
+from augur.sim.scenario import Scenario, SeriesIndexedAmount
 from augur.sim.state import (
     ASSET_LOT_FRAME,
     CAPITAL_GAINS_YTD_FRAME,
@@ -73,6 +73,7 @@ def simulate_with_external_series(
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
     engine = _resolve_engine(engine)
+    _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
     if engine == "numba":
         from augur.sim.numba.engine import simulate_with_external_series_numba  # noqa: PLC0415
 
@@ -91,6 +92,81 @@ def _resolve_engine(engine: SimulationEngineName | None) -> SimulationEngineName
         msg = f"unsupported simulation engine: {selected!r}"
         raise ValueError(msg)
     return cast(SimulationEngineName, selected)
+
+
+def _validate_series_indexed_amounts(
+    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+) -> None:
+    """Validate path-indexed amount schedules before backend dispatch.
+
+    Polars used to surface these errors while evaluating each amount.
+    Numba reads from a dense cube, so validate once at the shared boundary.
+    """
+
+    series_levels: dict[tuple[str, int, int], float | None] = {}
+    for row in external_series.series_values.iter_rows(named=True):
+        value = row["value"]
+        series_levels[(str(row["series_id"]), int(row["month_index"]), int(row["rollout_index"]))] = (
+            None if value is None else float(value)
+        )
+
+    for label, amount, months in _series_indexed_amount_uses(scenario):
+        if not isinstance(amount, SeriesIndexedAmount) or not months:
+            continue
+        before_base = [month for month in months if month < amount.base_month_index]
+        if before_base:
+            raise ValueError(
+                f"series-indexed amount {label} is active at month {before_base[0]} "
+                f"before base month {amount.base_month_index}"
+            )
+        required_months = {int(amount.base_month_index)}
+        required_months.update(amount._reset_month(month) for month in months)
+        for month in sorted(required_months):
+            missing_rollouts = [
+                rollout_index
+                for rollout_index in range(rollout_count)
+                if series_levels.get((amount.series_id, month, rollout_index)) is None
+            ]
+            if missing_rollouts:
+                raise KeyError(
+                    f"series-indexed amount {label} references external series {amount.series_id!r} "
+                    f"at month {month}, but it is missing rollout(s): {_format_rollout_sample(missing_rollouts)}"
+                )
+        zero_base_rollouts = [
+            rollout_index
+            for rollout_index in range(rollout_count)
+            if series_levels[(amount.series_id, int(amount.base_month_index), rollout_index)] == 0.0
+        ]
+        if zero_base_rollouts:
+            raise ValueError(
+                f"external series {amount.series_id!r} has zero base level at month "
+                f"{amount.base_month_index} for rollout(s): {_format_rollout_sample(zero_base_rollouts)}"
+            )
+
+
+def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, tuple[int, ...]]]:
+    horizon = int(scenario.horizon_months)
+    uses: list[tuple[str, object, tuple[int, ...]]] = []
+    for transfer in scenario.scheduled_transfers:
+        months = (transfer.month,) if 0 <= transfer.month < horizon else ()
+        uses.append((f"scheduled transfer {transfer.cause_id!r}", transfer.amount_usd, months))
+    for transfer in scenario.recurring_transfers:
+        months = tuple(month for month in range(horizon) if transfer.is_active_at(month))
+        uses.append((f"recurring transfer {transfer.cause_id!r}", transfer.amount_usd, months))
+    for obligation in scenario.scheduled_obligations:
+        months = (obligation.month,) if 0 <= obligation.month < horizon else ()
+        uses.append((f"scheduled obligation {obligation.obligation_id!r}", obligation.amount_due_usd, months))
+    for obligation in scenario.recurring_obligations:
+        months = tuple(month for month in range(horizon) if obligation.is_active_at(month))
+        uses.append((f"recurring obligation {obligation.obligation_id!r}", obligation.amount_due_usd, months))
+    return uses
+
+
+def _format_rollout_sample(rollout_indices: list[int]) -> str:
+    sample = ", ".join(str(index) for index in rollout_indices[:5])
+    if len(rollout_indices) > 5:
+        sample += ", ..."
+    return sample
 
 
 def _simulate_with_external_series_polars(

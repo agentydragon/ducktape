@@ -110,6 +110,72 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
     assert amount.series_id == "rent:san_francisco_ca"
 
 
+def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
+    rent_series_id = "rent:san_francisco_ca"
+    scenario = _series_indexed_rent_obligation_scenario(
+        SeriesIndexedAmount(
+            base_amount_usd=1_000.0, series_id=rent_series_id, base_month_index=1, adjustment_period_months=12
+        ),
+        horizon_months=2,
+    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0, 110.0, 120.0]])
+
+    with pytest.raises(ValueError, match="before base month 1"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+
+
+def test_series_indexed_amount_requires_external_series_coverage() -> None:
+    rent_series_id = "rent:san_francisco_ca"
+    scenario = _series_indexed_rent_obligation_scenario(
+        SeriesIndexedAmount(
+            base_amount_usd=1_000.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
+        ),
+        horizon_months=13,
+    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0] * 12])
+
+    with pytest.raises(KeyError, match="missing rollout"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+
+
+def test_series_indexed_amount_rejects_zero_base_level() -> None:
+    rent_series_id = "rent:san_francisco_ca"
+    scenario = _series_indexed_rent_obligation_scenario(
+        SeriesIndexedAmount(
+            base_amount_usd=1_000.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
+        ),
+        horizon_months=1,
+    )
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
+
+    with pytest.raises(ValueError, match="zero base level"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+
+
+def _series_indexed_rent_obligation_scenario(amount: SeriesIndexedAmount, *, horizon_months: int) -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=20_000.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=0,
+                obligation_id="outside_rent",
+                obligation_type="outside_rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=amount,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+
+
 def test_scenario_requires_explicit_tax_profiles() -> None:
     with pytest.raises(ValidationError, match="tax_profiles"):
         Scenario.model_validate(
@@ -118,6 +184,20 @@ def test_scenario_requires_explicit_tax_profiles() -> None:
                 "initial_cash": [{"agent_id": "alice", "account_id": "checking", "balance_usd": 100.0}],
                 "horizon_months": 1,
             }
+        )
+
+
+def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
+    with pytest.raises(ValidationError, match=r"duplicate liquidity policies.*alice/checking"):
+        Scenario(
+            agents=[Agent(agent_id="alice")],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
+            liquidity_policies=[
+                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"]),
+                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["qqq"]),
+            ],
+            tax_profiles=[],
+            horizon_months=1,
         )
 
 

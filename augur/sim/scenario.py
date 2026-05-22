@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Protocol
 
 import polars as pl
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
 
 from augur.model.series_model import SeriesModelBundle
 
@@ -354,3 +354,17 @@ class Scenario(BaseModel):
     tax_profiles: list[TaxProfile]
     liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
+
+    @model_validator(mode="after")
+    def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:
+        seen: set[tuple[str, str]] = set()
+        duplicates: set[tuple[str, str]] = set()
+        for policy in self.liquidity_policies:
+            key = (policy.agent_id, policy.account_id)
+            if key in seen:
+                duplicates.add(key)
+            seen.add(key)
+        if duplicates:
+            duplicate_list = ", ".join(f"{agent_id}/{account_id}" for agent_id, account_id in sorted(duplicates))
+            raise ValueError(f"duplicate liquidity policies for account(s): {duplicate_list}")
+        return self
