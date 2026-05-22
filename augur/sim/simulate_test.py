@@ -201,6 +201,34 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
         )
 
 
+def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> None:
+    with pytest.raises(ValidationError, match=r"duplicate initial lot purchase months.*alice/vti@-12.*old_a.*old_b"):
+        Scenario(
+            agents=[Agent(agent_id="alice")],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_lots=[
+                InitialLot(
+                    lot_id="old_a",
+                    agent_id="alice",
+                    asset_id="vti",
+                    purchase_month_index=-12,
+                    quantity=10.0,
+                    cost_basis_per_unit_usd=80.0,
+                ),
+                InitialLot(
+                    lot_id="old_b",
+                    agent_id="alice",
+                    asset_id="vti",
+                    purchase_month_index=-12,
+                    quantity=5.0,
+                    cost_basis_per_unit_usd=90.0,
+                ),
+            ],
+            tax_profiles=[],
+            horizon_months=1,
+        )
+
+
 def test_transfer_income_category_allows_only_ordinary() -> None:
     scheduled_data = {
         "month": 0,

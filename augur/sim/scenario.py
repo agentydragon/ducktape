@@ -357,6 +357,25 @@ class Scenario(BaseModel):
     horizon_months: PositiveInt
 
     @model_validator(mode="after")
+    def _reject_duplicate_initial_lot_purchase_months(self) -> Scenario:
+        seen: dict[tuple[str, str, int], str] = {}
+        duplicates: list[tuple[str, str, int, str, str]] = []
+        for lot in self.initial_lots:
+            key = (lot.agent_id, lot.asset_id, lot.purchase_month_index)
+            previous_lot_id = seen.get(key)
+            if previous_lot_id is not None:
+                duplicates.append((*key, previous_lot_id, lot.lot_id))
+            else:
+                seen[key] = lot.lot_id
+        if duplicates:
+            duplicate_list = ", ".join(
+                f"{agent_id}/{asset_id}@{purchase_month} ({first_lot_id}, {second_lot_id})"
+                for agent_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
+            )
+            raise ValueError(f"duplicate initial lot purchase months for FIFO pool(s): {duplicate_list}")
+        return self
+
+    @model_validator(mode="after")
     def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
         horizon = int(self.horizon_months)
         for sale in self.scheduled_asset_sales:
