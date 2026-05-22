@@ -1,9 +1,9 @@
 # Numba vs Polars Simulator Parity Risks
 
 This tracks simulator behavior differences noticed while reviewing the Numba
-backend before making it the default engine. Series-indexed amount validation
-and duplicate liquidity policies are handled separately by the shared simulator
-input checks.
+backend before making it the default engine. Series-indexed amount validation,
+duplicate liquidity policies, and scheduled sales/property purchases outside the
+scenario horizon are handled separately by the shared simulator input checks.
 
 ## FIFO lot tie-break order
 
@@ -14,18 +14,6 @@ results.
 
 Pin this with a parity test where scenario order is `z_lot`, then `a_lot`, with
 the same purchase month. The consumed lot should be explicit.
-
-## Out-of-horizon scheduled events
-
-Polars ignores scheduled asset sales and property purchases whose month is
-outside the simulated horizon because it filters by active month during the
-monthly loop. Numba writes those months into fixed-size compile-time arrays, so
-future months can raise `IndexError` during compilation and negative months can
-write into Python's negative index slot.
-
-Pin this with validation or parity tests for scheduled sales and property
-purchases at `horizon + 1` and `-1`. Either reject them at scenario validation
-or ignore them consistently.
 
 ## Transfer income-category fidelity
 

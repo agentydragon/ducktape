@@ -201,6 +201,106 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
         )
 
 
+def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
+    with pytest.raises(ValidationError, match=r"scheduled asset sale 'late_sale'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice")],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_lots=[
+                InitialLot(
+                    lot_id="seed",
+                    agent_id="alice",
+                    asset_id="vti",
+                    purchase_month_index=0,
+                    quantity=1.0,
+                    cost_basis_per_unit_usd=100.0,
+                )
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=2,
+                    cause_id="late_sale",
+                    agent_id="alice",
+                    asset_id="vti",
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                    price_per_unit_usd=100.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+    with pytest.raises(ValidationError, match=r"scheduled asset sale 'pre_sale'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice")],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=-1,
+                    cause_id="pre_sale",
+                    agent_id="alice",
+                    asset_id="vti",
+                    quantity=1.0,
+                    proceeds_account_id="checking",
+                    price_per_unit_usd=100.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+
+def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
+    with pytest.raises(ValidationError, match=r"scheduled property purchase 'late_purchase'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=2,
+                    cause_id="late_purchase",
+                    property_id="home",
+                    location_id="san_francisco",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="seller",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=100_000.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+    with pytest.raises(ValidationError, match=r"scheduled property purchase 'pre_purchase'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=-1,
+                    cause_id="pre_purchase",
+                    property_id="home",
+                    location_id="san_francisco",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="seller",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=100_000.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+
 def test_alice_gives_bob_five_dollars_one_rollout() -> None:
     """One scheduled transfer at month 0 moves $5 from Bob to Alice.
     After month 0: Alice $15, Bob $15. The transfer is on the log;

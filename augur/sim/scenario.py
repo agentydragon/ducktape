@@ -356,6 +356,23 @@ class Scenario(BaseModel):
     horizon_months: PositiveInt
 
     @model_validator(mode="after")
+    def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
+        horizon = int(self.horizon_months)
+        for sale in self.scheduled_asset_sales:
+            if not 0 <= sale.month < horizon:
+                raise ValueError(
+                    f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        for purchase in self.scheduled_property_purchases:
+            if not 0 <= purchase.month < horizon:
+                raise ValueError(
+                    f"scheduled property purchase {purchase.cause_id!r} has month {purchase.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:
         seen: set[tuple[str, str]] = set()
         duplicates: set[tuple[str, str]] = set()
