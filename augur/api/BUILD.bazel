@@ -304,6 +304,7 @@ py_test(
 
 py_test(
     name = "server_test",
+    size = "medium",
     srcs = ["server_test.py"],
     data = [
         ":public_fixture_config",
