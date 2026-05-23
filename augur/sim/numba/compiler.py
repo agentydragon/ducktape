@@ -53,9 +53,38 @@ class StringTable:
 
 
 @dataclass(frozen=True)
+class SlotPlan:
+    """Dense shape contract for one compiled simulation.
+
+    Dimensions use the notation from `augur/plans/numba_shape_discipline.md`.
+    Counts that can be absent but are still iterated by the kernel use their
+    allocated sentinel axis size, usually `max(1, actual_count)`.
+    """
+
+    event_months: int
+    snapshot_months: int
+    rollout_count: int
+    cash_count: int
+    lot_count: int
+    tax_profile_count: int
+    capital_gain_agent_count: int
+    tax_link_count: int
+    tax_liability_count: int
+    property_count: int
+    liability_count: int
+    max_transfer_slots: int
+    max_obligation_slots: int
+    scheduled_sale_count: int
+    liquidity_policy_count: int
+    max_liquidity_policy_assets: int
+    max_tax_settlement_slots: int
+
+
+@dataclass(frozen=True)
 class CompiledSimulation:
     horizon_months: int
     rollout_count: int
+    slot_plan: SlotPlan
     strings: tuple[str, ...]
     series_ids: tuple[str, ...]
     external_values: np.ndarray
@@ -169,14 +198,6 @@ class CompiledSimulation:
     liquidity_policy_asset_codes: np.ndarray
     liquidity_policy_asset_series_index: np.ndarray
     liquidity_policy_prefixes: tuple[str, ...]
-    max_transfer_slots: int
-    max_obligation_slots: int
-    max_scheduled_disposition_slots: int
-    max_liquidity_disposition_slots: int
-    max_property_slots: int
-    max_liability_slots: int
-    max_tax_links: int
-    max_tax_settlement_slots: int
 
 
 def compile_simulation(
@@ -356,20 +377,30 @@ def compile_simulation(
         lot_cost_basis_per_unit.append(float(lot.cost_basis_per_unit_usd))
         lot_initial_quantity.append(float(lot.quantity))
 
-    max_transfer_slots = transfer_cause_codes.shape[1] + property_cause_codes.shape[1] + obligation_cause_codes.shape[1]
-    max_obligation_slots = obligation_cause_codes.shape[1]
-    max_scheduled_disposition_slots = max(1, sale_cause_codes.shape[1] * max(1, len(lot_id_codes)))
-    max_liquidity_disposition_slots = max(
-        1,
-        liquidity_policy_asset_codes.shape[0]
-        * max(1, liquidity_policy_asset_codes.shape[1])
-        * max(1, len(lot_id_codes)),
+    slot_plan = SlotPlan(
+        event_months=horizon,
+        snapshot_months=horizon + 1,
+        rollout_count=rollout_count,
+        cash_count=len(cash_initial_balance),
+        lot_count=len(lot_id_codes),
+        tax_profile_count=tax_profile_agent_codes.shape[0],
+        capital_gain_agent_count=capital_gain_agent_codes.shape[0],
+        tax_link_count=max(1, tax_link_profile_index.shape[0]),
+        tax_liability_count=tax_liability_profile_index.shape[0],
+        property_count=property_month.shape[0],
+        liability_count=liability_codes.shape[0],
+        max_transfer_slots=transfer_cause_codes.shape[1],
+        max_obligation_slots=obligation_cause_codes.shape[1],
+        scheduled_sale_count=sale_month.shape[0],
+        liquidity_policy_count=liquidity_policy_asset_codes.shape[0],
+        max_liquidity_policy_assets=liquidity_policy_asset_codes.shape[1],
+        max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),
     )
-    max_tax_settlement_slots = max(1, len(scenario.tax_profiles))
 
     return CompiledSimulation(
         horizon_months=horizon,
         rollout_count=rollout_count,
+        slot_plan=slot_plan,
         strings=tuple(strings.values),
         series_ids=series_ids,
         external_values=external_values,
@@ -483,14 +514,6 @@ def compile_simulation(
         liquidity_policy_asset_codes=liquidity_policy_asset_codes,
         liquidity_policy_asset_series_index=liquidity_policy_asset_series_index,
         liquidity_policy_prefixes=liquidity_policy_prefixes,
-        max_transfer_slots=max_transfer_slots,
-        max_obligation_slots=max_obligation_slots,
-        max_scheduled_disposition_slots=max_scheduled_disposition_slots,
-        max_liquidity_disposition_slots=max_liquidity_disposition_slots,
-        max_property_slots=max(1, property_cause_codes.shape[1]),
-        max_liability_slots=max(1, liability_codes.shape[0]),
-        max_tax_links=max(1, tax_link_profile_index.shape[0]),
-        max_tax_settlement_slots=max_tax_settlement_slots,
     )
 
 

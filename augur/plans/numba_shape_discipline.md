@@ -1,6 +1,24 @@
 # Numba Simulator Shape Discipline Plan
 
-Status: planned.
+Status: first refactor pass applied.
+
+Implemented:
+
+- `SlotPlan` records the compiled dense dimensions in
+  `augur/sim/numba/compiler.py`.
+- `SimulationBuffers` now groups state history and event buffers by semantic
+  family in `augur/sim/numba/engine.py`.
+- `_allocate_buffers()` documents buffer shapes using the notation below and
+  validates all output buffers before invoking the Numba kernel.
+- Scheduled and liquidity lot-disposition buffers use semantic axes instead of
+  flattened sale/policy/asset/lot slots.
+
+Remaining follow-up:
+
+- Product metric fans still build a full `SimulationRun` before projecting
+  metrics. The product service avoids selected-rollout event materialization,
+  but a future native Numba product path could read dense state buffers directly
+  and decode event tables only for selected rollout detail.
 
 This plan records the discipline we want before adding much more economic
 surface area to the Numba simulator. The current dense-array strategy is a good

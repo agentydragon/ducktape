@@ -289,7 +289,8 @@ def _consume_lots_for_dollars(
     out_units: np.ndarray,
     out_basis: np.ndarray,
     out_proceeds: np.ndarray,
-    out_offset: int,
+    out_policy: int,
+    out_asset_idx: int,
 ) -> float:
     if target_dollars <= 0.0 or unit_price <= 0.0:
         return 0.0
@@ -319,11 +320,10 @@ def _consume_lots_for_dollars(
                 cls = 0 if month - lot_purchase_month[best_lot] >= 12 else 1
                 capital_gain_active[profile, cls] = True
                 capital_gain_ytd[profile, cls] += gain
-        slot = out_offset + best_lot
-        out_active[month, slot, rollout_index] = True
-        out_units[month, slot, rollout_index] += units
-        out_basis[month, slot, rollout_index] += basis
-        out_proceeds[month, slot, rollout_index] += proceeds
+        out_active[month, out_policy, out_asset_idx, best_lot, rollout_index] = True
+        out_units[month, out_policy, out_asset_idx, best_lot, rollout_index] += units
+        out_basis[month, out_policy, out_asset_idx, best_lot, rollout_index] += basis
+        out_proceeds[month, out_policy, out_asset_idx, best_lot, rollout_index] += proceeds
         realized += proceeds
     return realized
 
@@ -351,7 +351,7 @@ def _consume_lots_for_units(
     out_units: np.ndarray,
     out_basis: np.ndarray,
     out_proceeds: np.ndarray,
-    out_offset: int,
+    out_sale: int,
 ) -> None:
     remaining_units = target_units
     while remaining_units > 1e-9:
@@ -376,11 +376,10 @@ def _consume_lots_for_units(
                 cls = 0 if month - lot_purchase_month[best_lot] >= 12 else 1
                 capital_gain_active[profile, cls] = True
                 capital_gain_ytd[profile, cls] += gain
-        slot = out_offset + best_lot
-        out_active[month, slot, rollout_index] = True
-        out_units[month, slot, rollout_index] += units
-        out_basis[month, slot, rollout_index] += basis
-        out_proceeds[month, slot, rollout_index] += proceeds
+        out_active[month, out_sale, best_lot, rollout_index] = True
+        out_units[month, out_sale, best_lot, rollout_index] += units
+        out_basis[month, out_sale, best_lot, rollout_index] += basis
+        out_proceeds[month, out_sale, best_lot, rollout_index] += proceeds
         remaining_units -= units
 
 
@@ -675,7 +674,7 @@ def run_simulation_kernel(
                     sched_disp_units,
                     sched_disp_basis,
                     sched_disp_proceeds,
-                    sale * max(1, lot_count),
+                    sale,
                 )
 
             # Year-end tax accruals, computed after scheduled events but before policy events.
@@ -851,7 +850,6 @@ def run_simulation_kernel(
                         unit_price = external_values[series_index, rollout_index, month]
                         if np.isnan(unit_price) or unit_price <= 0.0:
                             continue
-                        offset = ((policy * liquidity_policy_asset_codes.shape[1]) + asset_idx) * max(1, lot_count)
                         realized = _consume_lots_for_dollars(
                             month,
                             rollout_index,
@@ -874,7 +872,8 @@ def run_simulation_kernel(
                             liq_disp_units,
                             liq_disp_basis,
                             liq_disp_proceeds,
-                            offset,
+                            policy,
+                            asset_idx,
                         )
                         remaining_deficit -= realized
 
