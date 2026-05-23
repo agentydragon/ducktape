@@ -209,9 +209,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert "actor_policy_options" not in bootstrap
     assert "default_actor_policy" not in bootstrap
     assert "default_partner_monthly_payment_usd" not in bootstrap
-    assert bootstrap["default_initial_checking_usd"] == 50000
-    assert bootstrap["default_knobs"]["starting_portfolio_usd"] == 150000
-    assert bootstrap["finance_snapshot"]["sp500_proxy_portfolio_usd"] == 150000
+    assert bootstrap["default_initial_checking_usd"] == 250000
+    assert bootstrap["default_knobs"]["starting_portfolio_usd"] == 750000
+    assert bootstrap["finance_snapshot"]["sp500_proxy_portfolio_usd"] == 750000
     assert bootstrap["finance_snapshot"]["concentrated_holdings"][0]["units"] == 1000
 
     scenario_run = _post_json(

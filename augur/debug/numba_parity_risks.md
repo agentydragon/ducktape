@@ -9,11 +9,16 @@ model boundary. Initial tax-lot `purchase_month_index` values must be distinct
 within each `(agent_id, asset_id)` FIFO pool, so sale ordering never depends on a
 backend-specific same-month tie-break.
 
-## Product-level Numba coverage
+## Product-level Numba coverage resolved
 
-The simulator test file is run under both engines, but product projection
-service tests currently rely on the default engine unless `AUGUR_SIM_ENGINE` is
-set. Before switching the default, add a product projection service test target
-that runs with the Numba engine so product API fan, rollout detail, tax, failure,
-and event-table surfaces are covered through the same entrypoint the frontend
-uses.
+The simulator test file and product projection service test file both run under
+both engines:
+
+- `//augur/sim:simulate_test`
+- `//augur/sim:simulate_numba_test`
+- `//augur/product:projection_service_test`
+- `//augur/product:projection_service_numba_test`
+
+This covers the product API fan, selected-rollout detail, tax, failure, and
+event-table surfaces through the same entrypoint the frontend uses. No remaining
+known behavior divergence is tracked here.

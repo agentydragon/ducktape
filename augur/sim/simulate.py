@@ -147,18 +147,44 @@ def _validate_series_indexed_amounts(
 def _series_indexed_amount_uses(scenario: Scenario) -> list[tuple[str, object, tuple[int, ...]]]:
     horizon = int(scenario.horizon_months)
     uses: list[tuple[str, object, tuple[int, ...]]] = []
-    for transfer in scenario.scheduled_transfers:
-        months = (transfer.month,) if 0 <= transfer.month < horizon else ()
-        uses.append((f"scheduled transfer {transfer.cause_id!r}", transfer.amount_usd, months))
-    for transfer in scenario.recurring_transfers:
-        months = tuple(month for month in range(horizon) if transfer.is_active_at(month))
-        uses.append((f"recurring transfer {transfer.cause_id!r}", transfer.amount_usd, months))
-    for obligation in scenario.scheduled_obligations:
-        months = (obligation.month,) if 0 <= obligation.month < horizon else ()
-        uses.append((f"scheduled obligation {obligation.obligation_id!r}", obligation.amount_due_usd, months))
-    for obligation in scenario.recurring_obligations:
-        months = tuple(month for month in range(horizon) if obligation.is_active_at(month))
-        uses.append((f"recurring obligation {obligation.obligation_id!r}", obligation.amount_due_usd, months))
+    for scheduled_transfer in scenario.scheduled_transfers:
+        transfer_months: tuple[int, ...] = (
+            (scheduled_transfer.month,) if 0 <= scheduled_transfer.month < horizon else ()
+        )
+        uses.append(
+            (f"scheduled transfer {scheduled_transfer.cause_id!r}", scheduled_transfer.amount_usd, transfer_months)
+        )
+    for recurring_transfer in scenario.recurring_transfers:
+        recurring_transfer_months = tuple(month for month in range(horizon) if recurring_transfer.is_active_at(month))
+        uses.append(
+            (
+                f"recurring transfer {recurring_transfer.cause_id!r}",
+                recurring_transfer.amount_usd,
+                recurring_transfer_months,
+            )
+        )
+    for scheduled_obligation in scenario.scheduled_obligations:
+        obligation_months: tuple[int, ...] = (
+            (scheduled_obligation.month,) if 0 <= scheduled_obligation.month < horizon else ()
+        )
+        uses.append(
+            (
+                f"scheduled obligation {scheduled_obligation.obligation_id!r}",
+                scheduled_obligation.amount_due_usd,
+                obligation_months,
+            )
+        )
+    for recurring_obligation in scenario.recurring_obligations:
+        recurring_obligation_months = tuple(
+            month for month in range(horizon) if recurring_obligation.is_active_at(month)
+        )
+        uses.append(
+            (
+                f"recurring obligation {recurring_obligation.obligation_id!r}",
+                recurring_obligation.amount_due_usd,
+                recurring_obligation_months,
+            )
+        )
     return uses
 
 

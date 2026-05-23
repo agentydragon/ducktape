@@ -679,8 +679,9 @@ def _metric_matrix(rollouts: tuple[CachedRollout, ...], *, metric: MetricName) -
 
 
 def _percentile(values: np.ndarray, percentiles: tuple[float, ...], *, axis: int) -> np.ndarray:
-    result = np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
-    return cast(np.ndarray, result)
+    return cast(
+        np.ndarray, np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
+    )
 
 
 def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> float:
