@@ -290,6 +290,38 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             splice_entry_imports_started.elapsed(),
         );
     }
+    // Naturalize every moved body up front and cache the per-plan
+    // local renames + post-naturalize body facts. Both
+    // `auto_grown_residual_exports` (entry_exports_and_trim below)
+    // and `plan_module_reference_needs` (the per-plan loop further
+    // down) read the same `ModuleBodyFacts`; computing once here
+    // eliminates a second walk over every moved body. Building the
+    // cache upstream of both consumers also keeps the per-plan loop
+    // free of facts-collection so it can be parallelized later
+    // without re-introducing the duplicate walk.
+    //
+    // The naturalize pass must precede facts collection because the
+    // in-place sym rewrites it performs (`plan.bindings` + heuristic
+    // return-object aliases) change which `(sym, ctxt)` tuples the
+    // body references; auto-grow then sees the post-naturalize set,
+    // which is also what the per-plan loop sees today.
+    let mut naturalized_bodies: Vec<Vec<ModuleItem>> = Vec::with_capacity(module_plans.len());
+    let mut local_renames_by_module: Vec<BTreeMap<String, String>> =
+        Vec::with_capacity(module_plans.len());
+    let mut body_facts_by_module: Vec<ModuleBodyFacts> = Vec::with_capacity(module_plans.len());
+    time_phase!(timings, "module.naturalize_body", {
+        for (index, plan) in module_plans.iter().enumerate() {
+            let mut body = std::mem::take(&mut selected_by_module[index]);
+            let renames = naturalize_module_body(&mut body, plan);
+            naturalized_bodies.push(body);
+            local_renames_by_module.push(renames);
+        }
+    });
+    time_phase!(timings, "module.collect_body_facts", {
+        for body in &naturalized_bodies {
+            body_facts_by_module.push(collect_module_body_facts(body));
+        }
+    });
     time_phase!(timings, "entry_exports_and_trim", {
         for export in entry_exports_for_moved_bindings(
             declarations,
@@ -310,7 +342,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         // modules", importability clause). The grow set excludes
         // names already in entry's source-level exports.
         let auto_grow = auto_grown_residual_exports(
-            &selected_by_module,
+            &body_facts_by_module,
             declaration_by_name,
             binding_assignment,
             pre_existing_entry_exports,
@@ -374,13 +406,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .collect();
 
     for (index, plan) in module_plans.iter().enumerate() {
-        let mut body = std::mem::take(&mut selected_by_module[index]);
-        let local_renames = time_phase!(timings, "module.naturalize_body", {
-            naturalize_module_body(&mut body, plan)
-        });
-        let body_facts = time_phase!(timings, "module.collect_body_facts", {
-            collect_module_body_facts(&body)
-        });
+        let mut body = std::mem::take(&mut naturalized_bodies[index]);
+        let local_renames = std::mem::take(&mut local_renames_by_module[index]);
+        let body_facts = &body_facts_by_module[index];
         let ModuleReferenceNeeds {
             cross_module_imports_by_provider,
             residual_entry_imports,
@@ -390,7 +418,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         } = time_phase!(timings, "module.plan_references", {
             plan_module_reference_needs(
                 index,
-                &body_facts,
+                body_facts,
                 factorization,
                 declaration_by_name,
                 binding_assignment,

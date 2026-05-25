@@ -178,7 +178,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 ///   are imported directly module→module rather than mediated by
 ///   entry.
 pub(super) fn auto_grown_residual_exports(
-    selected_by_module: &[Vec<ModuleItem>],
+    body_facts_by_module: &[ModuleBodyFacts],
     declaration_by_name: &HashMap<Id, usize>,
     binding_assignment: &HashMap<Id, usize>,
     pre_existing_entry_exports: &HashSet<Id>,
@@ -186,8 +186,11 @@ pub(super) fn auto_grown_residual_exports(
     entry_renames: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     let mut needed = BTreeSet::<String>::new();
-    for body in selected_by_module {
-        let facts = collect_module_body_facts(body);
+    // `body_facts_by_module` is precomputed once upstream (see
+    // `lower_chunk`); both this auto-grow pass and the per-plan
+    // reference resolver read the same `ModuleBodyFacts`, so the
+    // body walk is paid exactly once per moved module.
+    for facts in body_facts_by_module {
         for id in &facts.referenced_idents {
             if facts.provided_locals.contains(id) {
                 continue;
