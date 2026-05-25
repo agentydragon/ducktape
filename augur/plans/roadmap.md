@@ -116,60 +116,6 @@ The prior-art audit points to a conservative target shape:
   typed model/evidence/calibration/generator/path identities; the next cleanup
   is to persist real artifacts and validation results behind those IDs.
 
-## Priority 1 — superseded: typed result views
-
-This priority described the typed result-panel contract
-(`data-result-panel-kind` = `distribution` / `trajectory` /
-`accounting_detail`) and the `/inputs` persistent edit surface that
-lived in the deleted scenario_set frontend. The product surface uses
-a much narrower UI shape and a single `MetricFanResponse` +
-`RolloutResponse` API; result-panel typing is no longer load-bearing.
-
-Surviving guardrail: Mantine remains the standard React component
-kit. `MantineProvider` wraps the product shell in `app.jsx`; keep
-migrating remaining controls to Mantine rather than inventing local
-widgets. The deferred multi-scenario comparison feature
-(`augur/sim/TODO.md` "Product UX") will need a comparable typed shape
-when it lands.
-
-## Priority 2 — done: scenario_set browser state retired
-
-The whole scenario_set frontend (its hand-written URL state encoder,
-section overrides, app shell) was deleted in favor of the much narrower
-`ScenarioKey` payload that the product surface consumes. Multi-scenario
-comparison is the only behavioral gap from that surface that survives
-as a forward-looking item; see `augur/sim/TODO.md` "Product UX".
-
-## Priority 3 — done: sampled PE / tender timing / crypto
-
-All three variance sources are now sampled, not flat:
-
-- **PE valuation** is sampled per-issuer via `PreSampledPrivateEquitySampler`
-  consuming a JSONL trajectory artifact from the gaffer-private
-  joint-fit pipeline (5-15 historical tenders → posterior over price ×
-  timing). The product wire exposes `pe_tender_policy` (LNW floor +
-  optional inflation indexing) and the sim engine drains lots FIFO at
-  each tender event.
-- **Tender timing** rides in the same JSONL artifact as sampled
-  `private_equity_sale_opportunity:<issuer>` event streams. Two
-  rollouts of the same scenario now see different tender months.
-- **Crypto** flows as `crypto:<symbol>` factors through the VECM joint
-  fit (BTC + ETH wired in `evidence_data.py`; `_latest_factor_value`
-  resolves crypto:btc → `btc_close_latest` etc.). The calibrated blob
-  at `augur/fit/calibrated/trained_vecm.npz` includes their
-  posteriors. Crypto holdings flow through `portfolio.holdings` as
-  `cryptocurrency` `security_kind` and are sellable through the
-  liquidity `crypto` bucket.
-
-Remaining open follow-ups in this area:
-
-- **PE public-market and acquisition regimes** (post-IPO unrestricted
-  shares; acquisition buyout). Tracked in `augur/sim/TODO.md`
-  "Private equity".
-- **Mortgage-rate path sampling** (today: single PMMS survey number;
-  no `mortgage30:*` series in the VECM). Tracked in `augur/sim/TODO.md`
-  "Exogenous sampling / VECM".
-
 ## Priority 4: Tax, Basis, And Accounting State
 
 Tax and accounting need to become a first-class layer rather than scattered
