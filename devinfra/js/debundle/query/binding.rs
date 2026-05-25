@@ -97,6 +97,13 @@ pub struct AssignArgs {
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
 
+    /// Path to `owner_graph.json` (debundler analysis output). Used by
+    /// the default-on realizability validation. Omit only when paired
+    /// with `--no-validate` / `--force` (then the edit is committed
+    /// without a gate check).
+    #[arg(long = "graph")]
+    pub owner_graph_path: Option<PathBuf>,
+
     /// Binding name (the value of `selector.binding.name` in the spec).
     pub name: String,
 
@@ -109,9 +116,21 @@ pub struct AssignArgs {
     #[arg(long = "rename")]
     pub rename: Option<String>,
 
-    /// Print the planned write but do not modify any files.
+    /// Print the planned write but do not modify any files. Still
+    /// runs validation when `--graph` is supplied.
     #[arg(long = "dry-run", default_value_t = false)]
     pub dry_run: bool,
+
+    /// Skip realizability validation and write the edit unconditionally.
+    /// Use when the validator's diagnostic is a known false positive
+    /// or when committing a partial change to be repaired in a
+    /// follow-up. Identical semantics to `--no-validate`.
+    #[arg(long = "force", default_value_t = false)]
+    pub force: bool,
+
+    /// Alias for `--force` with clearer intent. Skips validation.
+    #[arg(long = "no-validate", default_value_t = false)]
+    pub no_validate: bool,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -120,12 +139,25 @@ pub struct UnassignArgs {
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
 
+    /// Path to `owner_graph.json`. See `AssignArgs::owner_graph_path`.
+    #[arg(long = "graph")]
+    pub owner_graph_path: Option<PathBuf>,
+
     /// Binding name (the value of `selector.binding.name` in the spec).
     pub name: String,
 
-    /// Print the planned change but do not modify any files.
+    /// Print the planned change but do not modify any files. Still
+    /// runs validation when `--graph` is supplied.
     #[arg(long = "dry-run", default_value_t = false)]
     pub dry_run: bool,
+
+    /// Skip realizability validation. See `AssignArgs::force`.
+    #[arg(long = "force", default_value_t = false)]
+    pub force: bool,
+
+    /// Alias for `--force`. See `AssignArgs::no_validate`.
+    #[arg(long = "no-validate", default_value_t = false)]
+    pub no_validate: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -191,6 +223,15 @@ pub struct AssignReport {
     pub new_home: BindingHome,
     pub created_destination_file: bool,
     pub dry_run: bool,
+    /// `true` if the edit was actually written. `false` when
+    /// `dry_run` is set, when validation failed without `--force`, or
+    /// when the edit was a no-op.
+    pub written: bool,
+    /// Result of the realizability gate check, when one was run.
+    /// `None` means validation was skipped (`--force`/`--no-validate`
+    /// or no `--graph` supplied).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<super::validation::ValidationReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -198,6 +239,9 @@ pub struct UnassignReport {
     pub binding: String,
     pub previous_home: Option<BindingHome>,
     pub dry_run: bool,
+    pub written: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation: Option<super::validation::ValidationReport>,
 }
 
 pub fn run(command: BindingCommand) -> Result<()> {
@@ -324,14 +368,51 @@ pub fn assign(args: &AssignArgs) -> Result<AssignReport> {
         renamed_to: args.rename.clone(),
     };
 
-    if !args.dry_run {
+    // Run realizability validation unless skipped. Validation is the
+    // default; the user opts out with `--force` / `--no-validate`.
+    let validation_skipped = args.force || args.no_validate;
+    let validation = if validation_skipped {
+        None
+    } else if let Some(graph_path) = &args.owner_graph_path {
+        let report = load_graph(graph_path)?;
+        let edit = super::validation::ProposedEdit::Assign {
+            binding: args.name.clone(),
+            module: args.module.clone(),
+        };
+        let result = super::validation::validate_spec_edit(&report, &args.modules_root, &edit)?;
+        if !result.is_ok() {
+            // Render the diagnostic to stderr and refuse the write.
+            // The caller (CLI entry point) will surface our anyhow
+            // error to stderr too; the rendered diagnostic gives the
+            // actionable detail.
+            let rendered = result.render_diagnostic(&edit, Some(&args.module));
+            eprintln!("{}", rendered.trim_end());
+            bail!(
+                "validation failed: {} cycle(s), {} atomic-unit conflict(s), {} duplicate claim(s), {} unresolved binding(s). Re-run with --force / --no-validate to commit anyway.",
+                result.cycles.len(),
+                result.atomic_unit_conflicts.len(),
+                result.duplicate_claims.len(),
+                result.unresolved_bindings.len(),
+            );
+        }
+        Some(result)
+    } else {
+        bail!(
+            "validation requires --graph <owner_graph.json>. Pass --no-validate (or --force) to skip the gate."
+        );
+    };
+
+    let written = if args.dry_run {
+        false
+    } else {
         // Remove from previous home (if any).
         if let Some(home) = &previous_home {
             remove_binding_from_file(Path::new(&home.file), &args.name, home.source)?;
         }
         // Append to destination.
         append_member_to_module(&destination_file, &new_member)?;
-    }
+        true
+    };
 
     Ok(AssignReport {
         binding: args.name.clone(),
@@ -339,6 +420,8 @@ pub fn assign(args: &AssignArgs) -> Result<AssignReport> {
         new_home,
         created_destination_file,
         dry_run: args.dry_run,
+        written,
+        validation,
     })
 }
 
@@ -351,13 +434,46 @@ pub fn unassign(args: &UnassignArgs) -> Result<UnassignReport> {
             args.modules_root.display()
         );
     };
-    if !args.dry_run {
+
+    let validation_skipped = args.force || args.no_validate;
+    let validation = if validation_skipped {
+        None
+    } else if let Some(graph_path) = &args.owner_graph_path {
+        let report = load_graph(graph_path)?;
+        let edit = super::validation::ProposedEdit::Unassign {
+            binding: args.name.clone(),
+        };
+        let result = super::validation::validate_spec_edit(&report, &args.modules_root, &edit)?;
+        if !result.is_ok() {
+            let rendered = result.render_diagnostic(&edit, None);
+            eprintln!("{}", rendered.trim_end());
+            bail!(
+                "validation failed: {} cycle(s), {} atomic-unit conflict(s), {} duplicate claim(s), {} unresolved binding(s). Re-run with --force / --no-validate to commit anyway.",
+                result.cycles.len(),
+                result.atomic_unit_conflicts.len(),
+                result.duplicate_claims.len(),
+                result.unresolved_bindings.len(),
+            );
+        }
+        Some(result)
+    } else {
+        bail!(
+            "validation requires --graph <owner_graph.json>. Pass --no-validate (or --force) to skip the gate."
+        );
+    };
+
+    let written = if args.dry_run {
+        false
+    } else {
         remove_binding_from_file(Path::new(&home.file), &args.name, home.source)?;
-    }
+        true
+    };
     Ok(UnassignReport {
         binding: args.name.clone(),
         previous_home,
         dry_run: args.dry_run,
+        written,
+        validation,
     })
 }
 
@@ -749,14 +865,22 @@ mod tests {
         );
         let report = assign(&AssignArgs {
             modules_root: modules_root.clone(),
+            owner_graph_path: None,
             name: "XOe".to_string(),
             module: "runtime/plugins".to_string(),
             rename: Some("PluginSettingsAccessor".to_string()),
             dry_run: false,
+            // `--force` skips validation; the unit tests for the
+            // gated path live in e2e where a real owner graph is
+            // available.
+            force: true,
+            no_validate: false,
         })
         .unwrap();
         assert!(report.created_destination_file);
         assert_eq!(report.new_home.module_path, "runtime/plugins");
+        assert!(report.written);
+        assert!(report.validation.is_none());
         // Previous file dropped because it became empty.
         assert!(!modules_root.join("runtime/old.yaml").exists());
         // New file present.
@@ -774,13 +898,17 @@ mod tests {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let report = assign(&AssignArgs {
             modules_root: modules_root.clone(),
+            owner_graph_path: None,
             name: "XOe".to_string(),
             module: "runtime/plugins".to_string(),
             rename: None,
             dry_run: true,
+            force: true,
+            no_validate: false,
         })
         .unwrap();
         assert!(report.dry_run);
+        assert!(!report.written);
         assert!(!modules_root.join("runtime/plugins.yaml").exists());
     }
 
@@ -789,13 +917,38 @@ mod tests {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let err = assign(&AssignArgs {
             modules_root,
+            owner_graph_path: None,
             name: "XOe".to_string(),
             module: "/etc/passwd".to_string(),
             rename: None,
             dry_run: false,
+            force: true,
+            no_validate: false,
         })
         .err();
         assert!(err.is_some());
+    }
+
+    #[test]
+    fn assign_without_graph_or_force_refuses_to_validate_blind() {
+        let (_dir, _graph_path, modules_root) = fixture("XOe");
+        let err = assign(&AssignArgs {
+            modules_root,
+            owner_graph_path: None,
+            name: "XOe".to_string(),
+            module: "runtime/plugins".to_string(),
+            rename: None,
+            dry_run: false,
+            // No --force, no --no-validate, no --graph → must bail.
+            force: false,
+            no_validate: false,
+        })
+        .expect_err("expected validation-without-graph to bail");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("--graph") && msg.contains("--no-validate"),
+            "expected helpful diagnostic, got: {msg}",
+        );
     }
 
     #[test]
@@ -807,11 +960,15 @@ mod tests {
         );
         let report = unassign(&UnassignArgs {
             modules_root: modules_root.clone(),
+            owner_graph_path: None,
             name: "XOe".to_string(),
             dry_run: false,
+            force: true,
+            no_validate: false,
         })
         .unwrap();
         assert_eq!(report.previous_home.unwrap().module_path, "runtime/plugins");
+        assert!(report.written);
         let remaining = read_module_file(&modules_root.join("runtime/plugins.yaml")).unwrap();
         assert_eq!(remaining.members.len(), 1);
         assert_eq!(remaining.members[0].selector.binding.name, "keep_me");
@@ -822,8 +979,11 @@ mod tests {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let err = unassign(&UnassignArgs {
             modules_root,
+            owner_graph_path: None,
             name: "XOe".to_string(),
             dry_run: false,
+            force: true,
+            no_validate: false,
         })
         .err();
         assert!(err.is_some());

@@ -8,6 +8,8 @@ See `guide.md` for:
 
 - Pipeline mode (`debundle run`).
 - Binding queries and edits (`debundle binding describe|show-code|assign|unassign`).
+  Mutating commands validate against the realizability gate by
+  default; pass `--force` / `--no-validate` to bypass.
 - SCC queries (`debundle scc`).
 - Cluster queries (`debundle cluster`).
 - The legacy planning surface (`debundle peel ...`).

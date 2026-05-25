@@ -99,21 +99,63 @@ debundle binding show-code \
 Move a binding into a specific module's YAML. Creates the YAML if
 missing, removes the binding from its previous home (and drops the old
 YAML if it becomes empty). Pass `--rename <export-name>` to set the
-export name; otherwise the binding name is used. `--dry-run` prints the
-planned write without modifying disk.
+export name; otherwise the binding name is used.
+
+**Validation is on by default.** Before writing the edit, `assign`
+runs the same realizability gate the pipeline runs — atomic-unit
+splits, cycles in the constraining-edge subgraph, duplicate claims,
+and unresolved binding names all refuse the write with an actionable
+diagnostic on stderr. Pass `--graph "$GRAPH"` so the validator has
+the owner graph to consult:
 
 ```bash
 debundle binding assign \
+    --graph "$GRAPH" \
     --modules "$MODULES" \
     --rename PluginSettingsAccessor \
     XOe runtime/plugins
 bazelisk run //tana/re/web/78d928dca7:regen_js
 ```
 
+Flags that change the default flow:
+
+- `--dry-run` — runs validation but does not write the spec edit.
+  Use to preview before committing.
+- `--force` — skips validation and writes unconditionally. Use when
+  the validator's diagnostic is a known false positive, or when
+  staging a partial edit you intend to repair in a follow-up.
+- `--no-validate` — alias for `--force` with clearer intent. Same
+  semantics: skip the gate.
+
+If neither `--graph` nor `--force` / `--no-validate` is supplied, the
+command exits nonzero with a hint — running blind is never the
+default.
+
+Example of a failed validation (cycle):
+
+```text
+$ debundle binding assign --graph $GRAPH --modules $MODULES \
+      isExternallyManagedFeatureFlagDefinition domains/system/ids/feature_flags
+Error: proposed edit creates a realizability cycle:
+
+  Cycle (3 modules, 2 cut edges):
+    domains/system/ids
+    domains/system/ids/feature_flags     [target of this assign]
+    domains/system/schemas
+
+  Top cut edges:
+     40  domains/system/ids -> domains/system/schemas
+      1  domains/system/ids/feature_flags -> domains/system/ids
+
+  Re-run with --force to commit anyway.
+```
+
 ### `debundle binding unassign <name>`
 
 Inverse of `assign`. Drop the binding from its module so it falls back
-into residual on the next pipeline run.
+into residual on the next pipeline run. The same default-on
+realizability validation runs before the write; `--force` /
+`--no-validate` / `--dry-run` behave as in `assign`.
 
 ## SCC Queries
 

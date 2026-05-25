@@ -14,6 +14,7 @@ pub mod binding;
 pub mod cluster;
 pub mod io;
 pub mod scc;
+pub mod validation;
 
 use anyhow::{Context, Result};
 use clap::Subcommand;

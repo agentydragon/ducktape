@@ -510,6 +510,7 @@ rust_library(
         "query/io.rs",
         "query/mod.rs",
         "query/scc.rs",
+        "query/validation.rs",
     ],
     crate_root = "query/mod.rs",
     edition = "2024",
