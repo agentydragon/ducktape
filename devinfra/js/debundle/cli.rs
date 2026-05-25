@@ -2,13 +2,14 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use peel::{PeelArgs, run_peel};
 use pipeline::{TransformArgs, run_transform_cli};
+use query::{QueryCommand, binding, cluster, scc};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "debundle",
     version,
     about = "Debundle JavaScript bundles and inspect peelable module work.",
-    long_about = "Runs the debundle transform pipeline and exposes JSON peel-planning queries over generated owner graphs and spec modules."
+    long_about = "Runs the debundle transform pipeline and exposes JSON queries / spec edits over the generated owner graph and spec modules. \n\nThe `peel` subcommand group is preserved for backwards-compatible planning workflows. The orthogonal top-level subcommands (`binding`, `scc`, `cluster`) are the canonical surface for everyday spec authoring."
 )]
 pub struct DebundleArgs {
     #[command(subcommand)]
@@ -21,6 +22,13 @@ enum DebundleCommand {
     Run(TransformArgs),
     /// Inspect peel-planning evidence from an owner graph and spec modules tree.
     Peel(PeelArgs),
+    /// Inspect or edit one binding (spec record, source, module assignment).
+    #[command(subcommand)]
+    Binding(binding::BindingCommand),
+    /// Inspect strongly-connected components in the module-quotient graph.
+    Scc(scc::SccArgs),
+    /// Inspect 1-hop neighbors of a module or binding in the quotient graph.
+    Cluster(cluster::ClusterArgs),
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
@@ -31,6 +39,9 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             Ok(())
         }
         DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
+        DebundleCommand::Binding(args) => query::run_query(QueryCommand::Binding(args)),
+        DebundleCommand::Scc(args) => query::run_query(QueryCommand::Scc(args)),
+        DebundleCommand::Cluster(args) => query::run_query(QueryCommand::Cluster(args)),
     }
 }
 
@@ -47,7 +58,10 @@ mod tests {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
         match parsed.command {
             super::DebundleCommand::Run(args) => args,
-            super::DebundleCommand::Peel(_) => panic!("expected run command"),
+            super::DebundleCommand::Peel(_)
+            | super::DebundleCommand::Binding(_)
+            | super::DebundleCommand::Scc(_)
+            | super::DebundleCommand::Cluster(_) => panic!("expected run command"),
         }
     }
 
@@ -123,5 +137,50 @@ mod tests {
         ])
         .expect("parse cli");
         assert!(matches!(parsed.command, super::DebundleCommand::Peel(_)));
+    }
+
+    #[test]
+    fn parse_binding_describe_command() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "binding",
+            "describe",
+            "--graph",
+            "owner_graph.json",
+            "--modules",
+            "modules",
+            "XOe",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Binding(_)));
+    }
+
+    #[test]
+    fn parse_scc_command_with_filters() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "scc",
+            "--graph",
+            "owner_graph.json",
+            "--singletons-only",
+            "--residual-only",
+            "--ndjson",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Scc(_)));
+    }
+
+    #[test]
+    fn parse_cluster_command() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "cluster",
+            "--graph",
+            "owner_graph.json",
+            "--module",
+            "runtime/plugins",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Cluster(_)));
     }
 }

@@ -15,7 +15,7 @@ fn main() -> ExitCode {
     GLOBALS.set(&globals, || match real_main() {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{error:#}");
             ExitCode::from(1)
         }
     })

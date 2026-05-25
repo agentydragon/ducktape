@@ -126,3 +126,23 @@ rust_test(
         "@rules_rust//tools/runfiles",
     ],
 )
+
+# End-to-end coverage for the orthogonal query CLI surface
+# (`debundle binding`, `debundle scc`, `debundle cluster`). The
+# tests fork the debundle binary against a real pipeline fixture
+# and parse its JSON output so the contract scripts depend on stays
+# pinned.
+rust_test(
+    name = "query_cli_test",
+    srcs = ["query_cli_test.rs"],
+    crate_root = "query_cli_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "@crates//:serde_json",
+    ],
+)

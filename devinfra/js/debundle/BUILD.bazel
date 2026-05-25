@@ -503,6 +503,40 @@ rust_test(
 )
 
 rust_library(
+    name = "query",
+    srcs = [
+        "query/binding.rs",
+        "query/cluster.rs",
+        "query/io.rs",
+        "query/mod.rs",
+        "query/scc.rs",
+    ],
+    crate_root = "query/mod.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":spec",
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:swc_atoms",
+    ],
+)
+
+rust_test(
+    name = "query_test",
+    crate = ":query",
+    edition = "2024",
+    deps = [
+        "@crates//:swc_atoms",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
     name = "cli",
     srcs = ["cli.rs"],
     crate_name = "debundle_cli",
@@ -511,6 +545,7 @@ rust_library(
     deps = [
         ":peel",
         ":pipeline",
+        ":query",
         "@crates//:anyhow",
         "@crates//:clap",
     ],

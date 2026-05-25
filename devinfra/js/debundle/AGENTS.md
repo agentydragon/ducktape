@@ -6,6 +6,13 @@
 > <DESIGN.md>. Read that first when working on the splitting
 > pipeline. This file documents agent-facing operating principles
 > on top of the design.
+>
+> The canonical CLI surface (`debundle binding`, `debundle scc`,
+> `debundle cluster`, plus the legacy `peel` group) and the shell
+> recipes downstream tooling depends on live in <CLI.md>. Reach
+> for those subcommands before grepping reports by hand — they
+> are the orthogonal entry points the rest of the ecosystem
+> composes against.
 
 ## Mission
 
