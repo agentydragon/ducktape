@@ -187,10 +187,28 @@ pub fn validate_spec_edit(
     modules_root: &Path,
     edit: &ProposedEdit,
 ) -> Result<ValidationReport> {
+    validate_spec_edits(report, modules_root, std::slice::from_ref(edit))
+}
+
+/// Batch form: applies every edit in `edits` to the in-memory spec
+/// snapshot in sequence, then runs the realizability gate over the
+/// final state. The single-edit `validate_spec_edit` delegates to
+/// this with a one-element slice; `binding move` calls it directly.
+///
+/// Atomicity contract: either the whole batch validates or
+/// `ValidationReport.is_ok()` is `false` and no write should happen.
+/// Earlier edits in `edits` are visible to later edits — the
+/// validator sees the post-batch claim state, not per-step
+/// intermediate states.
+pub fn validate_spec_edits(
+    report: &OwnerGraphReport,
+    modules_root: &Path,
+    edits: &[ProposedEdit],
+) -> Result<ValidationReport> {
     // Step 1: load all current YAML claims, then apply the proposed
-    // edit. The result is a `name → Vec<module>` map (Vec to catch
-    // duplicates). Residual entries are skipped — the pipeline does
-    // not treat residual paths as claims.
+    // edits in order. The result is a `name → Vec<module>` map (Vec
+    // to catch duplicates). Residual entries are skipped — the
+    // pipeline does not treat residual paths as claims.
     let mut claims: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for path in collect_module_files(modules_root)
         .with_context(|| format!("walking {}", modules_root.display()))?
@@ -214,17 +232,23 @@ pub fn validate_spec_edit(
 
     let mut report_out = ValidationReport::default();
 
-    // Apply the edit in-memory. `assign` overrides; `unassign` clears.
-    let edit_binding = edit.binding().to_string();
-    match edit {
-        ProposedEdit::Assign { binding, module } => {
-            claims.insert(binding.clone(), vec![module.clone()]);
-            if is_residual_module_path(module) {
-                report_out.residual_destinations.push(module.clone());
+    // Apply each edit in-memory. `assign` overrides; `unassign`
+    // clears. Later edits in the batch overwrite earlier ones for
+    // the same binding.
+    let mut edit_bindings: Vec<String> = Vec::with_capacity(edits.len());
+    for edit in edits {
+        let edit_binding = edit.binding().to_string();
+        edit_bindings.push(edit_binding.clone());
+        match edit {
+            ProposedEdit::Assign { binding, module } => {
+                claims.insert(binding.clone(), vec![module.clone()]);
+                if is_residual_module_path(module) {
+                    report_out.residual_destinations.push(module.clone());
+                }
             }
-        }
-        ProposedEdit::Unassign { binding } => {
-            claims.remove(binding);
+            ProposedEdit::Unassign { binding } => {
+                claims.remove(binding);
+            }
         }
     }
 
@@ -244,25 +268,21 @@ pub fn validate_spec_edit(
         }
     }
 
-    // Step 3: confirm the edit's binding is actually known to the
+    // Step 3: confirm each edit's binding is actually known to the
     // graph. Otherwise the realizability gate would silently pass and
     // the user would only learn later that nothing moved.
-    let owners_for_edit: Vec<usize> = report
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, node)| {
+    for edit_binding in &edit_bindings {
+        let any_owner = report.nodes.iter().any(|node| {
             node.declared_bindings
                 .iter()
                 .any(|b| b.binding.as_ref() == edit_binding.as_str())
-                .then_some(idx)
-        })
-        .collect();
-    if owners_for_edit.is_empty() {
-        report_out.unresolved_bindings.push(edit_binding.clone());
-        // Still continue with the rest of the checks so the report is
-        // complete — the caller may want to see other latent issues
-        // even when one edit name doesn't resolve.
+        });
+        if !any_owner && !report_out.unresolved_bindings.contains(edit_binding) {
+            report_out.unresolved_bindings.push(edit_binding.clone());
+            // Still continue with the rest of the checks so the
+            // report is complete — the caller may want to see other
+            // latent issues even when one edit name doesn't resolve.
+        }
     }
 
     // Step 4: allocate ModuleIds. Index 0 is reserved for residual;
@@ -344,11 +364,12 @@ pub fn validate_spec_edit(
             })
             .collect();
         let cut_edges = collect_cut_edges(&owner_graph, &partition, &scc, &module_path_for_id);
-        let touches_edit = if let Some(target_module) = target_module_path(edit) {
-            modules.iter().any(|m| m == target_module)
-        } else {
-            false
-        };
+        // Cycle touches the edit if any module in the cycle is the
+        // destination of any edit in the batch.
+        let edit_targets: Vec<&str> = edits.iter().filter_map(target_module_path).collect();
+        let touches_edit = edit_targets
+            .iter()
+            .any(|target| modules.iter().any(|m| m == *target));
         report_out.cycles.push(CycleDiagnostic {
             modules,
             cut_edges,

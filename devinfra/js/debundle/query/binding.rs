@@ -45,11 +45,20 @@ pub enum BindingCommand {
     /// occupy in the input chunk.
     #[command(name = "show-code")]
     ShowCode(ShowCodeArgs),
+    /// Move one or more bindings into named modules in a single
+    /// atomic batch. Single-op shape (`<name> <module>`) is the
+    /// backward-compatible drop-in for `assign`; batch syntax
+    /// (`--op X=foo --op Y=foo`, `X=foo Y=foo`, `--batch ops.txt`)
+    /// lets cycle-aware multi-move plans land together. Shares the
+    /// realizability validator with `assign` / `unassign`.
+    Move(super::move_batch::MoveArgs),
     /// Move the binding into a named module. Creates the YAML if
     /// missing, removes the binding from its previous home.
+    /// Single-op alias for `move`.
     Assign(AssignArgs),
     /// Remove the binding from its current module. After
     /// re-running the pipeline, it ends up in the residual.
+    /// Single-op alias for `move <name>=-`.
     Unassign(UnassignArgs),
 }
 
@@ -248,6 +257,7 @@ pub fn run(command: BindingCommand) -> Result<()> {
     match command {
         BindingCommand::Describe(args) => print_json(&describe(&args)?),
         BindingCommand::ShowCode(args) => print_json(&show_code(&args)?),
+        BindingCommand::Move(args) => super::move_batch::run(args),
         BindingCommand::Assign(args) => print_json(&assign(&args)?),
         BindingCommand::Unassign(args) => print_json(&unassign(&args)?),
     }

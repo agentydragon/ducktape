@@ -13,6 +13,7 @@
 pub mod binding;
 pub mod cluster;
 pub mod io;
+pub mod move_batch;
 pub mod scc;
 pub mod validation;
 

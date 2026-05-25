@@ -509,6 +509,7 @@ rust_library(
         "query/cluster.rs",
         "query/io.rs",
         "query/mod.rs",
+        "query/move_batch.rs",
         "query/scc.rs",
         "query/validation.rs",
     ],
