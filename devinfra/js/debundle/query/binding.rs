@@ -45,11 +45,18 @@ pub enum BindingCommand {
     /// occupy in the input chunk.
     #[command(name = "show-code")]
     ShowCode(ShowCodeArgs),
-    /// Move the binding into a named module. Creates the YAML if
-    /// missing, removes the binding from its previous home.
+    /// Move one or more bindings into named modules in a single
+    /// atomic batch. Single-op shape (`<name> <module>`) is the
+    /// backward-compatible drop-in for `assign`; batch syntax
+    /// (`--op X=foo --op Y=foo`, `X=foo Y=foo`, `--batch ops.txt`)
+    /// lets cycle-aware multi-move plans land together.
+    Move(super::move_batch::MoveArgs),
+    /// Move the binding into a named module. Single-op alias for
+    /// `move`; kept for backward compatibility.
     Assign(AssignArgs),
     /// Remove the binding from its current module. After
     /// re-running the pipeline, it ends up in the residual.
+    /// Single-op alias for `move <name>=-`.
     Unassign(UnassignArgs),
 }
 
@@ -93,6 +100,14 @@ pub struct ShowCodeArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct AssignArgs {
+    /// Optional path to `owner_graph.json` (debundler analysis
+    /// output). When supplied, the same batch-validation check
+    /// `binding move` runs is applied here too. Omit to skip
+    /// validation; pair with `--force` if a graph is on hand but
+    /// you intentionally want to bypass.
+    #[arg(long = "graph")]
+    pub owner_graph_path: Option<PathBuf>,
+
     /// Root of emitted-module `*.yaml` spec files.
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
@@ -112,10 +127,19 @@ pub struct AssignArgs {
     /// Print the planned write but do not modify any files.
     #[arg(long = "dry-run", default_value_t = false)]
     pub dry_run: bool,
+
+    /// Bypass realizability validation. Equivalent to `binding move
+    /// --force <name>=<module>`.
+    #[arg(long = "force", default_value_t = false)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct UnassignArgs {
+    /// Optional path to `owner_graph.json`; see `AssignArgs::graph`.
+    #[arg(long = "graph")]
+    pub owner_graph_path: Option<PathBuf>,
+
     /// Root of emitted-module `*.yaml` spec files.
     #[arg(long = "modules")]
     pub modules_root: PathBuf,
@@ -126,6 +150,11 @@ pub struct UnassignArgs {
     /// Print the planned change but do not modify any files.
     #[arg(long = "dry-run", default_value_t = false)]
     pub dry_run: bool,
+
+    /// Bypass realizability validation. Same semantics as
+    /// `binding move --force`.
+    #[arg(long = "force", default_value_t = false)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,6 +233,7 @@ pub fn run(command: BindingCommand) -> Result<()> {
     match command {
         BindingCommand::Describe(args) => print_json(&describe(&args)?),
         BindingCommand::ShowCode(args) => print_json(&show_code(&args)?),
+        BindingCommand::Move(args) => super::move_batch::run(args),
         BindingCommand::Assign(args) => print_json(&assign(&args)?),
         BindingCommand::Unassign(args) => print_json(&unassign(&args)?),
     }
@@ -324,6 +354,23 @@ pub fn assign(args: &AssignArgs) -> Result<AssignReport> {
         renamed_to: args.rename.clone(),
     };
 
+    // Single-op invocations route through the batch's validator so
+    // `assign --graph ...` enforces the same realizability check as
+    // `binding move`.
+    if let Some(graph_path) = &args.owner_graph_path {
+        if !args.force {
+            let op = super::move_batch::MoveOp {
+                name: args.name.clone(),
+                destination: Some(args.module.clone()),
+            };
+            super::move_batch::validate_single_op(
+                std::slice::from_ref(&op),
+                graph_path,
+                &args.modules_root,
+            )?;
+        }
+    }
+
     if !args.dry_run {
         // Remove from previous home (if any).
         if let Some(home) = &previous_home {
@@ -351,6 +398,19 @@ pub fn unassign(args: &UnassignArgs) -> Result<UnassignReport> {
             args.modules_root.display()
         );
     };
+    if let Some(graph_path) = &args.owner_graph_path {
+        if !args.force {
+            let op = super::move_batch::MoveOp {
+                name: args.name.clone(),
+                destination: None,
+            };
+            super::move_batch::validate_single_op(
+                std::slice::from_ref(&op),
+                graph_path,
+                &args.modules_root,
+            )?;
+        }
+    }
     if !args.dry_run {
         remove_binding_from_file(Path::new(&home.file), &args.name, home.source)?;
     }
@@ -748,11 +808,13 @@ mod tests {
             "members:\n  - selector:\n      binding:\n        name: XOe\n",
         );
         let report = assign(&AssignArgs {
+            owner_graph_path: None,
             modules_root: modules_root.clone(),
             name: "XOe".to_string(),
             module: "runtime/plugins".to_string(),
             rename: Some("PluginSettingsAccessor".to_string()),
             dry_run: false,
+            force: false,
         })
         .unwrap();
         assert!(report.created_destination_file);
@@ -773,11 +835,13 @@ mod tests {
     fn assign_dry_run_does_not_touch_files() {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let report = assign(&AssignArgs {
+            owner_graph_path: None,
             modules_root: modules_root.clone(),
             name: "XOe".to_string(),
             module: "runtime/plugins".to_string(),
             rename: None,
             dry_run: true,
+            force: false,
         })
         .unwrap();
         assert!(report.dry_run);
@@ -788,11 +852,13 @@ mod tests {
     fn assign_rejects_absolute_destination() {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let err = assign(&AssignArgs {
+            owner_graph_path: None,
             modules_root,
             name: "XOe".to_string(),
             module: "/etc/passwd".to_string(),
             rename: None,
             dry_run: false,
+            force: false,
         })
         .err();
         assert!(err.is_some());
@@ -806,9 +872,11 @@ mod tests {
             "members:\n  - selector:\n      binding:\n        name: XOe\n  - selector:\n      binding:\n        name: keep_me\n",
         );
         let report = unassign(&UnassignArgs {
+            owner_graph_path: None,
             modules_root: modules_root.clone(),
             name: "XOe".to_string(),
             dry_run: false,
+            force: false,
         })
         .unwrap();
         assert_eq!(report.previous_home.unwrap().module_path, "runtime/plugins");
@@ -821,9 +889,11 @@ mod tests {
     fn unassign_errors_when_binding_is_unassigned() {
         let (_dir, _graph_path, modules_root) = fixture("XOe");
         let err = unassign(&UnassignArgs {
+            owner_graph_path: None,
             modules_root,
             name: "XOe".to_string(),
             dry_run: false,
+            force: false,
         })
         .err();
         assert!(err.is_some());

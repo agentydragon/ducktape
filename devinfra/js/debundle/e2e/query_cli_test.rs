@@ -250,6 +250,485 @@ fn binding_assign_dry_run_does_not_modify_disk() {
     assert!(!modules_root.join("consumers/helper.yaml").exists());
 }
 
+// ---------------------------------------------------------------------------
+// `binding move` (batched, validated)
+// ---------------------------------------------------------------------------
+
+/// Writes a hand-built `owner_graph.json` plus minimal modules root.
+/// `nodes` is `(owner_id, binding, destination_module_id)`; `edges`
+/// is `(source_owner_id, target_owner_id)`. Owner ids start at
+/// `owner:0` so the graph round-trips through the JSON schema the
+/// real pipeline emits.
+fn write_synthetic_graph(
+    dir: &std::path::Path,
+    chunk_id: &str,
+    nodes: &[(&str, &str, &str)],
+    edges: &[(&str, &str)],
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let graph_path = dir.join("owner_graph.json");
+    let modules_root = dir.join("spec/modules");
+    std::fs::create_dir_all(&modules_root).unwrap();
+    let node_json: Vec<Value> = nodes
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, binding, dest))| {
+            serde_json::json!({
+                "id": id,
+                "statement_ordinal": idx + 1,
+                "source_location": {
+                    "source_path": "src.js",
+                    "start_line": idx + 1,
+                    "end_line": idx + 1,
+                },
+                "declared_bindings": [
+                    {"binding": binding, "export_name": binding}
+                ],
+                "statement_kind": "var_decl",
+                "purity": {"kind": "pure"},
+                "destination": {
+                    "id": dest,
+                    "label": dest,
+                    "residual": dest.contains("residual"),
+                },
+            })
+        })
+        .collect();
+    let edge_json: Vec<Value> = edges
+        .iter()
+        .enumerate()
+        .map(|(idx, (src, tgt))| {
+            serde_json::json!({
+                "id": format!("edge:{idx}"),
+                "source": src,
+                "target": tgt,
+                "edge_kind": "eager_use",
+                "statement_ordinal": idx + 1,
+                "constrains_init_order": true,
+            })
+        })
+        .collect();
+    let graph = serde_json::json!({
+        "chunk_id": chunk_id,
+        "nodes": node_json,
+        "edges": edge_json,
+        "module_graph": {"nodes": [], "edges": [], "sccs": []},
+        "atomic_graph": {"nodes": [], "edges": []},
+    });
+    std::fs::write(&graph_path, serde_json::to_string_pretty(&graph).unwrap()).unwrap();
+    (graph_path, modules_root)
+}
+
+#[test]
+fn binding_move_single_op_positional_matches_assign_shape() {
+    // Backward-compatibility: `binding move X foo` is the drop-in
+    // replacement for `binding assign X foo`. Same outcome on disk,
+    // no batch syntax needed.
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "helper",
+        "consumers/helper",
+    ]);
+    assert!(
+        result.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    assert!(modules_root.join("consumers/helper.yaml").is_file());
+    assert!(
+        result.stdout.contains("ok") && result.stdout.contains("consumers/helper"),
+        "expected ok line, got {:?}",
+        result.stdout,
+    );
+}
+
+#[test]
+fn binding_move_two_acyclic_moves_apply_atomically() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    // Two unrelated moves: `helper` into a new module, and a
+    // re-home of `anchor` into a sibling module. Both should land.
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "helper=runtime/helpers",
+        "anchor=runtime/anchors",
+    ]);
+    assert!(
+        result.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    assert!(modules_root.join("runtime/helpers.yaml").is_file());
+    assert!(modules_root.join("runtime/anchors.yaml").is_file());
+    // Old anchor home dropped (it became empty).
+    assert!(
+        !modules_root.join("anchors/anchor.yaml").exists(),
+        "expected old anchor home dropped, got {:?}",
+        std::fs::read_dir(modules_root.join("anchors"))
+            .map(|i| i.collect::<Vec<_>>())
+            .ok(),
+    );
+    assert!(result.stdout.contains("2 ops applied"));
+}
+
+#[test]
+fn binding_move_batch_via_repeated_op_flag_lands() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "--op",
+        "helper=runtime/helpers",
+        "--op",
+        "anchor=runtime/anchors",
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    assert!(modules_root.join("runtime/helpers.yaml").is_file());
+    assert!(modules_root.join("runtime/anchors.yaml").is_file());
+}
+
+#[test]
+fn binding_move_batch_via_file_lands() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let batch_path = fixture.report_root.join("batch.txt");
+    std::fs::write(
+        &batch_path,
+        "# comment line is skipped\nhelper=runtime/helpers\n\nanchor=runtime/anchors\n",
+    )
+    .unwrap();
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "--batch",
+        batch_path.to_str().unwrap(),
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    assert!(modules_root.join("runtime/helpers.yaml").is_file());
+    assert!(modules_root.join("runtime/anchors.yaml").is_file());
+}
+
+#[test]
+fn binding_move_batch_rejects_duplicate_destinations() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "helper=runtime/helpers",
+        "helper=runtime/other",
+    ]);
+    assert!(!result.status.success());
+    assert!(
+        result.stderr.contains("duplicate"),
+        "expected duplicate diagnostic, stderr:\n{}",
+        result.stderr,
+    );
+    assert!(!modules_root.join("runtime/helpers.yaml").exists());
+    assert!(!modules_root.join("runtime/other.yaml").exists());
+}
+
+#[test]
+fn binding_move_empty_batch_exits_two() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+    ]);
+    assert_eq!(result.status.code(), Some(2), "stderr:\n{}", result.stderr);
+    assert!(
+        result.stderr.contains("no operations specified"),
+        "stderr:\n{}",
+        result.stderr,
+    );
+}
+
+#[test]
+fn binding_move_dry_run_validates_but_does_not_write() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "--dry-run",
+        "helper=runtime/helpers",
+        "anchor=runtime/anchors",
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    assert!(result.stdout.contains("dry-run"));
+    assert!(!modules_root.join("runtime/helpers.yaml").exists());
+    assert!(!modules_root.join("runtime/anchors.yaml").exists());
+}
+
+#[test]
+fn binding_move_residual_alias_unassigns() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    // anchor starts in anchors/anchor.yaml; `helper=-` is a no-op
+    // (already residual); `anchor=-` should unassign it and drop the
+    // now-empty YAML.
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "anchor=-",
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    assert!(!modules_root.join("anchors/anchor.yaml").exists());
+}
+
+#[test]
+fn binding_move_source_eq_destination_is_no_op_with_notice() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "anchor=anchors/anchor",
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    assert!(
+        result.stdout.contains("noop"),
+        "expected noop line, got {:?}",
+        result.stdout,
+    );
+    // Still on disk.
+    assert!(modules_root.join("anchors/anchor.yaml").is_file());
+}
+
+#[test]
+fn binding_move_batch_rejects_cycle_creating_set() {
+    // Synthetic owner graph:
+    //   foo declares X, currently in module foo
+    //   bar declares Y, currently in module bar
+    //   X depends on Y (edge foo->bar)
+    //   Y depends on X (edge bar->foo)
+    // The pipeline normally folds these into a cycle. The batch
+    // `X=other_a Y=other_b` keeps them on opposite sides of the
+    // edges and so synthesizes a 2-cycle in the hypothetical
+    // quotient.
+    let tmp = tempfile::tempdir().unwrap();
+    let (graph_path, modules_root) = write_synthetic_graph(
+        tmp.path(),
+        "static/index",
+        &[
+            ("owner:0", "X", "static/index::module:foo"),
+            ("owner:1", "Y", "static/index::module:bar"),
+        ],
+        // X -> Y and Y -> X form a 2-cycle if X and Y move to
+        // different modules.
+        &[("owner:0", "owner:1"), ("owner:1", "owner:0")],
+    );
+    // Seed the spec so the existing-binding check is satisfied.
+    std::fs::write(
+        modules_root.join("foo.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: X\n",
+    )
+    .unwrap();
+    std::fs::write(
+        modules_root.join("bar.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: Y\n",
+    )
+    .unwrap();
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "X=other_a",
+        "Y=other_b",
+    ]);
+    assert!(
+        !result.status.success(),
+        "expected rejection, stdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains("realizability cycle"),
+        "expected cycle diagnostic, stderr:\n{}",
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains("Batch rejected"),
+        "expected rejection footer, stderr:\n{}",
+        result.stderr,
+    );
+    // No spec edits.
+    assert!(!modules_root.join("other_a.yaml").exists());
+    assert!(!modules_root.join("other_b.yaml").exists());
+}
+
+#[test]
+fn binding_move_force_bypasses_cycle_check() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (graph_path, modules_root) = write_synthetic_graph(
+        tmp.path(),
+        "static/index",
+        &[
+            ("owner:0", "X", "static/index::module:foo"),
+            ("owner:1", "Y", "static/index::module:bar"),
+        ],
+        &[("owner:0", "owner:1"), ("owner:1", "owner:0")],
+    );
+    std::fs::write(
+        modules_root.join("foo.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: X\n",
+    )
+    .unwrap();
+    std::fs::write(
+        modules_root.join("bar.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: Y\n",
+    )
+    .unwrap();
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "--force",
+        "X=other_a",
+        "Y=other_b",
+    ]);
+    assert!(
+        result.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        result.stdout,
+        result.stderr,
+    );
+    assert!(modules_root.join("other_a.yaml").is_file());
+    assert!(modules_root.join("other_b.yaml").is_file());
+}
+
+#[test]
+fn binding_move_batch_of_two_lands_when_individually_one_would_cycle() {
+    // The "killer use case" from the design: graph has X -> Y and
+    // a back-edge to a module containing both X and Y. Moving X
+    // alone leaves the back edge pointing into a different module
+    // (creates a cycle); moving {X, Y} together to the same new
+    // module re-collapses the back edge into a self-edge (no
+    // cycle).
+    let tmp = tempfile::tempdir().unwrap();
+    // Three owners. X (owner:0) and Y (owner:1) both live in
+    // `core::module:legacy`. Z (owner:2) lives in
+    // `core::module:client` and forwards a value to Y.
+    //   X -> Y  (legacy -> legacy, intra-module)
+    //   Z -> Y  (client -> legacy)
+    //   Y -> Z  (legacy -> client)  <-- creates cycle if Y leaves legacy alone
+    let (graph_path, modules_root) = write_synthetic_graph(
+        tmp.path(),
+        "core",
+        &[
+            ("owner:0", "X", "core::module:legacy"),
+            ("owner:1", "Y", "core::module:legacy"),
+            ("owner:2", "Z", "core::module:client"),
+        ],
+        &[
+            ("owner:0", "owner:1"), // X -> Y inside legacy
+            ("owner:2", "owner:1"), // Z -> Y
+            ("owner:1", "owner:2"), // Y -> Z
+        ],
+    );
+    // Seed the spec so the binding check passes.
+    std::fs::write(
+        modules_root.join("legacy.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: X\n  - selector:\n      binding:\n        name: Y\n",
+    )
+    .unwrap();
+    std::fs::write(
+        modules_root.join("client.yaml"),
+        "members:\n  - selector:\n      binding:\n        name: Z\n",
+    )
+    .unwrap();
+
+    // Moving X alone into a new module is fine (X has no incoming
+    // edges from Y or Z), but moving Y alone creates a 2-cycle
+    // between Y's new module and `client` (because of Z -> Y and
+    // Y -> Z). Verify that.
+    let bad = debundle(&[
+        "binding",
+        "move",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "Y=newhome",
+    ]);
+    assert!(!bad.status.success(), "expected cycle rejection");
+
+    // Moving Y and Z together into the same module re-collapses the
+    // Z<->Y pair into a self-edge, eliminating the cycle.
+    let good = debundle(&[
+        "binding",
+        "move",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "Y=newhome",
+        "Z=newhome",
+    ]);
+    assert!(
+        good.status.success(),
+        "expected batch to land, stdout:\n{}\nstderr:\n{}",
+        good.stdout,
+        good.stderr,
+    );
+    assert!(modules_root.join("newhome.yaml").is_file());
+}
+
+#[test]
+fn binding_move_ndjson_emits_one_record_per_op_plus_summary() {
+    let (fixture, modules_root) = build_two_module_fixture();
+    let _ = fixture;
+    let result = debundle(&[
+        "binding",
+        "move",
+        "--modules",
+        modules_root.to_str().unwrap(),
+        "--ndjson",
+        "helper=runtime/helpers",
+        "anchor=runtime/anchors",
+    ]);
+    assert!(result.status.success(), "stderr:\n{}", result.stderr);
+    let lines = ndjson_stdout(&result);
+    // Two op records + one summary record = three lines.
+    assert_eq!(lines.len(), 3, "expected 3 ndjson records, got {lines:?}");
+    assert!(
+        lines[2].get("applied").is_some(),
+        "trailing summary missing applied: {:?}",
+        lines[2]
+    );
+}
+
 #[test]
 fn scc_default_returns_array_ndjson_returns_lines() {
     let (fixture, _modules_root) = build_two_module_fixture();

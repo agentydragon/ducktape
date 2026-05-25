@@ -100,7 +100,9 @@ Move a binding into a specific module's YAML. Creates the YAML if
 missing, removes the binding from its previous home (and drops the old
 YAML if it becomes empty). Pass `--rename <export-name>` to set the
 export name; otherwise the binding name is used. `--dry-run` prints the
-planned write without modifying disk.
+planned write without modifying disk. Pass `--graph "$GRAPH"` to enable
+the same realizability check `binding move` runs (off by default for
+backward compatibility); `--force` bypasses it.
 
 ```bash
 debundle binding assign \
@@ -113,7 +115,69 @@ bazelisk run //tana/re/web/78d928dca7:regen_js
 ### `debundle binding unassign <name>`
 
 Inverse of `assign`. Drop the binding from its module so it falls back
-into residual on the next pipeline run.
+into residual on the next pipeline run. Single-op alias for
+`binding move <name>=-`.
+
+### `debundle binding move <ops>...`
+
+The batched verb. Subsumes `assign`/`unassign` and lets cycle-aware
+multi-move plans land atomically: the full set of moves is applied to
+an in-memory spec copy, the realizability check runs over the final
+state, and _all_ moves write only if it passes. If validation fails,
+no file is touched and the diagnostic is printed to stderr.
+
+Single-op shape (backward compatible with `assign`):
+
+```bash
+debundle binding move \
+    --modules "$MODULES" \
+    XOe runtime/plugins
+```
+
+Batch shapes (pick whichever is most ergonomic):
+
+```bash
+# Positional pairs (terse for one-liners):
+debundle binding move \
+    --graph "$GRAPH" --modules "$MODULES" \
+    X=runtime/plugins Y=runtime/plugins Z=runtime/utils
+
+# Repeated --op flags (handy in scripts that build args up):
+debundle binding move \
+    --graph "$GRAPH" --modules "$MODULES" \
+    --op X=runtime/plugins \
+    --op Y=runtime/plugins
+
+# Batch file (one `name=destination` per line; `#` comments allowed):
+debundle binding move \
+    --graph "$GRAPH" --modules "$MODULES" \
+    --batch ops.txt
+```
+
+Sentinel destinations:
+
+- `name=-` (or `name=residual`, `name=<residual>`) — unassign the
+  binding back to residual.
+
+Output: per-op `ok    NAME -> DEST` lines on stdout, then a trailing
+`N ops applied.` summary. With `--ndjson`, each op is emitted as a
+JSON record on its own line, followed by a JSON summary record.
+
+Flags:
+
+- `--graph <owner_graph.json>` enables realizability validation.
+  Without it the batch lands unchecked (intended for pure-rename
+  workflows that don't have a graph on hand).
+- `--dry-run` runs validation but writes nothing.
+- `--force` bypasses the realizability check (duplicate-destination
+  and unresolved-binding checks still run).
+- `--ndjson` swaps the per-op output to JSON-per-line.
+
+The killer use case is the cycle-aware batch: moving binding `X`
+alone might create a module-quotient cycle, but moving `{X, Y}`
+together to the same module collapses the back edge into a
+self-edge and the batch lands cleanly. A wrapper script is no
+longer needed — `debundle binding move X=foo Y=foo` is one command.
 
 ## SCC Queries
 
@@ -222,6 +286,25 @@ debundle binding show-code \
 debundle binding assign --modules "$MODULES" XOe runtime/plugins
 bazelisk run //tana/re/web/<version>:regen_js
 ```
+
+### "Move a cycle-aware batch of bindings together"
+
+When a single move would create a cycle but a batched move closes it
+(e.g. moving `X` alone leaves `X -> Y` and `Y -> X` straddling
+modules; moving `{X, Y}` together collapses both onto the new
+module's self-edge):
+
+```bash
+debundle binding move \
+    --graph "$GRAPH" --modules "$MODULES" \
+    X=runtime/plugins Y=runtime/plugins
+bazelisk run //tana/re/web/<version>:regen_js
+```
+
+If the batch would itself create a cycle, the command exits
+nonzero, writes nothing, and prints the cycle's modules and the
+heaviest cut edges. Re-run with `--force` only when you have
+already understood the cycle and intend to commit anyway.
 
 ### "Try a hypothetical spec edit and see what changes"
 

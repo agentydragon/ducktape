@@ -144,5 +144,6 @@ rust_test(
     deps = [
         ":support",
         "@crates//:serde_json",
+        "@crates//:tempfile",
     ],
 )
