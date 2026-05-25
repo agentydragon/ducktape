@@ -18,6 +18,15 @@ pub(super) fn trim_dead_named_specifiers(
     // `Id = (Atom, SyntaxContext)`; we collect refs by sym for the
     // claimed-and-unused filter below.
     let refs: HashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
+    // Build a sym-only set of binding names up front so the
+    // per-specifier "is this name claimed by any binding?" probe is
+    // O(1) instead of an O(N) scan over `bindings`. The previous
+    // `bindings.iter().any(...)` made the loop O(specifiers × bindings) —
+    // ~2s on gaffer's main chunk where `bindings` is in the thousands.
+    // Mirrors the same shape used by `build_module_plans` in commit
+    // `6ac23db1f`. The set is scoped to this function and dropped
+    // when we return.
+    let claimed_syms: HashSet<&str> = bindings.keys().map(|id| id.0.as_ref()).collect();
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -33,7 +42,7 @@ pub(super) fn trim_dead_named_specifiers(
                 // bindings is Id-keyed; match by sym (top-level
                 // names are unique within a chunk).
                 let local = named.local.sym.as_ref();
-                let claimed = bindings.iter().any(|(id, _)| id.0.as_ref() == local);
+                let claimed = claimed_syms.contains(local);
                 let unused = !refs.contains(&named.local.sym);
                 !(claimed && unused)
             }
