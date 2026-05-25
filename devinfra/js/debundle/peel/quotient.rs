@@ -271,6 +271,12 @@ pub struct QuotientGraph {
     /// Stable owner IDs in `OwnerIdx.0` order. Inherited from the
     /// source `OwnerGraphReport.nodes`.
     owner_ids: Vec<String>,
+    /// Reverse index for `owner_ids`: owner-id string → `OwnerIdx`.
+    /// Built once at construction; `owner_ids` is never mutated after
+    /// that, so this stays in sync. Backs `owner_idx_of` so callers
+    /// avoid an O(n) linear scan per lookup (hot on `peel plan-work`,
+    /// 17.6% inclusive in the 2026-05-25 callgraph profile).
+    owner_id_to_idx: HashMap<String, OwnerIdx>,
     /// Owner → current class. Dense, indexed by `OwnerIdx.0`.
     owner_to_class: Vec<ClassId>,
     /// Class metadata. Indexed by `ClassId.0`. Entries for emptied
@@ -390,10 +396,10 @@ impl QuotientGraph {
     pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
         let (owner_graph, report_index) = OwnerGraph::from_report(report);
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
-        let owner_index: HashMap<&str, OwnerIdx> = owner_ids
+        let owner_id_to_idx: HashMap<String, OwnerIdx> = owner_ids
             .iter()
             .enumerate()
-            .map(|(i, id)| (id.as_str(), OwnerIdx(i)))
+            .map(|(i, id)| (id.clone(), OwnerIdx(i)))
             .collect();
 
         let mut classes = Vec::<ClassData>::with_capacity(owner_ids.len());
@@ -434,8 +440,8 @@ impl QuotientGraph {
             Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
             let (Some(&s), Some(&t)) = (
-                owner_index.get(edge.source.as_str()),
-                owner_index.get(edge.target.as_str()),
+                owner_id_to_idx.get(edge.source.as_str()),
+                owner_id_to_idx.get(edge.target.as_str()),
             ) else {
                 continue;
             };
@@ -493,6 +499,7 @@ impl QuotientGraph {
             owner_index: report_index,
             gate_residual_owners,
             owner_ids,
+            owner_id_to_idx,
             owner_to_class,
             classes,
             owner_constraining_edges,
@@ -600,12 +607,10 @@ impl QuotientGraph {
     }
 
     /// Look up the owner index for a stable owner-id string. Returns
-    /// `None` for ids not present in the source report.
+    /// `None` for ids not present in the source report. O(1) via the
+    /// `owner_id_to_idx` HashMap.
     pub fn owner_idx_of(&self, owner_id: &str) -> Option<OwnerIdx> {
-        self.owner_ids
-            .iter()
-            .position(|id| id == owner_id)
-            .map(OwnerIdx)
+        self.owner_id_to_idx.get(owner_id).copied()
     }
 
     /// Stable owner id string for an `OwnerIdx`.
