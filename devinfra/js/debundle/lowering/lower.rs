@@ -4,6 +4,10 @@
 //! level orchestration that wraps this lives in mod.rs's
 //! `materialize_logical_chunk`.
 
+use std::sync::Mutex;
+
+use rayon::prelude::*;
+
 use super::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
     relative_source,
@@ -332,8 +336,10 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let imported_reexports_by_module = time_phase!(timings, "collect_imported_reexports", {
         collect_imported_reexports_by_module(factorization, module_plans.len())
     });
-    let mut source_import_cache =
-        ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
+    let source_import_cache = Mutex::new(ArtifactSourceImportResolutionCache::new(
+        artifact,
+        artifact_indexes,
+    ));
 
     let mut files = vec![JsFile {
         path: entry_file.to_string(),
@@ -373,205 +379,65 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
-    for (index, plan) in module_plans.iter().enumerate() {
-        let mut body = std::mem::take(&mut selected_by_module[index]);
-        let local_renames = time_phase!(timings, "module.naturalize_body", {
-            naturalize_module_body(&mut body, plan)
-        });
-        let body_facts = time_phase!(timings, "module.collect_body_facts", {
-            collect_module_body_facts(&body)
-        });
-        let ModuleReferenceNeeds {
-            cross_module_imports_by_provider,
-            residual_entry_imports,
-            missing_residual_exports,
-            runtime_reimports,
-            phantom_side_effect_providers,
-        } = time_phase!(timings, "module.plan_references", {
-            plan_module_reference_needs(
-                index,
-                &body_facts,
-                factorization,
-                declaration_by_name,
-                binding_assignment,
-                &entry_exports_by_original_local,
-                RuntimeImportLookup {
-                    imports: runtime_import_facts,
-                    heuristic_renames: &local_renames,
-                },
-            )
-        });
-        let mut module_import_renames = BTreeMap::<String, String>::new();
-        let mut module_import_locals = collect_local_binding_names(&body);
-        let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
-            cross_module_imports_for_plan(
-                &plan.target_file,
-                cross_module_imports_by_provider,
-                factorization,
-                &mut module_import_locals,
-                &mut module_import_renames,
-            )
-        });
-        // Phantom side-effect imports surface at-init-promotion-derived
-        // constraining edges as real ESM imports so the linker's DFS
-        // visits the provider modules as dependencies. Prepended so
-        // they sort before residual-entry and runtime re-imports, all
-        // of which would short-circuit the cycle when the residual is
-        // mid-evaluation. See `phantom_side_effect_imports` and
-        // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
-        let phantom_imports = time_phase!(timings, "module.build_phantom_imports", {
-            phantom_side_effect_imports(
-                &plan.target_file,
-                phantom_side_effect_providers,
-                factorization,
-            )
-        });
-        let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
-            residual_entry_imports_for_moved_body(
-                &plan.id,
-                entry_file,
-                &plan.target_file,
-                residual_entry_imports,
-                missing_residual_exports,
-                &mut module_import_locals,
-                &mut module_import_renames,
-            )
-        })?;
-        if !module_import_renames.is_empty() {
-            let mut renamer = IdentifierRenamer {
-                renames: &module_import_renames,
-            };
-            for item in body.iter_mut() {
-                item.visit_mut_with(&mut renamer);
-            }
-        }
-        // Re-import any source-chunk import-specifier-bound locals that
-        // moved code in `body` references but no top-level decl
-        // satisfies (e.g. `const { decode } = gge;` where `gge` was an
-        // ImportSpecifier in the source chunk's runtime body). Without
-        // this, the moved code references a free variable and Node
-        // throws `ReferenceError: gge is not defined` at runtime.
-        let mut runtime_reimports = time_phase!(timings, "module.build_runtime_reimports", {
-            source_chunk_imports_for_moved_body(
-                &mut source_import_cache,
-                chunk_id,
-                entry_file,
-                &plan.target_file,
-                runtime_reimports,
-            )
-        })?;
-        module_imports.append(&mut residual_entry_imports);
-        module_imports.append(&mut runtime_reimports);
-        // Phantom side-effect imports go FIRST in the emitted module
-        // so the linker DFS-recurses into the providers before the
-        // residual/entry import (which would short-circuit when the
-        // residual is mid-evaluation).
-        let mut combined = phantom_imports;
-        combined.append(&mut module_imports);
-        combined.append(&mut body);
-        body = combined;
-        // Apply chunk_renames to the assembled module body so that
-        // import-specifier aliases and references in the moved code
-        // both pick up the spec's rename. Without this, residual
-        // entry says `getMobxGlobalState` but the peeled module's
-        // `import { f as cx }` and `cx()` refs still say `cx`,
-        // producing two disagreeing local aliases for the same
-        // upstream binding.
-        if !cross_module_chunk_renames.is_empty() {
-            time_phase!(timings, "module.rename_chunk_renames", {
-                let mut renamer = IdentifierRenamer {
-                    renames: &cross_module_chunk_renames,
-                };
-                for item in body.iter_mut() {
-                    item.visit_mut_with(&mut renamer);
-                }
-            });
-        }
-        time_phase!(timings, "module.rewrite_runtime_sources", {
-            rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
-        });
-        // ImportSpecifier-bound members (`BindingKind::Imported` in
-        // `factorization.analysis.bindings`): for each `Imported` binding whose
-        // `re_exported_by` map names this module, emit a re-import
-        // (using the local name as the alias) plus mirror the
-        // public-name export. Per-destination relative paths are
-        // computed here so multiple modules at different output
-        // depths each get a correctly-relativised path.
-        let import_member_exports = time_phase!(timings, "module.imported_reexports", {
-            let mut import_member_exports = BTreeMap::<String, String>::new();
-            let reexports = &imported_reexports_by_module[index];
-            if !reexports.is_empty() {
-                let import_count = body
-                    .iter()
-                    .take_while(|item| {
-                        matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_)))
+    // Per-plan lowering: each plan's output (`JsFile`, file record,
+    // `SelectedModuleLowering`) is independent — the only shared
+    // mutable state the loop body touches is `source_import_cache`
+    // (memoization for source-chunk import resolution), wrapped in a
+    // `Mutex` above. Body facts are precomputed upstream (see
+    // `collect_module_body_facts` callers in `materialize/mod.rs`).
+    //
+    // `PhaseTimings` is a per-iteration local; merged into the chunk-
+    // level `timings` once the parallel work completes. `time_phase!`
+    // requires `&mut PhaseTimings`, which the per-iter local
+    // satisfies.
+    //
+    // `swc_common::GLOBALS` is a `scoped_tls` thread-local; it does
+    // NOT carry into rayon worker threads, so we capture the parent
+    // thread's `Globals` and re-set it inside each worker closure.
+    // Mirrors the chunk-level `par_iter` in `lowering/mod.rs`.
+    let per_plan_bodies: Vec<Vec<ModuleItem>> = std::mem::take(&mut selected_by_module);
+    let module_outputs: Vec<(
+        JsFile,
+        (String, FileRole),
+        SelectedModuleLowering,
+        PhaseTimings,
+    )> = GLOBALS.with(|globals| -> Result<_> {
+        per_plan_bodies
+            .into_par_iter()
+            .zip(module_plans.par_iter())
+            .enumerate()
+            .map(|(index, (body, plan))| {
+                GLOBALS.set(globals, || {
+                    lower_single_plan(LowerSinglePlanInputs {
+                        index,
+                        plan,
+                        body,
+                        factorization,
+                        declaration_by_name,
+                        binding_assignment,
+                        runtime_import_facts,
+                        entry_exports_by_original_local: &entry_exports_by_original_local,
+                        imported_reexports_by_module: &imported_reexports_by_module,
+                        selected_exports_by_module: &selected_exports_by_module,
+                        cross_module_chunk_renames: &cross_module_chunk_renames,
+                        source_import_cache: &source_import_cache,
+                        chunk_id,
+                        entry_file,
+                        source_path,
+                        chunk_top_level_mark,
+                        runtime_ast,
                     })
-                    .count();
-                // `imported_from` on `BindingKind::Imported` is output-tree-
-                // rooted absolute; `plan.target_file` is chunk-rooted. Lift
-                // the destination to the same coordinate system before
-                // computing the relative path.
-                let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
-                // Group reexports by rewritten source so multiple bindings
-                // re-exported from the same import-from end up in a single
-                // `import { ... } from "<src>"` statement, not one
-                // statement per binding. First-occurrence order is
-                // preserved for both source groups and bindings within
-                // each group. All specifiers emitted here are Named, so
-                // ESM's Namespace/Named mutual-exclusion rule doesn't
-                // apply.
-                let mut groups: Vec<(String, Vec<ImportSpecifier>)> =
-                    Vec::with_capacity(reexports.len());
-                let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
-                for reexport in reexports {
-                    let src = relative_source(&dest_abs, &reexport.imported_from);
-                    let specifier =
-                        imported_binding_named_specifier(&reexport.local, &reexport.imported_name);
-                    let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
-                        groups.push((src.clone(), Vec::new()));
-                        groups.len() - 1
-                    });
-                    groups[group_index].1.push(specifier);
-                    import_member_exports
-                        .insert(reexport.local.clone(), reexport.public_name.clone());
-                }
-                let mut reexport_imports = Vec::with_capacity(groups.len());
-                for (src, specifiers) in groups {
-                    reexport_imports.push(import_decl_module_item(specifiers, &src));
-                }
-                let tail = body.split_off(import_count);
-                body.extend(reexport_imports);
-                body.extend(tail);
-            }
-            import_member_exports
-        });
-        time_phase!(timings, "module.final_exports", {
-            if let Some(exports) = &selected_exports_by_module[index] {
-                let mut exports = final_module_exports(exports, &local_renames);
-                exports.extend(
-                    import_member_exports
-                        .iter()
-                        .map(|(k, v)| (k.clone(), v.clone())),
-                );
-                body.push(export_named_for_bindings(&exports));
-            } else if !import_member_exports.is_empty() {
-                body.push(export_named_for_bindings(&import_member_exports));
-            }
-        });
-        time_phase!(timings, "module.build_output_records", {
-            let output_context = ModuleOutputContext {
-                factorization,
-                runtime_ast,
-                chunk_top_level_mark,
-                chunk_id,
-                entry_file,
-                source_path,
-            };
-            let (file, record, lowering) = build_module_output(plan, body, &output_context);
-            files.push(file);
-            file_records.push(record);
-            applied.push(lowering);
-        });
+                })
+            })
+            .collect()
+    })?;
+    for (file, record, lowering, local_timings) in module_outputs {
+        files.push(file);
+        file_records.push(record);
+        applied.push(lowering);
+        for (name, duration) in local_timings.durations {
+            timings.add(name, duration);
+        }
     }
 
     Ok(LoweredChunk {
@@ -655,6 +521,255 @@ struct ModuleOutputContext<'a> {
     chunk_id: &'a str,
     entry_file: &'a str,
     source_path: &'a str,
+}
+
+struct LowerSinglePlanInputs<'a> {
+    index: usize,
+    plan: &'a ModulePlan,
+    body: Vec<ModuleItem>,
+    factorization: &'a ChunkFactorization,
+    declaration_by_name: &'a HashMap<Id, usize>,
+    binding_assignment: &'a HashMap<Id, usize>,
+    runtime_import_facts: &'a RuntimeImportFacts,
+    entry_exports_by_original_local: &'a HashMap<Id, EntryExport>,
+    imported_reexports_by_module: &'a [Vec<super::plan_references::ImportedReexport>],
+    selected_exports_by_module: &'a [Option<BTreeMap<String, String>>],
+    cross_module_chunk_renames: &'a BTreeMap<String, String>,
+    source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,
+    chunk_id: &'a str,
+    entry_file: &'a str,
+    source_path: &'a str,
+    chunk_top_level_mark: swc_common::Mark,
+    runtime_ast: &'a ParsedJsModule,
+}
+
+fn lower_single_plan(
+    inputs: LowerSinglePlanInputs<'_>,
+) -> Result<(
+    JsFile,
+    (String, FileRole),
+    SelectedModuleLowering,
+    PhaseTimings,
+)> {
+    let LowerSinglePlanInputs {
+        index,
+        plan,
+        mut body,
+        factorization,
+        declaration_by_name,
+        binding_assignment,
+        runtime_import_facts,
+        entry_exports_by_original_local,
+        imported_reexports_by_module,
+        selected_exports_by_module,
+        cross_module_chunk_renames,
+        source_import_cache,
+        chunk_id,
+        entry_file,
+        source_path,
+        chunk_top_level_mark,
+        runtime_ast,
+    } = inputs;
+    let mut timings = PhaseTimings::default();
+    let local_renames = time_phase!(timings, "module.naturalize_body", {
+        naturalize_module_body(&mut body, plan)
+    });
+    let body_facts = time_phase!(timings, "module.collect_body_facts", {
+        collect_module_body_facts(&body)
+    });
+    let ModuleReferenceNeeds {
+        cross_module_imports_by_provider,
+        residual_entry_imports,
+        missing_residual_exports,
+        runtime_reimports,
+        phantom_side_effect_providers,
+    } = time_phase!(timings, "module.plan_references", {
+        plan_module_reference_needs(
+            index,
+            &body_facts,
+            factorization,
+            declaration_by_name,
+            binding_assignment,
+            entry_exports_by_original_local,
+            RuntimeImportLookup {
+                imports: runtime_import_facts,
+                heuristic_renames: &local_renames,
+            },
+        )
+    });
+    let mut module_import_renames = BTreeMap::<String, String>::new();
+    let mut module_import_locals = collect_local_binding_names(&body);
+    let mut module_imports = time_phase!(timings, "module.build_cross_imports", {
+        cross_module_imports_for_plan(
+            &plan.target_file,
+            cross_module_imports_by_provider,
+            factorization,
+            &mut module_import_locals,
+            &mut module_import_renames,
+        )
+    });
+    // Phantom side-effect imports surface at-init-promotion-derived
+    // constraining edges as real ESM imports so the linker's DFS
+    // visits the provider modules as dependencies. Prepended so
+    // they sort before residual-entry and runtime re-imports, all
+    // of which would short-circuit the cycle when the residual is
+    // mid-evaluation. See `phantom_side_effect_imports` and
+    // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
+    let phantom_imports = time_phase!(timings, "module.build_phantom_imports", {
+        phantom_side_effect_imports(
+            &plan.target_file,
+            phantom_side_effect_providers,
+            factorization,
+        )
+    });
+    let mut residual_entry_imports = time_phase!(timings, "module.build_residual_imports", {
+        residual_entry_imports_for_moved_body(
+            &plan.id,
+            entry_file,
+            &plan.target_file,
+            residual_entry_imports,
+            missing_residual_exports,
+            &mut module_import_locals,
+            &mut module_import_renames,
+        )
+    })?;
+    if !module_import_renames.is_empty() {
+        let mut renamer = IdentifierRenamer {
+            renames: &module_import_renames,
+        };
+        for item in body.iter_mut() {
+            item.visit_mut_with(&mut renamer);
+        }
+    }
+    // Re-import any source-chunk import-specifier-bound locals that
+    // moved code in `body` references but no top-level decl
+    // satisfies (e.g. `const { decode } = gge;` where `gge` was an
+    // ImportSpecifier in the source chunk's runtime body). Without
+    // this, the moved code references a free variable and Node
+    // throws `ReferenceError: gge is not defined` at runtime.
+    //
+    // `source_import_cache` is shared across parallel per-plan
+    // workers; the `Mutex` serialises the BTreeMap lookups but the
+    // critical section is short (a key lookup + possible insert).
+    let mut runtime_reimports = time_phase!(timings, "module.build_runtime_reimports", {
+        let mut cache = source_import_cache
+            .lock()
+            .expect("source_import_cache poisoned");
+        source_chunk_imports_for_moved_body(
+            &mut cache,
+            chunk_id,
+            entry_file,
+            &plan.target_file,
+            runtime_reimports,
+        )
+    })?;
+    module_imports.append(&mut residual_entry_imports);
+    module_imports.append(&mut runtime_reimports);
+    // Phantom side-effect imports go FIRST in the emitted module
+    // so the linker DFS-recurses into the providers before the
+    // residual/entry import (which would short-circuit when the
+    // residual is mid-evaluation).
+    let mut combined = phantom_imports;
+    combined.append(&mut module_imports);
+    combined.append(&mut body);
+    body = combined;
+    // Apply chunk_renames to the assembled module body so that
+    // import-specifier aliases and references in the moved code
+    // both pick up the spec's rename. Without this, residual
+    // entry says `getMobxGlobalState` but the peeled module's
+    // `import { f as cx }` and `cx()` refs still say `cx`,
+    // producing two disagreeing local aliases for the same
+    // upstream binding.
+    if !cross_module_chunk_renames.is_empty() {
+        time_phase!(timings, "module.rename_chunk_renames", {
+            let mut renamer = IdentifierRenamer {
+                renames: cross_module_chunk_renames,
+            };
+            for item in body.iter_mut() {
+                item.visit_mut_with(&mut renamer);
+            }
+        });
+    }
+    time_phase!(timings, "module.rewrite_runtime_sources", {
+        rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
+    });
+    // ImportSpecifier-bound members (`BindingKind::Imported` in
+    // `factorization.analysis.bindings`): for each `Imported` binding whose
+    // `re_exported_by` map names this module, emit a re-import
+    // (using the local name as the alias) plus mirror the
+    // public-name export. Per-destination relative paths are
+    // computed here so multiple modules at different output
+    // depths each get a correctly-relativised path.
+    let import_member_exports = time_phase!(timings, "module.imported_reexports", {
+        let mut import_member_exports = BTreeMap::<String, String>::new();
+        let reexports = &imported_reexports_by_module[index];
+        if !reexports.is_empty() {
+            let import_count = body
+                .iter()
+                .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+                .count();
+            // `imported_from` on `BindingKind::Imported` is output-tree-
+            // rooted absolute; `plan.target_file` is chunk-rooted. Lift
+            // the destination to the same coordinate system before
+            // computing the relative path.
+            let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
+            // Group reexports by rewritten source so multiple bindings
+            // re-exported from the same import-from end up in a single
+            // `import { ... } from "<src>"` statement, not one
+            // statement per binding. First-occurrence order is
+            // preserved for both source groups and bindings within
+            // each group. All specifiers emitted here are Named, so
+            // ESM's Namespace/Named mutual-exclusion rule doesn't
+            // apply.
+            let mut groups: Vec<(String, Vec<ImportSpecifier>)> =
+                Vec::with_capacity(reexports.len());
+            let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
+            for reexport in reexports {
+                let src = relative_source(&dest_abs, &reexport.imported_from);
+                let specifier =
+                    imported_binding_named_specifier(&reexport.local, &reexport.imported_name);
+                let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
+                    groups.push((src.clone(), Vec::new()));
+                    groups.len() - 1
+                });
+                groups[group_index].1.push(specifier);
+                import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
+            }
+            let mut reexport_imports = Vec::with_capacity(groups.len());
+            for (src, specifiers) in groups {
+                reexport_imports.push(import_decl_module_item(specifiers, &src));
+            }
+            let tail = body.split_off(import_count);
+            body.extend(reexport_imports);
+            body.extend(tail);
+        }
+        import_member_exports
+    });
+    time_phase!(timings, "module.final_exports", {
+        if let Some(exports) = &selected_exports_by_module[index] {
+            let mut exports = final_module_exports(exports, &local_renames);
+            exports.extend(
+                import_member_exports
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone())),
+            );
+            body.push(export_named_for_bindings(&exports));
+        } else if !import_member_exports.is_empty() {
+            body.push(export_named_for_bindings(&import_member_exports));
+        }
+    });
+    let (file, record, lowering) = time_phase!(timings, "module.build_output_records", {
+        let output_context = ModuleOutputContext {
+            factorization,
+            runtime_ast,
+            chunk_top_level_mark,
+            chunk_id,
+            entry_file,
+            source_path,
+        };
+        build_module_output(plan, body, &output_context)
+    });
+    Ok((file, record, lowering, timings))
 }
 
 fn build_module_output(
