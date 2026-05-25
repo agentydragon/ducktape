@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1025,9 +1025,18 @@ where
             &ArtifactIndexes,
             &BTreeMap<String, M>,
             &ChunkTable,
+            &MaterializedOutputChunkIndex,
         ) -> PartialSwapFileResult
         + Sync,
 {
+    // Precompute once: the per-import-decl call in `rewrite_swap_import_decls`
+    // used to do an O(N_chunks) linear scan over the chunk table to resolve
+    // relative `./..` imports against materialized output paths (15.4%
+    // inclusive on cpu_atom of `debundle run`). The longest-prefix index
+    // collapses that to two HashMap lookups plus a short ancestor walk per
+    // import, and also pre-formats the `"<name>.js"` keys so we no longer
+    // `format!()` once per import-decl per chunk.
+    let materialized_index = MaterializedOutputChunkIndex::build(chunk_table);
     let mut jobs = Vec::new();
     for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
         let caller_chunk_id = chunk_artifact.chunk_id;
@@ -1058,11 +1067,18 @@ where
 
     let chunk_table_ref = chunk_table;
     let mappings_ref = mappings;
+    let materialized_index_ref = &materialized_index;
     let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
         jobs.into_par_iter()
             .map(|job| {
                 GLOBALS.set(globals, || {
-                    rewrite_fn(job, references, mappings_ref, chunk_table_ref)
+                    rewrite_fn(
+                        job,
+                        references,
+                        mappings_ref,
+                        chunk_table_ref,
+                        materialized_index_ref,
+                    )
                 })
             })
             .collect()
@@ -1658,6 +1674,7 @@ fn rewrite_partial_swap_in_file(
     references: &ArtifactIndexes,
     mappings: &PartialSwapMappings,
     chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
 ) -> PartialSwapFileResult {
     let module = &mut job.ast.module;
 
@@ -1680,6 +1697,7 @@ fn rewrite_partial_swap_in_file(
         &job.file_path,
         references,
         chunk_table,
+        materialized_index,
         |target_chunk_name, imported_name_lookup, local_sym| {
             let chunk_mapping = mappings.get(target_chunk_name)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
@@ -1786,6 +1804,7 @@ fn rewrite_bundled_partial_swap_in_file(
     references: &ArtifactIndexes,
     mappings: &BundledPartialSwapMappings,
     chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
 ) -> PartialSwapFileResult {
     let module = &mut job.ast.module;
 
@@ -1814,6 +1833,7 @@ fn rewrite_bundled_partial_swap_in_file(
         &job.file_path,
         references,
         chunk_table,
+        materialized_index,
         |target_chunk_name, imported_name_lookup, local_sym| {
             let chunk_mapping = mappings.get(target_chunk_name)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
@@ -1897,6 +1917,7 @@ fn rewrite_swap_import_decls<F>(
     caller_file_path: &str,
     references: &ArtifactIndexes,
     chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
     mut rewrite_one: F,
 ) -> Vec<ModuleItem>
 where
@@ -1915,6 +1936,7 @@ where
             caller_file_path,
             references,
             chunk_table,
+            materialized_index,
         ) else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
@@ -2112,6 +2134,7 @@ fn resolve_partial_swap_import_target(
     caller_file_path: &str,
     references: &ArtifactIndexes,
     chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
 ) -> Option<ChunkId> {
     references
         .resolve_runtime_import_reference(source, caller_chunk_id, caller_file_path, chunk_table)
@@ -2122,6 +2145,7 @@ fn resolve_partial_swap_import_target(
                 caller_chunk_id,
                 caller_file_path,
                 chunk_table,
+                materialized_index,
             )
         })
 }
@@ -2131,6 +2155,7 @@ fn resolve_materialized_output_import_target(
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
     chunk_table: &ChunkTable,
+    materialized_index: &MaterializedOutputChunkIndex,
 ) -> Option<ChunkId> {
     if source.is_empty() || !source.starts_with('.') {
         return None;
@@ -2141,56 +2166,141 @@ fn resolve_materialized_output_import_target(
     ]);
     let resolved_path =
         normalize_module_path(&join_module_path(&[caller_output_dir.as_str(), source])).ok()?;
+    materialized_index.lookup(&resolved_path)
+}
 
-    let mut best: Option<(usize, ChunkId)> = None;
-    let mut ambiguous = false;
-    for index in 0..chunk_table.len() {
-        let chunk_id = ChunkId(index);
-        let chunk_name = chunk_table.name(chunk_id);
-        let Some(match_len) = materialized_output_chunk_match_len(&resolved_path, chunk_name)
-        else {
-            continue;
-        };
-        match best {
-            None => {
-                best = Some((match_len, chunk_id));
-                ambiguous = false;
-            }
-            Some((best_len, _)) if match_len > best_len => {
-                best = Some((match_len, chunk_id));
-                ambiguous = false;
-            }
-            Some((best_len, best_chunk_id))
-                if match_len == best_len && best_chunk_id != chunk_id =>
-            {
-                ambiguous = true;
-            }
-            _ => {}
+/// Precomputed longest-prefix-match index for resolving partial-swap
+/// relative imports to their target chunk. Built once per
+/// `apply_*partial_vendor_swaps` invocation; replaces the per-import-decl
+/// O(N_chunks) scan over `ChunkTable`.
+///
+/// Per chunk we register candidate keys derived from the chunk name plus,
+/// for slash-bearing names, the post-first-slash stripped form (mirroring
+/// the original `materialized_output_chunk_match_len` two-shape match):
+///   * `by_exact["<name>.js"]`         — exact match against
+///     `resolved_path` (match_len = name.len()).
+///   * `by_dir_prefix["<name>"]`       — `resolved_path` is
+///     `"<name>/<rest>"` (match_len = name.len()).
+///
+/// Lookup checks the exact map plus walks `resolved_path`'s `/`-bounded
+/// ancestors longest-to-shortest against `by_dir_prefix`, then combines
+/// the two candidates with longest-match-wins / tie-breaks-as-`None`
+/// (same semantics as the prior linear scan, including `ambiguous`).
+struct MaterializedOutputChunkIndex {
+    by_exact: HashMap<String, ChunkEntry>,
+    by_dir_prefix: HashMap<String, ChunkEntry>,
+}
+
+#[derive(Clone, Copy)]
+enum ChunkEntry {
+    Unique(ChunkId, usize),
+    Ambiguous(usize),
+}
+
+impl ChunkEntry {
+    fn match_len(&self) -> usize {
+        match self {
+            ChunkEntry::Unique(_, len) | ChunkEntry::Ambiguous(len) => *len,
         }
     }
-    if ambiguous {
-        None
-    } else {
-        best.map(|(_, chunk_id)| chunk_id)
+
+    fn merge(&mut self, chunk_id: ChunkId, match_len: usize) {
+        match *self {
+            ChunkEntry::Unique(existing, existing_len) => {
+                debug_assert_eq!(existing_len, match_len);
+                if existing != chunk_id {
+                    *self = ChunkEntry::Ambiguous(match_len);
+                }
+            }
+            ChunkEntry::Ambiguous(existing_len) => {
+                debug_assert_eq!(existing_len, match_len);
+            }
+        }
     }
 }
 
-fn materialized_output_chunk_match_len(resolved_path: &str, chunk_name: &str) -> Option<usize> {
-    let mut best = path_targets_chunk_name(resolved_path, chunk_name).then_some(chunk_name.len());
-    if let Some((_, stripped)) = chunk_name.split_once('/')
-        && path_targets_chunk_name(resolved_path, stripped)
-        && best.is_none_or(|len| stripped.len() > len)
-    {
-        best = Some(stripped.len());
+impl MaterializedOutputChunkIndex {
+    fn build(chunk_table: &ChunkTable) -> Self {
+        let len = chunk_table.len();
+        let mut by_exact: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
+        let mut by_dir_prefix: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
+        for index in 0..len {
+            let chunk_id = ChunkId(index);
+            let chunk_name = chunk_table.name(chunk_id);
+            insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, chunk_name);
+            if let Some((_, stripped)) = chunk_name.split_once('/') {
+                insert_candidate(&mut by_exact, &mut by_dir_prefix, chunk_id, stripped);
+            }
+        }
+        Self {
+            by_exact,
+            by_dir_prefix,
+        }
     }
-    best
+
+    fn lookup(&self, resolved_path: &str) -> Option<ChunkId> {
+        let exact = self.by_exact.get(resolved_path).copied();
+        let prefix = self.longest_prefix_match(resolved_path);
+        let candidate = match (exact, prefix) {
+            (None, None) => return None,
+            (Some(c), None) | (None, Some(c)) => c,
+            (Some(a), Some(b)) => {
+                if a.match_len() > b.match_len() {
+                    a
+                } else if b.match_len() > a.match_len() {
+                    b
+                } else {
+                    // Equal lengths: ambiguous unless both resolve to the
+                    // same Unique chunk (only possible when an exact
+                    // `"<name>.js"` key happens to also be a registered
+                    // dir-prefix for the same chunk, which the original
+                    // semantics never produced — but we keep the check
+                    // explicit).
+                    match (a, b) {
+                        (ChunkEntry::Unique(ax, _), ChunkEntry::Unique(bx, _)) if ax == bx => a,
+                        _ => return None,
+                    }
+                }
+            }
+        };
+        match candidate {
+            ChunkEntry::Unique(chunk_id, _) => Some(chunk_id),
+            ChunkEntry::Ambiguous(_) => None,
+        }
+    }
+
+    fn longest_prefix_match(&self, resolved_path: &str) -> Option<ChunkEntry> {
+        // Walk `/`-bounded ancestors of `resolved_path` longest-first.
+        // A by_dir_prefix entry `K` matches iff `resolved_path == "<K>/<rest>"`.
+        let mut end = resolved_path.rfind('/')?;
+        loop {
+            if let Some(entry) = self.by_dir_prefix.get(&resolved_path[..end]) {
+                return Some(*entry);
+            }
+            match resolved_path[..end].rfind('/') {
+                Some(next) => end = next,
+                None => return None,
+            }
+        }
+    }
 }
 
-fn path_targets_chunk_name(resolved_path: &str, chunk_name: &str) -> bool {
-    resolved_path == format!("{chunk_name}.js")
-        || resolved_path
-            .strip_prefix(chunk_name)
-            .is_some_and(|rest| rest.starts_with('/'))
+fn insert_candidate(
+    by_exact: &mut HashMap<String, ChunkEntry>,
+    by_dir_prefix: &mut HashMap<String, ChunkEntry>,
+    chunk_id: ChunkId,
+    name: &str,
+) {
+    let match_len = name.len();
+    let exact_key = format!("{name}.js");
+    by_exact
+        .entry(exact_key)
+        .and_modify(|e| e.merge(chunk_id, match_len))
+        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
+    by_dir_prefix
+        .entry(name.to_string())
+        .and_modify(|e| e.merge(chunk_id, match_len))
+        .or_insert(ChunkEntry::Unique(chunk_id, match_len));
 }
 
 enum DeferredImport {
@@ -2628,5 +2738,147 @@ export { b as beta };
                 })
             })
             .unwrap_or_default()
+    }
+
+    fn chunk_table_with(names: &[&str]) -> ChunkTable {
+        let mut t = ChunkTable::default();
+        for n in names {
+            t.intern((*n).to_string());
+        }
+        t
+    }
+
+    #[test]
+    fn materialized_index_resolves_simple_name() {
+        let table = chunk_table_with(&["app", "vendor"]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        assert_eq!(
+            index.lookup("vendor.js"),
+            Some(table.get("vendor").unwrap())
+        );
+        assert_eq!(
+            index.lookup("vendor/entry.js"),
+            Some(table.get("vendor").unwrap())
+        );
+        assert_eq!(
+            index.lookup("app/entry.js"),
+            Some(table.get("app").unwrap())
+        );
+        assert_eq!(index.lookup("missing.js"), None);
+    }
+
+    #[test]
+    fn materialized_index_prefers_longer_prefix() {
+        // Chunk "a/b" should win over "a" for path "a/b/x.js" because
+        // match_len(3) > match_len(1).
+        let table = chunk_table_with(&["a", "a/b"]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        assert_eq!(index.lookup("a/b/x.js"), Some(table.get("a/b").unwrap()));
+        assert_eq!(index.lookup("a/x.js"), Some(table.get("a").unwrap()));
+    }
+
+    #[test]
+    fn materialized_index_stripped_form_resolves() {
+        // Chunk name "static/vendor" exposes stripped form "vendor"; a
+        // path like "vendor.js" should resolve to that chunk.
+        let table = chunk_table_with(&["static/vendor"]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        let target = table.get("static/vendor").unwrap();
+        assert_eq!(index.lookup("static/vendor.js"), Some(target));
+        assert_eq!(index.lookup("vendor.js"), Some(target));
+        assert_eq!(index.lookup("vendor/foo.js"), Some(target));
+    }
+
+    #[test]
+    fn materialized_index_ambiguous_returns_none() {
+        // Both chunk "vendor" (exact name) and chunk "static/vendor"
+        // (stripped form) match path "vendor.js" with match_len=6 →
+        // ambiguous.
+        let table = chunk_table_with(&["vendor", "static/vendor"]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        assert_eq!(index.lookup("vendor.js"), None);
+        assert_eq!(index.lookup("vendor/foo.js"), None);
+    }
+
+    #[test]
+    fn materialized_index_matches_legacy_linear_scan() {
+        // Cross-check the index against the original O(N) scan logic for
+        // a range of resolved paths, locking in the equivalence.
+        fn legacy(resolved_path: &str, table: &ChunkTable) -> Option<ChunkId> {
+            let mut best: Option<(usize, ChunkId)> = None;
+            let mut ambiguous = false;
+            for i in 0..table.len() {
+                let cid = ChunkId(i);
+                let name = table.name(cid);
+                let mut len = None;
+                if path_targets_legacy(resolved_path, name) {
+                    len = Some(name.len());
+                }
+                if let Some((_, stripped)) = name.split_once('/')
+                    && path_targets_legacy(resolved_path, stripped)
+                    && len.is_none_or(|l| stripped.len() > l)
+                {
+                    len = Some(stripped.len());
+                }
+                let Some(ml) = len else {
+                    continue;
+                };
+                match best {
+                    None => {
+                        best = Some((ml, cid));
+                        ambiguous = false;
+                    }
+                    Some((bl, _)) if ml > bl => {
+                        best = Some((ml, cid));
+                        ambiguous = false;
+                    }
+                    Some((bl, bc)) if ml == bl && bc != cid => {
+                        ambiguous = true;
+                    }
+                    _ => {}
+                }
+            }
+            if ambiguous {
+                None
+            } else {
+                best.map(|(_, c)| c)
+            }
+        }
+        fn path_targets_legacy(resolved_path: &str, chunk_name: &str) -> bool {
+            resolved_path == format!("{chunk_name}.js")
+                || resolved_path
+                    .strip_prefix(chunk_name)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        }
+
+        let table = chunk_table_with(&[
+            "app",
+            "vendor",
+            "a/b",
+            "a",
+            "static/vendor",
+            "deep/nested/chunk",
+        ]);
+        let index = MaterializedOutputChunkIndex::build(&table);
+        for path in [
+            "app.js",
+            "app/main.js",
+            "vendor.js",
+            "vendor/x.js",
+            "a/b/x.js",
+            "a/x.js",
+            "static/vendor.js",
+            "static/vendor/foo.js",
+            "deep/nested/chunk.js",
+            "deep/nested/chunk/y.js",
+            "unrelated.js",
+            "deep/unrelated.js",
+        ] {
+            assert_eq!(
+                index.lookup(path),
+                legacy(path, &table),
+                "mismatch on path={path:?}"
+            );
+        }
     }
 }
