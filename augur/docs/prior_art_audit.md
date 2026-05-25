@@ -411,7 +411,7 @@ Current Augur alignment:
 
 - `augur/model/` owns evidence loading, exogenous model protocols, fitting, and
   sim-native joint exogenous models.
-- `augur/plans/e2e_redesign.md` explicitly says source-data shapes belong in
+- `augur/sim/README.md` explicitly says source-data shapes belong in
   `augur/model`, not app state or the simulator contract.
 
 Gap:

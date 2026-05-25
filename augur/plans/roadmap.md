@@ -10,11 +10,14 @@ and deployment-specific composition stay in the downstream private repo.
 ## Sources
 
 - `augur/SPEC.md`: product contract and simulator vocabulary.
+- `augur/sim/README.md`: sim purpose, boundaries, invariants, and rollout
+  failure semantics.
 - `augur/sim/REQUIREMENTS.md` + `augur/sim/DESIGN.md`: simulator capability
   surface and structural decisions.
-- `augur/plans/e2e_redesign.md`: distribution-first runtime redesign and
-  ledger/reconciliation work.
+- `augur/plans/e2e_redesign.md`: ledger/reconciliation work for monthly
+  result arrays.
 - `augur/sim/docs/tensorized_simulator.md`: rollout-axis tensorization design + invariants.
+- `augur/sim/docs/tax_engine_evaluation.md`: tax engine build-vs-adopt evaluation.
 - `augur/docs/prior_art_audit.md`: external architecture lessons for path
   identity, governance, policy projection, and accounting traces.
 - `augur/sim/TODO.md`: forward-looking sim/product follow-ups.
