@@ -14,8 +14,6 @@ and deployment-specific composition stay in the downstream private repo.
   failure semantics.
 - `augur/sim/REQUIREMENTS.md` + `augur/sim/DESIGN.md`: simulator capability
   surface and structural decisions.
-- `augur/plans/e2e_redesign.md`: ledger/reconciliation work for monthly
-  result arrays.
 - `augur/sim/docs/tensorized_simulator.md`: rollout-axis tensorization design + invariants.
 - `augur/sim/docs/tax_engine_evaluation.md`: tax engine build-vs-adopt evaluation.
 - `augur/docs/prior_art_audit.md`: external architecture lessons for path

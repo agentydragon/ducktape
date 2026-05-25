@@ -22,6 +22,27 @@ Anything fully shipped is removed — git history is the record of done work.
   in one place. Implementations exist (sp500, crypto, home_value, rent,
   PE, inflation), but no single document says whether a configured value
   is a sim-month-0 level or a fixed contract value.
+- **Arrays reconcile to ledger.** Monthly result columns should remain
+  charts, not truth. Keep shrinking bespoke explanatory array math
+  without changing monthly-column semantics:
+  - True state snapshots (cash, public asset value, private-equity mark,
+    tender-eligible PE value, property value, mortgage balance,
+    home-equity claims, ownership pct, net-worth metrics) sourced from
+    state snapshots rather than transaction ledger rows.
+  - Transaction-flow arrays derived from ledger rows where practical.
+    Likely next targets: purchase-closing costs, property depreciation,
+    and tax payment timing once the tax ledger/liability shape exists.
+  - Explanatory arrays moved toward typed accounting detail once their
+    semantics are explicit enough. These arrays explain calculations;
+    they should not pretend to be cash movement unless a corresponding
+    ledger row exists.
+  - Generalize the ledger-derived matrix helper only when the next
+    family needs multiple categories, actor filters, property filters,
+    or balance snapshots.
+  - Keep existing monthly columns stable and keep reconciliation tests
+    as guardrails while the implementation source changes.
+  - Add any missing causes/IDs needed by derivation. Do not add ad hoc
+    string parsing to recover meaning from categories.
 
 ## Product UX
 
