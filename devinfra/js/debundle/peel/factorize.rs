@@ -41,6 +41,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -86,6 +87,25 @@ pub struct PeelFactorizeReport {
     /// See `plans/peel_proposer_contraction_model.md`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub seed_rejections: Vec<SeedContractionRejected>,
+    /// Wall-clock breakdown of the planner phases. Populated by
+    /// `analyze_peel_factorize`; left absent when the caller invoked
+    /// `factorize` directly (existing tests construct the report
+    /// inline). Serialised under `timings` so downstream automation
+    /// can correlate plan-work wall-clock with the same phase labels
+    /// used by `lower_chunk`'s timings tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timings: Option<PlanWorkTimingsReport>,
+}
+
+/// Plan-work phase timings shipped alongside the proposals so
+/// profiling can map back to source phases without an external
+/// profiler. Mirrors the shape of `pipeline.json`'s timings section:
+/// duration values plus integer milliseconds for grep-friendly
+/// inspection.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PlanWorkTimingsReport {
+    pub durations: BTreeMap<String, Duration>,
+    pub durations_ms: BTreeMap<String, u128>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -189,66 +209,134 @@ pub struct FactorizeDiagnosticReport {
 }
 
 pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFactorizeReport> {
-    let graph: OwnerGraphReport = serde_json::from_str(
-        &fs::read_to_string(&options.owner_graph_path)
-            .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
-    let claims = load_active_claims(&options.modules_root)?;
-    Ok(factorize(&graph, &claims, options.size_cap_lines))
+    let analyze_started = Instant::now();
+    let mut timings = PlanWorkTimings::default();
+    let graph: OwnerGraphReport = time_phase!(timings, "load_owner_graph", {
+        serde_json::from_str(
+            &fs::read_to_string(&options.owner_graph_path)
+                .with_context(|| format!("reading {}", options.owner_graph_path.display()))?,
+        )
+        .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?
+    });
+    let claims = time_phase!(timings, "load_active_claims", {
+        load_active_claims(&options.modules_root)?
+    });
+    let mut report = factorize_with_timings(&graph, &claims, options.size_cap_lines, &mut timings);
+    report.timings = Some(timings.into_report(analyze_started.elapsed()));
+    Ok(report)
 }
+
+/// Wall-clock collector used by `analyze_peel_factorize` and the
+/// per-phase planner internals it threads timings into. Kept private
+/// so the unit tests that construct `PeelFactorizeReport` inline
+/// don't have to pay attention to it. The serialised shape lives in
+/// `PlanWorkTimingsReport`.
+#[derive(Debug, Default)]
+struct PlanWorkTimings {
+    durations: BTreeMap<String, Duration>,
+}
+
+impl PlanWorkTimings {
+    fn add(&mut self, name: &str, duration: Duration) {
+        *self.durations.entry(name.to_string()).or_default() += duration;
+    }
+
+    fn into_report(self, total: Duration) -> PlanWorkTimingsReport {
+        let mut durations = self.durations;
+        durations.insert("total".to_string(), total);
+        let durations_ms: BTreeMap<String, u128> = durations
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_millis()))
+            .collect();
+        PlanWorkTimingsReport {
+            durations,
+            durations_ms,
+        }
+    }
+}
+
+macro_rules! time_phase {
+    ($timings:expr, $name:expr, $body:block) => {{
+        let phase_started = std::time::Instant::now();
+        let value = $body;
+        $timings.add($name, phase_started.elapsed());
+        value
+    }};
+}
+pub(crate) use time_phase;
 
 pub fn factorize(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, String>,
     size_cap_lines: usize,
 ) -> PeelFactorizeReport {
-    let owner_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| (node.id.as_str(), i))
-        .collect();
+    let mut timings = PlanWorkTimings::default();
+    factorize_with_timings(graph, active_claims, size_cap_lines, &mut timings)
+}
 
-    let residual: BTreeSet<usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .filter(|(_, node)| node.destination.residual)
-        .map(|(i, _)| i)
-        .collect();
+fn factorize_with_timings(
+    graph: &OwnerGraphReport,
+    active_claims: &BTreeMap<String, String>,
+    size_cap_lines: usize,
+    timings: &mut PlanWorkTimings,
+) -> PeelFactorizeReport {
+    let owner_index: HashMap<&str, usize> = time_phase!(timings, "build_owner_index", {
+        graph
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, node)| (node.id.as_str(), i))
+            .collect()
+    });
 
-    let owner_to_active_module: HashMap<usize, String> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(i, node)| {
-            if node.destination.residual {
-                return None;
-            }
-            let path = node
-                .declared_bindings
+    let residual: BTreeSet<usize> = time_phase!(timings, "collect_residual_owners", {
+        graph
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.destination.residual)
+            .map(|(i, _)| i)
+            .collect()
+    });
+
+    let owner_to_active_module: HashMap<usize, String> =
+        time_phase!(timings, "build_owner_to_active_module", {
+            graph
+                .nodes
                 .iter()
-                .find_map(|b| active_claims.get(b.binding.as_str()))
-                .cloned()
-                .or_else(|| node.destination.target_file.clone())
-                .unwrap_or_else(|| node.destination.label.clone());
-            Some((i, path))
-        })
-        .collect();
+                .enumerate()
+                .filter_map(|(i, node)| {
+                    if node.destination.residual {
+                        return None;
+                    }
+                    let path = node
+                        .declared_bindings
+                        .iter()
+                        .find_map(|b| active_claims.get(b.binding.as_str()))
+                        .cloned()
+                        .or_else(|| node.destination.target_file.clone())
+                        .unwrap_or_else(|| node.destination.label.clone());
+                    Some((i, path))
+                })
+                .collect()
+        });
 
     // Spec-module groups: every active-claimed module's owners
     // pre-contracted into one class. Used by `build_seed_quotient`'s
     // pass 2 to seed pre-existing-module classes; the greedy then
     // absorbs orphans into them.
-    let spec_modules = spec_module_groups(graph);
-    let (mut quotient, seed_rejections) = build_seed_quotient(
-        graph,
-        &graph.atomic_graph.nodes,
-        &spec_modules,
-        size_cap_lines,
-    );
-    let _greedy_steps = greedy_merge_to_convergence(&mut quotient);
+    let spec_modules = time_phase!(timings, "spec_module_groups", { spec_module_groups(graph) });
+    let (mut quotient, seed_rejections) = time_phase!(timings, "build_seed_quotient", {
+        build_seed_quotient(
+            graph,
+            &graph.atomic_graph.nodes,
+            &spec_modules,
+            size_cap_lines,
+        )
+    });
+    time_phase!(timings, "greedy_merge_to_convergence", {
+        let _greedy_steps = greedy_merge_to_convergence(&mut quotient);
+    });
 
     // Per-class edge accounting. Walk every constraining owner
     // edge and classify (source-class, target-class) into:
@@ -259,50 +347,62 @@ pub fn factorize(
     // edge-accounting surface mirrors today's cell-edge-accounting
     // semantics; non-residual edges are part of the spec module's
     // internal initialization, not relevant to peel proposals).
-    let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
-    let mut edges_to_active: Vec<(usize, String)> = Vec::new();
-    for edge in &graph.edges {
-        if !edge.constrains_init_order {
-            continue;
-        }
-        let (Some(&source), Some(&target)) = (
-            owner_index.get(edge.source.as_str()),
-            owner_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
-        if !residual.contains(&source) || source == target {
-            continue;
-        }
-        if residual.contains(&target) {
-            residual_constraining_edges.push((source, target));
-        } else if let Some(module_path) = owner_to_active_module.get(&target) {
-            edges_to_active.push((source, module_path.clone()));
-        }
-    }
+    let (residual_constraining_edges, edges_to_active) =
+        time_phase!(timings, "classify_constraining_edges", {
+            let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
+            let mut edges_to_active: Vec<(usize, String)> = Vec::new();
+            for edge in &graph.edges {
+                if !edge.constrains_init_order {
+                    continue;
+                }
+                let (Some(&source), Some(&target)) = (
+                    owner_index.get(edge.source.as_str()),
+                    owner_index.get(edge.target.as_str()),
+                ) else {
+                    continue;
+                };
+                if !residual.contains(&source) || source == target {
+                    continue;
+                }
+                if residual.contains(&target) {
+                    residual_constraining_edges.push((source, target));
+                } else if let Some(module_path) = owner_to_active_module.get(&target) {
+                    edges_to_active.push((source, module_path.clone()));
+                }
+            }
+            (residual_constraining_edges, edges_to_active)
+        });
 
     // Per-class label (pre-existing module path). Built from the
     // active-claimed owners surviving in each class; if a class
     // contains owners from two distinct active modules, the labels
     // are collected and surfaced as a `merge_into` later.
-    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<String>> = BTreeMap::new();
-    for (idx, _) in graph.nodes.iter().enumerate() {
-        let Some(label) = owner_to_active_module.get(&idx) else {
-            continue;
-        };
-        let c = quotient.class_of(OwnerIdx(idx));
-        class_to_labels.entry(c).or_default().insert(label.clone());
-    }
+    let class_to_labels: BTreeMap<ClassId, BTreeSet<String>> =
+        time_phase!(timings, "build_class_to_labels", {
+            let mut class_to_labels: BTreeMap<ClassId, BTreeSet<String>> = BTreeMap::new();
+            for (idx, _) in graph.nodes.iter().enumerate() {
+                let Some(label) = owner_to_active_module.get(&idx) else {
+                    continue;
+                };
+                let c = quotient.class_of(OwnerIdx(idx));
+                class_to_labels.entry(c).or_default().insert(label.clone());
+            }
+            class_to_labels
+        });
 
-    let proposals = emit_proposals(
-        &quotient,
-        &class_to_labels,
-        &residual_constraining_edges,
-        &edges_to_active,
-        graph,
-        size_cap_lines,
-    );
-    let diagnostics = collect_size_cap_diagnostics(&quotient, graph, size_cap_lines);
+    let proposals = time_phase!(timings, "emit_proposals", {
+        emit_proposals(
+            &quotient,
+            &class_to_labels,
+            &residual_constraining_edges,
+            &edges_to_active,
+            graph,
+            size_cap_lines,
+        )
+    });
+    let diagnostics = time_phase!(timings, "collect_size_cap_diagnostics", {
+        collect_size_cap_diagnostics(&quotient, graph, size_cap_lines)
+    });
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
@@ -316,6 +416,7 @@ pub fn factorize(
         diagnostic_counts,
         size_distributions,
         seed_rejections,
+        timings: None,
     }
 }
 

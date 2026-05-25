@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -13,6 +14,7 @@ use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use lowering::{MaterializeLogicalModulesOptions, materialize_logical_modules};
+use output_layout::REPORTS_DIR;
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
@@ -129,12 +131,84 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     ))
 }
 
+/// Wall-clock timings for every meaningful top-level phase of
+/// `run_transform_cli`. Sub-phase timings (chunk-level analysis,
+/// per-plan emit, etc.) continue to live in `modules.json`; this
+/// struct is the pipeline-level peer that captures the work between
+/// `load_js_chunks` and `emit_browser_harness` so the previously
+/// uninstrumented gap in profiles disappears. Phases marked
+/// `prepare_js_chunks.parse_files_sum` / `analyze_files_sum`
+/// aggregate the per-file `ParsedJsFileRecord` durations the parser
+/// already records, so the cost of the parse step relative to the
+/// surrounding orchestration is visible without re-instrumenting
+/// `prepare_js_chunks`.
+#[derive(Debug, Default, Serialize)]
+struct PipelineTimings {
+    durations: BTreeMap<String, Duration>,
+}
+
+impl PipelineTimings {
+    fn add(&mut self, name: &str, duration: Duration) {
+        *self.durations.entry(name.to_string()).or_default() += duration;
+    }
+
+    fn into_report(self, total: Duration) -> PipelineTimingsReport {
+        let mut durations = self.durations;
+        durations.insert("total".to_string(), total);
+        let durations_ms: BTreeMap<String, u128> = durations
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_millis()))
+            .collect();
+        PipelineTimingsReport {
+            durations,
+            durations_ms,
+        }
+    }
+}
+
+/// `pipeline.json` shape. `durations` serialises each phase's
+/// `Duration` (`{secs, nanos}`); `durations_ms` is the same data
+/// flattened to integer milliseconds for grep-friendly inspection.
+/// Both views ship so automation can pick whichever it prefers
+/// without re-serializing.
+#[derive(Debug, Serialize)]
+struct PipelineTimingsReport {
+    durations: BTreeMap<String, Duration>,
+    durations_ms: BTreeMap<String, u128>,
+}
+
+/// Run `$body`, record its wall-clock under `$name` in `$timings`,
+/// and return the body's value. Mirrors the in-lowering
+/// `time_phase!` macro so the new pipeline phases use the same
+/// shape downstream automation already expects.
+macro_rules! time_phase {
+    ($timings:expr, $name:expr, $body:expr) => {{
+        let phase_started = std::time::Instant::now();
+        let value = $body;
+        $timings.add($name, phase_started.elapsed());
+        value
+    }};
+}
+
 pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
-    let spec = load_transform_spec_source(&cli.spec_source)?;
-    validate_transform_spec(&spec)?;
-    preflight_output_roots(&spec)?;
-    let (artifact, _load_manifest) =
-        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
+    let pipeline_started = Instant::now();
+    let mut timings = PipelineTimings::default();
+    let spec = time_phase!(
+        timings,
+        "load_spec",
+        load_transform_spec_source(&cli.spec_source)
+    )?;
+    time_phase!(timings, "validate_spec", validate_transform_spec(&spec))?;
+    time_phase!(
+        timings,
+        "preflight_output_roots",
+        preflight_output_roots(&spec)
+    )?;
+    let (artifact, _load_manifest) = time_phase!(
+        timings,
+        "load_js_chunks",
+        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)
+    )?;
     let materialise_chunk_ids: Vec<String> = spec
         .logical_modules
         .keys()
@@ -144,17 +218,46 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let prepare_result = prepare_js_chunks(&spec, artifact)?;
-    let artifact_indexes = ArtifactIndexes::build(&prepare_result.artifact)?;
+    let prepare_result = time_phase!(
+        timings,
+        "prepare_js_chunks",
+        prepare_js_chunks(&spec, artifact)
+    )?;
+    // Aggregate the per-file parse + analyze durations from
+    // `prepare_js_chunks` into pipeline-level entries so the cost of
+    // parsing vs. shallow analysis is visible without diving into the
+    // per-file manifest. The sums dwarf the wall-clock of the
+    // surrounding orchestration when parsing is the bottleneck;
+    // diverging from it means the orchestration is.
+    let mut parse_total = Duration::ZERO;
+    let mut analyze_total = Duration::ZERO;
+    for record in &prepare_result.parsed_js_files.parsed_files {
+        parse_total += record.parse_duration;
+        analyze_total += record.analysis_duration;
+    }
+    timings.add("prepare_js_chunks.parse_files_sum", parse_total);
+    timings.add("prepare_js_chunks.analyze_files_sum", analyze_total);
+    let artifact_indexes = time_phase!(
+        timings,
+        "build_artifact_indexes",
+        ArtifactIndexes::build(&prepare_result.artifact)
+    )?;
 
-    let rewrite_result =
-        rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes)?;
+    let rewrite_result = time_phase!(
+        timings,
+        "rewrite_chunk_entry_specifiers",
+        rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes)
+    )?;
     let mut artifact = rewrite_result.artifact;
     let counts = prepare_result.counts;
     let mut chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let full_swap_result = run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
+    let full_swap_result = time_phase!(
+        timings,
+        "run_full_vendor_swaps",
+        run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli)
+    )?;
     artifact = full_swap_result.artifact;
     vendor_report.full = full_swap_result.full_swap_resolutions;
     chunk_records.retain(|chunk| !full_swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
@@ -169,36 +272,46 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
             report_out_dir,
             target_dir,
         } = spec.materialize_logical_modules.clone();
-        let materialize_result = materialize_logical_modules(
-            artifact,
-            &spec.logical_modules,
-            &spec.chunk_renames,
-            &spec.unassigned_mode,
-            &spec.chunk_analysis_options,
-            MaterializeLogicalModulesOptions {
-                chunk_ids: materialise_chunk_ids,
-                file,
-                prune_other_chunks,
-                report_out_dir,
-                target_dir,
-            },
-        )?;
+        let materialize_result = time_phase!(timings, "materialize_logical_modules", {
+            materialize_logical_modules(
+                artifact,
+                &spec.logical_modules,
+                &spec.chunk_renames,
+                &spec.unassigned_mode,
+                &spec.chunk_analysis_options,
+                MaterializeLogicalModulesOptions {
+                    chunk_ids: materialise_chunk_ids,
+                    file,
+                    prune_other_chunks,
+                    report_out_dir,
+                    target_dir,
+                },
+            )
+        })?;
         artifact = materialize_result.artifact;
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         decomposition_by_chunk = materialize_result.decomposition_by_chunk;
     }
 
-    let partial_result = run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
+    let partial_result = time_phase!(
+        timings,
+        "run_partial_vendor_swaps",
+        run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli)
+    )?;
     artifact = partial_result.artifact;
     vendor_report.partial = partial_result.partial_swap_resolutions;
     vendor_report.bundled_partial = partial_result.bundled_partial_swap_resolutions;
     vendor_report.strip_stats = partial_result.strip_stats;
 
-    write_vendor_swaps_report(
-        spec.swap_vendor_chunks.write,
-        spec.swap_vendor_chunks.output_manifest_path.as_deref(),
-        &vendor_report,
+    time_phase!(
+        timings,
+        "write_vendor_swaps_report",
+        write_vendor_swaps_report(
+            spec.swap_vendor_chunks.write,
+            spec.swap_vendor_chunks.output_manifest_path.as_deref(),
+            &vendor_report,
+        )
     )?;
 
     // Final emit-shape check: every JS file that came out of the
@@ -208,18 +321,26 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
     // pageerror) into an immediate build-time error pointing at the
     // exact file, name, and source lines. Runs unconditionally so
     // pipelines without vendor swaps still benefit.
-    validate_emitted_exports(&artifact)?;
+    time_phase!(
+        timings,
+        "validate_emitted_exports",
+        validate_emitted_exports(&artifact)
+    )?;
 
     if let Some(cfg) = &spec.write_js_tree {
-        write_js_tree(&WriteTreeInput {
-            artifact: &artifact,
-            out_dir: &cfg.out_dir,
-            lowerings: &selected_lowerings,
-            counts: &counts,
-            chunk_records: &chunk_records,
-            module_count,
-            decomposition_by_chunk: &decomposition_by_chunk,
-        })?;
+        time_phase!(
+            timings,
+            "write_js_tree",
+            write_js_tree(&WriteTreeInput {
+                artifact: &artifact,
+                out_dir: &cfg.out_dir,
+                lowerings: &selected_lowerings,
+                counts: &counts,
+                chunk_records: &chunk_records,
+                module_count,
+                decomposition_by_chunk: &decomposition_by_chunk,
+            })
+        )?;
     }
 
     if let Some(cfg) = &spec.emit_browser_harness {
@@ -228,10 +349,49 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
             out_dir: cfg.out_dir.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
         };
-        emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
+        time_phase!(
+            timings,
+            "emit_browser_harness",
+            emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)
+        )?;
     }
 
+    // Persist the pipeline-level breakdown next to the per-chunk
+    // `modules.json`. Writing to the same reports root as the rest
+    // of the tree means existing automation that mounts the reports
+    // directory picks the file up without spec changes; if neither
+    // `write_js_tree` nor `emit_browser_harness` was configured (a
+    // lib call from a custom harness, say), we silently skip — the
+    // numbers can still be re-collected with explicit instrumentation
+    // upstream.
+    write_pipeline_timings_report(&spec, timings.into_report(pipeline_started.elapsed()))?;
+
     Ok(())
+}
+
+const PIPELINE_REPORT: &str = "pipeline.json";
+
+fn write_pipeline_timings_report(
+    spec: &TransformSpec,
+    report: PipelineTimingsReport,
+) -> Result<()> {
+    let out_dir = spec
+        .write_js_tree
+        .as_ref()
+        .map(|cfg| cfg.out_dir.clone())
+        .or_else(|| {
+            spec.emit_browser_harness
+                .as_ref()
+                .map(|cfg| cfg.out_dir.clone())
+        });
+    let Some(out_dir) = out_dir else {
+        return Ok(());
+    };
+    let reports_dir = out_dir.join(REPORTS_DIR);
+    fs::create_dir_all(&reports_dir)
+        .with_context(|| format!("creating {}", reports_dir.display()))?;
+    let path = reports_dir.join(PIPELINE_REPORT);
+    write_json(&path, &report)
 }
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
