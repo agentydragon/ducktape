@@ -22,8 +22,6 @@ spec:
       serviceAccountName: homeassistant-proxy
       securityContext:
         fsGroup: 1000
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: homeassistant-proxy
           image: ghcr.io/agentydragon/homeassistant-proxy:devel-20260522024329-b644a41 # {"$imagepolicy": "flux-system:homeassistant-proxy"}

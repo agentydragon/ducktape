@@ -23,8 +23,6 @@ spec:
       serviceAccountName: airlock
       securityContext:
         fsGroup: 1000
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: airlock
           image: ghcr.io/agentydragon/airlock:devel-20260515210919-a51187a # {"$imagepolicy": "flux-system:airlock"}

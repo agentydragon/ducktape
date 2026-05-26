@@ -215,7 +215,6 @@ Expected path behavior through the proxy:
 
 ## Secrets
 
-| Secret                                    | Key                 | Source                                        |
-| ----------------------------------------- | ------------------- | --------------------------------------------- |
-| `harbor-pull-robot`                       | `.dockerconfigjson` | harbor-ci TF (Reflector mirror)               |
-| `tana-agentydragon-gmail-com-account-pat` | `token`             | SOPS-managed PAT for `agentydragon@gmail.com` |
+| Secret                                    | Key     | Source                                        |
+| ----------------------------------------- | ------- | --------------------------------------------- |
+| `tana-agentydragon-gmail-com-account-pat` | `token` | SOPS-managed PAT for `agentydragon@gmail.com` |

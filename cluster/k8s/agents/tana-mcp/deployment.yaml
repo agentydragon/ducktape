@@ -21,8 +21,6 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop

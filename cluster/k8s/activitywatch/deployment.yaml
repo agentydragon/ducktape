@@ -24,8 +24,6 @@ spec:
         fsGroup: 999
       nodeSelector:
         topology.kubernetes.io/region: proxmox
-      imagePullSecrets:
-        - name: harbor-pull-robot
       containers:
         - name: aw-server
           image: ghcr.io/agentydragon/aw-server:devel-20260522024811-bae306b # {"$imagepolicy": "flux-system:activitywatch"}
