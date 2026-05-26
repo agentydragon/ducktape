@@ -512,6 +512,38 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 - [ ] Cert-Manager, Metrics Server, ESO webhook, OpenClaw sandbox egress, Props, Nix cache
 
+### Scoped Historical Logs for `claude-sandbox`
+
+Agents in `claude-sandbox` can't reach Loki — `loki-ingress` CNP only allows
+promtail/grafana/alloy/gatus/authentik, and Loki runs `auth_enabled: false` so the
+CNP is the entire access boundary. Without log access, post-mortems on dead pods
+(e.g. the 2026-05-24 `tana-mcp` livenessProbe kill) are limited to metrics +
+kubelet's short-lived previous-container buffer.
+
+Options, from cheapest to cleanest:
+
+- **A. Allowlist `claude-sandbox` on `loki-ingress` CNP.** ~5 lines. Grants full
+  cluster Loki read; scoping relies on the agent querying only namespaces it has
+  business in (same trust model as `namespace-diagnostics-reader`).
+- **B. `loki-agent-proxy` deployment in `monitoring`.** nginx + njs/Lua that
+  rewrites incoming LogQL `query` params to inject `{namespace=~"<allowlist>"}`
+  before forwarding to `loki-read:3100`. CNP grants `claude-sandbox` → proxy only,
+  not Loki directly. Real per-namespace scoping. Mirrors existing precedent
+  (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch-readonly`
+  whitelisting `GET/POST /api/0/query`). Natural allowlist: the
+  `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
+  <k8s/agents/claude-rbac/permissions.md>.
+- **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
+  per-namespace tenants via Alloy/Promtail, grant tenant IDs. Touches every log
+  producer; almost certainly overkill.
+
+Grafana isn't a useful proxy here: OSS Grafana's Loki datasource has no
+label-level access controls (TeamLBAC is Enterprise-only), so routing through
+Grafana shifts the trust boundary without actually scoping access.
+
+Recommendation: **B** when log access starts mattering for routine triage; **A**
+as a stop-gap if the trust-the-agent model is acceptable.
+
 ### Pod Security Standards
 
 Apply `restricted` PSS labels to app namespaces. System namespaces keep `privileged`.
