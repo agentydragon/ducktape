@@ -33,9 +33,17 @@
 //! abandoned (see `docs/lessons_learned/cross_process_stage_b.md`).
 //! The composer survives as a structural readability boundary.
 //!
-//! Atomic-unit-rebind folding still runs inline at the materializer
-//! because it mutates ChunkPlanBuilder state, not just stderr/control
-//! flow; moving it into the composer is a separate refactor.
+//! Atomic-unit-rebind folding is the "Stage A.5" step: it runs after
+//! the partition seed phases (explicit requests, destructure pull,
+//! residual sweep) but is purely a function of Stage A's output
+//! (owner graph + atomic units) and the post-seed binding→module
+//! assignment. The decision logic lives at
+//! [`compute_rebind_folds`]; the lowering-side caller applies the
+//! returned folds to its `ModulePlan` list.
+
+mod rebind_fold;
+
+pub use rebind_fold::{RebindFold, compute_rebind_folds};
 
 use anyhow::{Result, bail};
 use swc_common::Span;

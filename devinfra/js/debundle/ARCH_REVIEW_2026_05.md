@@ -8,12 +8,6 @@ Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top o
 
 The original executive-summary item resolved with the `EdgeRole` enum. Remaining work is the section-by-section backlog below.
 
-## Ad-hoc wiring + pipeline-state passing
-
-### `compute_stage_one_analysis` — only rebind-folding still leaks into the materializer
-
-`stage_one/mod.rs` is a clean composer. Redundant-hint stderr and the top-level-await `bail!` are now owned by the composer (`report_redundant_hints_to_stderr` + the explicit `top_level_await` check). The only side-effecting path still living inline at the materializer is `fold_rebind_atomic_units` (`lowering/materialize/mod.rs:216`), which folds atomic-unit rebinds into the partition. Moving that into the composer would finish the Stage A separation; the rebind path needs the post-seed partition, so it's plausibly a separate "Stage A.5" composer rather than an extension of `compute_stage_one_analysis` proper.
-
 ## Duplicated calculations
 
 ### `tarjan_scc` over the module quotient: residual walks

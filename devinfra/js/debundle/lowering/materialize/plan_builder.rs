@@ -401,8 +401,9 @@ impl ChunkPlanBuilder {
 
     /// `MiniFactors` mode: every unclaimed atomic factor unit gets
     /// its own synthesized plan at `__auto/mini/NNNN`. Run after
-    /// `fold_rebind_units` so the residual sweep + rebind folding
-    /// have already settled which units are still unclaimed. Bindings
+    /// Stage A.5 (`apply_rebind_folds`) so the residual sweep +
+    /// rebind folding have already settled which units are still
+    /// unclaimed. Bindings
     /// previously parked at the residual plan are moved out into the
     /// synthesized plan; the residual plan's `bindings` map is
     /// pruned to match.
@@ -531,20 +532,56 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// Resolve rebind-only atomic-unit soft conflicts: extend an
-    /// explicit claim's plan to cover any cycle member that has no
-    /// explicit destination, so that ESM-read-only-import semantics
-    /// don't surface the conflict as an unrealizable spec.
+    /// Apply a batch of rebind-fold decisions produced by the
+    /// Stage A.5 composer (`analysis::compute_rebind_folds`).
     ///
-    /// Implementation in `rebind_folding::fold_rebind_atomic_units`.
-    pub(super) fn fold_rebind_units(&mut self, precomputed: &OwnerGraphAndUnits) {
-        super::rebind_folding::fold_rebind_atomic_units(
-            precomputed,
-            &mut self.binding_assignment,
-            &mut self.bindings_catalogue,
-            &mut self.module_plans,
-            self.residual_plan_index,
-        );
+    /// Each fold reroutes a single binding from its previous plan
+    /// (if any) to the cycle's explicit destination. The
+    /// `bindings_catalogue` mirrors the new owner, and bindings
+    /// that were previously parked at the residual plan are pruned
+    /// from that plan's binding list so the residual doesn't
+    /// double-claim them.
+    ///
+    /// Folds are produced in atomic-unit iteration order; we do not
+    /// reorder them here. The mutations are idempotent in the sense
+    /// that `module_plans[dest].bindings.entry(name).or_insert_with`
+    /// preserves any existing entry under that name.
+    pub(super) fn apply_rebind_folds(&mut self, folds: Vec<RebindFold>) {
+        let residual_plan_index = self.residual_plan_index;
+        for fold in folds {
+            let RebindFold {
+                binding,
+                name,
+                dest,
+                owned_kind,
+                previous,
+            } = fold;
+            self.binding_assignment.insert(binding.clone(), dest);
+            self.bindings_catalogue.insert(binding, owned_kind);
+            self.module_plans[dest]
+                .bindings
+                .entry(name.clone())
+                .or_insert_with(|| name.clone());
+            if let Some(prev_idx) = previous
+                && Some(prev_idx) == residual_plan_index
+            {
+                self.module_plans[prev_idx].bindings.remove(&name);
+            }
+        }
+    }
+
+    /// Borrow access to the current binding assignment so the
+    /// Stage A.5 composer can compute folds against it without
+    /// mutating the builder.
+    pub(super) fn binding_assignment(&self) -> &HashMap<Id, usize> {
+        &self.binding_assignment
+    }
+
+    /// The residual landing-site plan index, if one was created by
+    /// the residual sweep. Needed by Stage A.5 to know which
+    /// existing claims count as "swept" (and hence still foldable).
+    pub(super) fn residual_plan_index(&self) -> Option<usize> {
+        self.residual_plan_index
     }
 
     pub(super) fn finalize(self) -> ChunkPlan {

@@ -5,7 +5,6 @@
 
 mod apply;
 mod plan_builder;
-mod rebind_folding;
 
 pub(super) use apply::apply_materialized_logical_chunks;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
@@ -213,7 +212,7 @@ pub(super) fn materialize_logical_chunk(
         owner_graph_and_units: precomputed,
     } = stage_one;
     time_phase!(timings, "fold_rebind_atomic_units", {
-        builder.fold_rebind_units(&precomputed);
+        apply_stage_one_a5(&mut builder, &precomputed);
     });
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         time_phase!(timings, "synthesize_mini_factor_plans", {
@@ -352,6 +351,33 @@ pub(super) fn materialize_logical_chunk(
         validation,
         report,
     })
+}
+
+/// Stage A.5 composer: fold rebind-only atomic units into their
+/// explicit destination. Bridges the pure
+/// `analysis::compute_rebind_folds` decision over the chunk's
+/// post-seed partition (managed by `ChunkPlanBuilder`) into the
+/// builder's plan-list/catalogue state.
+///
+/// Stage A.5 runs after the seed phases of partition construction
+/// (explicit requests, destructure pull, residual sweep) and before
+/// `synthesize_mini_factors`. The decision step is spec-independent —
+/// it only inspects Stage A's owner graph + atomic units, the
+/// builder's binding→plan assignment, and the residual landing-site
+/// index — so it lives in the `analysis` crate; this thin composer
+/// owns the application of those decisions to the builder's
+/// `ModulePlan` list.
+///
+/// See `ARCH_REVIEW_2026_05.md` § "`compute_stage_one_analysis` —
+/// only rebind-folding still leaks into the materializer" for the
+/// original separation rationale.
+fn apply_stage_one_a5(builder: &mut ChunkPlanBuilder, precomputed: &OwnerGraphAndUnits) {
+    let folds = compute_rebind_folds(
+        precomputed,
+        builder.binding_assignment(),
+        builder.residual_plan_index(),
+    );
+    builder.apply_rebind_folds(folds);
 }
 
 /// Build the `FactorizationLogicalModule` list the factorizer

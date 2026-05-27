@@ -12,8 +12,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, ChunkFactorization, DepKind, KnownEffect,
     LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
-    OwnerGraphOptions, OwnerId, RedundantPurityHint, StageOneAnalysis, compute_stage_one_analysis,
-    render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
+    OwnerGraphOptions, OwnerId, RebindFold, RedundantPurityHint, StageOneAnalysis,
+    compute_rebind_folds, compute_stage_one_analysis, render_atomic_unit_conflict_summary,
+    render_cycle_summary, top_level_id,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,

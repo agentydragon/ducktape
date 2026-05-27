@@ -71,7 +71,9 @@ pub use reports::schema::{
     QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
     SourceLocation,
 };
-pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
+pub use stage_one::{
+    RebindFold, StageOneAnalysis, compute_rebind_folds, compute_stage_one_analysis,
+};
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
     render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,
