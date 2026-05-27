@@ -20,8 +20,8 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
-    run_explain_report, run_graph_summary_report, run_patch_plan_report, run_peel,
-    run_plan_work_report, run_source_slice_report, run_units_report,
+    resolve_binding_owners, run_explain_report, run_graph_summary_report, run_patch_plan_report,
+    run_peel, run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, run_transform_cli};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
@@ -681,15 +681,12 @@ fn run_scc(args: SccArgs) -> Result<()> {
     })?;
     // If a binding was supplied, find its owner -> destination module
     // first; we restrict SCCs to ones containing that destination.
+    // Uses the shared `resolve_binding_owners` helper so minified and
+    // readable name forms both resolve.
     let restrict_to_module: Option<String> = if let Some(sym) = &args.binding {
-        let owner = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|b| b.binding == *sym || b.export_name == *sym)
-            })
+        let owner = resolve_binding_owners(&graph, sym)
+            .into_iter()
+            .next()
             .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
         Some(owner.destination.id.clone())
     } else {
@@ -759,14 +756,12 @@ fn run_cluster(args: ClusterArgs) -> Result<()> {
         &std::fs::read_to_string(&args.common.owner_graph_path)
             .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
     )?;
-    let owner = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|b| b.binding == args.sym || b.export_name == args.sym)
-        })
+    // Use the shared `resolve_binding_owners` helper (same code path
+    // `describe` / `show-source` / `scc --binding` use), so minified
+    // and readable names both work.
+    let owner = resolve_binding_owners(&graph, &args.sym)
+        .into_iter()
+        .next()
         .ok_or_else(|| anyhow::anyhow!("no owner declares binding {:?}", args.sym))?;
     let home_module = owner.destination.id.clone();
     let mut incoming: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();

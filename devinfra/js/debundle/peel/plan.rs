@@ -1166,6 +1166,49 @@ fn query_report(selection: &SelectionKind) -> QueryReport {
     }
 }
 
+/// Find every owner node whose `declared_bindings` matches `name`.
+///
+/// `name` is compared against both the minified `BindingReport.binding`
+/// and the readable `BindingReport.export_name`. Matches by minified
+/// name come first, so when both forms happen to spell `name` on
+/// different bindings (extremely rare — readable names are picked to
+/// avoid collisions with live minified ids), the minified match wins
+/// the back-compat order; both still appear in the returned slice so
+/// callers can detect ambiguity if they care.
+///
+/// This is the one shared resolver every CLI verb that accepts a
+/// binding name from the owner graph (`cluster`, `scc --binding`,
+/// `describe`, `show-source`) routes through. Spec-edit verbs
+/// (`bindings rename` / `assign` / `unassign` / `comment`) use
+/// [`crate::binding::resolve_unambiguous`] instead — they need YAML
+/// member positions, not owner-graph node refs.
+pub fn resolve_binding_owners<'a>(
+    graph: &'a OwnerGraphReport,
+    name: &str,
+) -> Vec<&'a OwnerGraphNodeReport> {
+    let mut by_minified: Vec<&OwnerGraphNodeReport> = Vec::new();
+    let mut by_readable: Vec<&OwnerGraphNodeReport> = Vec::new();
+    for node in &graph.nodes {
+        let mut matched_minified = false;
+        let mut matched_readable = false;
+        for binding in &node.declared_bindings {
+            if binding.binding == *name {
+                matched_minified = true;
+            }
+            if binding.export_name == *name {
+                matched_readable = true;
+            }
+        }
+        if matched_minified {
+            by_minified.push(node);
+        } else if matched_readable {
+            by_readable.push(node);
+        }
+    }
+    by_minified.extend(by_readable);
+    by_minified
+}
+
 fn resolve_owner_ids(
     selection: &SelectionKind,
     graph: &OwnerGraphReport,
@@ -1180,14 +1223,8 @@ fn resolve_owner_ids(
                 bail!("owner id {owner_id:?} not found in owner graph");
             }
         }
-        SelectionKind::Binding(binding_id) => graph
-            .nodes
-            .iter()
-            .filter(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|binding| binding.binding == *binding_id)
-            })
+        SelectionKind::Binding(binding_id) => resolve_binding_owners(graph, binding_id)
+            .into_iter()
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {

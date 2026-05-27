@@ -40,17 +40,7 @@ that would be touched — drowning the actual semantic delta.
 `anonymous_statements:` content semantically changes, not files merely
 re-formatted by canonicalization.
 
-### 3. `describe` and `show-source` reject readable names; `cluster` accepts them
-
-`debundle cluster PluginSettingsAccessor` works. `debundle describe
-PluginSettingsAccessor` exits 1: `selection did not resolve to any owner
-ids`. Same for `show-source`.
-
-**Fix idea**: factor the readable→minified resolution into a shared
-selector helper used by all three commands. Today `cluster` has it,
-others don't.
-
-### 4. `cluster --binding <sym>` documented but rejected
+### 3. `cluster --binding <sym>` documented but rejected
 
 `tana/re/web/AGENTS.md` shows `$BIN cluster --binding XOe --format
 ndjson`. The CLI actually wants a positional `<SYM>`: `error: unexpected
@@ -59,7 +49,7 @@ argument '--binding' found`.
 **Fix idea**: either drop the `--binding` flag form from AGENTS.md or
 add it as an alias in the CLI parser.
 
-### 5. `cluster` output uses opaque `logical:N` ids without labels
+### 4. `cluster` output uses opaque `logical:N` ids without labels
 
 `debundle cluster XOe` returns:
 
@@ -73,7 +63,7 @@ add it as an alias in the CLI parser.
 **Fix idea**: include `"label"` / `"path"` alongside the `logical:N` id
 in cluster output, matching describe's shape.
 
-### 6. `modules delete` requires `.yaml` suffix; the error message hides it
+### 5. `modules delete` requires `.yaml` suffix; the error message hides it
 
 `debundle modules delete --dry-run auto_partition/auto_partition_0004`
 errors with `module path does not exist:
@@ -86,7 +76,7 @@ path; only `modules delete` requires the suffix. Inconsistent.
 **Fix idea**: accept the bare path (consistent with siblings) or change
 the error to "expected `.yaml` suffix".
 
-### 7. `modules merge --dry-run` silent on success
+### 6. `modules merge --dry-run` silent on success
 
 `debundle modules merge --dry-run --target T S1` prints only `reading
 T.yaml` to stderr and exits 0. Per `cli.md`, mutating commands should
@@ -96,7 +86,7 @@ print a one-line verdict (`ok` / `would change N files` / `rejected
 **Fix idea**: emit the verdict line; cite the prior-art behavior of
 `bindings assign --dry-run`.
 
-### 8. `gate list` silent when `cycles.json` missing
+### 7. `gate list` silent when `cycles.json` missing
 
 `debundle gate list` with no current cycles emits a single `reading
 …/cycles.json` to stderr and exits 0 (no body). Indistinguishable from
@@ -107,7 +97,7 @@ file is missing, error explicitly.
 
 ## 🔵 Minor doc inconsistencies
 
-### 9. `tana/re/web/AGENTS.md` BIN path stale
+### 8. `tana/re/web/AGENTS.md` BIN path stale
 
 The doc says `BIN=bazel-bin/external/ducktape_debundle_bin/file/debundle`.
 The actual path now has a `+_repo_rules+` prefix:
@@ -115,14 +105,14 @@ The actual path now has a `+_repo_rules+` prefix:
 
 **Fix**: update gaffer-private's AGENTS.md.
 
-### 10. `describe` text format missing home-module path
+### 9. `describe` text format missing home-module path
 
 JSON output includes `binding_homes[].path`. Text output shows owners,
 bindings, atom membership, edge counts — but no module path. Either the
 text output should include the path, or the docs should reflect text's
 narrower surface.
 
-### 11. `bindings comment` read with empty comment returns empty string
+### 10. `bindings comment` read with empty comment returns empty string
 
 Reading an unset comment returns `{"sym": "...", "comment": "",
 "action": "read"}`. Indistinguishable from an explicit `comment: ""` in
@@ -130,7 +120,7 @@ the spec. Docs say "empty if none."
 
 **Fix idea**: return `"comment": null` or omit the field when unset.
 
-### 12. `describe <sym>` text format hangs on repeat invocations
+### 11. `describe <sym>` text format hangs on repeat invocations
 
 First invocation returned a 5-line summary; second invocation of the
 same command hung indefinitely. `--format json` consistently completes

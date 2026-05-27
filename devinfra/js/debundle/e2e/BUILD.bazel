@@ -336,3 +336,16 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+rust_test(
+    name = "binding_name_resolution_cli_test",
+    srcs = ["binding_name_resolution_cli_test.rs"],
+    crate_root = "binding_name_resolution_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
