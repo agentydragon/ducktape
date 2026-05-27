@@ -62,7 +62,7 @@ pub use purity::{
 };
 pub use realizability::{
     CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
-    SccDiagnosis, check_realizability, check_realizability_with_quotient,
+    SccDiagnosis, SccTimingReporter, check_realizability, check_realizability_with_quotient,
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,

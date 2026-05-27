@@ -595,6 +595,7 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":cli",
         "@crates//:anyhow",
         "@crates//:clap",

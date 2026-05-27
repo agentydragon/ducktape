@@ -31,6 +31,8 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -834,6 +836,142 @@ impl<'a> OverlayGraphView<'a> {
     fn effective_count(&self, from: ModuleId, to: ModuleId) -> isize {
         self.base.edge_count(from, to) as isize + self.delta.get(&(from, to)).copied().unwrap_or(0)
     }
+
+    /// Resolve the strict SCC containing `module`, consulting a
+    /// precomputed partition of the underlying base graph before
+    /// falling back to the overlay-aware forward-∩-reverse walk.
+    ///
+    /// Cache shape: `cached_sccs[i]` is the i-th SCC of the committed
+    /// base graph as `tarjan_scc` produced it; `cached_scc_of[m] = i`
+    /// gives the index for module `m`. A module with no incident
+    /// edges in the base graph is absent from `cached_scc_of`; in
+    /// that case the base SCC is the singleton `{module}` (matching
+    /// `RollbackDiGraph::scc_containing`'s explicit fallback).
+    ///
+    /// Correctness condition for the short-circuits: an overlay edge
+    /// `(u, v)` (positive or negative delta) can only enlarge or
+    /// contract the SCC of `module` if at least one of `u, v` is in
+    /// `module`'s base SCC. Edges entirely outside that SCC are part
+    /// of unrelated SCCs in both the base and the effective graph
+    /// and cannot shift the partition for the query. So when no
+    /// overlay edit endpoint sits inside `module`'s cached SCC, the
+    /// cached SCC is the answer verbatim.
+    ///
+    /// Instrumentation: when the `DEBUNDLE_TIMING` environment
+    /// variable is set, this function increments per-process counters
+    /// for total calls, cache hits (cached partition was authoritative),
+    /// and full walks (overlay touches `module`'s SCC), and accumulates
+    /// wall time. The counters are printed by
+    /// `print_scc_containing_timing_on_drop` at program exit.
+    fn scc_containing_with_base_cache(
+        &self,
+        module: ModuleId,
+        cached_sccs: &[BTreeSet<ModuleId>],
+        cached_scc_of: &BTreeMap<ModuleId, usize>,
+    ) -> BTreeSet<ModuleId> {
+        let timing = scc_timing_enabled();
+        let start = if timing { Some(Instant::now()) } else { None };
+        SCC_CONTAINING_CALLS.fetch_add(1, Ordering::Relaxed);
+
+        let base_scc: BTreeSet<ModuleId> = match cached_scc_of.get(&module) {
+            Some(&idx) => cached_sccs[idx].clone(),
+            None => BTreeSet::from([module]),
+        };
+
+        // No overlay edits at all — the effective graph IS the base.
+        if self.delta.is_empty() {
+            SCC_CONTAINING_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+            if let Some(start) = start {
+                record_scc_duration(start.elapsed());
+            }
+            return base_scc;
+        }
+
+        // Overlay edits exist. They can only perturb `module`'s SCC if
+        // at least one endpoint of some overlay edit is in `base_scc`.
+        // Iterate the delta (small by design) and check membership.
+        let overlay_touches_scc = self
+            .delta
+            .keys()
+            .any(|(from, to)| base_scc.contains(from) || base_scc.contains(to));
+        if !overlay_touches_scc {
+            SCC_CONTAINING_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
+            if let Some(start) = start {
+                record_scc_duration(start.elapsed());
+            }
+            return base_scc;
+        }
+
+        // Fall back to the overlay-aware walk.
+        SCC_CONTAINING_FULL_WALKS.fetch_add(1, Ordering::Relaxed);
+        let result = self.scc_containing(module);
+        if let Some(start) = start {
+            record_scc_duration(start.elapsed());
+        }
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// scc_containing instrumentation
+//
+// Enabled at runtime by setting the DEBUNDLE_TIMING env var. The counters and
+// timing accumulator are process-global; there is no I/O on the hot path. A
+// helper RAII guard installed by `install_scc_timing_reporter` prints the
+// final tally to stderr on program exit when timing is enabled.
+// ---------------------------------------------------------------------------
+
+static SCC_CONTAINING_CALLS: AtomicUsize = AtomicUsize::new(0);
+static SCC_CONTAINING_CACHE_HITS: AtomicUsize = AtomicUsize::new(0);
+static SCC_CONTAINING_FULL_WALKS: AtomicUsize = AtomicUsize::new(0);
+/// Cumulative wall time spent inside `scc_containing_with_base_cache`, in
+/// nanoseconds. Tracked via `AtomicU64` so the hot path stays lock-free.
+static SCC_CONTAINING_NANOS: AtomicU64 = AtomicU64::new(0);
+
+fn scc_timing_enabled() -> bool {
+    // Cheap check (single env lookup per call could be slow under heavy
+    // load, but `std::env::var` is fine compared to the work we're
+    // measuring). Cache the answer in a thread-local? Not needed at
+    // current call volumes.
+    std::env::var_os("DEBUNDLE_TIMING").is_some()
+}
+
+fn record_scc_duration(elapsed: Duration) {
+    let nanos = elapsed.as_nanos();
+    let nanos = if nanos > u64::MAX as u128 {
+        u64::MAX
+    } else {
+        nanos as u64
+    };
+    SCC_CONTAINING_NANOS.fetch_add(nanos, Ordering::Relaxed);
+}
+
+/// RAII guard that prints the SCC-containing timing summary when
+/// dropped. Construct one early in `main` (gated on `DEBUNDLE_TIMING`)
+/// to get a tally at program exit.
+pub struct SccTimingReporter;
+
+impl SccTimingReporter {
+    pub fn install_if_enabled() -> Option<Self> {
+        if scc_timing_enabled() {
+            Some(Self)
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for SccTimingReporter {
+    fn drop(&mut self) {
+        let calls = SCC_CONTAINING_CALLS.load(Ordering::Relaxed);
+        let hits = SCC_CONTAINING_CACHE_HITS.load(Ordering::Relaxed);
+        let walks = SCC_CONTAINING_FULL_WALKS.load(Ordering::Relaxed);
+        let nanos = SCC_CONTAINING_NANOS.load(Ordering::Relaxed);
+        let secs = nanos as f64 / 1e9;
+        eprintln!(
+            "scc_containing: {calls} calls, {hits} cache hits, {walks} full walks, {secs:.3}s total"
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -851,6 +989,15 @@ type ISuccessorsMap = BTreeMap<ModuleId, BTreeSet<ModuleId>>;
 /// `(from_module, to_module)` pairs. Cached snapshot of
 /// `constraining_buckets.keys()` for the overlay path.
 type ConstrainingPairs = BTreeSet<(ModuleId, ModuleId)>;
+
+/// Pair of `Ref`s borrowed from the cached SCC partition: the partition
+/// itself and the auxiliary `ModuleId -> scc index` map. Returned by
+/// `IncrementalQuotient::base_constraining_sccs` /
+/// `IncrementalQuotient::base_i_sccs`.
+type SccCacheRefs<'a> = (
+    std::cell::Ref<'a, Vec<BTreeSet<ModuleId>>>,
+    std::cell::Ref<'a, BTreeMap<ModuleId, usize>>,
+);
 
 #[derive(Debug, Clone)]
 struct IncrementalQuotient {
@@ -879,6 +1026,18 @@ struct IncrementalQuotient {
     /// Lazily-computed snapshot of the constraining pairs set
     /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
     cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
+    /// SCCs of the committed `constraining_graph`. Refreshed lazily on
+    /// access and invalidated when the base graph mutates (push/undo/
+    /// commit of permanent deltas; speculative overlay deltas DO NOT
+    /// invalidate — they live entirely in `QuotientOverlay`). The
+    /// `Vec<BTreeSet<ModuleId>>` mirrors `tarjan_scc`; the auxiliary
+    /// `cached_constraining_scc_of` gives O(log N) "which SCC is
+    /// module M in?" by indexing into that vector.
+    cached_constraining_sccs: RefCell<Option<Vec<BTreeSet<ModuleId>>>>,
+    cached_constraining_scc_of: RefCell<Option<BTreeMap<ModuleId, usize>>>,
+    /// Same as above, for `i_graph`.
+    cached_i_sccs: RefCell<Option<Vec<BTreeSet<ModuleId>>>>,
+    cached_i_scc_of: RefCell<Option<BTreeMap<ModuleId, usize>>>,
 }
 
 impl IncrementalQuotient {
@@ -892,6 +1051,10 @@ impl IncrementalQuotient {
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
+            cached_constraining_sccs: RefCell::new(None),
+            cached_constraining_scc_of: RefCell::new(None),
+            cached_i_sccs: RefCell::new(None),
+            cached_i_scc_of: RefCell::new(None),
         };
         for edge in owner_graph.iter_edges() {
             quotient.add_current_edge(edge, partition, true);
@@ -900,13 +1063,25 @@ impl IncrementalQuotient {
     }
 
     /// Invalidate the cached base simulator and its precomputed input
-    /// snapshots. Called from every mutating path that changes the
-    /// I-graph adjacency or the constraining-edge buckets. Each is
-    /// rebuilt lazily on the next read.
+    /// snapshots, plus the cached base SCC partitions for the
+    /// constraining and I graphs. Called from every mutating path that
+    /// changes the I-graph adjacency or the constraining-edge buckets
+    /// (`add_current_edge`, `remove_current_edge`, `rollback_graphs`).
+    /// Each cache is rebuilt lazily on the next read.
+    ///
+    /// Soundness note: the SCC partitions are functions of the
+    /// **committed** `i_graph` / `constraining_graph` topology.
+    /// Speculative `QuotientOverlay` edits do NOT call this — they
+    /// live entirely on the stack and consult the cache through
+    /// `scc_containing_with_base_cache`.
     fn invalidate_cached_simulator(&mut self) {
         *self.cached_base_simulator.borrow_mut() = None;
         *self.cached_base_i_successors.borrow_mut() = None;
         *self.cached_base_constraining_pairs.borrow_mut() = None;
+        *self.cached_constraining_sccs.borrow_mut() = None;
+        *self.cached_constraining_scc_of.borrow_mut() = None;
+        *self.cached_i_sccs.borrow_mut() = None;
+        *self.cached_i_scc_of.borrow_mut() = None;
     }
 
     /// Borrow the base simulator, building it on demand if the cache
@@ -968,6 +1143,64 @@ impl IncrementalQuotient {
             opt.as_ref()
                 .expect("cached_base_constraining_pairs was just populated")
         })
+    }
+
+    /// Populate the SCC partition + reverse-index cache for `graph`
+    /// into the provided slots if either is empty. The slots are
+    /// borrowed mutably under the same guard so they always populate
+    /// together — callers can then read either via the cached form
+    /// without further computation.
+    fn populate_scc_cache(
+        graph: &RollbackDiGraph<ModuleId>,
+        sccs_slot: &RefCell<Option<Vec<BTreeSet<ModuleId>>>>,
+        index_slot: &RefCell<Option<BTreeMap<ModuleId, usize>>>,
+    ) {
+        let mut sccs_guard = sccs_slot.borrow_mut();
+        let mut index_guard = index_slot.borrow_mut();
+        if sccs_guard.is_some() && index_guard.is_some() {
+            return;
+        }
+        let sccs = graph.all_sccs();
+        let mut index: BTreeMap<ModuleId, usize> = BTreeMap::new();
+        for (i, scc) in sccs.iter().enumerate() {
+            for &m in scc {
+                index.insert(m, i);
+            }
+        }
+        *sccs_guard = Some(sccs);
+        *index_guard = Some(index);
+    }
+
+    /// Borrow the cached constraining-graph SCC partition, refreshing
+    /// it on first access after invalidation.
+    fn base_constraining_sccs(&self) -> SccCacheRefs<'_> {
+        Self::populate_scc_cache(
+            &self.constraining_graph,
+            &self.cached_constraining_sccs,
+            &self.cached_constraining_scc_of,
+        );
+        let sccs = std::cell::Ref::map(self.cached_constraining_sccs.borrow(), |opt| {
+            opt.as_ref()
+                .expect("cached_constraining_sccs was just populated")
+        });
+        let index = std::cell::Ref::map(self.cached_constraining_scc_of.borrow(), |opt| {
+            opt.as_ref()
+                .expect("cached_constraining_scc_of was just populated")
+        });
+        (sccs, index)
+    }
+
+    /// Borrow the cached I-graph SCC partition, refreshing it on first
+    /// access after invalidation.
+    fn base_i_sccs(&self) -> SccCacheRefs<'_> {
+        Self::populate_scc_cache(&self.i_graph, &self.cached_i_sccs, &self.cached_i_scc_of);
+        let sccs = std::cell::Ref::map(self.cached_i_sccs.borrow(), |opt| {
+            opt.as_ref().expect("cached_i_sccs was just populated")
+        });
+        let index = std::cell::Ref::map(self.cached_i_scc_of.borrow(), |opt| {
+            opt.as_ref().expect("cached_i_scc_of was just populated")
+        });
+        (sccs, index)
     }
 
     fn marks(&self) -> (GraphMark, GraphMark) {
@@ -1177,7 +1410,10 @@ impl IncrementalQuotient {
 
         let constraining_graph =
             OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
-        let constraining_modules = constraining_graph.scc_containing(module);
+        let constraining_modules = {
+            let (sccs, scc_of) = self.base_constraining_sccs();
+            constraining_graph.scc_containing_with_base_cache(module, &sccs, &scc_of)
+        };
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges =
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
@@ -1189,7 +1425,10 @@ impl IncrementalQuotient {
         }
 
         let i_graph_view = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
-        let i_modules = i_graph_view.scc_containing(module);
+        let i_modules = {
+            let (sccs, scc_of) = self.base_i_sccs();
+            i_graph_view.scc_containing_with_base_cache(module, &sccs, &scc_of)
+        };
         if i_modules.len() >= 2 && !reported.contains(&i_modules) {
             let constraining_pairs = self.constraining_pairs_with_overlay(overlay);
             let any_inside_scc = constraining_pairs.iter().any(|(from, to)| {

@@ -1,10 +1,15 @@
 use std::process::ExitCode;
 
+use analysis::SccTimingReporter;
 use clap::Parser;
 use debundle_cli::{DebundleArgs, run_debundle_cli};
 use swc_common::{GLOBALS, Globals};
 
 fn main() -> ExitCode {
+    // Install the realizability scc_containing timing reporter when
+    // DEBUNDLE_TIMING is set. The guard prints a summary on drop.
+    let _scc_timing_guard = SccTimingReporter::install_if_enabled();
+
     // SWC hygiene (`Mark`, `SyntaxContext`) is stored in a thread-local
     // arena managed by `GLOBALS`. Every parse and AST-touching operation
     // in the debundler runs inside this closure so the `resolver` pass
