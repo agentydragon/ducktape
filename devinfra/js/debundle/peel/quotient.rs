@@ -1829,7 +1829,7 @@ impl QuotientGraph {
         let in_iter = in_set
             .into_iter()
             .flat_map(|s| s.iter().copied())
-            .filter(move |n| out_set.map_or(true, |s| !s.contains(n)));
+            .filter(move |n| out_set.is_none_or(|s| !s.contains(n)));
         out_iter.chain(in_iter)
     }
 }
