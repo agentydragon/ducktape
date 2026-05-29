@@ -79,6 +79,7 @@ _STANDARD_E2E_DEPS = [
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
         "auto_grown_export_alias_collision_test",
+        "reserved_word_mint_test",
         "runtime_tdz_on_imported_class_test",
         "accepted_spec_runs_under_node_test",
         "lemma_two_rescued_asymmetric_cycle_test",

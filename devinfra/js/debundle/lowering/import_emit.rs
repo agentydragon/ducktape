@@ -1,7 +1,15 @@
+use super::util::is_valid_js_identifier;
 use super::*;
 
 pub(super) fn mint_unique_name(base: &str, mut try_claim: impl FnMut(&str) -> bool) -> String {
-    if try_claim(base) {
+    // A reserved word (`default`, `class`, `await`, …) used verbatim as a
+    // local would surface straight into an emitted `import {...}` /
+    // `export {...}` clause and produce un-parseable JS. Suffixing turns
+    // it into a valid identifier (`default$1`), so only offer `base`
+    // directly when it is a usable identifier. `$`-suffixed candidates are
+    // always valid, so the loop below always terminates with a parseable
+    // name.
+    if is_valid_js_identifier(base) && try_claim(base) {
         return base.to_string();
     }
     let mut suffix = 1usize;

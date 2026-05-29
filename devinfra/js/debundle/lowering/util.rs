@@ -1,11 +1,16 @@
 use super::*;
 
-/// True iff `s` is a valid JavaScript identifier — start char is
-/// `[A-Za-z_$]` and rest is `[A-Za-z0-9_$]`. Reserved words are not
-/// rejected (a target named e.g. `class` or `let` would still trip
-/// at parse time downstream, but that's a louder failure than this
-/// shallow check would catch). The intent is to filter typos
-/// (`with-dash`, `0digit`, empty string) from spec authors.
+/// True iff `s` is a usable JavaScript identifier for the emitted ESM:
+/// the start char is `[A-Za-z_$]`, the rest is `[A-Za-z0-9_$]`, and `s`
+/// is not a reserved word in any ECMAScript context. Reserved words are
+/// rejected because emitted modules are ESM (always strict mode) and a
+/// base like `default` / `class` / `await` used directly in an
+/// `import {...}` / `export {...}` clause would produce un-parseable JS
+/// with no diagnostic. Reserved-word detection uses SWC's
+/// `EsReserved::is_reserved_in_any` (from `swc_ecma_ast`), which covers
+/// the union of sloppy-mode, strict-mode, and ES3 reserved sets. The
+/// intent is also to filter typos (`with-dash`, `0digit`, empty string)
+/// from spec authors.
 pub(super) fn is_valid_js_identifier(s: &str) -> bool {
     let mut chars = s.chars();
     let first = match chars.next() {
@@ -15,7 +20,10 @@ pub(super) fn is_valid_js_identifier(s: &str) -> bool {
     if !(first.is_ascii_alphabetic() || first == '_' || first == '$') {
         return false;
     }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
+        return false;
+    }
+    !s.is_reserved_in_any()
 }
 
 pub(super) fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
