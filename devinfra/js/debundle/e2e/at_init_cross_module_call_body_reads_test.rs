@@ -81,7 +81,7 @@ fn module_id_for<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {
         .iter()
         .find(|node| node.id == owner_id)
         .unwrap_or_else(|| panic!("no node with id {owner_id} found"));
-    node.destination.id.as_str()
+    node.destination.as_str()
 }
 
 fn quotient_edges_between<'a>(
@@ -93,7 +93,7 @@ fn quotient_edges_between<'a>(
         .quotient
         .edges
         .iter()
-        .filter(|edge| edge.source == from_module && edge.target == to_module)
+        .filter(|edge| edge.source.as_str() == from_module && edge.target.as_str() == to_module)
         .collect()
 }
 

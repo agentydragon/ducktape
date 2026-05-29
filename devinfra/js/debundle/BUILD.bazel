@@ -585,6 +585,7 @@ rust_library(
         ":output_layout",
         ":peel",
         ":pipeline",
+        ":spec",
         ":spec_modules",
         ":spec_stats",
         "@crates//:anyhow",

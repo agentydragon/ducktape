@@ -39,13 +39,7 @@ fn synthetic_graph_json() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:mod_a",
-                    "label": "mod_a",
-                    "residual": false,
-                    "index": 0,
-                    "target_file": "mod_a.js"
-                }
+                "destination": "mod_a"
             },
             {
                 "id": "owner:1",
@@ -56,13 +50,7 @@ fn synthetic_graph_json() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:mod_b",
-                    "label": "mod_b",
-                    "residual": false,
-                    "index": 1,
-                    "target_file": "mod_b.js"
-                }
+                "destination": "mod_b"
             }
         ],
         "edges": [
@@ -85,7 +73,14 @@ fn synthetic_graph_json() -> String {
                 "constrains_init_order": true
             }
         ],
-        "module_graph": { "nodes": [], "edges": [], "sccs": [] },
+        "module_graph": {
+            "nodes": [
+                { "key": "mod_a", "path": "mod_a", "residual": false },
+                { "key": "mod_b", "path": "mod_b", "residual": false }
+            ],
+            "edges": [],
+            "sccs": []
+        },
         "atomic_graph": { "nodes": [], "edges": [] }
     })
     .to_string()

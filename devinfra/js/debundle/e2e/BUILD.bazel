@@ -259,6 +259,7 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -347,6 +348,7 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],

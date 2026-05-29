@@ -78,6 +78,23 @@ pub struct OwnerGraphReport {
     pub atomic_graph: AtomicGraphReport,
 }
 
+impl OwnerGraphReport {
+    /// Resolve a [`ModuleKey`] to its module-table entry. The table
+    /// (`quotient.nodes`) is the single source of truth for a module's
+    /// path + residual flag; consumers look up here rather than reading
+    /// a duplicated field off the reference.
+    pub fn module(&self, key: &ModuleKey) -> Option<&ModuleEntry> {
+        self.quotient.nodes.iter().find(|entry| &entry.key == key)
+    }
+
+    /// Whether `key` denotes the residual catch-all, per the module
+    /// table's authoritative `residual` flag. Unknown keys are not
+    /// residual.
+    pub fn is_residual(&self, key: &ModuleKey) -> bool {
+        self.module(key).is_some_and(|entry| entry.residual)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphNodeReport {
     pub id: String,
@@ -91,7 +108,10 @@ pub struct OwnerGraphNodeReport {
     /// `has_purity: bool` — consumers that want the boolean
     /// can use `purity.kind == "pure"`.
     pub purity: Purity,
-    pub destination: ModuleReportRef,
+    /// The module this owner is assigned to, as an interned
+    /// [`ModuleKey`]. Resolve to a path / residual flag via the module
+    /// table (`quotient.nodes`).
+    pub destination: ModuleKey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,7 +169,10 @@ impl EdgeRoleReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OwnerGraphQuotientReport {
-    pub nodes: Vec<ModuleReportRef>,
+    /// The module table: one [`ModuleEntry`] per logical module. The
+    /// single source of truth for each module's path + residual flag;
+    /// every other reference is a [`ModuleKey`] into this list.
+    pub nodes: Vec<ModuleEntry>,
     pub edges: Vec<QuotientEdgeReport>,
     pub sccs: Vec<QuotientSccReport>,
 }
@@ -157,8 +180,8 @@ pub struct OwnerGraphQuotientReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotientEdgeReport {
     pub id: String,
-    pub source: String,
-    pub target: String,
+    pub source: ModuleKey,
+    pub target: ModuleKey,
     pub edge_kinds: Vec<DepKind>,
     pub constrains_init_order: bool,
 }
@@ -173,8 +196,10 @@ pub struct QuotientEdgeReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotientSccReport {
     pub id: String,
-    pub modules: Vec<String>,
-    pub labels: Vec<String>,
+    /// Modules in this SCC, as interned [`ModuleKey`]s. Resolve to
+    /// paths via the module table; the former parallel `labels` field
+    /// (the same modules spelled as paths) is gone.
+    pub modules: Vec<ModuleKey>,
     pub is_cycle: bool,
     pub realizable: bool,
     pub module_edge_ids: Vec<String>,
@@ -194,7 +219,9 @@ pub struct AtomicUnitReport {
     pub members: Vec<BindingReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anonymous_statement_owner_ids: Vec<String>,
-    pub destinations: Vec<ModuleReportRef>,
+    /// Distinct modules the unit's owners are assigned to, as interned
+    /// [`ModuleKey`]s. Resolve to paths/residual via the module table.
+    pub destinations: Vec<ModuleKey>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub causes: Vec<DepKind>,
     pub size_lines_estimate: usize,
@@ -230,30 +257,47 @@ pub enum FactorizeDiagnosticReason {
     RepeatedFrontier,
 }
 
-/// Conventional JSON-key value for the residual catch-all module
-/// across the report schema and downstream consumers. Kept as an SSOT
-/// constant so consumers that key off "the residual module" by id can
-/// still pattern-match — but the
-/// debundler itself stopped using it as a discriminator: residual is
-/// just a `ModuleReportRef` whose `residual: bool` flag is `true`,
-/// and the synthesized module's id is `module_key(ModuleId)` (e.g.
-/// `logical:7`).
-pub const RESIDUAL_ENTRY_MODULE_ID: &str = "residual";
+/// Interned reference to a logical module.
+///
+/// This is the **one** encoding of module identity on the owner-graph
+/// wire. Everything that points at a module — an owner's
+/// `destination`, a quotient edge's endpoints, an SCC's members, an
+/// atomic unit's `destinations` — carries a `ModuleKey`, never a
+/// path or a parallel label. The key resolves to a [`ModuleEntry`] in
+/// the module table (`OwnerGraphQuotientReport::nodes`), which is the
+/// sole place a module's `path` and `residual` flag are stored.
+///
+/// The key is `module_key(ModuleId)` — `"logical:N"` — so it stays
+/// compact and stable; the human-readable path lives once, in the
+/// table entry.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ModuleKey(pub String);
 
-/// Conventional human-facing label some downstream tooling still
-/// renders for the residual catch-all module. Production reports now
-/// emit the synthesized residual logical module's own id (e.g.
-/// `<chunk>::residual`); this constant remains for fixture
-/// helpers that need a fallback label.
-pub const RESIDUAL_ENTRY_LABEL: &str = "<residual_entry>";
+impl ModuleKey {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
+impl std::fmt::Display for ModuleKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// One entry in the module table (`OwnerGraphQuotientReport::nodes`).
+/// The single source of truth mapping a [`ModuleKey`] to its canonical
+/// path and residual flag. No other wire field duplicates `path` or
+/// `residual`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ModuleReportRef {
-    pub id: String,
-    pub label: String,
+pub struct ModuleEntry {
+    pub key: ModuleKey,
+    /// Canonical module identity/destination path (see
+    /// [`spec::ModulePath`]).
+    pub path: spec::ModulePath,
+    /// `true` for the synthesized residual catch-all. Authoritative —
+    /// not derivable from `path` (a spec author may legitimately name
+    /// a non-residual module `residual/...`).
     pub residual: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_file: Option<String>,
 }

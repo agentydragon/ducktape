@@ -399,22 +399,38 @@ mod tests {
     use std::fs;
 
     use analysis::{
-        AtomicGraphReport, BindingReport, DepKind, ModuleReportRef, OwnerGraphEdgeReport,
+        AtomicGraphReport, BindingReport, DepKind, ModuleEntry, ModuleKey, OwnerGraphEdgeReport,
         OwnerGraphNodeReport, OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation,
         StatementKind, StatementOrdinal,
     };
+    use spec::ModulePath;
     use tempfile::TempDir;
 
     use super::*;
 
-    fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-        ModuleReportRef {
-            id: id.to_string(),
-            label: id.to_string(),
-            residual,
-            index: None,
-            target_file: (!residual).then(|| id.to_string()),
+    /// Test destination key; the key string is the module's canonical
+    /// path (e.g. `"residual"`), recovered into the module table by
+    /// `module_table`.
+    fn module_ref(id: &str, _residual: bool) -> ModuleKey {
+        ModuleKey(id.to_string())
+    }
+
+    fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<ModuleEntry> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut out = Vec::new();
+        for key in keys {
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            let path = ModulePath::parse(key.as_str(), "").expect("valid test module path");
+            let residual = path.is_residual();
+            out.push(ModuleEntry {
+                key: key.clone(),
+                path,
+                residual,
+            });
         }
+        out
     }
 
     fn owner(id: &str, ordinal: usize, bindings: Vec<BindingReport>) -> OwnerGraphNodeReport {
@@ -433,7 +449,7 @@ mod tests {
             },
             declared_bindings: bindings,
             purity: Purity::Pure,
-            destination: module_ref("logical:residual", true),
+            destination: module_ref("residual", true),
         }
     }
 
@@ -465,9 +481,11 @@ Ro([Z], Co.prototype, "visible", 2);
             }],
         );
         let decorator_owner = owner("owner:1", 2, Vec::new());
+        let nodes = vec![class_owner, decorator_owner];
+        let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
         let graph = OwnerGraphReport {
             chunk_id: "static/index".to_string(),
-            nodes: vec![class_owner, decorator_owner],
+            nodes,
             edges: vec![OwnerGraphEdgeReport {
                 id: "edge:0".to_string(),
                 source: "owner:1".to_string(),
@@ -479,7 +497,7 @@ Ro([Z], Co.prototype, "visible", 2);
                 role: None,
             }],
             quotient: OwnerGraphQuotientReport {
-                nodes: Vec::new(),
+                nodes: module_nodes,
                 edges: Vec::new(),
                 sccs: Vec::<QuotientSccReport>::new(),
             },

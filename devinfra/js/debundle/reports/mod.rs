@@ -9,9 +9,9 @@ use crate::graph::EdgeRole;
 use crate::reports::schema::LineRange;
 use crate::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
-    DepKind, EdgeRoleReport, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, QuotientEdgeReport,
-    QuotientSccReport,
+    DepKind, EdgeRoleReport, LogicalModuleIndex, ModuleEntry, ModuleId, ModuleKey,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+    OwnerId, QuotientEdgeReport, QuotientSccReport,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -77,7 +77,7 @@ fn build_owner_nodes_and_edges(
             declared_bindings: binding_reports(factorization, node.declared.iter()),
             statement_kind: node.kind,
             purity: node.purity.clone(),
-            destination: module_report_ref(factorization, partition.of(node.id)),
+            destination: module_key(partition.of(node.id)),
         })
         .collect();
     let edges = owner_graph
@@ -112,7 +112,7 @@ where
         .collect()
 }
 
-fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleReportRef> {
+fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<ModuleEntry> {
     let mut modules = BTreeSet::<ModuleId>::new();
     for idx in 0..factorization.analysis.logical_modules.len() {
         modules.insert(ModuleId(LogicalModuleIndex(idx)));
@@ -126,7 +126,7 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
     }
     modules
         .into_iter()
-        .map(|id| module_report_ref(factorization, id))
+        .map(|id| module_entry(factorization, id))
         .collect()
 }
 
@@ -192,10 +192,10 @@ fn build_atomic_unit_report(
     let mut owner_ids = Vec::with_capacity(unit.members.len());
     let mut members = Vec::new();
     let mut anonymous_statement_owner_ids = Vec::new();
-    // Destinations dedup-by-id: tiny set per unit (rare to exceed
+    // Destinations dedup-by-key: tiny set per unit (rare to exceed
     // a handful), so a Vec + linear-scan dedup is cheaper than a
     // `BTreeMap` allocation per unit.
-    let mut destinations: Vec<ModuleReportRef> = Vec::new();
+    let mut destinations: Vec<ModuleKey> = Vec::new();
     // `unit.causes` is a `BTreeSet<DepKind>` — iteration is already
     // `DepKind`-`Ord`-stable so no post-collection sort is needed.
     let causes: Vec<DepKind> = unit.causes.iter().copied().collect();
@@ -214,9 +214,8 @@ fn build_atomic_unit_report(
             }
             min_ordinal = min_ordinal.min(node.statement_ordinal.0);
             max_ordinal = max_ordinal.max(node.statement_ordinal.0);
-            let destination =
-                module_report_ref(factorization, factorization.partition.of(*owner_id));
-            if !destinations.iter().any(|d| d.id == destination.id) {
+            let destination = module_key(factorization.partition.of(*owner_id));
+            if !destinations.contains(&destination) {
                 destinations.push(destination);
             }
         }
@@ -224,7 +223,7 @@ fn build_atomic_unit_report(
     members.sort();
     members.dedup();
     anonymous_statement_owner_ids.sort();
-    destinations.sort_by(|a, b| a.id.cmp(&b.id));
+    destinations.sort();
     AtomicUnitReport {
         id: atomic_unit_key(idx),
         owner_ids,
@@ -340,23 +339,13 @@ fn build_quotient_scc_reports(
                 }
             }
         }
-        let mut modules: Vec<String> = in_scc.iter().copied().map(module_key).collect();
+        let mut modules: Vec<ModuleKey> = in_scc.iter().copied().map(module_key).collect();
         modules.sort();
-        let mut labels: Vec<String> = modules
-            .iter()
-            .map(|key| {
-                module_id_from_key(key)
-                    .map(|id| factorization.analysis.module_name(id))
-                    .unwrap_or_else(|| key.clone())
-            })
-            .collect();
-        labels.sort();
         module_edge_ids.sort();
         constraining_module_edge_ids.sort();
         sccs.push(QuotientSccReport {
             id: format!("scc:{}", sccs.len()),
             modules,
-            labels,
             is_cycle,
             realizable: constraining_module_edge_ids.is_empty(),
             module_edge_ids,
@@ -413,32 +402,38 @@ fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
     }
 }
 
-pub(crate) fn module_key(id: ModuleId) -> String {
+pub(crate) fn module_key(id: ModuleId) -> ModuleKey {
     let LogicalModuleIndex(idx) = id.0;
-    format!("logical:{idx}")
+    ModuleKey(format!("logical:{idx}"))
 }
 
 pub(crate) fn atomic_unit_key(idx: usize) -> String {
     format!("atomic:{idx}")
 }
 
-pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {
-    key.strip_prefix("logical:")
+pub(crate) fn module_id_from_key(key: &ModuleKey) -> Option<ModuleId> {
+    key.as_str()
+        .strip_prefix("logical:")
         .and_then(|idx| idx.parse::<usize>().ok())
         .map(|idx| ModuleId(LogicalModuleIndex(idx)))
 }
 
-pub(crate) fn module_report_ref(
-    factorization: &ChunkFactorization,
-    id: ModuleId,
-) -> ModuleReportRef {
-    let LogicalModuleIndex(idx) = id.0;
-    let logical = factorization.analysis.logical_modules.get(idx);
-    ModuleReportRef {
-        id: module_key(id),
-        label: factorization.analysis.module_name(id),
+/// Build the module-table entry for `id`: the single place its
+/// canonical [`spec::ModulePath`] and residual flag are recorded. The
+/// path comes from the module's `LogicalModule.id` (the production
+/// `<chunk>::<path>` spelling), normalized through `ModulePath::parse`.
+pub(crate) fn module_entry(factorization: &ChunkFactorization, id: ModuleId) -> ModuleEntry {
+    let chunk_id = &factorization.analysis.chunk_id;
+    let raw = factorization.analysis.module_name(id);
+    let path = spec::ModulePath::parse(&raw, chunk_id).unwrap_or_else(|e| {
+        panic!(
+            "module {} has unparseable identity {raw:?}: {e}",
+            module_key(id)
+        )
+    });
+    ModuleEntry {
+        key: module_key(id),
+        path,
         residual: is_residual_destination(factorization, id),
-        index: logical.map(|_| idx),
-        target_file: logical.map(|module| module.target_file.clone()),
     }
 }

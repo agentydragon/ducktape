@@ -266,7 +266,7 @@ fn factorize_with_context(
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| node.destination.residual)
+        .filter(|(_, node)| graph.is_residual(&node.destination))
         .map(|(i, _)| i)
         .collect();
 
@@ -275,10 +275,10 @@ fn factorize_with_context(
         .iter()
         .enumerate()
         .filter_map(|(i, node)| {
-            if node.destination.residual {
+            if graph.is_residual(&node.destination) {
                 return None;
             }
-            Some((i, active_module_label(node, active_claims, &graph.chunk_id)))
+            Some((i, active_module_label(node, active_claims, graph)))
         })
         .collect();
 
@@ -367,23 +367,17 @@ fn factorize_with_context(
 
 /// The canonical [`ModulePath`] an owner's destination resolves to.
 ///
-/// Owners of one spec module reach their identity by different
-/// routes: a claimed binding resolves via `active_claims` (the clean
-/// spec path), while an unclaimed sibling falls through to the
-/// report's `destination.label`, which production spells
-/// `<chunk_id>::<path>`. Both are funneled through
-/// [`ModulePath::parse`], which strips the chunk prefix, so the two
-/// routes yield one identity and the class never emits a self-merge.
-///
-/// The fallbacks (`target_file`, then `destination.id`) only fire for
-/// degenerate reports that carry no label; they are parsed under the
-/// same rule. A report so malformed that none of these is a valid
-/// path is a bug we surface by panicking rather than fabricating a
-/// bogus identity.
+/// A claimed binding resolves via `active_claims` (the spec authority).
+/// Otherwise the destination's canonical path comes straight from the
+/// module table — a single source of truth, already normalized, so no
+/// chunk-prefix stripping or fallback chain is needed and two owners of
+/// one module can never disagree (the former self-merge bug). A
+/// destination key absent from the table is a malformed report we
+/// surface by panicking rather than inventing an identity.
 fn active_module_label(
     node: &OwnerGraphNodeReport,
     active_claims: &BTreeMap<String, ModulePath>,
-    chunk_id: &str,
+    graph: &OwnerGraphReport,
 ) -> ModulePath {
     if let Some(claimed) = node
         .declared_bindings
@@ -392,28 +386,30 @@ fn active_module_label(
     {
         return claimed.clone();
     }
-    let raw = if !node.destination.label.is_empty() {
-        node.destination.label.as_str()
-    } else if let Some(target_file) = &node.destination.target_file {
-        target_file.as_str()
-    } else {
-        node.destination.id.as_str()
-    };
-    ModulePath::parse(raw, chunk_id)
-        .unwrap_or_else(|e| panic!("owner {} has unparseable destination: {e}", node.id))
+    graph
+        .module(&node.destination)
+        .unwrap_or_else(|| {
+            panic!(
+                "owner {} destination {} absent from module table",
+                node.id, node.destination
+            )
+        })
+        .path
+        .clone()
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
-/// Owners with a non-residual destination are grouped by
-/// destination id; residual owners stay out (they'll be singletons).
+/// Owners with a non-residual destination are grouped by their
+/// (interned) destination key; residual owners stay out (they'll be
+/// singletons).
 fn spec_module_groups(graph: &OwnerGraphReport) -> Vec<SpecModuleGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for node in &graph.nodes {
-        if node.destination.residual {
+        if graph.is_residual(&node.destination) {
             continue;
         }
         groups
-            .entry(node.destination.id.clone())
+            .entry(node.destination.0.clone())
             .or_default()
             .push(node.id.clone());
     }
@@ -492,7 +488,7 @@ fn emit_proposals(
         let n_labels = labels.map(|s| s.len()).unwrap_or(0);
         let has_residual_origin = quotient
             .class_members(c)
-            .any(|o| graph.nodes[o.0].destination.residual);
+            .any(|o| graph.is_residual(&graph.nodes[o.0].destination));
         if n_labels == 0 {
             // Pure residual class. Always emit (fresh-module).
             candidate_classes.push(c);
@@ -716,7 +712,7 @@ fn build_proposal(
         all_owner_idxs
             .iter()
             .copied()
-            .filter(|&idx| graph.nodes[idx].destination.residual)
+            .filter(|&idx| graph.is_residual(&graph.nodes[idx].destination))
             .collect()
     } else {
         all_owner_idxs.clone()
@@ -978,7 +974,7 @@ mod tests {
     use swc_atoms::Atom;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleReportRef,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleKey,
         OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
         Purity, SourceLocation, StatementKind, StatementOrdinal,
     };
@@ -996,7 +992,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            test_utils::module_ref("logical:residual", true),
+            test_utils::module_ref("residual", true),
         )
     }
 
@@ -1016,14 +1012,11 @@ mod tests {
         )
     }
 
-    fn module_report_ref(id: &str, label: &str, target_file: &str) -> ModuleReportRef {
-        ModuleReportRef {
-            id: id.to_string(),
-            label: label.to_string(),
-            residual: false,
-            index: None,
-            target_file: Some(target_file.to_string()),
-        }
+    /// Destination key for a test owner. By convention the key string
+    /// is the module's canonical path, so `path` is the key and the
+    /// module table (built in `graph_with_atomic_units`) recovers it.
+    fn module_ref_path(path: &str) -> ModuleKey {
+        ModuleKey(path.to_string())
     }
 
     fn owner_at(
@@ -1031,7 +1024,7 @@ mod tests {
         ordinal_value: usize,
         bindings: &[&str],
         lines: usize,
-        destination: ModuleReportRef,
+        destination: ModuleKey,
     ) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
             id: id.to_string(),
@@ -1081,14 +1074,14 @@ mod tests {
     fn unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
         let mut owner_ids = Vec::new();
         let mut members = Vec::new();
-        let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+        let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
         let mut line_range = LineRange::new();
         let mut min_ordinal = usize::MAX;
         let mut max_ordinal = 0usize;
         for owner in owners {
             owner_ids.push(owner.id.clone());
             members.extend(owner.declared_bindings.clone());
-            destinations.insert(owner.destination.id.clone(), owner.destination.clone());
+            destinations.insert(owner.destination.clone(), owner.destination.clone());
             if let Some(location) = &owner.source_location {
                 line_range.expand(location);
             }
@@ -1125,12 +1118,15 @@ mod tests {
         atomic_units: Vec<AtomicUnitReport>,
         atomic_edges: Vec<AtomicUnitEdgeReport>,
     ) -> OwnerGraphReport {
+        // The module table is the single source of truth for path +
+        // residual; build it from the distinct owner destinations.
+        let module_nodes = test_utils::module_table(nodes.iter().map(|n| &n.destination));
         OwnerGraphReport {
             chunk_id: "x".to_string(),
             nodes,
             edges,
             quotient: OwnerGraphQuotientReport {
-                nodes: vec![],
+                nodes: module_nodes,
                 edges: vec![],
                 sccs: vec![],
             },
@@ -1232,23 +1228,13 @@ mod tests {
 
     #[test]
     fn merge_proposals_use_spec_module_labels_not_generated_target_files() {
-        let a = owner_at(
-            "a",
-            1,
-            &["a"],
-            10,
-            module_report_ref("logical:1", "domains/system/ids", "domains/system/ids.js"),
-        );
+        let a = owner_at("a", 1, &["a"], 10, module_ref_path("domains/system/ids"));
         let b = owner_at(
             "b",
             2,
             &["b"],
             10,
-            module_report_ref(
-                "logical:2",
-                "domains/system/id_helpers",
-                "domains/system/id_helpers.js",
-            ),
+            module_ref_path("domains/system/id_helpers"),
         );
         let graph = graph_with_atomic_units(
             vec![a.clone(), b.clone()],
@@ -1275,21 +1261,18 @@ mod tests {
     }
 
     #[test]
-    fn chunk_prefixed_and_clean_label_of_one_module_do_not_self_merge() {
-        // Two owners of ONE spec module (same destination.id ->
+    fn two_owners_of_one_module_reached_by_different_routes_do_not_self_merge() {
+        // Two owners of ONE spec module (same destination key ->
         // `spec_module_groups` contracts them into one class). Owner
-        // `a` resolves its label via an active claim to the clean
-        // path `domains/system/ids`; owner `b` has no claim and falls
-        // through to `destination.label`, which production reports
-        // spell with the `<chunk_id>::` prefix
-        // (`x::domains/system/ids`). The two spellings denote the same
-        // module, so the class must collapse to a single label and
-        // emit NO `merge_into` self-merge.
-        let dest = module_report_ref(
-            "logical:1",
-            "x::domains/system/ids",
-            "domains/system/ids.js",
-        );
+        // `a` resolves its identity via an active claim
+        // (`domains/system/ids`); owner `b` has no claim and resolves
+        // via the module table. Both routes yield the one canonical
+        // `ModulePath`, so the class collapses to a single label and
+        // emits NO `merge_into` self-merge. (The former two-spelling
+        // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
+        // is now unrepresentable: the wire carries one interned key
+        // and the table holds one canonical path.)
+        let dest = module_ref_path("domains/system/ids");
         let a = owner_at("a", 1, &["a"], 10, dest.clone());
         let b = owner_at("b", 2, &["b"], 10, dest.clone());
         let graph = graph_with_atomic_units(

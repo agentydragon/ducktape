@@ -678,12 +678,12 @@ fn run_scc(args: SccArgs) -> Result<()> {
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_owners` helper so minified and
     // readable name forms both resolve.
-    let restrict_to_module: Option<String> = if let Some(sym) = &args.binding {
+    let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
         let owner = resolve_binding_owners(&graph, sym)
             .into_iter()
             .next()
             .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
-        Some(owner.destination.id.clone())
+        Some(owner.destination.clone())
     } else {
         None
     };
@@ -692,10 +692,7 @@ fn run_scc(args: SccArgs) -> Result<()> {
     for scc in &graph.quotient.sccs {
         let is_cycle = scc.is_cycle;
         let is_singleton = scc.modules.len() == 1;
-        let touches_residual = scc
-            .modules
-            .iter()
-            .any(|m| m.contains("residual") || m.ends_with(":residual"));
+        let touches_residual = scc.modules.iter().any(|m| graph.is_residual(m));
         if args.cycles_only && !is_cycle {
             continue;
         }
@@ -710,10 +707,22 @@ fn run_scc(args: SccArgs) -> Result<()> {
                 continue;
             }
         }
+        // Resolve each interned key to its human path via the module
+        // table for the `labels` view; the wire stores the path once.
+        let labels: Vec<String> = scc
+            .modules
+            .iter()
+            .map(|key| {
+                graph
+                    .module(key)
+                    .map(|entry| entry.path.to_string())
+                    .unwrap_or_else(|| key.as_str().to_string())
+            })
+            .collect();
         entries.push(SccEntry {
             id: scc.id.clone(),
-            modules: scc.modules.clone(),
-            labels: scc.labels.clone(),
+            modules: scc.modules.iter().map(|k| k.as_str().to_string()).collect(),
+            labels,
             is_cycle,
             realizable: scc.realizable,
         });
@@ -758,20 +767,20 @@ fn run_cluster(args: ClusterArgs) -> Result<()> {
         .into_iter()
         .next()
         .ok_or_else(|| anyhow::anyhow!("no owner declares binding {:?}", args.sym))?;
-    let home_module = owner.destination.id.clone();
+    let home_module = owner.destination.clone();
     let mut incoming: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut outgoing: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for edge in &graph.quotient.edges {
         if edge.target == home_module && edge.source != home_module {
-            incoming.insert(edge.source.clone());
+            incoming.insert(edge.source.as_str().to_string());
         }
         if edge.source == home_module && edge.target != home_module {
-            outgoing.insert(edge.target.clone());
+            outgoing.insert(edge.target.as_str().to_string());
         }
     }
     let report = ClusterReport {
         binding: args.sym.clone(),
-        home_module,
+        home_module: home_module.as_str().to_string(),
         incoming_modules: incoming.into_iter().collect(),
         outgoing_modules: outgoing.into_iter().collect(),
     };

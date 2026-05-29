@@ -398,12 +398,12 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 /// pre-trim value. The per-binding-pair blame view (the surface
 /// spec authors actually read) is unaffected.
 fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<CycleEdge> {
-    // Owner id -> destination module label. The cycles.json `modules`
-    // entries are precisely the module destination labels.
+    // Owner id -> destination module key. The cycles.json `modules`
+    // entries are precisely these interned module keys.
     let owner_module: HashMap<&str, &str> = graph
         .nodes
         .iter()
-        .map(|n| (n.id.as_str(), n.destination.label.as_str()))
+        .map(|n| (n.id.as_str(), n.destination.as_str()))
         .collect();
     // Owner id -> first declared binding (matches the heuristic
     // `from_binding_by_ordinal` builds in validation.rs).
@@ -544,18 +544,15 @@ mod tests {
     use super::*;
     use analysis::{AtomicGraphReport, Purity};
     use analysis::{
-        BindingReport, EdgeRoleReport, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        BindingReport, EdgeRoleReport, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
     };
 
-    fn module_ref(label: &str) -> ModuleReportRef {
-        ModuleReportRef {
-            id: format!("logical:{label}"),
-            label: label.to_string(),
-            residual: false,
-            index: None,
-            target_file: None,
-        }
+    /// Destination key for gate tests; the key string is the module
+    /// label so `recompute_evidence`'s `owner_module` lookup matches
+    /// the SCC `modules` entries (which are these same keys).
+    fn module_ref(label: &str) -> ModuleKey {
+        ModuleKey(label.to_string())
     }
 
     fn owner_node(

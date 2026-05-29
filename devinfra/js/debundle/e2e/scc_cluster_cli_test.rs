@@ -33,13 +33,7 @@ fn synthetic_graph_json() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:ui/plugins",
-                    "label": "ui/plugins",
-                    "residual": false,
-                    "index": null,
-                    "target_file": "ui/plugins.js"
-                }
+                "destination": "ui/plugins"
             },
             {
                 "id": "owner:1",
@@ -50,45 +44,28 @@ fn synthetic_graph_json() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:residual",
-                    "label": "residual",
-                    "residual": true,
-                    "index": null,
-                    "target_file": null
-                }
+                "destination": "residual"
             }
         ],
         "edges": [],
         "module_graph": {
             "nodes": [
-                {
-                    "id": "logical:ui/plugins",
-                    "label": "ui/plugins",
-                    "residual": false,
-                    "index": null,
-                    "target_file": "ui/plugins.js"
-                },
-                {
-                    "id": "logical:residual",
-                    "label": "residual",
-                    "residual": true,
-                    "index": null,
-                    "target_file": null
-                }
+                { "key": "ui/plugins", "path": "ui/plugins", "residual": false },
+                { "key": "residual", "path": "residual", "residual": true },
+                { "key": "isolated", "path": "isolated", "residual": false }
             ],
             "edges": [
                 {
                     "id": "q_edge:0",
-                    "source": "logical:ui/plugins",
-                    "target": "logical:residual",
+                    "source": "ui/plugins",
+                    "target": "residual",
                     "edge_kinds": ["eager_use"],
                     "constrains_init_order": true
                 },
                 {
                     "id": "q_edge:1",
-                    "source": "logical:residual",
-                    "target": "logical:ui/plugins",
+                    "source": "residual",
+                    "target": "ui/plugins",
                     "edge_kinds": ["eager_use"],
                     "constrains_init_order": true
                 }
@@ -96,8 +73,7 @@ fn synthetic_graph_json() -> String {
             "sccs": [
                 {
                     "id": "scc:0",
-                    "modules": ["logical:ui/plugins", "logical:residual"],
-                    "labels": ["ui/plugins", "residual"],
+                    "modules": ["ui/plugins", "residual"],
                     "is_cycle": true,
                     "realizable": false,
                     "module_edge_ids": ["q_edge:0", "q_edge:1"],
@@ -105,8 +81,7 @@ fn synthetic_graph_json() -> String {
                 },
                 {
                     "id": "scc:1",
-                    "modules": ["logical:isolated"],
-                    "labels": ["isolated"],
+                    "modules": ["isolated"],
                     "is_cycle": false,
                     "realizable": true,
                     "module_edge_ids": [],
@@ -227,13 +202,7 @@ fn cluster_emits_quotient_neighbors() {
         .expect("spawn debundle");
     assert!(out.status.success());
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(parsed["home_module"].as_str(), Some("logical:ui/plugins"));
-    assert_eq!(
-        parsed["incoming_modules"][0].as_str(),
-        Some("logical:residual")
-    );
-    assert_eq!(
-        parsed["outgoing_modules"][0].as_str(),
-        Some("logical:residual")
-    );
+    assert_eq!(parsed["home_module"].as_str(), Some("ui/plugins"));
+    assert_eq!(parsed["incoming_modules"][0].as_str(), Some("residual"));
+    assert_eq!(parsed["outgoing_modules"][0].as_str(), Some("residual"));
 }

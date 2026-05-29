@@ -44,11 +44,7 @@ fn graph_with_atomic_unit() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:home",
-                    "label": "home/atom",
-                    "residual": false
-                }
+                "destination": "home/atom"
             },
             {
                 "id": "owner:1",
@@ -58,11 +54,7 @@ fn graph_with_atomic_unit() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:home",
-                    "label": "home/atom",
-                    "residual": false
-                }
+                "destination": "home/atom"
             }
         ],
         "edges": [

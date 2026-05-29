@@ -69,8 +69,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
     DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
-    PartitionDelta, RESIDUAL_ENTRY_MODULE_ID, RealizabilityIndex, RealizabilityVerdict,
-    record_gate_diagnostic_translation,
+    PartitionDelta, RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -424,29 +423,30 @@ impl QuotientGraph {
         for (i, node) in report.nodes.iter().enumerate() {
             let mut members = BTreeSet::new();
             members.insert(OwnerIdx(i));
-            // `is_residual` marks the literal residual_entry
-            // catch-all class only, not every owner currently
-            // destined for residual_entry. The catch-all is
-            // identified by its module id; the commit-2 greedy
-            // refuses to absorb any orphan INTO it, but freely
-            // merges residual-orphan singletons among themselves
-            // or into pre-existing active module classes.
+            // `ClassData::is_residual` marks the single residual
+            // catch-all CLASS that the greedy refuses to merge into —
+            // a distinct concept from "this owner is destined for
+            // residual" (which is the whole peelable pile). At seed
+            // time no class is the catch-all: every owner is its own
+            // singleton and the factorizer peels residual-destined
+            // owners OUT into fresh-module proposals. So this starts
+            // `false`; the residual class is established later. The
+            // authoritative "destined for residual" signal lives in
+            // the module table (`OwnerGraphReport::is_residual`) and is
+            // consumed via `gate_residual_owners` below + the
+            // projection in `realizability_index`.
             classes.push(ClassData {
                 members,
                 lines: owner_line_count_from_report(node),
-                is_residual: node.destination.id == RESIDUAL_ENTRY_MODULE_ID,
+                is_residual: false,
                 is_pre_existing_module: false,
             });
             owner_to_class.push(ClassId(i));
-            // `gate_residual_owners` mirrors `factorize.rs`'s use
-            // of `destination.residual` to identify owners assigned
-            // to the synthesized residual catch-all. The
-            // realizability gate's ESM simulator DFS starts at the
-            // partition's residual; any class containing a
-            // `destination.residual` owner projects to that
+            // The realizability gate's ESM simulator DFS starts at the
+            // partition's residual; any residual owner projects to that
             // residual ModuleId so the simulator's DFS reaches the
             // candidate SCCs.
-            if node.destination.residual {
+            if report.is_residual(&node.destination) {
                 gate_residual_owners.insert(OwnerIdx(i));
             }
         }
@@ -645,6 +645,15 @@ impl QuotientGraph {
     /// `true` if a class contains the residual catch-all owner.
     pub fn class_is_residual(&self, c: ClassId) -> bool {
         self.classes[c.0].is_residual
+    }
+
+    /// Designate `c` as the residual catch-all class — the class the
+    /// commit-2 greedy refuses to merge into. Seed-time construction
+    /// leaves every class non-residual (the factorizer peels
+    /// residual-destined owners OUT into fresh modules); callers that
+    /// model a sticky residual sink mark it explicitly.
+    pub fn mark_class_residual(&mut self, c: ClassId) {
+        self.classes[c.0].is_residual = true;
     }
 
     /// Iterator over all live (non-empty) class IDs.
@@ -2585,7 +2594,9 @@ pub fn build_seed_quotient(
             .map(|unit| {
                 (
                     unit.id.as_str(),
-                    unit.destinations.iter().any(|dest| dest.residual),
+                    unit.destinations
+                        .iter()
+                        .any(|dest| report.is_residual(dest)),
                 )
             })
             .collect();

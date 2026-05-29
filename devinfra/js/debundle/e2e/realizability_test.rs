@@ -271,7 +271,7 @@ export { A, B, Existing };
                 && unit
                     .destinations
                     .iter()
-                    .any(|destination| destination.residual)
+                    .any(|destination| graph.is_residual(destination))
         }),
         "atomic graph should collapse the residual A/B eager cycle into one unit: {graph:#?}",
     );
@@ -348,7 +348,7 @@ export { a, b, existing };
                 && unit
                     .destinations
                     .iter()
-                    .any(|destination| destination.residual)
+                    .any(|destination| graph.is_residual(destination))
         }),
         "written residual binding a should share an atomic unit with assigner b: {graph:#?}",
     );

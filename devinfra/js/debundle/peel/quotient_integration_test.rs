@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 
 use analysis::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
-    ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+    ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
     OwnerGraphReport, Purity, RealizabilityVerdict, SourceLocation, StatementKind,
     StatementOrdinal, check_realizability,
 };
@@ -57,14 +57,33 @@ fn binding(name: &str) -> BindingReport {
     }
 }
 
-fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
-        residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
+/// Test destination key. By convention the key string is the module's
+/// canonical path, so the module table (built in graph constructors)
+/// recovers the path and residual flag from it.
+fn module_ref(id: &str, _residual: bool) -> ModuleKey {
+    ModuleKey(id.to_string())
+}
+
+/// Build the module table (`quotient.nodes`) from a set of destination
+/// keys. The single source of truth for each module's path + residual
+/// flag; tests use the key string as the path.
+fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<analysis::ModuleEntry> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for key in keys {
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        let path = ModulePath::parse(key.as_str(), "")
+            .unwrap_or_else(|e| panic!("test module key {key} is not a valid path: {e}"));
+        let residual = path.is_residual();
+        out.push(analysis::ModuleEntry {
+            key: key.clone(),
+            path,
+            residual,
+        });
     }
+    out
 }
 
 fn owner(
@@ -72,7 +91,7 @@ fn owner(
     ordinal: usize,
     bindings: &[&str],
     lines: usize,
-    destination: ModuleReportRef,
+    destination: ModuleKey,
 ) -> OwnerGraphNodeReport {
     OwnerGraphNodeReport {
         id: id.to_string(),
@@ -95,13 +114,7 @@ fn residual_owner(
     bindings: &[&str],
     lines: usize,
 ) -> OwnerGraphNodeReport {
-    owner(
-        id,
-        ordinal,
-        bindings,
-        lines,
-        module_ref("logical:residual", true),
-    )
+    owner(id, ordinal, bindings, lines, module_ref("residual", true))
 }
 
 fn active_owner(
@@ -136,14 +149,14 @@ fn owner_edge(
 fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
     let mut owner_ids = Vec::new();
     let mut members = Vec::new();
-    let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+    let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
     let mut line_range = LineRange::new();
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
     for o in owners {
         owner_ids.push(o.id.clone());
         members.extend(o.declared_bindings.clone());
-        destinations.insert(o.destination.id.clone(), o.destination.clone());
+        destinations.insert(o.destination.clone(), o.destination.clone());
         if let Some(location) = &o.source_location {
             line_range.expand(location);
         }
@@ -180,12 +193,13 @@ fn graph_of(
     units: Vec<AtomicUnitReport>,
     unit_edges: Vec<AtomicUnitEdgeReport>,
 ) -> OwnerGraphReport {
+    let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     OwnerGraphReport {
         chunk_id: "x".to_string(),
         nodes,
         edges,
         quotient: OwnerGraphQuotientReport {
-            nodes: vec![],
+            nodes: module_nodes,
             edges: vec![],
             sccs: vec![],
         },
@@ -925,13 +939,7 @@ fn greedy_never_merges_into_residual() {
         declared_bindings: vec![],
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
-        destination: ModuleReportRef {
-            id: analysis::RESIDUAL_ENTRY_MODULE_ID.to_string(),
-            label: "residual".to_string(),
-            residual: true,
-            index: None,
-            target_file: None,
-        },
+        destination: module_ref("residual", true),
     };
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
     let report = graph_of(
@@ -959,6 +967,11 @@ fn greedy_never_merges_into_residual() {
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
     let residual_idx = q.owner_idx_of("owner:residual_catchall").unwrap();
     let residual_class = q.class_of(residual_idx);
+    // Designate the catch-all class as the sticky residual sink; the
+    // kernel leaves classes non-residual at seed time (residual-destined
+    // owners are otherwise peelable), so this test marks the sink it
+    // wants the greedy to refuse to merge into.
+    q.mark_class_residual(residual_class);
     let contractions = greedy_merge_to_convergence(&mut q);
     for (c1, c2) in &contractions {
         assert!(

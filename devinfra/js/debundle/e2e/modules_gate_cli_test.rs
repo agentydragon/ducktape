@@ -55,11 +55,7 @@ fn graph_with_merge_cycle_potential() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:a",
-                    "label": "a",
-                    "residual": false
-                }
+                "destination": "a"
             },
             {
                 "id": "owner:1",
@@ -69,11 +65,7 @@ fn graph_with_merge_cycle_potential() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:b",
-                    "label": "b",
-                    "residual": false
-                }
+                "destination": "b"
             },
             {
                 "id": "owner:2",
@@ -83,11 +75,7 @@ fn graph_with_merge_cycle_potential() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:c",
-                    "label": "c",
-                    "residual": false
-                }
+                "destination": "c"
             }
         ],
         "edges": [
@@ -135,11 +123,7 @@ fn graph_with_mutual_cross_module_reads() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:a",
-                    "label": "a",
-                    "residual": false
-                }
+                "destination": "a"
             },
             {
                 "id": "owner:1",
@@ -149,11 +133,7 @@ fn graph_with_mutual_cross_module_reads() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:b",
-                    "label": "b",
-                    "residual": false
-                }
+                "destination": "b"
             }
         ],
         "edges": [
@@ -199,11 +179,7 @@ fn graph_with_acyclic_cross_module_read() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:a",
-                    "label": "a",
-                    "residual": false
-                }
+                "destination": "a"
             },
             {
                 "id": "owner:1",
@@ -213,11 +189,7 @@ fn graph_with_acyclic_cross_module_read() -> String {
                 ],
                 "statement_kind": "var_decl",
                 "purity": { "kind": "pure" },
-                "destination": {
-                    "id": "logical:b",
-                    "label": "b",
-                    "residual": false
-                }
+                "destination": "b"
             }
         ],
         "edges": [

@@ -606,7 +606,7 @@ pub fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
         units.retain(|unit| {
             unit.destinations
                 .iter()
-                .any(|destination| destination.residual)
+                .any(|destination| graph.is_residual(destination))
         });
     }
     if args.readable_only {
@@ -626,7 +626,7 @@ pub fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
     });
     apply_limit(&mut units, args.limit);
     let groups = if args.by_destination {
-        group_units_by_destination(&units)
+        group_units_by_destination(&graph, &units)
     } else {
         Vec::new()
     };
@@ -693,7 +693,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
         .filter(|unit| {
             unit.destinations
                 .iter()
-                .any(|destination| destination.residual)
+                .any(|destination| graph.is_residual(destination))
         })
         .map(|unit| UnitSummary {
             unit_id: unit.id.clone(),
@@ -719,7 +719,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
             .filter(|unit| {
                 unit.destinations
                     .iter()
-                    .any(|destination| destination.residual)
+                    .any(|destination| graph.is_residual(destination))
             })
             .count(),
         atomic_edge_count: graph.atomic_graph.edges.len(),
@@ -828,9 +828,9 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .collect();
     let mut binding_homes = binding_homes(&args.common.modules_root, &binding_ids)?;
 
-    let selected_destinations: BTreeSet<String> = owners
+    let selected_destinations: BTreeSet<analysis::ModuleKey> = owners
         .iter()
-        .map(|owner| owner.destination.id.clone())
+        .map(|owner| owner.destination.clone())
         .collect();
     let mut quotient_edges = graph
         .quotient
@@ -1002,14 +1002,21 @@ fn sort_factorize_diagnostics(diagnostics: &mut [FactorizeDiagnosticReport]) {
     });
 }
 
-fn group_units_by_destination(units: &[AtomicUnitReport]) -> Vec<UnitGroup> {
+fn group_units_by_destination(
+    graph: &OwnerGraphReport,
+    units: &[AtomicUnitReport],
+) -> Vec<UnitGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for unit in units {
         for destination in &unit.destinations {
-            groups
-                .entry(destination.label.clone())
-                .or_default()
-                .push(unit.id.clone());
+            // Group by the human-facing path (the module's identity),
+            // resolved once via the module table; fall back to the raw
+            // key if the table lacks the entry.
+            let label = graph
+                .module(destination)
+                .map(|entry| entry.path.to_string())
+                .unwrap_or_else(|| destination.0.clone());
+            groups.entry(label).or_default().push(unit.id.clone());
         }
     }
     groups
@@ -1360,7 +1367,7 @@ fn resolve_owner_ids(
             let owner_ids: Vec<String> = graph
                 .nodes
                 .iter()
-                .filter(|node| node.destination.id == *module_id)
+                .filter(|node| node.destination.as_str() == *module_id)
                 .map(|node| node.id.clone())
                 .collect();
             if owner_ids.is_empty()
@@ -1368,7 +1375,7 @@ fn resolve_owner_ids(
                     .quotient
                     .nodes
                     .iter()
-                    .any(|module| module.id == *module_id)
+                    .any(|module| module.key.as_str() == *module_id)
             {
                 bail!("module id {module_id:?} not found in owner graph");
             }
@@ -1643,7 +1650,7 @@ mod tests {
     use std::path::Path;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleReportRef,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleKey,
         OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
         Purity, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
     };
@@ -1671,21 +1678,21 @@ mod tests {
             declared_bindings: vec![test_utils::member(binding, export_name)],
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: test_utils::module_ref("logical:residual", true),
+            destination: test_utils::module_ref("residual", true),
         }
     }
 
     fn atomic_unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
         let mut owner_ids = Vec::new();
         let mut members = Vec::new();
-        let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+        let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
         let mut start_line = usize::MAX;
         let mut end_line = 0usize;
         let mut size_lines_estimate = 0usize;
         for owner in owners {
             owner_ids.push(owner.id.clone());
             members.extend(owner.declared_bindings.clone());
-            destinations.insert(owner.destination.id.clone(), owner.destination.clone());
+            destinations.insert(owner.destination.clone(), owner.destination.clone());
             if let Some(location) = &owner.source_location {
                 start_line = start_line.min(location.start_line);
                 end_line = end_line.max(location.end_line);
@@ -1724,9 +1731,11 @@ mod tests {
     fn graph_fixture() -> OwnerGraphReport {
         let zz = owner("owner:0", 1, "ZZ", "PaymentError");
         let aa = owner("owner:1", 2, "aa", "aa");
+        let nodes = vec![zz.clone(), aa.clone()];
+        let module_nodes = test_utils::module_table(nodes.iter().map(|n| &n.destination));
         OwnerGraphReport {
             chunk_id: "static/index".to_string(),
-            nodes: vec![zz.clone(), aa.clone()],
+            nodes,
             edges: vec![OwnerGraphEdgeReport {
                 id: "edge:0".to_string(),
                 source: "owner:1".to_string(),
@@ -1738,7 +1747,7 @@ mod tests {
                 role: None,
             }],
             quotient: OwnerGraphQuotientReport {
-                nodes: Vec::new(),
+                nodes: module_nodes,
                 edges: Vec::new(),
                 sccs: Vec::<QuotientSccReport>::new(),
             },

@@ -14,9 +14,9 @@ use std::fs;
 use std::path::Path;
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleReportRef,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-    QuotientEdgeReport, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientEdgeReport,
+    QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::{
     CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
@@ -38,13 +38,19 @@ fn member(binding: &str, export: &str) -> BindingReport {
     }
 }
 
-fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
+/// Destination key whose string is the module's canonical path.
+fn module_ref(path: &str, _residual: bool) -> analysis::ModuleKey {
+    analysis::ModuleKey(path.to_string())
+}
+
+/// A module-table entry built from a canonical path key.
+fn module_entry(path: &str) -> analysis::ModuleEntry {
+    let parsed = spec::ModulePath::parse(path, "").expect("valid test module path");
+    let residual = parsed.is_residual();
+    analysis::ModuleEntry {
+        key: analysis::ModuleKey(path.to_string()),
+        path: parsed,
         residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
     }
 }
 
@@ -53,7 +59,7 @@ fn owner(
     ordinal: usize,
     binding: &str,
     export: &str,
-    destination: ModuleReportRef,
+    destination: analysis::ModuleKey,
 ) -> OwnerGraphNodeReport {
     OwnerGraphNodeReport {
         id: id.to_string(),
@@ -84,24 +90,15 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
         1,
         "XOe",
         "PluginSettingsAccessor",
-        module_ref("logical:ui/plugins", false),
+        module_ref("ui/plugins", false),
     );
-    let other = owner(
-        "owner:1",
-        2,
-        "YOe",
-        "YOe",
-        module_ref("logical:residual", true),
-    );
+    let other = owner("owner:1", 2, "YOe", "YOe", module_ref("residual", true));
     let quotient = OwnerGraphQuotientReport {
-        nodes: vec![
-            module_ref("logical:ui/plugins", false),
-            module_ref("logical:residual", true),
-        ],
+        nodes: vec![module_entry("ui/plugins"), module_entry("residual")],
         edges: vec![QuotientEdgeReport {
             id: "q_edge:0".to_string(),
-            source: "logical:residual".to_string(),
-            target: "logical:ui/plugins".to_string(),
+            source: analysis::ModuleKey("residual".to_string()),
+            target: analysis::ModuleKey("ui/plugins".to_string()),
             edge_kinds: vec![DepKind::EagerUse],
             constrains_init_order: true,
         }],

@@ -68,10 +68,9 @@ pub use realizability::{
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,
-    FactorizeDiagnosticReason, LineRange, ModuleReportRef, OwnerGraphEdgeReport,
+    FactorizeDiagnosticReason, LineRange, ModuleEntry, ModuleKey, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
-    QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
-    SourceLocation,
+    QuotientEdgeReport, QuotientSccReport, SourceLocation,
 };
 pub use stage_one::{
     RebindFold, StageOneAnalysis, compute_rebind_folds, compute_stage_one_analysis,

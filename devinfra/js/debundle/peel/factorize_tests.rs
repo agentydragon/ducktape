@@ -463,7 +463,7 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
         .find(|node| node.id == "owner:1")
         .expect("X owner should be reported");
     assert!(
-        residual_owner.destination.residual,
+        report.is_residual(&residual_owner.destination),
         "residual owner should land on the synthesized residual module: {:?}",
         residual_owner.destination,
     );
@@ -489,7 +489,7 @@ fn owner_graph_report_emits_atomic_graph_not_heuristic_peel_fields() {
                     && unit
                         .destinations
                         .iter()
-                        .any(|destination| destination.residual)
+                        .any(|destination| report.is_residual(destination))
             ),
         "Leaf should appear as a residual atomic unit: {:#?}",
         report.atomic_graph,

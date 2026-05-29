@@ -150,6 +150,42 @@ single genuine collision is the binding's destination field:
 - Tombstone-free: this is an atomic in-repo API change, all callers
   updated in the same commits.
 
+### Stage 5 — collapse the redundant module-identity encodings (done)
+
+Eliminated every redundant encoding of module identity on the
+owner-graph wire — "one type/encoding per thing":
+
+- `ModuleReportRef { id, label, residual, index, target_file }` (five
+  spellings of one identity) → split into `ModuleKey` (the one interned
+  reference, `"logical:N"`) and `ModuleEntry { key, path, residual }`
+  (the module table, `module_graph.nodes`, the single source of truth
+  for path + residual). `index`/`label`/`target_file` and the parallel
+  `QuotientSccReport.labels` are removed.
+- `OwnerGraphNodeReport.destination`, `QuotientEdgeReport.source/target`,
+  `QuotientSccReport.modules`, `AtomicUnitReport.destinations` all carry
+  `ModuleKey`. Consumers resolve path/residual via
+  `OwnerGraphReport::module(key)` / `is_residual(key)`.
+- Fixed the latent always-false residual compare
+  (`destination.id == "residual"` on `logical:N` keys). Residual is now
+  read from the table's authoritative flag everywhere. `ClassData`'s
+  seed-time `is_residual` stays `false` (residual-destined owners are
+  the peelable pile, not the sticky catch-all class); added
+  `QuotientGraph::mark_class_residual` to designate the sink explicitly.
+- Wire-visible: regenerated/rewrote the hand-built JSON + Rust test
+  fixtures to the new shape. The frozen `props/specimens/...` snapshot
+  was **not** touched (per the standing decision) and now diverges from
+  the live wire format.
+
+**Note on the residual-flag decision.** The plan called for seeding
+`ClassData::is_residual` from the authoritative table flag. Tried it;
+it regressed the factorizer (golden output 2 proposals → 0) because
+`class_is_residual` means "the sticky residual catch-all class," a
+different concept from "owner destined for residual" (the whole peelable
+pile, which the factorizer must peel OUT). Kept the behavior-preserving
+seed (`false`) and exposed `mark_class_residual` for callers that model
+a sticky sink — the authoritative flag still drives the gate's
+`gate_residual_owners` and the realizability projection.
+
 ## Out of scope / future TODO
 
 - **`owner → node` rename.** Folding `OwnerId`/`OwnerIdx` into one
