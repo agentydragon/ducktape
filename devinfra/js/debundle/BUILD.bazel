@@ -292,6 +292,22 @@ rust_test(
     ],
 )
 
+# Test-only helpers for building owner-graph wire fixtures (the module
+# table + interned ModuleKey references). Shared by in-crate tests and
+# the separate integration / e2e test crates so the builders aren't
+# copy-pasted per test module.
+rust_library(
+    name = "report_fixtures",
+    testonly = True,
+    srcs = ["report_fixtures.rs"],
+    crate_root = "report_fixtures.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":spec",
+    ],
+)
+
 rust_library(
     name = "spec_modules",
     srcs = ["spec_modules.rs"],
@@ -368,6 +384,7 @@ rust_test(
     crate = ":peel",
     edition = "2024",
     deps = [
+        ":report_fixtures",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_parser",
         "@crates//:tempfile",
@@ -397,6 +414,7 @@ rust_test(
     deps = [
         ":analysis",
         ":peel",
+        ":report_fixtures",
         ":spec",
         "@crates//:serde_json",
     ],
@@ -603,6 +621,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":js_ast",
+        ":report_fixtures",
         ":spec_tree",
         "@crates//:tempfile",
     ],

@@ -544,16 +544,10 @@ mod tests {
     use super::*;
     use analysis::{AtomicGraphReport, Purity};
     use analysis::{
-        BindingReport, EdgeRoleReport, ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        BindingReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
     };
-
-    /// Destination key for gate tests; the key string is the module
-    /// label so `recompute_evidence`'s `owner_module` lookup matches
-    /// the SCC `modules` entries (which are these same keys).
-    fn module_ref(label: &str) -> ModuleKey {
-        ModuleKey(label.to_string())
-    }
+    use report_fixtures::module_ref;
 
     fn owner_node(
         id: &str,
@@ -561,6 +555,9 @@ mod tests {
         bindings: &[&str],
         module_label: &str,
     ) -> OwnerGraphNodeReport {
+        // The destination key string is the module label so
+        // `recompute_evidence`'s `owner_module` lookup matches the SCC
+        // `modules` entries (which are these same keys).
         OwnerGraphNodeReport {
             id: id.to_string(),
             statement_ordinal: StatementOrdinal(statement_ordinal),
@@ -574,7 +571,7 @@ mod tests {
                 .collect(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: module_ref(module_label),
+            destination: module_ref(module_label, false),
         }
     }
 

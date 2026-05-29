@@ -1012,13 +1012,6 @@ mod tests {
         )
     }
 
-    /// Destination key for a test owner. By convention the key string
-    /// is the module's canonical path, so `path` is the key and the
-    /// module table (built in `graph_with_atomic_units`) recovers it.
-    fn module_ref_path(path: &str) -> ModuleKey {
-        ModuleKey(path.to_string())
-    }
-
     fn owner_at(
         id: &str,
         ordinal_value: usize,
@@ -1228,13 +1221,19 @@ mod tests {
 
     #[test]
     fn merge_proposals_use_spec_module_labels_not_generated_target_files() {
-        let a = owner_at("a", 1, &["a"], 10, module_ref_path("domains/system/ids"));
+        let a = owner_at(
+            "a",
+            1,
+            &["a"],
+            10,
+            test_utils::module_ref("domains/system/ids", false),
+        );
         let b = owner_at(
             "b",
             2,
             &["b"],
             10,
-            module_ref_path("domains/system/id_helpers"),
+            test_utils::module_ref("domains/system/id_helpers", false),
         );
         let graph = graph_with_atomic_units(
             vec![a.clone(), b.clone()],
@@ -1272,7 +1271,7 @@ mod tests {
         // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
         // is now unrepresentable: the wire carries one interned key
         // and the table holds one canonical path.)
-        let dest = module_ref_path("domains/system/ids");
+        let dest = test_utils::module_ref("domains/system/ids", false);
         let a = owner_at("a", 1, &["a"], 10, dest.clone());
         let b = owner_at("b", 2, &["b"], 10, dest.clone());
         let graph = graph_with_atomic_units(

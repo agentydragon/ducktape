@@ -33,6 +33,7 @@ use peel::quotient::{
     OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
     greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
+use report_fixtures::{module_ref, module_table};
 use spec::ModulePath;
 
 // ---------- Fixture helpers (generic; no the upstream/gaffer strings). ----------
@@ -55,35 +56,6 @@ fn binding(name: &str) -> BindingReport {
         binding: name.into(),
         export_name: name.into(),
     }
-}
-
-/// Test destination key. By convention the key string is the module's
-/// canonical path, so the module table (built in graph constructors)
-/// recovers the path and residual flag from it.
-fn module_ref(id: &str, _residual: bool) -> ModuleKey {
-    ModuleKey(id.to_string())
-}
-
-/// Build the module table (`quotient.nodes`) from a set of destination
-/// keys. The single source of truth for each module's path + residual
-/// flag; tests use the key string as the path.
-fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<analysis::ModuleEntry> {
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out = Vec::new();
-    for key in keys {
-        if !seen.insert(key.clone()) {
-            continue;
-        }
-        let path = ModulePath::parse(key.as_str(), "")
-            .unwrap_or_else(|e| panic!("test module key {key} is not a valid path: {e}"));
-        let residual = path.is_residual();
-        out.push(analysis::ModuleEntry {
-            key: key.clone(),
-            path,
-            residual,
-        });
-    }
-    out
 }
 
 fn owner(

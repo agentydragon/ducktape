@@ -9,9 +9,9 @@ use std::fs;
 use std::path::Path;
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleEntry, ModuleKey,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-    QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleEntry, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientSccReport,
+    SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::plan::PatchPlanStatus;
 use peel::{
@@ -19,6 +19,7 @@ use peel::{
     SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
     run_patch_plan_report, run_plan_work_report, run_source_slice_report, run_units_report,
 };
+use report_fixtures::{module_ref, module_table};
 use tempfile::TempDir;
 
 fn write(path: &Path, body: &str) {
@@ -35,19 +36,10 @@ fn member(binding: &str, export: &str) -> BindingReport {
     }
 }
 
-/// Destination key whose string is the module's canonical path.
-fn module_ref(path: &str, _residual: bool) -> ModuleKey {
-    ModuleKey(path.to_string())
-}
-
 /// The module table for a graph whose only module is the residual
 /// catch-all (these query fixtures put every owner in residual).
 fn residual_table() -> Vec<ModuleEntry> {
-    vec![ModuleEntry {
-        key: ModuleKey("residual".to_string()),
-        path: spec::ModulePath::parse("residual", "").unwrap(),
-        residual: true,
-    }]
+    module_table([&module_ref("residual", true)])
 }
 
 fn owner(id: &str, ordinal: usize, binding: &str, export: &str) -> OwnerGraphNodeReport {

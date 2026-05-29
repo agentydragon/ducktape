@@ -399,39 +399,14 @@ mod tests {
     use std::fs;
 
     use analysis::{
-        AtomicGraphReport, BindingReport, DepKind, ModuleEntry, ModuleKey, OwnerGraphEdgeReport,
-        OwnerGraphNodeReport, OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation,
-        StatementKind, StatementOrdinal,
+        AtomicGraphReport, BindingReport, DepKind, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation, StatementKind,
+        StatementOrdinal,
     };
-    use spec::ModulePath;
+    use report_fixtures::{module_ref, module_table};
     use tempfile::TempDir;
 
     use super::*;
-
-    /// Test destination key; the key string is the module's canonical
-    /// path (e.g. `"residual"`), recovered into the module table by
-    /// `module_table`.
-    fn module_ref(id: &str, _residual: bool) -> ModuleKey {
-        ModuleKey(id.to_string())
-    }
-
-    fn module_table<'a>(keys: impl IntoIterator<Item = &'a ModuleKey>) -> Vec<ModuleEntry> {
-        let mut seen = std::collections::BTreeSet::new();
-        let mut out = Vec::new();
-        for key in keys {
-            if !seen.insert(key.clone()) {
-                continue;
-            }
-            let path = ModulePath::parse(key.as_str(), "").expect("valid test module path");
-            let residual = path.is_residual();
-            out.push(ModuleEntry {
-                key: key.clone(),
-                path,
-                residual,
-            });
-        }
-        out
-    }
 
     fn owner(id: &str, ordinal: usize, bindings: Vec<BindingReport>) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
