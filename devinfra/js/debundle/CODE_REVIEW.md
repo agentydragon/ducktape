@@ -61,7 +61,7 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 ### `DepKind` 6-way split vs primary constraining/non-constraining axis
 
-Callers in realizability.rs, validation.rs, facts.rs frequently partition into constraining vs non-constraining via `constrains_init_order()`. Make this a first-class type distinction.
+Callers in realizability.rs, validation.rs, facts/mod.rs frequently partition into constraining vs non-constraining via `constrains_init_order()`. Make this a first-class type distinction.
 
 ### Three-layer edge representation
 
