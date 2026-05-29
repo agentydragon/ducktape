@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from devinfra.js.debundle.live_proxy.package_tree import resolve_package_subpath
 
@@ -106,4 +107,4 @@ class SubpathEscapeTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

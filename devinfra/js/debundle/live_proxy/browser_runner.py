@@ -161,7 +161,7 @@ def collect_ignored_console_errors(signals: BrowserSignals, ignored_patterns=())
 
 
 def compile_patterns(patterns):
-    return [pattern if hasattr(pattern, "search") else re.compile(pattern) for pattern in patterns]
+    return [pattern if isinstance(pattern, re.Pattern) else re.compile(pattern) for pattern in patterns]
 
 
 def assert_no_console_errors(signals: BrowserSignals, detail: str, ignored_patterns=()) -> None:

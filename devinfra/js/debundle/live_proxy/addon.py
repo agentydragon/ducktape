@@ -39,13 +39,13 @@ class DebundleLiveProxyAddon:
 
         request_path = urlsplit(flow.request.path or "/").path
         if request_path == "/sw.js":
-            self._serve_local_mapping(flow, self.config.control_paths["service_worker"])
+            self._serve_local_mapping(flow, self.config.control_paths.service_worker)
             return
         if request_path.startswith(f"{self.config.internal_prefix}/"):
             self._serve_local_mapping(flow, flow.request.path)
             return
         if is_target_document_request(flow.request.method, headers, self.config):
-            self._serve_local_mapping(flow, self.config.control_paths["live_index"])
+            self._serve_local_mapping(flow, self.config.control_paths.live_index)
             return
 
     def _serve_local_mapping(self, flow: http.HTTPFlow, path: str) -> None:

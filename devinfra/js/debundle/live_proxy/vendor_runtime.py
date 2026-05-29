@@ -20,7 +20,6 @@ class VendorRuntimeEntry:
     subpath: str
     version: str
     generated_wrapper_path: Path | None = None
-    wrapper_shape: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +54,8 @@ PARTIAL_SWAP_URL_PREFIX = "_partial_swap"
 
 
 def load_vendor_resolution_manifest(manifest_path: Path) -> dict:
+    # Opaque external JSON produced by the Rust vendor-swap pipeline; entries are
+    # parsed into typed VendorRuntimeEntry objects in load_vendor_runtime_index.
     if not manifest_path or not manifest_path.exists():
         return {}
     raw = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -100,7 +101,6 @@ def load_vendor_runtime_index(
             subpath=entry["subpath"],
             version=entry["version"],
             generated_wrapper_path=wrapper_abs_path,
-            wrapper_shape=entry.get("wrapper_shape") if wrapper_abs_path else None,
         )
     return by_chunk_id
 

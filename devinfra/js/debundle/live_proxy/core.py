@@ -7,12 +7,15 @@ import posixpath
 import re
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
+from enum import StrEnum
 from html import escape as html_escape
 from pathlib import Path
 from typing import Any, NoReturn, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from devinfra.js.debundle.live_proxy.vendor_runtime import (
+    PartialSwapEntry,
+    VendorRuntimeEntry,
     build_partial_swap_import_map,
     load_partial_swap_runtime_index,
     load_vendor_runtime_index,
@@ -77,20 +80,25 @@ class LiveProxyOptions:
 
 
 @dataclass(frozen=True)
+class ControlPaths:
+    """Same-origin internal URLs the proxy serves directly."""
+
+    live_index: str
+    service_worker: str
+
+
+@dataclass(frozen=True)
 class LiveProxyConfig:
     app_asset_prefix: str
-    app_manifest: dict
     app_manifest_path: Path
     app_root: Path
-    asset_summary: dict
     asset_summary_path: Path | None
     bootstrap_url: str
     ca_dir: Path
-    control_paths: dict[str, str]
+    control_paths: ControlPaths
     injected_html: str
     internal_prefix: str
     out_root: Path
-    output_report: dict
     profile_dir: Path
     proxy_host: str
     proxy_port: int
@@ -101,14 +109,23 @@ class LiveProxyConfig:
     target_url: str
     ui_version: str
     vendor_manifest_path: Path
-    vendor_runtime_index: dict
+    vendor_runtime_index: dict[str, VendorRuntimeEntry]
     partial_swap_manifest_path: Path
-    partial_swap_runtime_index: dict
+    partial_swap_runtime_index: dict[str, PartialSwapEntry]
+
+
+class LocalAssetKind(StrEnum):
+    LIVE_INDEX = "live-index"
+    SERVICE_WORKER = "service-worker"
+    VENDOR_FILE = "vendor-file"
+    PARTIAL_SWAP_REDIRECT = "partial-swap-redirect"
+    PARTIAL_SWAP_FILE = "partial-swap-file"
+    FILE = "file"
 
 
 @dataclass(frozen=True)
 class LocalAssetMapping:
-    kind: str
+    kind: LocalAssetKind
     content_type: str | None = None
     file_path: Path | None = None
     body: bytes | None = None
@@ -189,7 +206,6 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
 
     runtime_report = read_json(app_manifest_path)
     reports_root = app_manifest_path.parent
-    output_report = read_optional_json(reports_root / "output.json", {})
     source_assets_report = read_optional_json(reports_root / "source_assets.json", {})
     provenance_report = read_optional_json(reports_root / "provenance.json", {})
     asset_summary = source_assets_report.get("asset_summary") or {}
@@ -235,19 +251,17 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
     target_origin = f"{target_parts.scheme}://{target_parts.netloc}"
     return LiveProxyConfig(
         app_asset_prefix=app_asset_prefix,
-        app_manifest=runtime_report,
         app_manifest_path=app_manifest_path,
         app_root=app_root,
-        asset_summary=asset_summary,
         asset_summary_path=resolve_relative(reports_root, source_assets_report["source_path"])
         if source_assets_report.get("source_path")
         else None,
         bootstrap_url=f"{app_asset_prefix}/bootstrap.js",
         ca_dir=state_dir / "mitm-ca",
-        control_paths={
-            "live_index": f"{internal_prefix}/live-index.html",
-            "service_worker": f"{internal_prefix}/sw.js",
-        },
+        control_paths=ControlPaths(
+            live_index=f"{internal_prefix}/live-index.html",
+            service_worker=f"{internal_prefix}/sw.js",
+        ),
         injected_html=rewrite_html_for_live_proxy(
             source_html,
             app_asset_prefix=app_asset_prefix,
@@ -257,7 +271,6 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
         ),
         internal_prefix=internal_prefix,
         out_root=app_root,
-        output_report=output_report,
         profile_dir=state_dir / "browser-profile",
         proxy_host=options.proxy_host or DEFAULT_PROXY_HOST,
         proxy_port=options.proxy_port or DEFAULT_PROXY_PORT,
@@ -341,16 +354,9 @@ def rewrite_snapshot_asset_urls(html: str, app_asset_prefix: str) -> str:
     )
 
 
-def is_target_document_request(method: str, headers: dict, config: LiveProxyConfig | dict) -> bool:
-    target_host = (
-        config.target_host
-        if isinstance(config, LiveProxyConfig)
-        else config["targetHost"]
-        if "targetHost" in config
-        else config["target_host"]
-    )
+def is_target_document_request(method: str, headers: dict, config: LiveProxyConfig) -> bool:
     host = normalize_host(header_get(headers, "host") or "")
-    if host != normalize_host(target_host):
+    if host != normalize_host(config.target_host):
         return False
     destination = (header_get(headers, "sec-fetch-dest") or "").lower()
     if destination in {"document", "iframe"}:
@@ -363,13 +369,15 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     normalized_path = pathname.split("?", 1)[0]
     if not normalized_path.startswith(f"{config.internal_prefix}/"):
         return None
-    if normalized_path == config.control_paths["live_index"]:
+    if normalized_path == config.control_paths.live_index:
         return LocalAssetMapping(
-            kind="live-index", body=config.injected_html.encode("utf-8"), content_type="text/html; charset=utf-8"
+            kind=LocalAssetKind.LIVE_INDEX,
+            body=config.injected_html.encode("utf-8"),
+            content_type="text/html; charset=utf-8",
         )
-    if normalized_path == config.control_paths["service_worker"]:
+    if normalized_path == config.control_paths.service_worker:
         return LocalAssetMapping(
-            kind="service-worker",
+            kind=LocalAssetKind.SERVICE_WORKER,
             body=noop_service_worker_source().encode("utf-8"),
             content_type="text/javascript; charset=utf-8",
         )
@@ -378,7 +386,7 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     vendor_runtime = resolve_vendor_runtime_request(suffix, config.vendor_runtime_index)
     if vendor_runtime:
         return LocalAssetMapping(
-            kind="vendor-file",
+            kind=LocalAssetKind.VENDOR_FILE,
             chunk_id=vendor_runtime.entry.chunk_id,
             content_type=content_type_for_path(vendor_runtime.file_path),
             file_path=vendor_runtime.file_path,
@@ -387,11 +395,11 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     if partial_swap:
         if partial_swap.resolved_suffix and partial_swap.resolved_suffix != partial_swap.request_suffix:
             return LocalAssetMapping(
-                kind="partial-swap-redirect",
+                kind=LocalAssetKind.PARTIAL_SWAP_REDIRECT,
                 redirect_to=f"{config.internal_prefix}/app/_partial_swap/{partial_swap.entry.package}/{partial_swap.resolved_suffix}",
             )
         return LocalAssetMapping(
-            kind="partial-swap-file",
+            kind=LocalAssetKind.PARTIAL_SWAP_FILE,
             content_type=content_type_for_path(partial_swap.file_path),
             file_path=partial_swap.file_path,
             package=partial_swap.entry.package,
@@ -401,7 +409,7 @@ def map_local_asset_path(pathname: str, config: LiveProxyConfig) -> LocalAssetMa
     if app_relative_path is None:
         return None
     return LocalAssetMapping(
-        kind="file",
+        kind=LocalAssetKind.FILE,
         content_type=content_type_for_path(Path(app_relative_path)),
         file_path=safe_join(config.app_root or config.out_root, app_relative_path),
     )

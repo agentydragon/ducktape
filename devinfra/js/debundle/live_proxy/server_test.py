@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import pytest_bazel
 
 from devinfra.js.debundle.live_proxy import server
 from devinfra.js.debundle.live_proxy.core import LiveProxyOptions
@@ -62,4 +63,4 @@ class StartProxyInProcessTest(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()

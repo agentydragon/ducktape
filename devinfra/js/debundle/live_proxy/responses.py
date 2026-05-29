@@ -4,14 +4,14 @@ from pathlib import Path
 
 from mitmproxy import http
 
-from devinfra.js.debundle.live_proxy.core import LocalAssetMapping
+from devinfra.js.debundle.live_proxy.core import LocalAssetKind, LocalAssetMapping
 
 NO_STORE = "no-store"
 TEXT_PLAIN = "text/plain; charset=utf-8"
 
 
 def response_for_mapping(mapping: LocalAssetMapping) -> http.Response:
-    if mapping.kind == "partial-swap-redirect":
+    if mapping.kind == LocalAssetKind.PARTIAL_SWAP_REDIRECT:
         return http.Response.make(301, b"", {"location": mapping.redirect_to or "/"})
     if mapping.body is not None:
         return ok_response(mapping.body, mapping.content_type)

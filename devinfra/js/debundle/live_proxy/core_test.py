@@ -6,9 +6,11 @@ import unittest
 from pathlib import Path
 
 import pytest
+import pytest_bazel
 
 from devinfra.js.debundle.live_proxy.addon import DebundleLiveProxyAddon
 from devinfra.js.debundle.live_proxy.core import (
+    LocalAssetKind,
     LocalAssetMapping,
     is_target_document_request,
     load_live_proxy_configuration,
@@ -49,7 +51,7 @@ class LiveProxyCoreTest(unittest.TestCase):
 
         assert config.target_origin == "https://example.test"
         assert config.bootstrap_url == "/_debundle/live/example/app/bootstrap.js"
-        assert config.control_paths["live_index"] == "/_debundle/live/example/live-index.html"
+        assert config.control_paths.live_index == "/_debundle/live/example/live-index.html"
         assert 'src="/_debundle/live/example/app/bootstrap.js"' in config.injected_html
         assert "js-debundle-live-proxy" in config.injected_html
 
@@ -148,7 +150,16 @@ class LiveProxyCoreTest(unittest.TestCase):
         assert 'href="/favicon.ico"' in rewritten
 
     def test_is_target_document_request(self) -> None:
-        config = {"target_host": "example.test"}
+        fixture = write_base_fixture()
+        config = load_live_proxy_configuration(
+            {
+                "app_manifest_path": str(fixture.app_manifest_path),
+                "proxy_host": "127.0.0.1",
+                "proxy_port": 9807,
+                "state_dir": str(fixture.root / "state"),
+            }
+        )
+        assert config.target_host == "example.test"
 
         assert is_target_document_request(
             "GET",
@@ -193,15 +204,15 @@ class LiveProxyCoreTest(unittest.TestCase):
         )
 
         file_mapping = require_mapping(map_local_asset_path("/_debundle/live/example/app/bootstrap.js", config))
-        assert file_mapping.kind == "file"
+        assert file_mapping.kind == LocalAssetKind.FILE
         assert file_mapping.file_path == fixture.app_root / "bootstrap.js"
 
         html_mapping = require_mapping(map_local_asset_path("/_debundle/live/example/live-index.html", config))
-        assert html_mapping.kind == "live-index"
+        assert html_mapping.kind == LocalAssetKind.LIVE_INDEX
         assert b"js-debundle-live-proxy" in (html_mapping.body or b"")
 
         sw_mapping = require_mapping(map_local_asset_path("/_debundle/live/example/sw.js", config))
-        assert sw_mapping.kind == "service-worker"
+        assert sw_mapping.kind == LocalAssetKind.SERVICE_WORKER
         assert b"skipWaiting" in (sw_mapping.body or b"")
 
     def test_vendor_and_partial_swap_resolution(self) -> None:
@@ -264,7 +275,7 @@ class LiveProxyCoreTest(unittest.TestCase):
         runtime_hit = require_mapping(
             map_local_asset_path("/_debundle/live/vendor/app/static/katex-BZy9Y_85/runtime.js", config)
         )
-        assert runtime_hit.kind == "vendor-file"
+        assert runtime_hit.kind == LocalAssetKind.VENDOR_FILE
         assert runtime_hit.file_path == fixture.packages_root / "katex" / "dist" / "katex.mjs"
 
         sibling_hit = require_mapping(
@@ -280,7 +291,7 @@ class LiveProxyCoreTest(unittest.TestCase):
         partial_redirect = require_mapping(
             map_local_asset_path("/_debundle/live/vendor/app/_partial_swap/mobx-react-lite/dist/platform", config)
         )
-        assert partial_redirect.kind == "partial-swap-redirect"
+        assert partial_redirect.kind == LocalAssetKind.PARTIAL_SWAP_REDIRECT
         assert (
             partial_redirect.redirect_to
             == "/_debundle/live/vendor/app/_partial_swap/mobx-react-lite/dist/platform/index.js"
@@ -431,4 +442,4 @@ def require_mapping(mapping: LocalAssetMapping | None) -> LocalAssetMapping:
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest_bazel.main()
