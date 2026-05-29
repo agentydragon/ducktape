@@ -1,0 +1,109 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "resolvers",
+    srcs = ["resolvers.py"],
+    deps = [
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "manifold",
+    srcs = ["manifold.py"],
+    deps = [
+        "//augur/api:casing",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "calibration",
+    srcs = ["calibration.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":resolvers",
+        "//augur/model:exogenous",
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "calibration_cli_lib",
+    srcs = ["calibration_cli.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        "//augur/model:exogenous",
+        "//augur/model:exogenous_provider_config",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "calibration_cli",
+    main_module = "augur.calibration.calibration_cli",
+    deps = [":calibration_cli_lib"],
+)
+
+py_test(
+    name = "test_resolvers",
+    srcs = ["test_resolvers.py"],
+    deps = [
+        ":resolvers",
+        "//:conftest",
+        "//augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog",
+    srcs = ["test_catalog.py"],
+    data = ["example_openai_catalog.yaml"],
+    deps = [
+        ":catalog",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_calibration",
+    srcs = ["test_calibration.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        "//:conftest",
+        "//augur/model:exogenous",
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest_bazel",
+    ],
+)
