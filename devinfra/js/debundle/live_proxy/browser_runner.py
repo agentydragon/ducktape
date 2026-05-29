@@ -228,9 +228,23 @@ async def write_undeclared_outputs(
     if not output_dir_raw:
         return None
     output_dir = Path(output_dir_raw)
-    output_dir.mkdir(parents=True, exist_ok=True)
     await settle_pending_tasks(signals, timeout_s=5.0)
     page_state = await safe_read_page_state(page, read_page_state)
+    # Offload the blocking filesystem writes to a worker thread so they
+    # don't stall the event loop (and keep this async function free of
+    # direct blocking pathlib I/O — ruff ASYNC240).
+    await asyncio.to_thread(_write_diagnostic_files, output_dir, signals, error, page_state, ignored_console_patterns)
+    try:
+        await page.screenshot(path=str(output_dir / "page.png"), full_page=True)
+    except Exception as screenshot_error:
+        await asyncio.to_thread(_write_text, output_dir / "screenshot_error.txt", f"{screenshot_error}\n")
+    return output_dir
+
+
+def _write_diagnostic_files(
+    output_dir: Path, signals: BrowserSignals, error: BaseException | None, page_state: dict, ignored_console_patterns
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
     response_body_dir = output_dir / "response_bodies"
     response_body_dir.mkdir(parents=True, exist_ok=True)
     for body in signals.response_bodies:
@@ -268,11 +282,10 @@ async def write_undeclared_outputs(
     )
     write_json(output_dir / "page_state.json", page_state)
     (output_dir / "page.html").write_text(page_state.get("html", ""), encoding="utf-8")
-    try:
-        await page.screenshot(path=str(output_dir / "page.png"), full_page=True)
-    except Exception as screenshot_error:
-        (output_dir / "screenshot_error.txt").write_text(f"{screenshot_error}\n", encoding="utf-8")
-    return output_dir
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
 
 
 def serialize_error(error: BaseException) -> dict[str, str]:
