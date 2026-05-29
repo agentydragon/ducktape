@@ -326,6 +326,35 @@ Induction, made executable.
 - Keep the script in the **project's** tree (adapter-owned), not in the generic
   skill — the *method* is generic, the *expectations* are project-specific.
 
+### Example expectations
+
+Concrete shapes (drawn from a React/MobX target; adapt the layers and vendor
+names to your project). Each is one named check emitting value + verdict +
+bounded violation list.
+
+- **RULE, intra-app graph — a low layer must not depend on higher layers.**
+  "`shared/` is framework-agnostic primitives": flag every `module_graph` edge
+  whose source is under `shared/` and whose destination is under `domains/`,
+  `features/`, or `app/`. Violations are mis-homed modules (e.g.
+  `shared/ui/Button -> features/outliner`) or values that should move down.
+- **RULE, vendor import — a layer must not import a framework.** "React-free
+  `domains/`": React arrives via a vendor swap, so it is invisible in the
+  module graph — scan the emitted JS for `import ... from ".../react*.js"` under
+  `domains/`. Hits are components/hooks mis-filed in the logic layer (e.g. a
+  module that defines a JSX component or calls `useMemo`). Exempt any
+  documented-immovable fused module so the rule measures only what is fixable.
+- **OBSERVATORY, tracked ratio — watch a hypothesis without asserting it.**
+  "fraction of edges pointing up the layer stack" or "share of `X -> app` edges
+  that hit the global-state/registry subtrees": record the value + a baseline
+  and report drift. A rising registry share is evidence that `app/` is
+  overloaded and should be split — a hypothesis you are accumulating evidence
+  for, not yet enforcing.
+- **OBSERVATORY paired with a rule — the grey-area sibling.** When a rule
+  forbids the clear-cut case (raw React), track the ambiguous neighbor (e.g. a
+  `framework-react/observer` reactivity wrapper that sometimes legitimately
+  sits with a store) as an observatory so it does not silently become the new
+  leak path once the rule goes green.
+
 ### On every architect pass
 
 Run the conformance script before writing recommendations. Treat the output as
