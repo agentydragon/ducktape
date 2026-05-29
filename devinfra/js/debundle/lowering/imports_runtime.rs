@@ -56,12 +56,8 @@ pub(super) fn resolve_imported_binding(
 /// Bindings sharing the same rewritten source are consolidated into a
 /// single `ImportDecl` (one statement with all specifiers) so the
 /// emitter matches what an author would write — not one statement per
-/// binding. Namespace specifiers (`import * as ns from "src"`) are
-/// emitted as their own `ImportDecl` even when a same-source group
-/// also has named/default specifiers, because ESM grammar forbids
-/// mixing `NameSpaceImport` with `NamedImports` in a single
-/// `ImportClause`. First-occurrence order is preserved both for the
-/// source groups and for specifiers within each group.
+/// binding. See [`group_specifiers_into_import_decls`] for the grouping
+/// and namespace-split rules.
 pub(super) fn source_chunk_imports_for_moved_body(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
     source_chunk_id: &str,
@@ -70,8 +66,7 @@ pub(super) fn source_chunk_imports_for_moved_body(
     needed: BTreeMap<String, &RuntimeImportInfo>,
 ) -> Result<Vec<ModuleItem>> {
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
-    let mut groups: Vec<(String, Vec<ImportSpecifier>, Vec<ImportSpecifier>)> = Vec::new();
-    let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
+    let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(needed.len());
     for (local, info) in needed {
         let rewritten_source = if let Some((target_chunk_id, target_entry_file, _path)) =
             source_import_cache.resolve(&info.src, source_chunk_id, source_runtime_file)?
@@ -103,13 +98,33 @@ pub(super) fn source_chunk_imports_for_moved_body(
             // Bare specifier (npm package etc.) — pass through unchanged.
             info.src.clone()
         };
-        let specifier = runtime_reimport_specifier(&local, info);
-        let group_index = *index_by_source
-            .entry(rewritten_source.clone())
-            .or_insert_with(|| {
-                groups.push((rewritten_source.clone(), Vec::new(), Vec::new()));
-                groups.len() - 1
-            });
+        pairs.push((rewritten_source, runtime_reimport_specifier(&local, info)));
+    }
+    Ok(group_specifiers_into_import_decls(pairs))
+}
+
+/// Consolidate `(rewritten_source, specifier)` pairs into `ImportDecl`
+/// `ModuleItem`s, one statement per source group. First-occurrence order
+/// is preserved both for the source groups and for specifiers within each
+/// group.
+///
+/// Namespace specifiers (`import * as ns from "src"`) are always emitted
+/// as their own `ImportDecl`, even when a same-source group also has
+/// named/default specifiers: ESM grammar forbids mixing a `NameSpaceImport`
+/// with `NamedImports` in one `ImportClause`, and one `ImportClause` holds
+/// at most one `NameSpaceImport`. Within a same-source named/default group,
+/// default specifiers are sorted before named to satisfy ESM grammar
+/// (`import D, { x } from "src"`, not the reverse).
+pub(super) fn group_specifiers_into_import_decls(
+    pairs: Vec<(String, ImportSpecifier)>,
+) -> Vec<ModuleItem> {
+    let mut groups: Vec<(String, Vec<ImportSpecifier>, Vec<ImportSpecifier>)> = Vec::new();
+    let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
+    for (src, specifier) in pairs {
+        let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
+            groups.push((src.clone(), Vec::new(), Vec::new()));
+            groups.len() - 1
+        });
         let (_, named_or_default, namespace) = &mut groups[group_index];
         match specifier {
             ImportSpecifier::Namespace(_) => namespace.push(specifier),
@@ -118,17 +133,10 @@ pub(super) fn source_chunk_imports_for_moved_body(
     }
     let mut result = Vec::with_capacity(groups.len());
     for (src, mut named_or_default, mut namespace) in groups {
-        // Emit namespace specifiers as their own ImportDecl each: ESM
-        // forbids mixing them with NamedImports in one ImportClause,
-        // and even multiple `import * as ns from "src"` for the same
-        // source cannot share a statement (one ImportClause has at
-        // most one NameSpaceImport).
         for ns_specifier in namespace.drain(..) {
             result.push(import_decl_module_item(vec![ns_specifier], &src));
         }
         if !named_or_default.is_empty() {
-            // Sort default specifiers before named to satisfy ESM
-            // grammar (`import D, { x } from "src"`, not the reverse).
             named_or_default.sort_by_key(|specifier| match specifier {
                 ImportSpecifier::Default(_) => 0,
                 _ => 1,
@@ -136,7 +144,7 @@ pub(super) fn source_chunk_imports_for_moved_body(
             result.push(import_decl_module_item(named_or_default, &src));
         }
     }
-    Ok(result)
+    result
 }
 
 pub(super) fn import_decl_module_item(specifiers: Vec<ImportSpecifier>, src: &str) -> ModuleItem {

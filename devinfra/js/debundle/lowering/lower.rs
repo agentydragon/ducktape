@@ -788,30 +788,20 @@ fn lower_single_plan(
             let dest_abs = join_module_path(&[chunk_id, &plan.target_file]);
             // Group reexports by rewritten source so multiple bindings
             // re-exported from the same import-from end up in a single
-            // `import { ... } from "<src>"` statement, not one
-            // statement per binding. First-occurrence order is
-            // preserved for both source groups and bindings within
-            // each group. All specifiers emitted here are Named, so
-            // ESM's Namespace/Named mutual-exclusion rule doesn't
-            // apply.
-            let mut groups: Vec<(String, Vec<ImportSpecifier>)> =
-                Vec::with_capacity(reexports.len());
-            let mut index_by_source: BTreeMap<String, usize> = BTreeMap::new();
+            // `import { ... } from "<src>"` statement, not one statement
+            // per binding. All specifiers emitted here are Named, so the
+            // namespace-split rule in the shared grouper is a no-op for
+            // this path, but routing through it keeps the grouping logic
+            // single-sourced with `source_chunk_imports_for_moved_body`.
+            let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
             for reexport in reexports {
                 let src = relative_source(&dest_abs, &reexport.imported_from);
                 let specifier =
                     imported_binding_named_specifier(&reexport.local, &reexport.imported_name);
-                let group_index = *index_by_source.entry(src.clone()).or_insert_with(|| {
-                    groups.push((src.clone(), Vec::new()));
-                    groups.len() - 1
-                });
-                groups[group_index].1.push(specifier);
+                pairs.push((src, specifier));
                 import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
             }
-            let mut reexport_imports = Vec::with_capacity(groups.len());
-            for (src, specifiers) in groups {
-                reexport_imports.push(import_decl_module_item(specifiers, &src));
-            }
+            let reexport_imports = group_specifiers_into_import_decls(pairs);
             let tail = body.split_off(import_count);
             body.extend(reexport_imports);
             body.extend(tail);

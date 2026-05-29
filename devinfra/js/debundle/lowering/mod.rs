@@ -67,7 +67,8 @@ use imports_cross::{
     phantom_side_effect_imports, residual_entry_imports_for_moved_body,
 };
 use imports_runtime::{
-    import_decl_module_item, resolve_imported_binding, source_chunk_imports_for_moved_body,
+    group_specifiers_into_import_decls, import_decl_module_item, resolve_imported_binding,
+    source_chunk_imports_for_moved_body,
 };
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
 use lower::{
