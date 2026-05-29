@@ -68,8 +68,8 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
-    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
-    PartitionDelta, RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
+    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, PartitionDelta,
+    RealizabilityIndex, RealizabilityVerdict, record_gate_diagnostic_translation,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -249,12 +249,6 @@ pub struct QuotientGraph {
     /// (`analysis::check_realizability`). Stored once at
     /// construction; never mutated.
     owner_graph: OwnerGraph,
-    /// Owner-id string → `analysis::OwnerId` table. Parallels
-    /// `owner_ids`; carried for fast lookup when projecting
-    /// `Partition`s. Currently unused but kept for the next-commit
-    /// persistent-state incremental algorithm.
-    #[allow(dead_code)]
-    owner_index: OwnerReportIndex,
     /// Owners whose `OwnerGraphNodeReport.destination.residual` is
     /// `true`. Set by `from_report` from the JSON wire flag (the
     /// same residual identification `factorize.rs` uses). Used by
@@ -409,7 +403,7 @@ impl QuotientGraph {
     /// reconstructed graph) needs `declared`, switch this call to
     /// pass the chunk's `StatementFactsReport` slice.
     pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
-        let (owner_graph, report_index) = OwnerGraph::from_report(report, &[]);
+        let (owner_graph, _) = OwnerGraph::from_report(report, &[]);
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let owner_id_to_idx: FxHashMap<String, OwnerIdx> = owner_ids
             .iter()
@@ -513,7 +507,6 @@ impl QuotientGraph {
         let num_classes = classes.len();
         let mut q = QuotientGraph {
             owner_graph,
-            owner_index: report_index,
             gate_residual_owners,
             owner_ids,
             owner_id_to_idx,

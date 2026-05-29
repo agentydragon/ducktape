@@ -301,7 +301,8 @@ fn factorize_with_context(
         &spec_modules,
         size_cap_lines,
     );
-    let _greedy_steps = greedy_merge_to_convergence(&mut quotient);
+    // Mutates the quotient in place; the returned merge-step list is unused here.
+    greedy_merge_to_convergence(&mut quotient);
 
     // Per-class edge accounting. Walk every constraining owner
     // edge and classify (source-class, target-class) into:
