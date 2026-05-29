@@ -137,8 +137,6 @@ all live in <perf/proposer.md>.
   while `peel/factorize.rs` produces advisory planner proposals from
   the serialized atomic DAG (surfaced as `debundle modules propose`).
   Keep docs explicit about which one they mean.
-- FACTORIZE.md is deleted; its content is folded into `docs/design.md`
-  §"Layered mental model" + §"Factor assembly inside `debundle run`".
 
 ## Analysis semantics breadth
 
@@ -163,6 +161,14 @@ mock browser bundle. Extend to:
 - HTML/runtime asset layouts outside the current corpus.
 
 ## Rename pipeline: collect → validate → execute _once_
+
+A scope-aware down-payment has landed: the in-place rename visitors
+(`IdentifierRenamer`, `RenameAndShorthandNaturalizer` in
+`lowering/visitors.rs`) now carry a `RenameScopeStack` and suppress a
+rename inside subtrees that re-bind the name, so the "X-layer renamed it,
+Y-layer didn't notice" shadowing class is mitigated. The
+collect→validate→execute **ledger/intent-buffer** architecture below
+remains the open work.
 
 The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer

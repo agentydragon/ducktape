@@ -35,28 +35,6 @@ compute the same partition for different consumers; structurally
 consolidatable behind a wider API change, but not urgent and not on a hot
 path.
 
-### `OwnerGraph::from_report` rehydration carries `declared: BTreeSet::new()`
-
-`graph.rs::OwnerGraph::from_report` rehydrates an `OwnerGraph` from its
-JSON wire shape (`OwnerGraphReport`), but with `declared:
-BTreeSet::new()` because the report does not carry per-node binding sets.
-Current production callers:
-
-1. `cli/module.rs::gate_post_edit_partition` — the CLI realizability gate that runs after every spec edit. It deserializes `OwnerGraphReport` from disk, rehydrates via `OwnerGraph::from_report`, then runs the cycle check before letting the edit land. This is the cross-process Stage B in everything but name — just synchronously inside the CLI process rather than as a separate daemon.
-2. `peel/quotient.rs::QuotientGraph::from_report` — kernel constructor used by every `from_report_with_partition*` entrypoint and the quotient integration tests.
-
-The structural hazard is the empty `declared` value: downstream code that
-touches `OwnerNode::declared` sees "no bindings" instead of the truth.
-The fix is either (a) extend `OwnerGraphReport` to carry per-node
-`declared`, or (b) split into a reconstruct-from-graph-shape function that
-does not pretend `declared` is meaningful.
-
-Related residual cleanup from the abandoned cross-process Stage B (see
-<docs/lessons_learned/cross_process_stage_b.md>): `facts/wire.rs`'s
-`StatementFactsReport` / `IdReport` stay as in-memory carriers (converted
-back via `IdReport::to_id`), but their `Serialize` / `Deserialize` derives
-are no longer consumed and are safe to drop.
-
 ## Encapsulation + module boundaries
 
 ### `ChunkFactorization` is yet another per-chunk IR/report layer

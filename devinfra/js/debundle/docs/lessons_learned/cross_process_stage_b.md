@@ -115,15 +115,6 @@ the materializer reads more cleanly when Stage A is a single
 function call rather than four inline stages — not cross-process
 caching.
 
-## What's still around (residual cleanup)
-
-The structural follow-ups this abandoned design left behind — the
-`OwnerGraph::from_report` empty-`declared` rehydration hazard and the
-now-unconsumed `Serialize`/`Deserialize` derives on `facts/wire.rs`'s
-`StatementFactsReport` / `IdReport` — are tracked in
-<../../ARCHITECTURE_BACKLOG.md>. This note records only why the
-cross-process split was abandoned.
-
 ## Pointers
 
 - `WIRE_FORMAT.md` — the live `Atom`-only convention.

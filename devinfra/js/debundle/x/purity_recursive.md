@@ -39,22 +39,6 @@ This is a manifest-format and consumer change. Do it when a real bundle has a
 cross-chunk pure-helper chain that is not better modeled as an explicit
 author override.
 
-### Block-Bodied IIFE Enum Forms
-
-The enum recognizer handles emitted expression-body forms. A future bundle may
-emit block-bodied forms:
-
-```js
-(function (target) {
-  target.A = "a";
-  return target;
-})(Enum || {});
-```
-
-The soundness story is the same: assignments to the enum object followed by
-returning that object can be pure if the target object is the enum cell and all
-assigned values are pure.
-
 ### Statement-Level Purity Override
 
 `purity: pure` on a member is callsite-oriented: it says calls to that binding

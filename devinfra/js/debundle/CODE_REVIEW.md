@@ -19,9 +19,9 @@ Whitelist tables already in `purity/whitelists.rs`; long PlainData /
 scanning, and TS enum IIFE recognition still live in `mod.rs` —
 could be sub-split further if it keeps growing.
 
-### `facts.rs` (1213 lines, 2 concerns)
+### `facts/mod.rs` (1213 lines, 2 concerns)
 
-`StatementFacts` carries 14 BTreeSet<Id> fields with many derivable sets; every construction site must keep them mutually consistent.
+`StatementFacts` carries many derivable `BTreeSet<Id>` sets that every construction site must keep mutually consistent — see the canonical "### `StatementFacts`" item under P3.
 
 ---
 
@@ -31,15 +31,11 @@ could be sub-split further if it keeps growing.
 
 `peel/test_utils.rs` already hosts `binding()`, `member()`, `module_ref()`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local — could probably be unified with a small enum-tagged builder.
 
-### Vendor swap test workspace setup remaining adopters
-
-`VendorTestWorkspace` builder exists but `run_named_from_module_default_fixture` and `run_named_from_default_fixture` still construct workspaces inline. Adopt the builder there to match `run_partial_swap_fixture` / `run_partial_swap_kind_fixture`.
-
 ---
 
 ## P2 — Structural Issues
 
-### `lower/lower.rs` — monolithic function (partially extracted)
+### `lowering/lower.rs` — monolithic function (partially extracted)
 
 `lower_chunk` had 8 sequential phases inline. Four have been extracted into named functions (`compute_selected_ordinals`, `plan_selected_exports`, `split_entry_body`, `build_module_output`). Remaining inline phases (naturalization, disambiguation, import planning, the per-module loop) could be further extracted, though each requires substantial captured state from `LowerChunkInputs` (15–20 fields).
 
@@ -59,9 +55,9 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 `rollback_graph.rs`, `artifact.rs`, `realizability.rs` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
 
-### `StatementFacts` (facts.rs) — 14 BTreeSet<Id> fields
+### `StatementFacts` (facts/mod.rs) — ~10 BTreeSet<Id> fields
 
-reads, eager_reads, writes, eager_writes, rebinds, eager_rebinds, lazy_reads, lazy_writes, lazy_rebinds, calls, at_init_calls, dynamic_imports, side_effects, local_effects. Many are derivable (eager + lazy = total). Every construction site must keep 14 sets mutually consistent. Consider computing derived sets on demand or using a builder that enforces invariants.
+`declared`, `eager_reads`, `eager_rebinds`, `lazy_reads`, `lazy_rebinds`, `first_order_lazy_reads`, `first_order_lazy_rebinds`, `local_effects`, `at_init_calls`, `body_calls`, `first_order_body_calls`. Several are derivable (e.g. the `first_order_*` sets are subsets of their parent). Every construction site must keep the sets mutually consistent. Consider computing derived sets on demand or using a builder that enforces invariants.
 
 ### `DepKind` 6-way split vs primary constraining/non-constraining axis
 
@@ -188,8 +184,6 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
-3. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.
+3. **Simplify `StatementFacts`** (`facts/mod.rs`) — see the canonical "### `StatementFacts`" item under P3.
 
-4. **Simplify `StatementFacts`** — 14 BTreeSet<Id> fields with many derivable sets; consider computing derived sets on demand.
-
-5. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong and the `generated_by_selected_module_lowering` ordering workaround if stage reordering makes that flag unnecessary.
+4. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong and the `generated_by_selected_module_lowering` ordering workaround if stage reordering makes that flag unnecessary.
