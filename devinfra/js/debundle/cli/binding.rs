@@ -602,8 +602,7 @@ pub fn run_bindings_assign(
         let Some((_, doc)) = docs.get_mut(&p.source_module) else {
             bail!("source module {:?} not in tree", p.source_module);
         };
-        let member = take_member(doc, p.source_index)?;
-        let mut member = member;
+        let mut member = take_member(doc, p.source_index)?;
         if let Some(new_readable) = &p.req.readable {
             if let Some(map) = member.as_mapping_mut() {
                 map.insert(yk("name"), Value::String(new_readable.clone()));
