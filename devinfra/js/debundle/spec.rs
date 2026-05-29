@@ -522,6 +522,167 @@ pub struct AnonymousStatement {
 /// catch-all path.
 pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
 
+/// The single, canonical identity of a logical module.
+///
+/// One spec module had, historically, several stringly-typed
+/// spellings that all denoted the same thing: the clean spec path
+/// (`domains/system/ids`, derived from the `*.yaml` file location),
+/// the chunk-prefixed `LogicalModule.id`
+/// (`static/index-DI2GynTv::domains/system/ids`, minted in
+/// `lowering/plans.rs`), the `<chunk>::` form surfaced as a report
+/// `destination.label`, and the generated `target_file`. Comparing
+/// two spellings of one module with `==` produced false positives —
+/// most visibly a `merge_into` self-merge proposal in the peel
+/// factorizer.
+///
+/// `ModulePath` collapses all of those to one normalized value at
+/// construction. The canonical spelling is **relative, slash-
+/// separated, lowercase** and equals the module's destination path
+/// (id == path; the dest file is `path + extension`). [`parse`] is
+/// the only way to build one from an untrusted string, so the
+/// chunk-id prefix is stripped exactly once, at the boundary, and
+/// `==` can no longer disagree about identity.
+///
+/// [`parse`]: ModulePath::parse
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ModulePath(String);
+
+impl ModulePath {
+    /// Normalize an untrusted module identifier into canonical form.
+    ///
+    /// `chunk_id` is the owning chunk's name (e.g.
+    /// `static/index-DI2GynTv`); a leading `"<chunk_id>::"` is the
+    /// production `LogicalModule.id` spelling and is stripped so it
+    /// collapses onto the clean path. Pass `""` when no chunk context
+    /// applies (the value is already a clean path).
+    ///
+    /// Rejects values that cannot be a relative module path:
+    /// backslashes (Windows separators), absolute paths, empty
+    /// segments, and `.`/`..` traversal.
+    pub fn parse(raw: &str, chunk_id: &str) -> Result<Self, ModulePathError> {
+        let stripped = match chunk_id.is_empty() {
+            true => raw,
+            false => raw
+                .strip_prefix(chunk_id)
+                .and_then(|rest| rest.strip_prefix("::"))
+                .unwrap_or(raw),
+        };
+        if stripped.contains('\\') {
+            return Err(ModulePathError::Backslash(stripped.to_string()));
+        }
+        let lower = stripped.to_ascii_lowercase();
+        let trimmed = lower.trim_matches('/');
+        if trimmed.is_empty() {
+            return Err(ModulePathError::Empty(raw.to_string()));
+        }
+        for segment in trimmed.split('/') {
+            if segment.is_empty() || segment == "." || segment == ".." {
+                return Err(ModulePathError::Segment {
+                    raw: raw.to_string(),
+                    segment: segment.to_string(),
+                });
+            }
+        }
+        Ok(Self(trimmed.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The chunk-relative file this module emits to, e.g.
+    /// `domains/system/ids` + `"js"` → `domains/system/ids.js`.
+    pub fn dest_file(&self, extension: &str) -> String {
+        format!("{}.{extension}", self.0)
+    }
+
+    /// True for the residual catch-all subtree (`residual` or
+    /// `residual/...`). Folds in the prefix rule
+    /// `spec_modules::is_residual_module_path` enforced.
+    pub fn is_residual(&self) -> bool {
+        self.0 == "residual" || self.0.starts_with("residual/")
+    }
+}
+
+impl std::fmt::Display for ModulePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModulePathError {
+    Empty(String),
+    Backslash(String),
+    Segment { raw: String, segment: String },
+}
+
+impl std::fmt::Display for ModulePathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty(raw) => write!(f, "module path is empty: {raw:?}"),
+            Self::Backslash(raw) => {
+                write!(f, "module path must use '/' separators, got {raw:?}")
+            }
+            Self::Segment { raw, segment } => {
+                write!(f, "invalid module path segment {segment:?} in {raw:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ModulePathError {}
+
+#[cfg(test)]
+mod module_path_tests {
+    use super::ModulePath;
+
+    #[test]
+    fn chunk_prefixed_and_clean_spellings_parse_equal() {
+        // The two-spelling bug: production reports spell a module
+        // `<chunk>::<path>` while active claims spell it `<path>`.
+        // Both must normalize to the same identity so `==` is honest.
+        let chunk = "static/index-DI2GynTv";
+        let prefixed =
+            ModulePath::parse("static/index-DI2GynTv::domains/system/ids", chunk).unwrap();
+        let clean = ModulePath::parse("domains/system/ids", chunk).unwrap();
+        assert_eq!(prefixed, clean);
+        assert_eq!(clean.as_str(), "domains/system/ids");
+    }
+
+    #[test]
+    fn normalizes_case_and_surrounding_slashes() {
+        let p = ModulePath::parse("/Domains/System/IDs/", "").unwrap();
+        assert_eq!(p.as_str(), "domains/system/ids");
+    }
+
+    #[test]
+    fn dest_file_appends_extension() {
+        let p = ModulePath::parse("domains/system/ids", "").unwrap();
+        assert_eq!(p.dest_file("js"), "domains/system/ids.js");
+    }
+
+    #[test]
+    fn residual_subtree_detected() {
+        assert!(ModulePath::parse("residual", "").unwrap().is_residual());
+        assert!(
+            ModulePath::parse("residual/unhandled", "")
+                .unwrap()
+                .is_residual()
+        );
+        assert!(!ModulePath::parse("ui/residual", "").unwrap().is_residual());
+    }
+
+    #[test]
+    fn rejects_traversal_and_backslashes() {
+        assert!(ModulePath::parse("a/../b", "").is_err());
+        assert!(ModulePath::parse("a\\b", "").is_err());
+        assert!(ModulePath::parse("", "").is_err());
+        assert!(ModulePath::parse("///", "").is_err());
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Member {

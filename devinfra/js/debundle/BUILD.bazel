@@ -126,6 +126,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "spec_test",
+    crate = ":spec",
+    edition = "2024",
+)
+
 rust_library(
     name = "vendor",
     srcs = [
@@ -391,6 +397,7 @@ rust_test(
     deps = [
         ":analysis",
         ":peel",
+        ":spec",
         "@crates//:serde_json",
     ],
 )

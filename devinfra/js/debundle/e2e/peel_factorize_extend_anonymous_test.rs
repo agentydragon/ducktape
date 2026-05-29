@@ -22,7 +22,17 @@
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel::factorize::factorize;
+use spec::ModulePath;
 use std::collections::BTreeMap;
+
+/// Build an active-claims map (binding name → canonical module path)
+/// from clean spec paths.
+fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
+    pairs
+        .iter()
+        .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
+        .collect()
+}
 
 /// All-residual anchor pattern: one named anchor binding belongs to
 /// the anchor module so the chunk has at least one logical module,
@@ -63,8 +73,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let claims = BTreeMap::from([("Foo".to_string(), "features/foo".to_string())]);
-    let report = factorize(&report_graph, &claims, 10_000);
+    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000);
 
     let extension = report
         .proposals
@@ -129,11 +138,11 @@ export { anchor, Foo, Bar };
             logical_module("features/bar", &[Member::new("Bar")]),
         ],
     );
-    let claims = BTreeMap::from([
-        ("Foo".to_string(), "features/foo".to_string()),
-        ("Bar".to_string(), "features/bar".to_string()),
-    ]);
-    let report = factorize(&report_graph, &claims, 10_000);
+    let report = factorize(
+        &report_graph,
+        &claims(&[("Foo", "features/foo"), ("Bar", "features/bar")]),
+        10_000,
+    );
 
     // No anon-only extension proposal should exist. The mixed-deps
     // anonymous statement must land as a fresh-module proposal
@@ -170,8 +179,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let claims = BTreeMap::from([("Foo".to_string(), "features/foo".to_string())]);
-    let report = factorize(&report_graph, &claims, 10_000);
+    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000);
 
     // No extension of `features/foo` should be proposed for the
     // intra-residual anon.

@@ -28,7 +28,14 @@ use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel::factorize::factorize;
 use serde_json::json;
+use spec::ModulePath;
 use std::collections::BTreeMap;
+
+/// Empty active-claims map: these fixtures all start from a fully
+/// residual graph (no pre-existing spec modules).
+fn no_claims() -> BTreeMap<String, ModulePath> {
+    BTreeMap::new()
+}
 
 fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings: &[&str]) -> bool {
     bindings
@@ -78,7 +85,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     assert!(
         report.proposals.iter().all(|proposal| proposal.status
@@ -113,7 +120,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
     assert!(
         report
             .proposals
@@ -142,7 +149,7 @@ export { anchor, dep, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -185,7 +192,7 @@ export { a, b, c };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     let chain_cell = report
         .proposals
@@ -240,7 +247,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     let consumer_alone = report
         .proposals
@@ -276,7 +283,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     let consumer_alone = report
         .proposals
@@ -311,7 +318,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     let combined = report
         .proposals
@@ -360,7 +367,7 @@ export { anchor, impure, pureBrand };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["pureBrand".to_string()]
@@ -409,7 +416,7 @@ export { anchor, mutable, peer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
@@ -477,7 +484,7 @@ export { anchor, SearchPopoverState };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000);
 
     assert!(
         report.proposals.iter().any(|proposal| {

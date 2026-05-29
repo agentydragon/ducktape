@@ -50,6 +50,7 @@ use analysis::{
     PeelCandidateStatus, StatementKind,
 };
 use anonymous_resolution::addressable_anonymous_statement_owner_ids;
+use spec::ModulePath;
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
@@ -232,7 +233,7 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
 
 pub fn factorize(
     graph: &OwnerGraphReport,
-    active_claims: &BTreeMap<String, String>,
+    active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
 ) -> PeelFactorizeReport {
     factorize_with_context(
@@ -250,7 +251,7 @@ struct FactorizeContext {
 
 fn factorize_with_context(
     graph: &OwnerGraphReport,
-    active_claims: &BTreeMap<String, String>,
+    active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
     context: FactorizeContext,
 ) -> PeelFactorizeReport {
@@ -269,7 +270,7 @@ fn factorize_with_context(
         .map(|(i, _)| i)
         .collect();
 
-    let owner_to_active_module: HashMap<usize, String> = graph
+    let owner_to_active_module: HashMap<usize, ModulePath> = graph
         .nodes
         .iter()
         .enumerate()
@@ -304,7 +305,7 @@ fn factorize_with_context(
     // semantics; non-residual edges are part of the spec module's
     // internal initialization, not relevant to peel proposals).
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
-    let mut edges_to_active: Vec<(usize, String)> = Vec::new();
+    let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
     for edge in &graph.edges {
         if !edge.constrains_init_order {
             continue;
@@ -329,7 +330,7 @@ fn factorize_with_context(
     // active-claimed owners surviving in each class; if a class
     // contains owners from two distinct active modules, the labels
     // are collected and surfaced as a `merge_into` later.
-    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<String>> = BTreeMap::new();
+    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<ModulePath>> = BTreeMap::new();
     for (idx, _) in graph.nodes.iter().enumerate() {
         let Some(label) = owner_to_active_module.get(&idx) else {
             continue;
@@ -364,41 +365,42 @@ fn factorize_with_context(
     }
 }
 
+/// The canonical [`ModulePath`] an owner's destination resolves to.
+///
+/// Owners of one spec module reach their identity by different
+/// routes: a claimed binding resolves via `active_claims` (the clean
+/// spec path), while an unclaimed sibling falls through to the
+/// report's `destination.label`, which production spells
+/// `<chunk_id>::<path>`. Both are funneled through
+/// [`ModulePath::parse`], which strips the chunk prefix, so the two
+/// routes yield one identity and the class never emits a self-merge.
+///
+/// The fallbacks (`target_file`, then `destination.id`) only fire for
+/// degenerate reports that carry no label; they are parsed under the
+/// same rule. A report so malformed that none of these is a valid
+/// path is a bug we surface by panicking rather than fabricating a
+/// bogus identity.
 fn active_module_label(
     node: &OwnerGraphNodeReport,
-    active_claims: &BTreeMap<String, String>,
+    active_claims: &BTreeMap<String, ModulePath>,
     chunk_id: &str,
-) -> String {
-    let label = node
+) -> ModulePath {
+    if let Some(claimed) = node
         .declared_bindings
         .iter()
         .find_map(|b| active_claims.get(b.binding.as_str()))
-        .cloned()
-        .or_else(|| (!node.destination.label.is_empty()).then(|| node.destination.label.clone()))
-        .or_else(|| node.destination.target_file.clone())
-        .unwrap_or_else(|| node.destination.id.clone());
-    canonical_module_label(&label, chunk_id)
-}
-
-/// Collapse the two spellings of one module to a single label.
-///
-/// Production owner-graph destinations spell a module's label with a
-/// `"<chunk_id>::"` prefix (e.g. `static/index-DI2GynTv::domains/system/ids`),
-/// while the active-claim lookup yields the clean spec path
-/// (`domains/system/ids`). Within one spec module some owners resolve
-/// via the claim and others fall through to `destination.label`, so a
-/// single class collects both spellings and would emit a bogus
-/// `merge_into` self-merge. Stripping the chunk-id prefix canonicalizes
-/// both to the clean path.
-fn canonical_module_label(label: &str, chunk_id: &str) -> String {
-    if chunk_id.is_empty() {
-        return label.to_string();
+    {
+        return claimed.clone();
     }
-    label
-        .strip_prefix(chunk_id)
-        .and_then(|rest| rest.strip_prefix("::"))
-        .map(str::to_string)
-        .unwrap_or_else(|| label.to_string())
+    let raw = if !node.destination.label.is_empty() {
+        node.destination.label.as_str()
+    } else if let Some(target_file) = &node.destination.target_file {
+        target_file.as_str()
+    } else {
+        node.destination.id.as_str()
+    };
+    ModulePath::parse(raw, chunk_id)
+        .unwrap_or_else(|e| panic!("owner {} has unparseable destination: {e}", node.id))
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
@@ -460,9 +462,9 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
 /// (computed separately in `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
-    class_to_labels: &BTreeMap<ClassId, BTreeSet<String>>,
+    class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     residual_edges: &[(usize, usize)],
-    active_edges: &[(usize, String)],
+    active_edges: &[(usize, ModulePath)],
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
     context: &FactorizeContext,
@@ -683,16 +685,19 @@ fn compute_topo_depths(
 fn build_proposal(
     candidate_idx: usize,
     class_id: ClassId,
-    labels: Option<&BTreeSet<String>>,
+    labels: Option<&BTreeSet<ModulePath>>,
     quotient: &QuotientGraph,
     residual_edges: &[(usize, usize)],
-    active_edges: &[(usize, String)],
+    active_edges: &[(usize, ModulePath)],
     graph: &OwnerGraphReport,
     owner_to_candidate: &HashMap<usize, usize>,
     context: &FactorizeContext,
 ) -> FactorizeProposal {
+    // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
+    // Convert to wire strings once, at this boundary; identity logic
+    // above this point is type-safe.
     let label_vec: Vec<String> = labels
-        .map(|s| s.iter().cloned().collect())
+        .map(|s| s.iter().map(ModulePath::to_string).collect())
         .unwrap_or_default();
     let is_extension = !label_vec.is_empty();
     let merge_into: Option<Vec<String>> = (label_vec.len() >= 2).then(|| label_vec.clone());
@@ -762,14 +767,15 @@ fn build_proposal(
         .collect();
 
     let mut to_active = 0usize;
-    let mut active_targets: BTreeSet<String> = BTreeSet::new();
+    let mut active_targets: BTreeSet<ModulePath> = BTreeSet::new();
     for (source_owner, module_path) in active_edges {
         if owner_to_candidate.get(source_owner) == Some(&candidate_idx) {
             to_active += 1;
             active_targets.insert(module_path.clone());
         }
     }
-    let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
+    let active_modules_referenced: Vec<String> =
+        active_targets.iter().map(ModulePath::to_string).collect();
 
     let extension_owner_ids: Vec<String> = if is_extension {
         let mut ids: Vec<String> = owner_idxs
@@ -1135,8 +1141,15 @@ mod tests {
         }
     }
 
-    fn no_claims() -> BTreeMap<String, String> {
+    fn no_claims() -> BTreeMap<String, ModulePath> {
         BTreeMap::new()
+    }
+
+    fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
+        pairs
+            .iter()
+            .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
+            .collect()
     }
 
     #[test]
@@ -1207,8 +1220,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, 10_000);
+        let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000);
         let proposal = report
             .proposals
             .iter()
@@ -1289,8 +1301,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![],
         );
-        let claims = BTreeMap::from([("a".to_string(), "domains/system/ids".to_string())]);
-        let report = factorize(&graph, &claims, 10_000);
+        let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000);
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",

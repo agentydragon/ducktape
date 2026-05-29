@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use spec::{AnonymousStatement, BindingSourceKind, Member};
+use spec::{AnonymousStatement, BindingSourceKind, Member, ModulePath};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,15 +190,19 @@ pub fn is_residual_module_path(module_path: &str) -> bool {
 /// * Files under any `residual/` directory (catch-all module that
 ///   doesn't represent a permanent home).
 ///
-/// Returned map's values are the module path (no `.yaml` extension)
-/// the binding lives in.
-pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, String>> {
+/// Returned map's values are the canonical [`ModulePath`] (the
+/// `*.yaml` file location with the extension stripped) the binding
+/// lives in. The path comes from an on-disk file location, so it is
+/// already the clean spelling — no chunk-id context applies.
+pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, ModulePath>> {
     let mut claims = BTreeMap::new();
     for path in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&path, modules_root);
-        if is_residual_module_path(&module_path) {
+        let raw_path = module_path_from_file(&path, modules_root);
+        if is_residual_module_path(&raw_path) {
             continue;
         }
+        let module_path = ModulePath::parse(&raw_path, "")
+            .with_context(|| format!("module path from {}", path.display()))?;
         for member in read_module_file(&path)?.members {
             let binding = member.selector.binding;
             if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
@@ -449,6 +453,9 @@ members:
         let claims = load_active_claims(root).unwrap();
         let claimed_names: BTreeSet<String> = claims.keys().cloned().collect();
         assert_eq!(claimed_names, BTreeSet::from(["a".to_string()]));
-        assert_eq!(claims.get("a"), Some(&"ui/active".to_string()));
+        assert_eq!(
+            claims.get("a"),
+            Some(&ModulePath::parse("ui/active", "").unwrap()),
+        );
     }
 }
