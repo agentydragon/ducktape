@@ -90,6 +90,35 @@ let global = (atom_from_wire, SyntaxContext::empty());
 let top_level = top_level_id(atom_from_wire, mark_b);
 ```
 
+## Convention: one canonical module identity (`ModulePath`)
+
+A logical module has exactly one identity: `spec::ModulePath`, the
+chunk-relative path the module emits to, in canonical form —
+**relative, slash-separated, lowercase** (`domains/system/ids`). The
+on-disk spec file (`modules/domains/system/ids.yaml`), the report
+`destination.label`, and the active-claim lookup all denote a module by
+this same value.
+
+`ModulePath::parse` is the only constructor: it strips a leading
+`"<chunk_id>::"` (the in-process `LogicalModule.id` spelling minted in
+`lowering/plans.rs`), lowercases, and normalizes separators. Two
+spellings of one module therefore collapse to a single value, so `==`
+is an honest identity test — this is what makes the peel factorizer's
+self-merge bug structurally impossible (see commit history /
+`plans/2026_05_29_naming_harmonization.md`).
+
+The internal array handle `ModuleId(LogicalModuleIndex)` is an
+in-process index for O(1) lookups; it is distinct from `ModulePath` and
+is not the public identity.
+
+> Historical note: `owner_graph.json` destinations still carry
+> `id` (`"logical:N"`), `index`, `residual`, and `target_file`
+> alongside `label`. These are redundant encodings of the one identity
+> (`id`/`index` = the array handle, `residual` = `path.is_residual()`,
+> `target_file` = `path.dest_file(ext)`); collapsing the destination to
+> just the path is a tracked follow-up, deferred because it is
+> wire-visible and the checked-in specimen is frozen.
+
 ## Related documents
 
 - `docs/design.md` §"Two classes of atom" — the realizability theorem
@@ -97,3 +126,5 @@ let top_level = top_level_id(atom_from_wire, mark_b);
 - `docs/lessons_learned/cross_process_stage_b.md` — why we don't
   serialize pre-filter facts.
 - `ARCHITECTURE_BACKLOG.md` — current architectural backlog.
+- `plans/2026_05_29_naming_harmonization.md` — the module-identity /
+  `owner`-field naming sweep.
