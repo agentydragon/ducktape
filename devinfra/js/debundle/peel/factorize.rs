@@ -139,6 +139,18 @@ pub struct FactorizeProposal {
     /// Other residual cells (by proposed_module_id) this cell's
     /// outgoing constraining edges target.
     pub other_residual_cells_referenced: Vec<String>,
+    /// Pre-resolution carrier for `other_residual_cells_referenced`:
+    /// the candidate indices (pre-sort `candidate_classes` positions)
+    /// this cell's outgoing constraining edges target. `emit_proposals`
+    /// resolves these to each target candidate's ACTUAL final
+    /// `proposed_module_id` (after merge/extend naming and post-sort id
+    /// assignment), then clears this field. A target candidate may be a
+    /// fresh `auto_partition`, an `extend:`, or a `merge:` class — so
+    /// the resolved id is not always `auto_partition_*`. Never
+    /// serialized; it exists only to thread index→id resolution through
+    /// the topo-sort.
+    #[serde(skip)]
+    residual_target_candidate_idxs: Vec<usize>,
     /// Edges from this cell to active-claimed bindings. Safe:
     /// active modules materialize before residual_entry, so reads
     /// to them don't cycle. Informational.
@@ -554,32 +566,50 @@ fn emit_proposals(
         })
     });
 
-    // After topo-sort the candidate indices are renumbered; rebuild
-    // the original candidate_idx → new_idx map so cross-references
-    // inside `other_residual_cells_referenced` point at the right
-    // post-sort module IDs.
-    let new_id_for: HashMap<usize, usize> = indexed
-        .iter()
-        .enumerate()
-        .map(|(new_idx, (orig_idx, _))| (*orig_idx, new_idx))
-        .collect();
+    // After topo-sort the candidate indices are renumbered. Remember
+    // each proposal's original (pre-sort) candidate index so we can
+    // resolve cross-references — which were recorded against pre-sort
+    // indices — to the targets' final `proposed_module_id`s.
+    let orig_idx_of: Vec<usize> = indexed.iter().map(|(orig_idx, _)| *orig_idx).collect();
     let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
+
+    // Assign final ids for fresh-module proposals (merge/extend ids
+    // were fixed at `build_proposal` time from their labels). This must
+    // happen before resolving cross-references so the index→final-id
+    // map below sees every candidate's ACTUAL final id.
     let mut fresh_counter = 0usize;
     for proposal in out.iter_mut() {
         if proposal.extends_module_id.is_none() && proposal.merge_into.is_none() {
             proposal.proposed_module_id = format!("auto_partition_{fresh_counter:04}");
             fresh_counter += 1;
         }
-        proposal.other_residual_cells_referenced = proposal
-            .other_residual_cells_referenced
+    }
+
+    // pre-sort candidate index → final proposed_module_id, covering all
+    // candidate classes (fresh `auto_partition`, `extend:`, `merge:`).
+    // Owns the id strings so the immutable borrow on `out` ends before
+    // the mutable resolution loop below.
+    let final_id_for: HashMap<usize, String> = out
+        .iter()
+        .enumerate()
+        .map(|(new_idx, proposal)| (orig_idx_of[new_idx], proposal.proposed_module_id.clone()))
+        .collect();
+
+    // Resolve cross-references once, from the candidate-index carrier to
+    // the targets' final ids. Every target index is a live candidate
+    // (it came from `owner_to_candidate`, which only maps candidate-
+    // class owners), so the lookup never misses; `expect` would be
+    // equally valid, but we keep the resolution total.
+    for proposal in out.iter_mut() {
+        let mut referenced: Vec<String> = proposal
+            .residual_target_candidate_idxs
             .iter()
-            .filter_map(|old_id| {
-                let old_idx: usize = old_id.strip_prefix("auto_partition_")?.parse().ok()?;
-                new_id_for
-                    .get(&old_idx)
-                    .map(|i| format!("auto_partition_{i:04}"))
-            })
+            .filter_map(|idx| final_id_for.get(idx).cloned())
             .collect();
+        referenced.sort();
+        referenced.dedup();
+        proposal.other_residual_cells_referenced = referenced;
+        proposal.residual_target_candidate_idxs = Vec::new();
     }
     out
 }
@@ -757,10 +787,13 @@ fn build_proposal(
             residual_targets.insert(ct);
         }
     }
-    let other_residual_cells_referenced: Vec<String> = residual_targets
-        .into_iter()
-        .map(|idx| format!("auto_partition_{idx:04}"))
-        .collect();
+    // Carry the cross-class residual targets as candidate indices.
+    // Resolving them to final `proposed_module_id`s here would be
+    // wrong: the post-sort renumber rewrites fresh-module ids, and a
+    // target candidate may itself be an `extend:`/`merge:` class whose
+    // id is not `auto_partition_*`. `emit_proposals` resolves these
+    // indices to each target's actual final id after id assignment.
+    let residual_target_candidate_idxs: Vec<usize> = residual_targets.into_iter().collect();
 
     let mut to_active = 0usize;
     let mut active_targets: BTreeSet<ModulePath> = BTreeSet::new();
@@ -811,7 +844,8 @@ fn build_proposal(
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: internal,
         edges_to_other_residual_cells: to_residual,
-        other_residual_cells_referenced,
+        other_residual_cells_referenced: Vec::new(),
+        residual_target_candidate_idxs,
         edges_to_active_modules: to_active,
         active_modules_referenced,
         cycle_blocker_owner_ids: Vec::new(),
@@ -1217,6 +1251,125 @@ mod tests {
             .expect("b proposal");
         assert_eq!(proposal.edges_to_active_modules, 1);
         assert_eq!(proposal.active_modules_referenced, vec!["ui/x".to_string()],);
+    }
+
+    #[test]
+    fn cross_reference_to_extension_class_resolves_to_an_emitted_proposal_id() {
+        // Regression: cross-class residual references must resolve to a
+        // `proposed_module_id` that actually exists among the emitted
+        // proposals — including when the target candidate is an
+        // EXTENSION class (whose id is the extended module path, not an
+        // `auto_partition_*` string).
+        //
+        // Shape:
+        // - `foo` is claimed for `features/foo` (active module). It is
+        //   the absorption target.
+        // - `bridge` is a residual owner whose only cross-module edge
+        //   is into `features/foo`. The greedy absorbs `bridge`'s
+        //   orphan class into `features/foo`, producing an extension
+        //   class that contains a residual-origin owner.
+        // - `consumer` is a residual owner with a constraining edge to
+        //   `bridge` AND a constraining edge into a SECOND active module
+        //   `features/baz`. Touching two modules makes the greedy
+        //   refuse to absorb `consumer`, so it survives as its own
+        //   residual class. Crucially there is no atomic-DAG edge
+        //   `consumer → bridge`, so the seed quotient's pass-3
+        //   reachability does NOT fold them into one class — the
+        //   owner-level constraining edge `consumer → bridge` survives
+        //   as a cross-class residual edge.
+        //
+        // `consumer`'s proposal therefore records a cross-class residual
+        // reference whose target candidate is the `features/foo`
+        // extension. The buggy emitter formatted that reference as
+        // `auto_partition_<candidate_idx>` — an id no emitted proposal
+        // carries — yielding a dangling reference.
+        let foo = owner_in_active_module("foo", 1, &["foo"], 10, "features/foo");
+        let baz = owner_in_active_module("baz", 2, &["baz"], 10, "features/baz");
+        let bridge = owner("bridge", 3, &["bridge"], 10);
+        let consumer = owner("consumer", 4, &["consumer"], 10);
+        let graph = graph_with_atomic_units(
+            vec![foo.clone(), baz.clone(), bridge.clone(), consumer.clone()],
+            vec![
+                // bridge depends on the `features/foo` module -> absorbed.
+                edge("e1", "bridge", "foo", DepKind::EagerUse, true),
+                // consumer depends on bridge (cross-class residual edge)
+                // and on the `features/baz` module (second module ->
+                // greedy refuses to absorb consumer).
+                edge("e2", "consumer", "bridge", DepKind::EagerUse, true),
+                edge("e3", "consumer", "baz", DepKind::EagerUse, true),
+            ],
+            vec![
+                unit("atomic:0", &[&foo]),
+                unit("atomic:1", &[&baz]),
+                unit("atomic:2", &[&bridge]),
+                unit("atomic:3", &[&consumer]),
+            ],
+            // Only the bridge -> foo reachability edge. No
+            // consumer -> bridge atomic edge: pass-3 must not fold
+            // consumer and bridge into one class.
+            vec![atomic_edge("atomic_edge:0", "atomic:2", "atomic:0")],
+        );
+        let report = factorize(
+            &graph,
+            &claims(&[("foo", "features/foo"), ("baz", "features/baz")]),
+            10_000,
+        );
+
+        // The scenario must actually produce the `features/foo`
+        // extension carrying the residual-origin `bridge`, plus a
+        // distinct `consumer` proposal that references it cross-class.
+        let extension = report
+            .proposals
+            .iter()
+            .find(|p| {
+                p.extends_module_id.as_deref() == Some("features/foo")
+                    && p.binding_ids.contains(&"bridge".to_string())
+            })
+            .unwrap_or_else(|| {
+                panic!("fixture must extend `features/foo` with the residual `bridge`: {report:#?}")
+            });
+        // The extension's id is the `extend:<module path>` form — NOT
+        // an `auto_partition_*` string. This is what makes the buggy
+        // `auto_partition_<idx>` cross-reference dangling.
+        assert_eq!(
+            extension.proposed_module_id, "extend:features/foo",
+            "extension proposal id must be the `extend:` form: {extension:#?}",
+        );
+
+        let consumer = report
+            .proposals
+            .iter()
+            .find(|p| p.binding_ids == vec!["consumer".to_string()])
+            .unwrap_or_else(|| {
+                panic!("fixture must produce a standalone `consumer` proposal: {report:#?}")
+            });
+        // `consumer` reads `bridge`, which lives in the `features/foo`
+        // extension — so its sole cross-class residual reference must
+        // resolve to the extension's actual id, `features/foo`.
+        assert_eq!(
+            consumer.other_residual_cells_referenced,
+            vec!["extend:features/foo".to_string()],
+            "consumer's cross-reference must resolve to the extension's real id \
+             (`extend:features/foo`), not a dangling `auto_partition_*`: {report:#?}",
+        );
+
+        // Belt and suspenders: every cross-reference any proposal emits
+        // must name a `proposed_module_id` that actually exists among
+        // the emitted proposals (no dangling references anywhere).
+        let emitted_ids: BTreeSet<&str> = report
+            .proposals
+            .iter()
+            .map(|p| p.proposed_module_id.as_str())
+            .collect();
+        for proposal in &report.proposals {
+            for referenced in &proposal.other_residual_cells_referenced {
+                assert!(
+                    emitted_ids.contains(referenced.as_str()),
+                    "cross-reference `{referenced}` must name an emitted proposal id, but none \
+                     carries it (emitted ids: {emitted_ids:?}); report: {report:#?}",
+                );
+            }
+        }
     }
 
     #[test]
