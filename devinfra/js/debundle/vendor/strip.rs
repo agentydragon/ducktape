@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::{AnalysisHints, ChunkId, LocalEffectPolicy, StatementFacts, analyze_chunk};
+use analysis::{
+    AnalysisHints, ChunkId, EffectCell, LocalEffectPolicy, StatementFacts, analyze_chunk,
+};
 use anyhow::{Context, Result, bail};
 use binding_targets::{
     binding_name_strings, declaration_ids, declaration_name_strings, module_export_name,
@@ -565,6 +567,20 @@ fn sweep_unreachable_top_level(
         &shareable_items,
     );
 
+    // An item carries a globally-observable side effect when it is either a
+    // `Hard` statement (impure / module linkage) or a `LocalMutation` that
+    // writes a target which is neither a chunk-local declaration nor a
+    // replacement-import local — i.e. the write lands on a global / external
+    // object whose post-strip value residual or external code may read.
+    let observable_side_effect = |i: usize| -> bool {
+        let an = &analyses[i];
+        an.side_effect == SideEffectKind::Hard
+            || (an.side_effect == SideEffectKind::LocalMutation
+                && an.local_effects.iter().any(|id| {
+                    !declarer.contains_key(id) && !replacement_import_locals.contains(id)
+                }))
+    };
+
     let mut live = vec![false; analyses.len()];
     let mut live_reasons = vec![None; analyses.len()];
     for (i, an) in analyses.iter().enumerate() {
@@ -575,12 +591,7 @@ fn sweep_unreachable_top_level(
             .cloned()
             .collect::<Vec<_>>();
         let residual_export = !residual_exports.is_empty();
-        let hard_side_effect = (an.side_effect == SideEffectKind::Hard
-            || (an.side_effect == SideEffectKind::LocalMutation
-                && an.local_effects.iter().any(|id| {
-                    !declarer.contains_key(id) && !replacement_import_locals.contains(id)
-                })))
-            && swapped_reachability[i].is_empty();
+        let hard_side_effect = observable_side_effect(i) && swapped_reachability[i].is_empty();
         if residual_export {
             live[i] = true;
             live_reasons[i] = Some(LiveReason::ResidualExport(residual_exports));
@@ -650,6 +661,68 @@ fn sweep_unreachable_top_level(
                 );
             }
         }
+    }
+
+    // Soundness gate: a top-level item carrying a globally-observable side
+    // effect must never be *silently* dropped. The keep-pass above honors such
+    // an item only when it is not swap-reachable; a swap-reachable one falls
+    // through to deletion. Dropping is sound only when the effect is provably
+    // swap-private — every storage cell it writes stays inside the swapped
+    // island, so no retained / external code can witness its post-strip value:
+    //
+    //   * a static-key `globalThis.<prop>` write is never private (external or
+    //     other-chunk code may read the global back — e.g. `window.foo =
+    //     <swappedThing>` read via `window.foo`);
+    //   * a binding write is private unless some *retained* (`live`) item reads
+    //     that binding; writes to a replacement-import local stay private
+    //     (the old island configuring the new facade has no residual reader);
+    //   * a statement the analyzer cannot summarize (dynamic `globalThis[expr]`,
+    //     `eval`, `with`, `Function(...)`) may touch any cell and is never
+    //     private.
+    //
+    // A swap-reachable observable effect that is not provably swap-private would
+    // be silently deleted — an under-restriction soundness violation. Bail so
+    // the spec author restructures rather than shipping a broken bundle.
+    let live_reads: BTreeSet<Id> = analyses
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| live[i])
+        .flat_map(|(_, an)| an.reads.iter().chain(an.local_effects.iter()).cloned())
+        .collect();
+    let swap_private_effect = |i: usize| -> bool {
+        let an = &analyses[i];
+        if !an.effects_summarizable {
+            return false;
+        }
+        an.observable_writes.iter().all(|cell| match cell {
+            EffectCell::GlobalProp(_) => false,
+            EffectCell::Binding(id) => {
+                replacement_import_locals.contains(id) || !live_reads.contains(id)
+            }
+        })
+    };
+    for i in 0..analyses.len() {
+        if live[i]
+            || swapped_reachability[i].is_empty()
+            || !observable_side_effect(i)
+            || swap_private_effect(i)
+        {
+            continue;
+        }
+        let packages = swapped_reachability[i]
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
+        let declared = analyses[i]
+            .declared
+            .iter()
+            .map(id_name)
+            .collect::<Vec<_>>()
+            .join(",");
+        bail!(
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: observable side-effect item {i} is swap-reachable from package(s) [{packages}] (declared=[{declared}]) but its observable effect is not provably swap-private (it writes a global / external cell residual code may read), so it would be silently dropped — restructure the spec so the side effect does not read swapped binding(s)",
+        );
     }
 
     let mut original = std::mem::take(&mut module.body);
@@ -1035,6 +1108,16 @@ struct ItemAnalysis {
     export_aliases: BTreeSet<String>,
     side_effect: SideEffectKind,
     shareable_helper: bool,
+    /// Outer-observable storage cells this statement writes at-init
+    /// (binding rebinds and static-key `globalThis.<prop>` writes).
+    /// Empty/incomplete unless `effects_summarizable` is true.
+    observable_writes: BTreeSet<EffectCell>,
+    /// False when the statement contains a shape the analyzer cannot
+    /// statically summarize (dynamic `globalThis[expr]`, `with`,
+    /// direct `eval`, `Function(...)`, etc.); in that case the write
+    /// set is unreliable and the statement must be treated as touching
+    /// every observable cell.
+    effects_summarizable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1092,6 +1175,8 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         export_aliases: export_aliases_for_item(item),
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
+        observable_writes: fact.effects.writes.clone(),
+        effects_summarizable: fact.effects.dataflow_summarizable,
     }
 }
 

@@ -719,6 +719,40 @@ fn partial_swap_keeps_side_effect_init() {
 }
 
 #[test]
+fn partial_swap_rejects_observable_side_effect_reading_swapped_binding() {
+    // A `Hard`, globally-observable side effect (`globalThis.__zodBoolean =
+    // e6`) that *reads* the swapped binding `e6`. The read makes the
+    // statement swap-reachable, so the keep-pass declines to honor it for its
+    // side effect and it would otherwise be silently dropped — even though
+    // residual / external code can witness the global write via
+    // `globalThis.__zodBoolean`. The strip pass must bail rather than ship a
+    // bundle missing the effect.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => true;\nglobalThis.__zodBoolean = e6;\n",
+        caller_source: "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        !fixture.result.status.success(),
+        "debundler should reject an observable side effect that reads a swapped binding\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    assert!(
+        fixture
+            .result
+            .stderr
+            .contains("observable side-effect item")
+            && fixture.result.stderr.contains("swap-reachable"),
+        "expected observable-side-effect soundness diagnostic in stderr:\n{}",
+        fixture.result.stderr,
+    );
+}
+
+#[test]
 fn partial_swap_drops_original_package_island_with_local_mutations() {
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
         chunk_source: "class ZodBoolean {}\nZodBoolean.displayName = \"ZodBoolean\";\nconst e6 = () => new ZodBoolean();\nexport { e6 };\n",
