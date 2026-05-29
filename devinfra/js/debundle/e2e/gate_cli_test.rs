@@ -318,3 +318,29 @@ fn gate_cycles_override_picks_up_custom_path() {
     let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
 }
+
+#[test]
+fn gate_list_runs_without_modules_flag() {
+    // `--modules` is optional (gate reads nothing from it). Omitting
+    // it — and clearing the env fallback — must still succeed.
+    let fx = fixture_with_default_cycles_layout();
+    let out = Command::new(debundle_binary())
+        .args([
+            "gate",
+            "list",
+            "--graph",
+            fx.graph_path.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .env_remove("DEBUNDLE_MODULES")
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "gate list without --modules exit: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(parsed["blocking_sccs"].as_array().unwrap().len(), 1);
+}

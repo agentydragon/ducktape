@@ -32,21 +32,16 @@
 //! and a no-op (comments don't participate in factorization).
 
 use std::fs;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args as ClapArgs, ValueEnum};
+use clap::Args as ClapArgs;
+use serde::Serialize;
 use serde_yaml::Value;
 
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
-
-#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-pub enum Format {
-    Text,
-    Json,
-}
 
 /// Args for `debundle bindings comment <sym> [...]`.
 #[derive(Debug, ClapArgs)]
@@ -75,7 +70,7 @@ pub struct BindingCommentArgs {
     /// Output format for read mode. Default `text` on tty, `json`
     /// on pipe.
     #[arg(long, value_enum)]
-    format: Option<Format>,
+    format: Option<peel::OutputFormat>,
 
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
@@ -113,7 +108,7 @@ pub struct ModuleCommentArgs {
 
     /// Output format for read mode.
     #[arg(long, value_enum)]
-    format: Option<Format>,
+    format: Option<peel::OutputFormat>,
 
     /// Validate (or simulate) but do not modify any file.
     #[arg(long)]
@@ -149,17 +144,6 @@ impl CommentMode {
     }
 }
 
-fn resolve_format(format: Option<Format>) -> Format {
-    if let Some(f) = format {
-        return f;
-    }
-    if std::io::stdout().is_terminal() {
-        Format::Text
-    } else {
-        Format::Json
-    }
-}
-
 /// Public entry point for the inner `comment` verb under either the
 /// `bindings` or `modules` namespace. Composed by the top-level
 /// `cli.rs` so the new `modules` clap node can sit alongside `merge`
@@ -181,7 +165,7 @@ fn run_binding_comment(args: BindingCommentArgs) -> Result<()> {
     let _ = args.no_verify; // accepted, no-op
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_binding_comment(&args.modules_root, &args.sym, mode, args.dry_run)?;
-    let format = resolve_format(args.format);
+    let format = peel::OutputFormat::resolve(args.format);
     print_outcome(&outcome, format);
     Ok(())
 }
@@ -209,46 +193,47 @@ pub enum OutcomeKind {
     Module,
 }
 
-fn print_outcome(outcome: &CommentOutcome, format: Format) {
-    match format {
-        Format::Text => {
-            println!("{}", outcome.comment);
-        }
-        Format::Json => {
-            let key = match outcome.kind {
-                OutcomeKind::Binding => "sym",
-                OutcomeKind::Module => "module",
-            };
-            let json = format!(
-                "{{\"{}\":{},\"comment\":{},\"action\":{}}}",
-                key,
-                json_string(&outcome.locator),
-                json_string(&outcome.comment),
-                json_string(outcome.action),
-            );
-            println!("{json}");
-        }
-    }
+/// JSON wire shape for a comment read/edit outcome. The locator key is
+/// `sym` for bindings and `module` for modules (`#[serde(flatten)]` on a
+/// `kind`-discriminated locator), matching the per-binding / per-module
+/// verb namespaces.
+#[derive(Debug, Serialize)]
+struct CommentOutcomeJson<'a> {
+    #[serde(flatten)]
+    locator: Locator<'a>,
+    comment: &'a str,
+    action: &'a str,
 }
 
-fn json_string(s: &str) -> String {
-    // Minimal JSON string escaper. We don't import serde_json just
-    // for this; the inputs are short and well-behaved.
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
+#[derive(Debug, Serialize)]
+enum Locator<'a> {
+    #[serde(rename = "sym")]
+    Binding(&'a str),
+    #[serde(rename = "module")]
+    Module(&'a str),
+}
+
+fn print_outcome(outcome: &CommentOutcome, format: peel::OutputFormat) {
+    match format {
+        peel::OutputFormat::Text => {
+            println!("{}", outcome.comment);
+        }
+        peel::OutputFormat::Json | peel::OutputFormat::Ndjson => {
+            let locator = match outcome.kind {
+                OutcomeKind::Binding => Locator::Binding(&outcome.locator),
+                OutcomeKind::Module => Locator::Module(&outcome.locator),
+            };
+            let payload = CommentOutcomeJson {
+                locator,
+                comment: &outcome.comment,
+                action: outcome.action,
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&payload).expect("comment outcome serializes")
+            );
         }
     }
-    out.push('"');
-    out
 }
 
 /// Find the member matching `sym` and apply `mode`. Returns the
@@ -442,7 +427,7 @@ fn run_module_comment(args: ModuleCommentArgs) -> Result<()> {
     let _ = args.no_verify;
     let mode = CommentMode::from_flags(args.text, args.edit, args.clear)?;
     let outcome = apply_module_comment(&args.modules_root, &args.module, mode, args.dry_run)?;
-    let format = resolve_format(args.format);
+    let format = peel::OutputFormat::resolve(args.format);
     print_outcome(&outcome, format);
     Ok(())
 }

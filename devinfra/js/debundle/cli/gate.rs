@@ -69,8 +69,10 @@ pub struct GateCommonArgs {
     /// Per-module YAML tree root. Unused today; kept here so every
     /// `debundle ...` command shares the same env/flag triple
     /// (`--graph`/`--modules`/`--source-root`) per docs/cli.md.
+    /// Optional: nothing in `gate` reads it yet, so users need not
+    /// pass an ignored path.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    pub modules_root: PathBuf,
+    pub modules_root: Option<PathBuf>,
 
     /// Override the default `cycles.json` location. Defaults to the
     /// sibling of `--graph`.
@@ -704,7 +706,9 @@ mod tests {
     fn cycles_path_defaults_to_graph_sibling() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            modules_root: PathBuf::from("/tmp/modules"),
+            // `--modules` is optional and unread by gate; omitting it
+            // must not affect cycles-path resolution.
+            modules_root: None,
             cycles_path: None,
         };
         assert_eq!(
@@ -717,7 +721,7 @@ mod tests {
     fn cycles_path_override_wins() {
         let common = GateCommonArgs {
             owner_graph_path: PathBuf::from("/tmp/reports/static/app/owner_graph.json"),
-            modules_root: PathBuf::from("/tmp/modules"),
+            modules_root: None,
             cycles_path: Some(PathBuf::from("/other/cycles.json")),
         };
         assert_eq!(
