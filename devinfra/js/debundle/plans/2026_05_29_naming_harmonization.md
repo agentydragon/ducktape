@@ -118,14 +118,25 @@ single genuine collision is the binding's destination field:
   `OwnerGraphNodeReport`, `owner_edge`, `owner:N`, `owner_graph.json` —
   all coherent under "owner = node that owns bindings".
 
-### Stage 3 — `BindingName` discriminated newtype
+### Stage 3 — `BindingName` discriminated enum (done, `504496c`)
 
-- `enum BindingName { Minified(Atom), Readable { minified: Atom, name: Atom } }`
-  (placement: `ids.rs`).
-- Replace the dual minified/readable `String` matching in
-  `cli/binding.rs::find_matches` with typed dispatch; ambiguity error
-  unchanged in behavior.
-- Type the `load_active_claims` / `ModuleClaims.bindings` keys.
+- `enum BindingName { Minified { minified } | Readable { minified, name } }`
+  in `cli/binding.rs` (where the binding-name handling lives; not
+  `ids.rs` — the analysis crate has no such concept).
+- Replaced the dual minified/readable `String` matching in
+  `find_matches` with `BindingName::matches`; ambiguity error unchanged.
+- `BindingMatch` (internal) and `BindingEntry` (serialized) both carry
+  `BindingName`. **CLI JSON shape changed** (decision: full typing
+  including output): `bindings list --format json` entries now flatten
+  `kind`/`minified`(/`name`) instead of `binding`/`readable`/`unrenamed`.
+  The redundant `unrenamed` bool (== `readable.is_none()`) is removed.
+- The `bindings assign --batch` input (`{sym, module, readable}`) is a
+  separate struct (`Move`) and was deliberately left unchanged.
+- Not done: typing `load_active_claims` / `ModuleClaims.bindings` keys
+  with `BindingName`. Those live in the `spec_modules` crate (no dep on
+  the CLI's `BindingName`) and are minified-only spec keys; left as
+  `String`. Revisit only if a shared binding-name type is promoted into
+  `spec`.
 
 ### Stage 4 — docs + backlog reconciliation
 
