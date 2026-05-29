@@ -86,7 +86,7 @@ fn residual_owner(
     bindings: &[&str],
     lines: usize,
 ) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref("residual", true))
+    owner(id, ordinal, bindings, lines, module_ref("residual"))
 }
 
 fn active_owner(
@@ -96,7 +96,7 @@ fn active_owner(
     lines: usize,
     module_path: &str,
 ) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref(module_path, false))
+    owner(id, ordinal, bindings, lines, module_ref(module_path))
 }
 
 fn owner_edge(
@@ -911,7 +911,7 @@ fn greedy_never_merges_into_residual() {
         declared_bindings: vec![],
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
-        destination: module_ref("residual", true),
+        destination: module_ref("residual"),
     };
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
     let report = graph_of(

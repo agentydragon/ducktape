@@ -1678,7 +1678,7 @@ mod tests {
             declared_bindings: vec![test_utils::member(binding, export_name)],
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: test_utils::module_ref("residual", true),
+            destination: test_utils::module_ref("residual"),
         }
     }
 

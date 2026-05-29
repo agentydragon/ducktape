@@ -522,26 +522,14 @@ pub struct AnonymousStatement {
 /// catch-all path.
 pub const DEFAULT_RESIDUAL_MODULE_PATH: &str = "residual/unhandled";
 
-/// The single, canonical identity of a logical module.
+/// The single, canonical identity of a logical module: **relative,
+/// slash-separated, lowercase** (e.g. `domains/system/ids`), equal to
+/// the module's destination path.
 ///
-/// One spec module had, historically, several stringly-typed
-/// spellings that all denoted the same thing: the clean spec path
-/// (`domains/system/ids`, derived from the `*.yaml` file location),
-/// the chunk-prefixed `LogicalModule.id`
-/// (`static/index-DI2GynTv::domains/system/ids`, minted in
-/// `lowering/plans.rs`), the `<chunk>::` form surfaced as a report
-/// `destination.label`, and the generated `target_file`. Comparing
-/// two spellings of one module with `==` produced false positives —
-/// most visibly a `merge_into` self-merge proposal in the peel
-/// factorizer.
-///
-/// `ModulePath` collapses all of those to one normalized value at
-/// construction. The canonical spelling is **relative, slash-
-/// separated, lowercase** and equals the module's destination path
-/// (id == path; the dest file is `path + extension`). [`parse`] is
-/// the only way to build one from an untrusted string, so the
-/// chunk-id prefix is stripped exactly once, at the boundary, and
-/// `==` can no longer disagree about identity.
+/// [`parse`] is the only constructor, so the several historical
+/// spellings of one module (clean spec path, chunk-prefixed
+/// `LogicalModule.id`, report label) collapse to one value and `==` is
+/// an honest identity test.
 ///
 /// [`parse`]: ModulePath::parse
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -551,55 +539,39 @@ pub struct ModulePath(String);
 impl ModulePath {
     /// Normalize an untrusted module identifier into canonical form.
     ///
-    /// `chunk_id` is the owning chunk's name (e.g.
-    /// `static/index-DI2GynTv`); a leading `"<chunk_id>::"` is the
-    /// production `LogicalModule.id` spelling and is stripped so it
-    /// collapses onto the clean path. Pass `""` when no chunk context
-    /// applies (the value is already a clean path).
-    ///
-    /// Rejects values that cannot be a relative module path:
-    /// backslashes (Windows separators), absolute paths, empty
-    /// segments, and `.`/`..` traversal.
+    /// A leading `"<chunk_id>::"` (the production `LogicalModule.id`
+    /// spelling) is stripped so it collapses onto the clean path; pass
+    /// `""` for `chunk_id` when the value is already a clean path.
+    /// Rejects what can't be a relative module path: backslashes,
+    /// absolute paths, empty segments, and `.`/`..` traversal.
     pub fn parse(raw: &str, chunk_id: &str) -> Result<Self, ModulePathError> {
-        let stripped = match chunk_id.is_empty() {
-            true => raw,
-            false => raw
-                .strip_prefix(chunk_id)
+        let stripped = if chunk_id.is_empty() {
+            raw
+        } else {
+            raw.strip_prefix(chunk_id)
                 .and_then(|rest| rest.strip_prefix("::"))
-                .unwrap_or(raw),
+                .unwrap_or(raw)
         };
+        let err = || ModulePathError(raw.to_string());
         if stripped.contains('\\') {
-            return Err(ModulePathError::Backslash(stripped.to_string()));
+            return Err(err());
         }
-        let lower = stripped.to_ascii_lowercase();
-        let trimmed = lower.trim_matches('/');
+        let trimmed = stripped.to_ascii_lowercase().trim_matches('/').to_string();
         if trimmed.is_empty() {
-            return Err(ModulePathError::Empty(raw.to_string()));
+            return Err(err());
         }
-        for segment in trimmed.split('/') {
-            if segment.is_empty() || segment == "." || segment == ".." {
-                return Err(ModulePathError::Segment {
-                    raw: raw.to_string(),
-                    segment: segment.to_string(),
-                });
-            }
+        if trimmed.split('/').any(|s| matches!(s, "" | "." | "..")) {
+            return Err(err());
         }
-        Ok(Self(trimmed.to_string()))
+        Ok(Self(trimmed))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// The chunk-relative file this module emits to, e.g.
-    /// `domains/system/ids` + `"js"` → `domains/system/ids.js`.
-    pub fn dest_file(&self, extension: &str) -> String {
-        format!("{}.{extension}", self.0)
-    }
-
     /// True for the residual catch-all subtree (`residual` or
-    /// `residual/...`). Folds in the prefix rule
-    /// `spec_modules::is_residual_module_path` enforced.
+    /// `residual/...`); matches `spec_modules::is_residual_module_path`.
     pub fn is_residual(&self) -> bool {
         self.0 == "residual" || self.0.starts_with("residual/")
     }
@@ -611,24 +583,15 @@ impl std::fmt::Display for ModulePath {
     }
 }
 
+/// Carries the offending raw input; module paths only fail validation
+/// in one way from the caller's view (the value isn't a valid relative
+/// path), so no caller branches on a reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ModulePathError {
-    Empty(String),
-    Backslash(String),
-    Segment { raw: String, segment: String },
-}
+pub struct ModulePathError(String);
 
 impl std::fmt::Display for ModulePathError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty(raw) => write!(f, "module path is empty: {raw:?}"),
-            Self::Backslash(raw) => {
-                write!(f, "module path must use '/' separators, got {raw:?}")
-            }
-            Self::Segment { raw, segment } => {
-                write!(f, "invalid module path segment {segment:?} in {raw:?}")
-            }
-        }
+        write!(f, "not a valid relative module path: {:?}", self.0)
     }
 }
 
@@ -655,12 +618,6 @@ mod module_path_tests {
     fn normalizes_case_and_surrounding_slashes() {
         let p = ModulePath::parse("/Domains/System/IDs/", "").unwrap();
         assert_eq!(p.as_str(), "domains/system/ids");
-    }
-
-    #[test]
-    fn dest_file_appends_extension() {
-        let p = ModulePath::parse("domains/system/ids", "").unwrap();
-        assert_eq!(p.dest_file("js"), "domains/system/ids.js");
     }
 
     #[test]

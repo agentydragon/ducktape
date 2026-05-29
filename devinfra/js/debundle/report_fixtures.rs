@@ -17,19 +17,15 @@ use std::collections::BTreeSet;
 use analysis::{ModuleEntry, ModuleKey};
 use spec::ModulePath;
 
-/// A destination key whose string is the module's canonical path. The
-/// `residual` argument is accepted for call-site readability but the
-/// authoritative residual flag is derived from the path in
-/// [`module_table`] / [`module_entry`].
-pub fn module_ref(path: &str, _residual: bool) -> ModuleKey {
+/// A destination key whose string is the module's canonical path.
+pub fn module_ref(path: &str) -> ModuleKey {
     ModuleKey(path.to_string())
 }
 
 /// The module-table entry for a single destination key: the canonical
 /// `ModulePath` (parsed from the key) and its residual flag.
 pub fn module_entry(key: &ModuleKey) -> ModuleEntry {
-    let path = ModulePath::parse(key.as_str(), "")
-        .unwrap_or_else(|e| panic!("test module key {key} is not a valid path: {e}"));
+    let path = ModulePath::parse(key.as_str(), "").expect("test module key is a valid path");
     let residual = path.is_residual();
     ModuleEntry {
         key: key.clone(),

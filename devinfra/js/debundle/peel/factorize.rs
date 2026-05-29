@@ -992,7 +992,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            test_utils::module_ref("residual", true),
+            test_utils::module_ref("residual"),
         )
     }
 
@@ -1008,7 +1008,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            test_utils::module_ref(module_path, false),
+            test_utils::module_ref(module_path),
         )
     }
 
@@ -1226,14 +1226,14 @@ mod tests {
             1,
             &["a"],
             10,
-            test_utils::module_ref("domains/system/ids", false),
+            test_utils::module_ref("domains/system/ids"),
         );
         let b = owner_at(
             "b",
             2,
             &["b"],
             10,
-            test_utils::module_ref("domains/system/id_helpers", false),
+            test_utils::module_ref("domains/system/id_helpers"),
         );
         let graph = graph_with_atomic_units(
             vec![a.clone(), b.clone()],
@@ -1271,7 +1271,7 @@ mod tests {
         // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
         // is now unrepresentable: the wire carries one interned key
         // and the table holds one canonical path.)
-        let dest = test_utils::module_ref("domains/system/ids", false);
+        let dest = test_utils::module_ref("domains/system/ids");
         let a = owner_at("a", 1, &["a"], 10, dest.clone());
         let b = owner_at("b", 2, &["b"], 10, dest.clone());
         let graph = graph_with_atomic_units(

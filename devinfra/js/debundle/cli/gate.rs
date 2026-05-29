@@ -571,7 +571,7 @@ mod tests {
                 .collect(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: module_ref(module_label, false),
+            destination: module_ref(module_label),
         }
     }
 

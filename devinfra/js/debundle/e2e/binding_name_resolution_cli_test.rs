@@ -75,18 +75,18 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
         1,
         "XOe",
         "PluginSettingsAccessor",
-        module_ref("ui/plugins", false),
+        module_ref("ui/plugins"),
     );
-    let other = owner("owner:1", 2, "YOe", "YOe", module_ref("residual", true));
+    let other = owner("owner:1", 2, "YOe", "YOe", module_ref("residual"));
     let quotient = OwnerGraphQuotientReport {
         nodes: vec![
-            module_entry(&module_ref("ui/plugins", false)),
-            module_entry(&module_ref("residual", true)),
+            module_entry(&module_ref("ui/plugins")),
+            module_entry(&module_ref("residual")),
         ],
         edges: vec![QuotientEdgeReport {
             id: "q_edge:0".to_string(),
-            source: module_ref("residual", true),
-            target: module_ref("ui/plugins", false),
+            source: module_ref("residual"),
+            target: module_ref("ui/plugins"),
             edge_kinds: vec![DepKind::EagerUse],
             constrains_init_order: true,
         }],
@@ -113,7 +113,7 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:0".to_string()],
                     members: vec![member("XOe", "PluginSettingsAccessor")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("ui/plugins", false)],
+                    destinations: vec![module_ref("ui/plugins")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([2, 2]),
@@ -124,7 +124,7 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:1".to_string()],
                     members: vec![member("YOe", "YOe")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([3, 3]),
@@ -266,14 +266,14 @@ fn resolve_binding_owners_prefers_minified_on_name_collision() {
         1,
         "Collide",
         "Collide",
-        module_ref("ui/plugins", false),
+        module_ref("ui/plugins"),
     );
     let by_readable = owner(
         "owner:readable",
         2,
         "ZZZ",
         "Collide",
-        module_ref("residual", true),
+        module_ref("residual"),
     );
     let report = OwnerGraphReport {
         chunk_id: "static/index".to_string(),

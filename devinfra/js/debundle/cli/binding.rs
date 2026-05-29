@@ -26,16 +26,9 @@ use spec_modules::{collect_module_files, is_residual_module_path, module_path_fr
 use crate::edit_gate::{gate_post_edit_partition, post_assign_spec, post_unassign_spec};
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
-/// A chunk-top binding's public identity.
-///
-/// Every binding has a minified hygiene name (`selector.binding.name`,
-/// e.g. `_ab`). The spec may additionally assign a readable `name:`
-/// (e.g. `parseUserId`). These were previously carried as a
-/// `(binding: String, readable: Option<String>, unrenamed: bool)`
-/// triple in which `unrenamed` was exactly `readable.is_none()` — a
-/// redundant derived field, and a shape that let "renamed but no
-/// readable name" be represented. The enum makes the renamed/unrenamed
-/// distinction the type and drops the derived bool.
+/// A chunk-top binding's public identity: the minified hygiene name
+/// (`selector.binding.name`, e.g. `_ab`) plus an optional readable
+/// `name:` the spec assigns (e.g. `parseUserId`).
 ///
 /// Serializes internally-tagged so CLI JSON consumers can branch on
 /// `.kind` (`"minified"` | `"readable"`) and always read `.minified`.
@@ -69,11 +62,6 @@ impl BindingName {
             Self::Minified { .. } => None,
             Self::Readable { name, .. } => Some(name),
         }
-    }
-
-    /// The public-facing name: the readable name if set, else minified.
-    pub fn effective(&self) -> &str {
-        self.readable().unwrap_or_else(|| self.minified())
     }
 
     pub fn is_renamed(&self) -> bool {
@@ -1084,18 +1072,16 @@ mod tests {
     }
 
     #[test]
-    fn binding_name_match_and_effective() {
+    fn binding_name_match_and_rename() {
         let minified = BindingName::new("_ab".to_string(), None);
         assert!(minified.matches("_ab"));
         assert!(!minified.matches("parseUserId"));
-        assert_eq!(minified.effective(), "_ab");
         assert!(!minified.is_renamed());
 
         let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
         // Both spellings resolve the same binding.
         assert!(readable.matches("_ab"));
         assert!(readable.matches("parseUserId"));
-        assert_eq!(readable.effective(), "parseUserId");
         assert!(readable.is_renamed());
     }
 

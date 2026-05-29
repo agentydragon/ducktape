@@ -424,7 +424,7 @@ mod tests {
             },
             declared_bindings: bindings,
             purity: Purity::Pure,
-            destination: module_ref("residual", true),
+            destination: module_ref("residual"),
         }
     }
 
