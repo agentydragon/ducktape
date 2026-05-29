@@ -276,6 +276,70 @@ the decompiled app's internal architecture; it does not mean "whatever the
 current spec happens to call things." Rewrite stale sections in place; git is
 the history.
 
+## Structural Conformance Metrics
+
+Prose conventions decay: an architect writes "`shared/` is framework-agnostic"
+or "panel logic should live under `app/panel`," workers drift from it, and
+nobody notices until the next manual audit. Whenever you draft a desired
+layering or cross-module dependency relationship — the structure you believe
+*should* exist in the debundled app — also encode it as a **rerunnable metric
+script** that measures how well the current output meets it, and run those
+scripts on every architect pass.
+
+This serves two distinct purposes, and you should label which one each metric
+is for:
+
+- **RULE** — a boundary you are asserting *should* hold. Any violation is a
+  finding to route to a worker. Example: "no module under `shared/` may import
+  from `domains/`, `features/`, or `app/`."
+- **OBSERVATORY** — a hypothesis you are *not yet* asserting. You suspect a
+  structure but want to watch what naturally happens and track how it evolves.
+  Record the current value plus a baseline; report drift, do not fail.
+  Example: "what fraction of edges point 'up' the layer stack, and is it
+  creeping?"
+
+An observatory that stabilizes can be promoted to a rule; a rule that reality
+keeps violating for good reasons is a signal that the *assumption was wrong* —
+update the rule (or conclude the debundle should be restructured), don't just
+keep failing it. This is the same hypothesis→rule lifecycle as Convention
+Induction, made executable.
+
+### How to build them
+
+- **Consume the debundler's JSON side outputs, not the emitted JS text.** The
+  owner graph (`owner_graph.json`) carries, per module, its `target_file` and
+  the typed module-to-module edges (`module_graph.edges` with `edge_kinds` and
+  `constrains_init_order`). That is a stable, rerunnable contract; re-parsing
+  `import` statements from the JS is brittle and misses lazy/eager/rebind edge
+  semantics the graph already classifies. Use `describe`, `cluster`, `scc`,
+  `coverage`, and `graph-summary` outputs the same way when a metric needs
+  them.
+- **One named expectation per check**, each emitting: its current measured
+  value, PASS/FAIL (rules) or drift-vs-baseline (observatories), and a bounded
+  list of concrete violating edges/modules so a worker can act without
+  re-deriving them.
+- **Make rule failures exit nonzero** so the script doubles as a CI/gate hook;
+  observatories never fail the run.
+- **Git-track the baselines** (a small JSON next to the script) so drift shows
+  up in review diffs, and update them deliberately with an explicit flag after
+  an intentional structural shift.
+- Keep the script in the **project's** tree (adapter-owned), not in the generic
+  skill — the *method* is generic, the *expectations* are project-specific.
+
+### On every architect pass
+
+Run the conformance script before writing recommendations. Treat the output as
+evidence:
+
+- A newly-RED rule is either a real regression (route a fix) or an assumption
+  reality has outgrown (update the rule and the architecture notes, and say
+  why).
+- A drifting observatory tells you where the structure is moving; decide
+  whether to intervene, promote it to a rule, or revise the hypothesis.
+- When you add or sharpen a desired relationship in `<architecture-notes>`, add
+  or update the matching metric in the same pass. An architecture note that
+  asserts a boundary without a check to measure it is incomplete.
+
 ## Precedence Model
 
 Co-consumption is useful evidence, but architecture ownership is stronger.
@@ -307,6 +371,10 @@ consumer relationship does not make authorization policy presentation-owned.
 - suspected layer boundaries
 - names of subsystems that need more evidence
 - questions for intake or lane workers
+- for each asserted boundary or tracked hypothesis, a pointer to the
+  rerunnable metric (rule or observatory) that measures it — see Structural
+  Conformance Metrics. A layering/dependency claim in the notes should have a
+  matching check.
 
 `<module-reorg>` contains firm worker-ready recommendations:
 
