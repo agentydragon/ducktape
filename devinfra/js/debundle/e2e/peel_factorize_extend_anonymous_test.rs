@@ -73,7 +73,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000);
+    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
 
     let extension = report
         .proposals
@@ -142,7 +142,8 @@ export { anchor, Foo, Bar };
         &report_graph,
         &claims(&[("Foo", "features/foo"), ("Bar", "features/bar")]),
         10_000,
-    );
+    )
+    .unwrap();
 
     // No anon-only extension proposal should exist. The mixed-deps
     // anonymous statement must land as a fresh-module proposal
@@ -179,7 +180,7 @@ export { anchor, Foo };
             logical_module("features/foo", &[Member::new("Foo")]),
         ],
     );
-    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000);
+    let report = factorize(&report_graph, &claims(&[("Foo", "features/foo")]), 10_000).unwrap();
 
     // No extension of `features/foo` should be proposed for the
     // intra-residual anon.

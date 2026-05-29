@@ -635,10 +635,10 @@ fn factorize_golden_output_unchanged() {
     // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
     // regenerate (only after a deliberate, justified change), set
     // `UPDATE_GOLDENS=1` when running the test.
-    let f1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000);
-    let f2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000);
+    let f1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
+    let f2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
     let claims_active = claims(&[("BindingA", "ui/x")]);
-    let f3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
+    let f3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
 
     let json1 = serde_json::to_string_pretty(&f1).unwrap();
     let json2 = serde_json::to_string_pretty(&f2).unwrap();
@@ -1464,7 +1464,7 @@ fn greedy_on_gaffer_chunk_completes_under_one_minute() {
     // its own active module, which is what the planner would see
     // before any spec edits).
     let started = std::time::Instant::now();
-    let result = factorize(&report, &no_claims(), 10_000);
+    let result = factorize(&report, &no_claims(), 10_000).unwrap();
     let elapsed = started.elapsed();
     let extension_proposals: usize = result
         .proposals
@@ -1654,7 +1654,8 @@ fn merge_two_existing_modules_with_mutual_eager_reads() {
         &report,
         &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
         10_000,
-    );
+    )
+    .unwrap();
     let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
         .proposals
         .iter()
@@ -1713,7 +1714,8 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
         &report,
         &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
         10_000,
-    );
+    )
+    .unwrap();
     let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
         .proposals
         .iter()
@@ -1766,9 +1768,9 @@ fn unification_byte_identical_on_well_formed_inputs() {
     // `factorize_golden_output_unchanged`.
     let claims_active = claims(&[("BindingA", "ui/x")]);
 
-    let r1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000);
-    let r2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000);
-    let r3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
+    let r1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000).unwrap();
+    let r2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000).unwrap();
+    let r3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000).unwrap();
 
     assert!(
         r1.seed_rejections.is_empty(),
@@ -1936,7 +1938,7 @@ fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
     // Spec module mod_alpha contains Foo. The factorize entry
     // point derives spec_modules from the owner destinations, so
     // the active owner above is already registered as mod_alpha.
-    let result = factorize(&report, &claims(&[("Foo", "mod_alpha")]), 10_000);
+    let result = factorize(&report, &claims(&[("Foo", "mod_alpha")]), 10_000).unwrap();
 
     // (a) No proposal should bundle Foo with Helper or Bar — the
     // cycle prevents merging Foo's class with Helper's class

@@ -233,21 +233,21 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
     } else {
         None
     };
-    Ok(factorize_with_context(
+    factorize_with_context(
         &graph,
         &claims,
         options.size_cap_lines,
         FactorizeContext {
             addressable_anonymous_owner_ids,
         },
-    ))
+    )
 }
 
 pub fn factorize(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
-) -> PeelFactorizeReport {
+) -> Result<PeelFactorizeReport> {
     factorize_with_context(
         graph,
         active_claims,
@@ -266,7 +266,7 @@ fn factorize_with_context(
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
     context: FactorizeContext,
-) -> PeelFactorizeReport {
+) -> Result<PeelFactorizeReport> {
     let owner_index: HashMap<&str, usize> = graph
         .nodes
         .iter()
@@ -286,13 +286,9 @@ fn factorize_with_context(
         .nodes
         .iter()
         .enumerate()
-        .filter_map(|(i, node)| {
-            if graph.is_residual(&node.destination) {
-                return None;
-            }
-            Some((i, active_module_label(node, active_claims, graph)))
-        })
-        .collect();
+        .filter(|(_, node)| !graph.is_residual(&node.destination))
+        .map(|(i, node)| Ok((i, active_module_label(node, active_claims, graph)?)))
+        .collect::<Result<_>>()?;
 
     // Spec-module groups: every active-claimed module's owners
     // pre-contracted into one class. Used by `build_seed_quotient`'s
@@ -364,7 +360,7 @@ fn factorize_with_context(
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
-    PeelFactorizeReport {
+    Ok(PeelFactorizeReport {
         proposals,
         diagnostics,
         size_cap_lines,
@@ -374,7 +370,7 @@ fn factorize_with_context(
         diagnostic_counts,
         size_distributions,
         seed_rejections,
-    }
+    })
 }
 
 /// The canonical [`ModulePath`] an owner's destination resolves to.
@@ -384,30 +380,31 @@ fn factorize_with_context(
 /// module table — a single source of truth, already normalized, so no
 /// chunk-prefix stripping or fallback chain is needed and two owners of
 /// one module can never disagree (the former self-merge bug). A
-/// destination key absent from the table is a malformed report we
-/// surface by panicking rather than inventing an identity.
+/// destination key absent from the table is a malformed report
+/// (truncated / version-skewed `owner_graph.json`), surfaced as an
+/// `Err` rather than a panic so the CLI reports it cleanly.
 fn active_module_label(
     node: &OwnerGraphNodeReport,
     active_claims: &BTreeMap<String, ModulePath>,
     graph: &OwnerGraphReport,
-) -> ModulePath {
+) -> Result<ModulePath> {
     if let Some(claimed) = node
         .declared_bindings
         .iter()
         .find_map(|b| active_claims.get(b.binding.as_str()))
     {
-        return claimed.clone();
+        return Ok(claimed.clone());
     }
-    graph
+    Ok(graph
         .module(&node.destination)
-        .unwrap_or_else(|| {
-            panic!(
-                "owner {} destination {} absent from module table",
+        .with_context(|| {
+            format!(
+                "malformed owner graph: owner {} destination {} absent from module table",
                 node.id, node.destination
             )
-        })
+        })?
         .path
-        .clone()
+        .clone())
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
@@ -1185,7 +1182,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
         assert_eq!(report.residual_owner_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(report.proposals.iter().all(|p| p.owner_ids.len() == 1));
@@ -1223,7 +1220,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = factorize(&graph, &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
         assert!(
             report.proposals.iter().any(|p| p.binding_ids
                 == vec!["a".to_string(), "b".to_string()]
@@ -1243,7 +1240,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000);
+        let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -1313,7 +1310,8 @@ mod tests {
             &graph,
             &claims(&[("foo", "features/foo"), ("baz", "features/baz")]),
             10_000,
-        );
+        )
+        .unwrap();
 
         // The scenario must actually produce the `features/foo`
         // extension carrying the residual-origin `bridge`, plus a
@@ -1397,7 +1395,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -1436,10 +1434,45 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![],
         );
-        let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000);
+        let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",
+        );
+    }
+
+    #[test]
+    fn non_residual_owner_with_missing_destination_is_clean_error_not_panic() {
+        // A non-residual owner whose `destination` key is absent from
+        // the module table (`quotient.nodes`) models a truncated /
+        // version-skewed `owner_graph.json` deserialized from disk by
+        // `analyze_peel_factorize`. `is_residual` returns false for an
+        // unknown key, so the owner survives the residual filter and
+        // reaches `active_module_label` — which used to `panic!`. The
+        // proposer must instead surface a clean `Err` so the CLI
+        // (`debundle modules propose`) reports it through `anyhow`
+        // rather than aborting.
+        let a = owner_at("a", 1, &["a"], 10, test_utils::module_ref("features/foo"));
+        let mut graph = graph_with_atomic_units(
+            vec![a.clone()],
+            vec![],
+            vec![unit("atomic:0", &[&a])],
+            vec![],
+        );
+        // Drop the owner's destination from the module table to
+        // simulate the malformed report.
+        graph
+            .quotient
+            .nodes
+            .retain(|entry| entry.key != a.destination);
+        assert!(graph.module(&a.destination).is_none());
+
+        let result = factorize(&graph, &no_claims(), 10_000);
+        let err = result.expect_err("missing destination must be a clean error, not a panic");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("malformed owner graph") && message.contains(&a.id),
+            "error must name the malformed report and the offending owner: {message}",
         );
     }
 
@@ -1453,7 +1486,7 @@ mod tests {
             vec![unit("atomic:0", &[&import])],
             vec![],
         );
-        let report = factorize(&graph, &no_claims(), 10_000);
+        let report = factorize(&graph, &no_claims(), 10_000).unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_owner_ids,
@@ -1490,7 +1523,8 @@ mod tests {
             FactorizeContext {
                 addressable_anonymous_owner_ids: Some(BTreeSet::from(["owner:effect".to_string()])),
             },
-        );
+        )
+        .unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert!(proposal.landable_today, "{proposal:?}");
         assert!(proposal.unaddressable_anonymous_owner_ids.is_empty());
@@ -1514,7 +1548,8 @@ mod tests {
             FactorizeContext {
                 addressable_anonymous_owner_ids: Some(BTreeSet::new()),
             },
-        );
+        )
+        .unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_owner_ids,
@@ -1549,7 +1584,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = factorize(&graph, &no_claims(), 5);
+        let report = factorize(&graph, &no_claims(), 5).unwrap();
         assert!(
             report.proposals.is_empty(),
             "oversized owners should not appear as proposals: {report:#?}",

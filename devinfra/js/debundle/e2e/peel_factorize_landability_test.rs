@@ -85,7 +85,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().all(|proposal| proposal.status
@@ -120,7 +120,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report
             .proposals
@@ -149,7 +149,7 @@ export { anchor, dep, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -192,7 +192,7 @@ export { a, b, c };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let chain_cell = report
         .proposals
@@ -247,7 +247,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let consumer_alone = report
         .proposals
@@ -283,7 +283,7 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let consumer_alone = report
         .proposals
@@ -318,7 +318,7 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     let combined = report
         .proposals
@@ -367,7 +367,7 @@ export { anchor, impure, pureBrand };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["pureBrand".to_string()]
@@ -416,7 +416,7 @@ export { anchor, mutable, peer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
     assert!(
         report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
@@ -484,7 +484,7 @@ export { anchor, SearchPopoverState };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let report = factorize(&graph, &no_claims(), 10_000);
+    let report = factorize(&graph, &no_claims(), 10_000).unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {
