@@ -1991,6 +1991,107 @@ fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
     );
 }
 
+#[test]
+fn pass3_diagnostic_walk_never_commits_a_merge() {
+    // Invariant guard for the pass-3 diagnostic walk in
+    // `build_seed_quotient`. After the fixed-point contraction loop
+    // exits (zero successful contractions), the diagnostic walk
+    // re-classifies each still-unmerged atomic-DAG edge to record
+    // *why* it could not contract. That walk must be read-only: it
+    // must never commit a merge. A stray successful contraction there
+    // would join two classes the fixed-point loop deliberately left
+    // apart, silently corrupting the partition that the post-seed
+    // realizability gate (and the returned `q`) then reads — and that
+    // merge would be neither counted nor looped.
+    //
+    // We pin the externally-observable consequence: for every
+    // `AtomicReachability`-rejected pair, the two pivot owners remain
+    // in DISTINCT classes in the returned quotient. If the diagnostic
+    // walk had committed the rejected merge (the pre-fix `contract` in
+    // the diagnostics phase's stray `Ok(_)` arm), the pair's owners
+    // would share a class — exactly the corruption the read-only
+    // predicates (`check_merge_preconditions` /
+    // `would_be_cycles_after_contract`) prevent.
+    //
+    // Fixture mirrors the cycle in
+    // `unification_rejects_cyclic_atomic_reachability_with_diagnostic`:
+    // residual Bar / Helper and active Foo (in spec module mod_alpha)
+    // form a constraining 3-cycle; pass-3's atomic-DAG-reachability
+    // contraction rejects the cycle-closing edges, driving the
+    // diagnostic walk.
+    let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
+    let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
+    let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:bar", "owner:foo", DepKind::EagerUse, true),
+        owner_edge(
+            "edge:1",
+            "owner:foo",
+            "owner:helper",
+            DepKind::EagerUse,
+            true,
+        ),
+        owner_edge(
+            "edge:2",
+            "owner:helper",
+            "owner:bar",
+            DepKind::EagerUse,
+            true,
+        ),
+    ];
+    let report = graph_of(
+        vec![foo.clone(), bar.clone(), helper.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:foo", &[&foo]),
+            atomic_unit_for("atomic:bar", &[&bar]),
+            atomic_unit_for("atomic:helper", &[&helper]),
+        ],
+        vec![
+            atomic_edge("atomic_edge:a", "atomic:bar", "atomic:foo"),
+            atomic_edge("atomic_edge:b", "atomic:foo", "atomic:helper"),
+            atomic_edge("atomic_edge:c", "atomic:helper", "atomic:bar"),
+        ],
+    );
+    let spec = vec![SpecModuleGroup {
+        module_id: "mod_alpha".to_string(),
+        owner_ids: vec!["owner:foo".to_string()],
+    }];
+    let (q, rejected) = build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+
+    let reachability_rejections: Vec<&SeedContractionRejected> = rejected
+        .iter()
+        .filter(|r| matches!(r, SeedContractionRejected::AtomicReachability { .. }))
+        .collect();
+    assert!(
+        !reachability_rejections.is_empty(),
+        "fixture must drive the pass-3 diagnostic walk via at least one \
+         AtomicReachability rejection, got: {rejected:?}",
+    );
+
+    // The load-bearing assertion: no rejected pair was actually
+    // merged by the diagnostic walk. Each pivot pair stays in a
+    // distinct class.
+    for r in &reachability_rejections {
+        let SeedContractionRejected::AtomicReachability { rejected_pair, .. } = r else {
+            unreachable!("filtered to AtomicReachability above");
+        };
+        let (src_owner, tgt_owner) = rejected_pair;
+        let src_idx = q
+            .owner_idx_of(src_owner)
+            .unwrap_or_else(|| panic!("rejected source owner {src_owner} must be in graph"));
+        let tgt_idx = q
+            .owner_idx_of(tgt_owner)
+            .unwrap_or_else(|| panic!("rejected target owner {tgt_owner} must be in graph"));
+        assert_ne!(
+            q.class_of(src_idx),
+            q.class_of(tgt_idx),
+            "diagnostic walk must NOT have committed the rejected merge of \
+             {src_owner} and {tgt_owner}; they must remain in distinct classes",
+        );
+    }
+}
+
 // ---------- Track A unification: planner gate ≡ materializer gate. ----------
 //
 // The peel planner's seed-quotient cycle gate must produce the same

@@ -2664,36 +2664,45 @@ pub fn build_seed_quotient(
         if cs == ct {
             continue;
         }
-        match q.contract(cs, ct) {
-            Ok(_) => {
-                // Should be unreachable: fixed-point loop already
-                // exited on zero successful contractions.
-                continue;
-            }
-            Err(ContractRejected::WouldCreateCycle { cycle }) => {
-                rejected.push(SeedContractionRejected::AtomicReachability {
-                    edge_id: edge.id.clone(),
-                    source_unit_id: edge.source.clone(),
-                    target_unit_id: edge.target.clone(),
-                    rejected_pair: (
-                        q.owner_id(src_pivot).to_string(),
-                        q.owner_id(tgt_pivot).to_string(),
-                    ),
-                    cycle,
-                });
-            }
-            Err(_) => {
-                rejected.push(SeedContractionRejected::AtomicReachability {
-                    edge_id: edge.id.clone(),
-                    source_unit_id: edge.source.clone(),
-                    target_unit_id: edge.target.clone(),
-                    rejected_pair: (
-                        q.owner_id(src_pivot).to_string(),
-                        q.owner_id(tgt_pivot).to_string(),
-                    ),
-                    cycle: CycleEvidence::default(),
-                });
-            }
+        // Diagnostic-only: classify *why* this edge's pair did not
+        // contract using the kernel's read-only predicates. This walk
+        // must NOT commit a merge: a stray successful `contract` here
+        // would mutate the partition the post-seed realizability gate
+        // below reads, committing a merge that is never counted or
+        // looped — silently corrupting the partition. The fixed-point
+        // loop above already applied every legitimate contraction, so
+        // any pair reaching here is expected to be rejected.
+        //
+        // We reproduce `check_merge`'s own classification order
+        // (preconditions, then cycle gate) without committing:
+        //   - preconditions fail -> the non-cycle `Err(_)` arm
+        //     (ResidualSticky / ExceedsCap / SameClass),
+        //   - cycle evidence     -> the `WouldCreateCycle` arm,
+        //   - neither            -> the merge *would* have succeeded;
+        //     unreachable at fixed point. Do nothing (and, critically,
+        //     never commit it) — the old `Ok(_)` arm's stray mutation.
+        if q.check_merge_preconditions(cs, ct).is_err() {
+            rejected.push(SeedContractionRejected::AtomicReachability {
+                edge_id: edge.id.clone(),
+                source_unit_id: edge.source.clone(),
+                target_unit_id: edge.target.clone(),
+                rejected_pair: (
+                    q.owner_id(src_pivot).to_string(),
+                    q.owner_id(tgt_pivot).to_string(),
+                ),
+                cycle: CycleEvidence::default(),
+            });
+        } else if let Some(cycle) = q.would_be_cycles_after_contract(cs, ct) {
+            rejected.push(SeedContractionRejected::AtomicReachability {
+                edge_id: edge.id.clone(),
+                source_unit_id: edge.source.clone(),
+                target_unit_id: edge.target.clone(),
+                rejected_pair: (
+                    q.owner_id(src_pivot).to_string(),
+                    q.owner_id(tgt_pivot).to_string(),
+                ),
+                cycle,
+            });
         }
     }
 
