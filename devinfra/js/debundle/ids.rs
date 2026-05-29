@@ -95,8 +95,10 @@ impl ChunkTable {
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in this
     /// chunk; the spec assigns it to a logical module (or the
-    /// residual entry).
-    Owned { owner: ModuleId },
+    /// residual entry). `module` is the owning logical module — named
+    /// `module` (not `owner`) to avoid colliding with the "owner =
+    /// owner-graph node" sense of `owner` used throughout the crate.
+    Owned { module: ModuleId },
     /// Introduced by an `import { imported_name as <local> } from
     /// "<source>"` in the chunk's top-level body. The value lives in
     /// another chunk; exactly one logical module re-exports it under

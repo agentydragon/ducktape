@@ -159,7 +159,7 @@ impl ChunkPlanBuilder {
             if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
                 let existing_id = match existing_kind {
                     BindingKind::Owned {
-                        owner: ModuleId(LogicalModuleIndex(owner_index)),
+                        module: ModuleId(LogicalModuleIndex(owner_index)),
                     } => self
                         .module_plans
                         .get(*owner_index)
@@ -217,7 +217,7 @@ impl ChunkPlanBuilder {
             let binding_id = top_level_id(binding, ctx.chunk_top_level_mark);
             if ctx.declaration_by_name.contains_key(&binding_id) {
                 self.binding_assignment.insert(binding_id.clone(), index);
-                let kind = BindingKind::Owned { owner: module_id };
+                let kind = BindingKind::Owned { module: module_id };
                 self.catalogue_index_by_name
                     .insert(binding.clone(), kind.clone());
                 self.bindings_catalogue.insert(binding_id, kind);
@@ -307,7 +307,7 @@ impl ChunkPlanBuilder {
                         self.binding_assignment
                             .insert(sibling_id.clone(), owner_index);
                         self.bindings_catalogue
-                            .insert(sibling_id, BindingKind::Owned { owner: owner_id });
+                            .insert(sibling_id, BindingKind::Owned { module: owner_id });
                         let plan = &mut self.module_plans[owner_index];
                         plan.bindings.insert(sibling.clone(), sibling.clone());
                     }
@@ -363,7 +363,7 @@ impl ChunkPlanBuilder {
                         self.bindings_catalogue.insert(
                             id.clone(),
                             BindingKind::Owned {
-                                owner: residual_module_id,
+                                module: residual_module_id,
                             },
                         );
                     }
@@ -409,7 +409,7 @@ impl ChunkPlanBuilder {
                                 .entry(name.clone())
                                 .or_insert_with(|| name.clone());
                             self.bindings_catalogue
-                                .insert(id.clone(), BindingKind::Owned { owner: owner_id });
+                                .insert(id.clone(), BindingKind::Owned { module: owner_id });
                         }
                     }
                 }
@@ -532,7 +532,7 @@ impl ChunkPlanBuilder {
                     self.bindings_catalogue.insert(
                         name.clone(),
                         BindingKind::Owned {
-                            owner: synthetic_module_id,
+                            module: synthetic_module_id,
                         },
                     );
                 }

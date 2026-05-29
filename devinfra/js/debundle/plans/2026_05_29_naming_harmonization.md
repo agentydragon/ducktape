@@ -37,11 +37,26 @@ caused the `1eb2cd2` self-merge bug.
   `BindingKind::Owned { owner: ModuleId }` becomes `{ module: ModuleId }`.
   The graph **keeps** its established name "owner graph" /
   `owner_graph.json` (no wire/doc rename).
+
+  **Revised after grounding (2026-05-29):** a `grep` showed "owner" is
+  used ~1158× and is internally coherent — an _owner_ IS a graph node
+  (a top-level statement that owns binding declarations); `OwnerId`,
+  `OwnerGraph`, `OwnerGraphNodeReport`, and `owner_edge` all hang
+  together. Since we keep the name "owner graph", renaming the element
+  to `Node` while keeping `OwnerGraph*` would make the codebase _less_
+  consistent, not more. So the `OwnerId → NodeId` / `owner:N → node:N`
+  rename is **backed out** (recorded as a future TODO below). The only
+  genuine collision is the field `BindingKind::Owned { owner: ModuleId }`,
+  where `owner` means _owning module_ — a different sense from
+  "owner = node". That one field is renamed to `module`.
+
 - **Binding name → discriminated newtype** distinguishing the minified
   name from a readable rename, replacing the conflated `String` query
   surface in the CLI.
-- **Scope → full harmonization sweep**, executed as the staged,
-  individually-compiling commits below.
+- **Scope → harmonization sweep** (module identity + the narrow
+  `owner`-field de-ambiguation + binding name), executed as the staged,
+  individually-compiling commits below. The wholesale `owner → node`
+  rename is explicitly out of scope.
 
 ## Root-cause framing
 
@@ -88,17 +103,20 @@ bug-class anywhere else labels are compared as strings.
   add a constructor unit test asserting both spellings parse equal.
 - `module_path_from_file` returns `ModulePath`.
 
-### Stage 2 — `Node` rename (mechanical)
+### Stage 2 — De-ambiguate the `owner` binding field (non-wire)
 
-- `OwnerIdx` (peel) and `OwnerId` (graph.rs), if both exist, fold into a
-  single `NodeId` in `ids.rs`. Update `graph.nodes`, `OwnerGraphNodeReport`
-  consumers, `quotient.class_of`, etc.
-- Wire id strings `"owner:N"` → `"node:N"` (parse + format in one helper
-  on `NodeId`; this is internal to `*Report.id`, not a file rename).
-- `BindingKind::Owned { owner: ModuleId }` → `{ module: ModuleId }`;
-  update all match sites.
-- Names that legitimately stay: "owner graph", `owner_graph.json`,
-  `compute_owner_graph_and_units`, `declared_bindings`.
+The wholesale `Node` rename is **out of scope** (see decision above). The
+single genuine collision is the binding's destination field:
+
+- `BindingKind::Owned { owner: ModuleId }` (`ids.rs`) → `{ module: ModuleId }`;
+  update all match/construction sites. Here `owner` meant _owning
+  module_, which collided with "owner = graph node"; `module` is
+  unambiguous.
+- No wire change: this enum is in-process only (the wire carries
+  `BindingKind` indirectly via reports that already use `ModuleReportRef`).
+- Everything else keeps the `owner` term: `OwnerId`, `OwnerGraph`,
+  `OwnerGraphNodeReport`, `owner_edge`, `owner:N`, `owner_graph.json` —
+  all coherent under "owner = node that owns bindings".
 
 ### Stage 3 — `BindingName` discriminated newtype
 
@@ -111,35 +129,47 @@ bug-class anywhere else labels are compared as strings.
 
 ### Stage 4 — docs + backlog reconciliation
 
-- `WIRE_FORMAT.md`: document `"node:N"` element ids and the `ModulePath`
-  canonical spelling (note `owner_graph.json` name retained).
-- `ids.rs` doc comments for each newtype; one short note in `README.md` /
-  `AGENTS.md` "naming model".
+- `WIRE_FORMAT.md`: document the `ModulePath` canonical spelling
+  (`owner_graph.json` element ids and name unchanged).
+- `ids.rs` / `spec.rs` doc comments for each newtype; one short note in
+  `README.md` / `AGENTS.md` "naming model".
 - Strike the now-resolved entries in `ARCHITECTURE_BACKLOG.md` /
-  `CODE_REVIEW.md` (label-spelling smear, `owner` overload,
-  `SourceImportResolution` tuple if touched).
+  `CODE_REVIEW.md` (label-spelling smear; `SourceImportResolution` tuple
+  if touched).
 - Tombstone-free: this is an atomic in-repo API change, all callers
   updated in the same commits.
+
+## Out of scope / future TODO
+
+- **`owner → node` rename.** Folding `OwnerId`/`OwnerIdx` into one
+  `NodeId`, renaming `OwnerGraph*` → `NodeGraph*`, and the wire ids
+  `owner:N → node:N`. Backed out (2026-05-29): "owner" is a coherent,
+  pervasive term (~1158 uses) and an owner genuinely _is_ a graph node;
+  a half-rename would worsen consistency, and a full rename is
+  ~1100+ sites, breaks the wire format, and diverges the frozen
+  specimen. Revisit only as a deliberate wholesale rename, not as part
+  of this sweep.
 
 ## Build / test loop (per stage)
 
 ```
-bbr build //devinfra/js/debundle/...
-bbr test  //devinfra/js/debundle/...
+/tmp/bz.sh build //devinfra/js/debundle/...
+/tmp/bz.sh test  //devinfra/js/debundle/...
 ```
 
-Run with `dangerouslyDisableSandbox: true` (Bazel + RBE). The crate has
-~53 e2e tests under `e2e/` and snapshot-ish CLI tests; several spell
-`"owner:N"` ids and module-label strings and will need updating in the
-same stage that changes them. No tests skipped.
+`bbr` is unusable in this environment (git-state mirror exceeds the
+75MB gRPC cap because `props/specimens/` embeds a full repo copy), so we
+drive `bazelisk` locally with the session bazelrc (JVM truststore for
+proxy TLS) + the sops BuildBuddy key + `--config=nolint` (the
+python/node lint aspects need network-bound stub wheels; CI runs full
+lint). All Bash with `dangerouslyDisableSandbox: true`. No tests skipped.
 
 ## Risks / call-outs
 
-- **Wire compatibility:** `"owner:N"` → `"node:N"` changes
-  `owner_graph.json` element ids. The checked-in specimen at
-  `props/specimens/ducktape/2026-05-20-00/code/...` is a frozen RE
-  fixture — confirm whether it must be regenerated or left as a
-  historical snapshot before touching it.
+- **Specimen is frozen** (decision 2026-05-29): the checked-in
+  `props/specimens/ducktape/2026-05-20-00/code/...` RE fixture is **not**
+  touched by this sweep. Its embedded copy of the tool diverges from the
+  live tool; that is accepted.
 - **Atom-only wire invariant** (`WIRE_FORMAT.md`) is preserved —
   `BindingName` serializes to the same `Atom` string on the wire; the
   enum is an in-process distinction.

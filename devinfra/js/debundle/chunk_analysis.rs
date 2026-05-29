@@ -165,12 +165,12 @@ fn build_binding_lookup_by_id(
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {
         let owner = match kind {
-            BindingKind::Owned { owner } => Some(*owner),
+            BindingKind::Owned { module } => Some(*module),
             BindingKind::Imported { .. } => None,
         };
         let export_name = match kind {
             BindingKind::Owned {
-                owner: ModuleId(LogicalModuleIndex(idx)),
+                module: ModuleId(LogicalModuleIndex(idx)),
             } => logical_modules
                 .get(*idx)
                 .and_then(|module| module.rename_map.get(id))

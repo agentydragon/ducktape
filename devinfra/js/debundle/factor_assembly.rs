@@ -103,7 +103,7 @@ fn compute_owner_claims(
     for node in owner_graph.iter_nodes() {
         for binding_id in &node.declared {
             let claim = bindings.get(binding_id).and_then(|kind| match kind {
-                BindingKind::Owned { owner: dest } => Some(*dest),
+                BindingKind::Owned { module: dest } => Some(*dest),
                 _ => None,
             });
             if let Some(dest) = claim {

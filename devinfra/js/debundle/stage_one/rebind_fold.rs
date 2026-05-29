@@ -44,7 +44,7 @@ pub struct RebindFold {
     pub name: String,
     /// Plan index this binding folds into.
     pub dest: usize,
-    /// The `BindingKind::Owned { owner: dest_module_id }` value the
+    /// The `BindingKind::Owned { module: dest_module_id }` value the
     /// caller should mirror into its bindings catalogue. Materialized
     /// here so the analysis crate owns the `ModuleId`/`BindingKind`
     /// construction (the caller doesn't need to know that the
@@ -146,7 +146,7 @@ pub fn compute_rebind_folds(
             continue;
         }
         let module_id = ModuleId(LogicalModuleIndex(dest));
-        let owned_kind = BindingKind::Owned { owner: module_id };
+        let owned_kind = BindingKind::Owned { module: module_id };
         for owner_id in owners_to_fold {
             let Some(node) = owner_graph.node(owner_id) else {
                 continue;

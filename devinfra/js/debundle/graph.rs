@@ -1984,7 +1984,7 @@ mod declared_round_trip_tests {
             // semantic test below sees a non-trivial partition.
             let dest = ModuleId(LogicalModuleIndex(idx % 2));
             for id in &node.declared {
-                bindings.insert(id.clone(), BindingKind::Owned { owner: dest });
+                bindings.insert(id.clone(), BindingKind::Owned { module: dest });
             }
         }
         let logical_modules = vec![
