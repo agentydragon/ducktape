@@ -277,7 +277,7 @@ fn factorize_with_context(
             if node.destination.residual {
                 return None;
             }
-            Some((i, active_module_label(node, active_claims)))
+            Some((i, active_module_label(node, active_claims, &graph.chunk_id)))
         })
         .collect();
 
@@ -367,14 +367,38 @@ fn factorize_with_context(
 fn active_module_label(
     node: &OwnerGraphNodeReport,
     active_claims: &BTreeMap<String, String>,
+    chunk_id: &str,
 ) -> String {
-    node.declared_bindings
+    let label = node
+        .declared_bindings
         .iter()
         .find_map(|b| active_claims.get(b.binding.as_str()))
         .cloned()
         .or_else(|| (!node.destination.label.is_empty()).then(|| node.destination.label.clone()))
         .or_else(|| node.destination.target_file.clone())
-        .unwrap_or_else(|| node.destination.id.clone())
+        .unwrap_or_else(|| node.destination.id.clone());
+    canonical_module_label(&label, chunk_id)
+}
+
+/// Collapse the two spellings of one module to a single label.
+///
+/// Production owner-graph destinations spell a module's label with a
+/// `"<chunk_id>::"` prefix (e.g. `static/index-DI2GynTv::domains/system/ids`),
+/// while the active-claim lookup yields the clean spec path
+/// (`domains/system/ids`). Within one spec module some owners resolve
+/// via the claim and others fall through to `destination.label`, so a
+/// single class collects both spellings and would emit a bogus
+/// `merge_into` self-merge. Stripping the chunk-id prefix canonicalizes
+/// both to the clean path.
+fn canonical_module_label(label: &str, chunk_id: &str) -> String {
+    if chunk_id.is_empty() {
+        return label.to_string();
+    }
+    label
+        .strip_prefix(chunk_id)
+        .and_then(|rest| rest.strip_prefix("::"))
+        .map(str::to_string)
+        .unwrap_or_else(|| label.to_string())
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
@@ -1235,6 +1259,41 @@ mod tests {
                 "domains/system/id_helpers".to_string(),
                 "domains/system/ids".to_string(),
             ],
+        );
+    }
+
+    #[test]
+    fn chunk_prefixed_and_clean_label_of_one_module_do_not_self_merge() {
+        // Two owners of ONE spec module (same destination.id ->
+        // `spec_module_groups` contracts them into one class). Owner
+        // `a` resolves its label via an active claim to the clean
+        // path `domains/system/ids`; owner `b` has no claim and falls
+        // through to `destination.label`, which production reports
+        // spell with the `<chunk_id>::` prefix
+        // (`x::domains/system/ids`). The two spellings denote the same
+        // module, so the class must collapse to a single label and
+        // emit NO `merge_into` self-merge.
+        let dest = module_report_ref(
+            "logical:1",
+            "x::domains/system/ids",
+            "domains/system/ids.js",
+        );
+        let a = owner_at("a", 1, &["a"], 10, dest.clone());
+        let b = owner_at("b", 2, &["b"], 10, dest.clone());
+        let graph = graph_with_atomic_units(
+            vec![a.clone(), b.clone()],
+            vec![
+                edge("e1", "a", "b", DepKind::EagerUse, true),
+                edge("e2", "b", "a", DepKind::EagerUse, true),
+            ],
+            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![],
+        );
+        let claims = BTreeMap::from([("a".to_string(), "domains/system/ids".to_string())]);
+        let report = factorize(&graph, &claims, 10_000);
+        assert!(
+            report.proposals.iter().all(|p| p.merge_into.is_none()),
+            "expected no self-merge proposal from two spellings of one module: {report:#?}",
         );
     }
 
