@@ -66,6 +66,7 @@ _STANDARD_E2E_DEPS = [
         "sibling_declarator_steal_test",
         "chunk_rename_cross_module_test",
         "chunk_renames_test",
+        "rename_shadowed_inner_binding_test",
         "missing_binding_member_test",
         "residual_member_rename_test",
         "source_order_emit_test",

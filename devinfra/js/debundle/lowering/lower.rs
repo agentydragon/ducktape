@@ -315,9 +315,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         for item in entry_body.iter_mut() {
             preserve_export_specifier_names(item, &body_renames);
         }
-        let mut renamer = IdentifierRenamer {
-            renames: &body_renames,
-        };
+        let mut renamer = IdentifierRenamer::new(&body_renames);
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
@@ -713,9 +711,7 @@ fn lower_single_plan(
         )
     })?;
     if !module_import_renames.is_empty() {
-        let mut renamer = IdentifierRenamer {
-            renames: &module_import_renames,
-        };
+        let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
@@ -761,9 +757,7 @@ fn lower_single_plan(
     // upstream binding.
     if !cross_module_chunk_renames.is_empty() {
         time_phase!(timings, "module.rename_chunk_renames", {
-            let mut renamer = IdentifierRenamer {
-                renames: cross_module_chunk_renames,
-            };
+            let mut renamer = IdentifierRenamer::new(cross_module_chunk_renames);
             for item in body.iter_mut() {
                 item.visit_mut_with(&mut renamer);
             }
