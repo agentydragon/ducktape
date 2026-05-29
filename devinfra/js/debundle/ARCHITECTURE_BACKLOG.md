@@ -9,6 +9,16 @@ Re-check file paths and line numbers against current `HEAD` before
 acting; this file intentionally describes shapes rather than frozen
 review line references.
 
+### `owner` → `node` rename (deferred)
+
+Folding `OwnerId`/`OwnerIdx` into one `NodeId`, renaming `OwnerGraph*` →
+`NodeGraph*`, and the wire ids `owner:N` → `node:N`. Deliberately not
+done in the naming/identity sweep: "owner" is a coherent, pervasive
+term (~1100+ uses) and an owner genuinely _is_ a graph node, so a
+half-rename worsens consistency while a full rename breaks the wire
+format and diverges the frozen `props/specimens` snapshot. Revisit only
+as a deliberate wholesale rename.
+
 ## Duplicated calculations
 
 ### `tarjan_scc` over the module quotient: residual walks

@@ -104,8 +104,7 @@ this same value.
 `lowering/plans.rs`), lowercases, and normalizes separators. Two
 spellings of one module therefore collapse to a single value, so `==`
 is an honest identity test — this is what makes the peel factorizer's
-self-merge bug structurally impossible (see commit history /
-`plans/2026_05_29_naming_harmonization.md`).
+self-merge bug structurally impossible.
 
 The internal array handle `ModuleId(LogicalModuleIndex)` is an
 in-process index for O(1) lookups; it is distinct from `ModulePath` and
@@ -143,5 +142,3 @@ flag, never inferred from a key string.
 - `docs/lessons_learned/cross_process_stage_b.md` — why we don't
   serialize pre-filter facts.
 - `ARCHITECTURE_BACKLOG.md` — current architectural backlog.
-- `plans/2026_05_29_naming_harmonization.md` — the module-identity /
-  `owner`-field naming sweep.
