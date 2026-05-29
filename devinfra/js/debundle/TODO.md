@@ -125,60 +125,10 @@ Still to do:
 - Keep new analysis tooling on the existing owner graph and embedded atomic
   DAG side outputs; do not add parallel selected-owner cache formats.
 
-## Materialize-stage hot-loop optimizations
+## Performance
 
-Current plan, ordered by leverage. Re-profile before implementation if
-the consumer corpus or pipeline shape has changed materially.
-
-1. **Re-profile / shrink `artifact::write_tree_reports`.**
-   The previous profile showed 6.42% Children % here, dominated by
-   serde_json pretty-print of `DirectoryManifestIndex` /
-   `DirectoryBoundarySummary`. Generated reports now use compact JSON;
-   re-profile before more work, then shrink the on-wire shape if this
-   path remains hot.
-
-2. **`vendor::strip::sweep_unreachable_top_level`.**
-   6.40% Children % in the current profile. Likely amenable to indexed
-   reachability or per-chunk caching.
-
-3. **Use the overlay realizability fast path where hypothetical moves remain.**
-   Candidate-style evaluation should use `RealizabilityIndex`'
-   `verdict_after_moving_owners_touching` where possible instead of the
-   rollbacking push/scope path. This avoids mutating the maintained quotient
-   during repeated what-if checks.
-
-4. **Keep harness emission proportional to the work.**
-   Most of the remaining `emit_browser_harness` cost is
-   `materialize_artifact_scripts` → `write_tree_reports`, i.e. report
-   writes (item 2), not the harness JS emission itself. Split
-   browser-harness generation from non-browser runs where practical,
-   and avoid recopying unchanged non-JS assets.
-
-5. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
-   `visit_children_with` still occupy ~10–15% summed across many
-   sub-2.5%-self entries (`parse_member_expr_or_new_expr_inner`
-   2.19% self; `parse_subscript` 1.80%; `Expr::visit_children_with`
-   1.57%; etc.). No single parser symbol is over the priority
-   threshold; revisit after items 1–2.
-
-## Graph pass performance and module boundaries
-
-Tighten before the next large peel loop:
-
-- Keep stage telemetry complete (index build/rebuild, fused AST analysis,
-  purity, owner-graph construction, atomic-DAG construction, quotient
-  construction, validation, lowering, output writing) — useful durations
-  should land in the emitted reports.
-- Move repeated timing helpers into one shared Rust module once a second
-  pass needs them outside the current local macro sites.
-- Add focused regression coverage for `ArtifactIndexes` rebuild boundaries
-  as more structural artifact mutations are optimized.
-- Profile the debundle action around `materialize_logical_modules`
-  and `rename_vendor_exports`; avoid whole-graph clone/rescan patterns
-  where a graph pass or indexed lookup can answer the same question.
-- Consider changing per-chunk `file_records` from an ordered vector of
-  `(file, role)` pairs into a typed map if the output consumers do not
-  depend on order. Keep the manifest easy to diff and easy to read.
+Proposer-gate, `debundle run`, and materialize-stage performance work
+all live in <perf/proposer.md>.
 
 ## Factorize / atomic-DAG docs drift
 
@@ -199,31 +149,9 @@ behavior for:
 - Replayable side-effect attachment.
 - Top-level side-effect classification across uncommon initializer shapes.
 
-## Cross-module / imported-binding purity (recursive purity Part 3)
-
-`ChunkCodeGraph` tracks chunk-local function/PlainData purity within
-a single source chunk. Imported callees from a different source chunk
-(vendor chunks, vite chunk splits) fall through to `unknown_call`
-because the importer has no per-function purity for the exporter's
-bindings. The downstream cost is each cross-chunk pure-helper needing
-a `purity: pure` spec hint in the consumer repo even though its body
-would classify pure if it were chunk-local.
-
-Sketch (deferred until residual hint set is dominated by cross-chunk
-shapes):
-
-- Per-chunk analysis emits a side-output manifest with each chunk-top
-  `Function` and `PlainData` binding's classification.
-- When analyzing chunk B that imports `helper` from chunk A's output,
-  read A's manifest and seed B's `ChunkCodeGraph` bindings with A's
-  per-name verdict.
-- Soundness gate: only admit cross-chunk facts when the importer's
-  import-specifier names match A's exported chunk-top binding shape
-  (e.g. `import { helper }` matches `export const helper = () => …`
-  but not a re-export from elsewhere).
-
-Land this only when a current corpus has a cross-chunk pure-helper chain
-that is not better modeled as an explicit author override.
+The purity-classifier backlog (cross-chunk purity facts, block-bodied
+enum IIFE forms, statement-level overrides, compositional proof) lives
+in <x/purity_recursive.md>.
 
 ## Corpus breadth
 
@@ -309,10 +237,9 @@ Prerequisite work before designing the pipeline:
 
 Likely multiple PRs.
 
-## RenameLedger (PR2) open questions
+### RenameLedger (PR2) open questions
 
-Before implementing the "Rename pipeline: collect → validate →
-execute _once_" architecture above, pin these three design questions:
+Before implementing the pipeline above, pin these three design questions:
 
 1. **Conflict policy for same-priority heuristic disagreements.** When
    two heuristic contributors propose conflicting renames at the same
@@ -339,19 +266,6 @@ propKeyA` and `collect_naturalization_renames_from_function` says
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
 
-## CLI gaps found while surveying real specs
+## CLI usability
 
-Current small `bindings ...` / `modules ...` gaps; nothing structural.
-
-- **`modules list --empty` shows every empty module, including ones
-  preserved by a `comment:`.** The actually-actionable subset is
-  "empty AND no comment" — i.e. the auto-deletable set. Add a
-  `--auto-deletable` filter (or expose `--empty --no-comment`) so
-  `debundle modules list --auto-deletable --format json | jq -r '.modules[].path' | xargs rm`
-  is the safe one-liner for sweeping drained cruft.
-- **`modules list` member-count is the only signal of module size**;
-  there's no quick way to spot a module whose member count is right
-  but whose `anonymous_statements:` count is huge (the residual case).
-  An optional `--with-anonymous` flag exposing that count alongside
-  `member_count` would let `debundle modules list --residual --with-anonymous`
-  surface the residual sentinel's anonymous-statement drift over time.
+CLI usability and scripting-safety findings live in <CLI_DOGFOOD.md>.

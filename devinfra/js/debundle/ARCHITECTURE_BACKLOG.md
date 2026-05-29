@@ -51,6 +51,12 @@ The fix is either (a) extend `OwnerGraphReport` to carry per-node
 `declared`, or (b) split into a reconstruct-from-graph-shape function that
 does not pretend `declared` is meaningful.
 
+Related residual cleanup from the abandoned cross-process Stage B (see
+<docs/lessons_learned/cross_process_stage_b.md>): `facts/wire.rs`'s
+`StatementFactsReport` / `IdReport` stay as in-memory carriers (converted
+back via `IdReport::to_id`), but their `Serialize` / `Deserialize` derives
+are no longer consumed and are safe to drop.
+
 ## Encapsulation + module boundaries
 
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
@@ -138,7 +144,8 @@ These files plus AGENTS.md plus RENAME.md document the same project from multipl
 - TODO.md is the broad active work backlog.
 - docs/lessons_learned/cross_process_stage_b.md is the historical
   exception: it records an abandoned design to prevent repeating it.
-- RENAME.md is a focused doc on the readability rename pass.
+- RENAME.md is the terminology-rename plan (removing "factor"
+  vocabulary in favor of precise graph-theoretic names).
 
 ## Quick wins (≤30 min each)
 

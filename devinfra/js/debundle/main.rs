@@ -11,8 +11,8 @@ fn main() -> ExitCode {
     // unset, so normal runs do not print a report. Cheap counters are
     // always recorded; the env var gates wall-clock timing, reporting,
     // and the expensive shadow base-Tarjan measurement. See
-    // `devinfra/js/debundle/perf/gate_perf_counters.md` for the
-    // counter list + example output.
+    // `devinfra/js/debundle/perf/proposer.md` (§"Gate perf counters")
+    // for the counter list + example output.
     let _gate_perf_guard = SccTimingReporter::install_if_enabled();
 
     // SWC hygiene (`Mark`, `SyntaxContext`) is stored in a thread-local

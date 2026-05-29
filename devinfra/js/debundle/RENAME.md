@@ -74,7 +74,7 @@ Plus one mapping and one heuristic:
 - `TODO.md`: `peel/factorize.rs` reference
 - `README.md`: any `ChunkFactorization` references
 - `x/graph_planner_factorization.md`: rename or update
-- `x/peel_cli_ux_notes.md`: any factorize references
+- `CLI_DOGFOOD.md`: any factorize references
 
 ## Output Schema (JSON field renames)
 
