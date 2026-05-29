@@ -494,27 +494,15 @@ The public spec format consumed by `--spec` is a reviewed contract, but it is
 still debundler-owned. Prefer clean typed shape over compatibility fields kept
 only for older in-repo fixtures.
 
-## Path Resolution Contract
+## Module-specifier path math
 
 The CLI accepts relative or absolute paths for `--spec`, `--package-root
-<pkg>=<dir>`, and `--packages-root`. When the binary runs inside a Bazel
-runfiles context (`bazel run`, `bb run`, or otherwise with `RUNFILES_DIR` /
-`RUNFILES_MANIFEST_FILE` set), each relative path is first resolved through
-runfiles via the standard `runfiles` crate; if the resolution points at an
-existing file the runfiles path is used, otherwise the path is left as-is for
-the caller's filesystem semantics. Outside Bazel the binary behaves as a
-plain CLI — runfiles resolution is opt-in by environment, not a build-time
-mode.
-
-This lets downstream Bazel targets compose absolute-equivalent paths with
-just `$(rlocationpath <label>)` (no shell wrappers, no `$$RUNFILES_DIR`
-substitutions) while keeping the binary usable as a standalone tool outside
-the Bazel tree.
-
-For module-specifier path math, use existing path crates and local helpers
-(`relative-path`, `runfiles`, artifact path helpers, etc.) rather than
-hand-rolled POSIX segment splitting or string replacement. If a helper is
-missing, add one in the path module and keep call sites typed.
+<pkg>=<dir>`, and `--packages-root`; callers pass already-resolved paths
+(e.g. `$(rlocationpath <label>)` from a Bazel target). For module-specifier
+path math, use existing path crates and local helpers (`relative-path`,
+artifact path helpers, etc.) rather than hand-rolled POSIX segment splitting
+or string replacement. If a helper is missing, add one in the path module and
+keep call sites typed.
 
 ## Spec-level `inputs`
 
