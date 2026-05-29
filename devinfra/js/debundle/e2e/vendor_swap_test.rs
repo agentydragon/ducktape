@@ -1508,6 +1508,77 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     assert_node_output(&probe_path, "package:URL\n", "");
 }
 
+#[test]
+fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
+    // Regression: the partial-swap identifier rewriter must be
+    // hygiene-aware. The caller imports `e6 as zodFlag` (swapped to the
+    // namespace member `z.boolean`), but a nested function declares a
+    // *parameter* named `zodFlag` that shadows the import local and
+    // reads through it. Keying the rewrite on the bare textual symbol
+    // would miscompile the inner read into `z.boolean()`, returning the
+    // upstream value instead of the argument the caller passed. Keying
+    // on the resolver-assigned binding `Id` leaves the shadowed inner
+    // binding untouched.
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "export const e6 = () => \"UPSTREAM\";\nexport const keepMe = () => 7;\n",
+        caller_source: "import { e6 as zodFlag, keepMe as kept } from \"../megachunk/entry.js\";\n\
+                        function pick(zodFlag) { return zodFlag(); }\n\
+                        export const fromImport = zodFlag();\n\
+                        export const fromParam = pick(() => \"PARAM\");\n\
+                        export const keepUse = kept();\n",
+        upstream_source: "export const boolean = () => \"UPSTREAM\";\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+
+    let caller = fs::read_to_string(&fixture.caller_emitted_path).expect("caller emitted");
+    // The top-level import-local use is rewritten to the facade member.
+    assert!(
+        caller.contains("z.boolean()"),
+        "top-level import-local use should be rewritten to the facade member:\n{caller}",
+    );
+    // The shadowing parameter and its read must survive verbatim — the
+    // inner `zodFlag()` is a call on the parameter, not the import local.
+    assert!(
+        caller.contains("function pick(zodFlag)") && caller.contains("return zodFlag()"),
+        "shadowing parameter binding must not be rewritten to the facade member:\n{caller}",
+    );
+
+    // Runtime proof: `fromParam` must reflect the argument passed to
+    // `pick`, not the swapped upstream value.
+    let app_root = fixture
+        .caller_emitted_path
+        .ancestors()
+        .nth(3)
+        .expect("app root above static/app/entry.js")
+        .to_path_buf();
+    // The emitted caller imports the bare `zod` specifier; provide a
+    // local `node_modules/zod` so node can resolve it at runtime.
+    write_text_file(
+        &app_root.join("node_modules/zod/package.json"),
+        "{ \"name\": \"zod\", \"version\": \"3.23.8\", \"type\": \"module\", \"main\": \"index.js\" }\n",
+    );
+    write_text_file(
+        &app_root.join("node_modules/zod/index.js"),
+        "export const boolean = () => \"UPSTREAM\";\n",
+    );
+    let probe_path = app_root.join("__run_shadow_probe.mjs");
+    write_text_file(
+        &probe_path,
+        "const m = await import(\"./static/app/entry.js\");\n\
+         console.log(`${m.fromImport}:${m.fromParam}`);\n",
+    );
+    assert_node_output(&probe_path, "UPSTREAM:PARAM\n", "");
+}
+
 struct PartialSwapKindFixtureArgs<'a> {
     /// "namespace", "default", or "named"
     kind: &'a str,

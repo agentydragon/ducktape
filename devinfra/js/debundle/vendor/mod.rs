@@ -19,7 +19,7 @@ use artifact::{
     get_chunk_entry_path, join_module_path, list_chunk_file_paths, manifest_relative_path,
     module_path_dirname, normalize_module_path, relative_module_specifier,
 };
-use binding_targets::{declaration_name_strings, module_export_name};
+use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 #[cfg(test)]
 use js_ast::emit_js_module;
 use js_ast::{ParsedJsModule, parse_js_module, str_value};
@@ -1687,7 +1687,7 @@ fn rewrite_partial_swap_in_file(
     //     `import * as <local> from "<pkg>"`; no identifier rewrite.
     //   - kind=default: queue a per-binding
     //     `import <local> from "<pkg>"`; no identifier rewrite.
-    let mut bindings: BTreeMap<String, IdentRewriteTarget> = BTreeMap::new();
+    let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
     let mut emitted_member_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
 
@@ -1708,7 +1708,7 @@ fn rewrite_partial_swap_in_file(
                     let upstream_export = target.upstream_export.as_deref()?;
                     let namespace = package_coords.namespace.as_deref()?;
                     bindings.insert(
-                        local_sym.to_string(),
+                        local_sym.to_id(),
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
@@ -1726,7 +1726,7 @@ fn rewrite_partial_swap_in_file(
                 PartialSwapKind::Namespace => {
                     imports.push(DeferredImport::Namespace {
                         source: target.package.clone(),
-                        local: local_sym.to_string(),
+                        local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
                         .entry((
@@ -1738,7 +1738,7 @@ fn rewrite_partial_swap_in_file(
                 PartialSwapKind::Default => {
                     imports.push(DeferredImport::Default {
                         source: target.package.clone(),
-                        local: local_sym.to_string(),
+                        local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
                         .entry((
@@ -1754,9 +1754,9 @@ fn rewrite_partial_swap_in_file(
                         local: upstream_export.to_string(),
                         upstream_export: upstream_export.to_string(),
                     });
-                    if local_sym != upstream_export {
+                    if local_sym.sym.as_ref() != upstream_export {
                         bindings.insert(
-                            local_sym.to_string(),
+                            local_sym.to_id(),
                             IdentRewriteTarget::Rename {
                                 upstream_export: upstream_export.to_string(),
                                 chunk_name: chunk_mapping.chunk_id.clone(),
@@ -1808,7 +1808,7 @@ fn rewrite_bundled_partial_swap_in_file(
 ) -> PartialSwapFileResult {
     let module = &mut job.ast.module;
 
-    let mut bindings: BTreeMap<String, IdentRewriteTarget> = BTreeMap::new();
+    let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
     let mut emitted_default_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
     let mut prelude_imports: Vec<DeferredImport> = Vec::new();
@@ -1850,7 +1850,7 @@ fn rewrite_bundled_partial_swap_in_file(
                     let upstream_export = target.upstream_export.as_deref()?;
                     let namespace = package_coords.namespace.as_deref()?;
                     bindings.insert(
-                        local_sym.to_string(),
+                        local_sym.to_id(),
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
@@ -1868,7 +1868,7 @@ fn rewrite_bundled_partial_swap_in_file(
                 PartialSwapKind::Namespace | PartialSwapKind::Default => {
                     imports.push(DeferredImport::Default {
                         source: import_source,
-                        local: local_sym.to_string(),
+                        local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
                         .entry((
@@ -1921,7 +1921,7 @@ fn rewrite_swap_import_decls<F>(
     mut rewrite_one: F,
 ) -> Vec<ModuleItem>
 where
-    F: FnMut(&str, &str, &str) -> Option<Vec<DeferredImport>>,
+    F: FnMut(&str, &str, &Ident) -> Option<Vec<DeferredImport>>,
 {
     let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
     for item in original_body {
@@ -1963,11 +1963,9 @@ where
             let ImportSpecifier::Named(named) = specifier else {
                 unreachable!("classified named above");
             };
-            if let Some(imports) = rewrite_one(
-                &target_chunk_name,
-                &imported_name_lookup,
-                named.local.sym.as_ref(),
-            ) {
+            if let Some(imports) =
+                rewrite_one(&target_chunk_name, &imported_name_lookup, &named.local)
+            {
                 decl_local_imports.extend(imports);
             } else {
                 retained_specifiers.push(ImportSpecifier::Named(named));
@@ -1984,7 +1982,12 @@ where
     new_body
 }
 
-fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<String, String> {
+/// Map each chunk-local named export to the hygiene-preserving `Id`
+/// (`(atom, SyntaxContext)`) of the binding it re-exports. The `orig`
+/// identifier carries the resolver-assigned `SyntaxContext`, so the
+/// returned `Id` is the canonical binding identity used to key the
+/// self-rewrite `bindings` map.
+fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<String, Id> {
     let mut out = BTreeMap::new();
     for item in &module.body {
         let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
@@ -2005,14 +2008,35 @@ fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<String, Stri
                 .as_ref()
                 .map(module_export_name)
                 .unwrap_or_else(|| orig.sym.to_string());
-            out.insert(export_name, orig.sym.to_string());
+            out.insert(export_name, orig.to_id());
+        }
+    }
+    out
+}
+
+/// Map each top-level binding name to its hygiene-preserving `Id`
+/// (`(atom, SyntaxContext)`). Used to resolve a manifest-recorded
+/// `local` name (a bare string) to the actual binding cell, so the
+/// self-rewrite map keys on binding identity rather than bare text.
+/// If two top-level declarations share a name (illegal in module
+/// scope after resolver, but defensive), the last one wins.
+fn collect_top_level_binding_ids(module: &Module) -> BTreeMap<String, Id> {
+    let mut out = BTreeMap::new();
+    for item in &module.body {
+        let decl = match item {
+            ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
+            _ => continue,
+        };
+        for id in declaration_ids(decl) {
+            out.insert(id.0.to_string(), id);
         }
     }
     out
 }
 
 struct SelfRewriteOutputs<'a> {
-    bindings: &'a mut BTreeMap<String, IdentRewriteTarget>,
+    bindings: &'a mut BTreeMap<Id, IdentRewriteTarget>,
     prelude_imports: &'a mut Vec<DeferredImport>,
     references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
     self_rewrite_import_locals: &'a mut BTreeSet<Id>,
@@ -2030,13 +2054,20 @@ fn seed_bundled_partial_swap_self_rewrites(
         return;
     };
     let exported_locals = collect_local_idents_by_export_name(module);
+    // The manifest records `local` only as a bare name string. Resolve
+    // it to the hygiene-preserving binding `Id` of the matching
+    // top-level declaration so the self-rewrite map is keyed on binding
+    // identity (matching `ident.to_id()` in the rewriter), not bare
+    // text — otherwise a same-named binding in a nested scope would be
+    // miscompiled.
+    let top_level_bindings = collect_top_level_binding_ids(module);
     let mut used_idents = module_used_idents(module);
     for (chunk_export, target) in &chunk_mapping.symbols {
-        let local_sym = target
-            .local
-            .as_ref()
-            .or_else(|| exported_locals.get(chunk_export));
-        let Some(local_sym) = local_sym else {
+        let local_id = match &target.local {
+            Some(local_name) => top_level_bindings.get(local_name),
+            None => exported_locals.get(chunk_export),
+        };
+        let Some(local_id) = local_id else {
             continue;
         };
         let Some(package_coords) = chunk_mapping.packages.get(&target.package) else {
@@ -2056,7 +2087,7 @@ fn seed_bundled_partial_swap_self_rewrites(
                     .as_deref()
                     .expect("kind=member/named validated to carry upstream_export");
                 outputs.bindings.insert(
-                    local_sym.clone(),
+                    local_id.clone(),
                     IdentRewriteTarget::Member {
                         namespace: local.clone(),
                         upstream_export: upstream_export.to_string(),
@@ -2067,7 +2098,7 @@ fn seed_bundled_partial_swap_self_rewrites(
             }
             PartialSwapKind::Namespace | PartialSwapKind::Default => {
                 outputs.bindings.insert(
-                    local_sym.clone(),
+                    local_id.clone(),
                     IdentRewriteTarget::Rename {
                         upstream_export: local.clone(),
                         chunk_name: chunk_mapping.chunk_id.clone(),
@@ -2349,15 +2380,25 @@ enum IdentRewriteTarget {
     },
 }
 
+/// Rewrites references to a partial-swap import local into the
+/// replacement facade access. `bindings` is keyed by the import
+/// local's hygiene-preserving `Id` (`(atom, SyntaxContext)`), captured
+/// from the actual binding `Ident` at construction. The module here has
+/// been through SWC's `resolver` pass (see
+/// `js_ast::parse_and_resolve`), so `ident.to_id()` is the canonical
+/// binding identity. Keying on `Id` (rather than the bare textual
+/// symbol) ensures a same-named binding in a nested scope — a function
+/// parameter, a shadowing `const`/`let`, a `catch` binding — is left
+/// untouched, since it carries a different `SyntaxContext`.
 struct PartialSwapIdentRewriter<'a> {
-    bindings: &'a BTreeMap<String, IdentRewriteTarget>,
+    bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
     references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
 }
 
 impl VisitMut for PartialSwapIdentRewriter<'_> {
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
         if local_namespace_iife_target(call)
-            .is_some_and(|target| self.bindings.contains_key(target.0.as_ref()))
+            .is_some_and(|target| self.bindings.contains_key(&target))
         {
             // Preserve TS namespace/enum initializer arguments such as
             // `Sa || (Sa = {})`. The strip pass recognizes that shape as
@@ -2386,7 +2427,7 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         let Expr::Ident(ident) = expr else {
             return;
         };
-        let Some(target) = self.bindings.get(ident.sym.as_ref()) else {
+        let Some(target) = self.bindings.get(&ident.to_id()) else {
             return;
         };
         let (chunk_name, chunk_export) = match target {
@@ -2625,8 +2666,11 @@ export { b as beta };
                  const direct = Sa.NONE;\n",
             )
             .unwrap();
+            let sa_id = collect_top_level_binding_ids(&parsed.module)
+                .remove("Sa")
+                .expect("`Sa` is declared at top level");
             let bindings = BTreeMap::from([(
-                "Sa".to_string(),
+                sa_id,
                 IdentRewriteTarget::Member {
                     namespace: "__debundle_bps_l3".to_string(),
                     upstream_export: "DiagLogLevel".to_string(),
