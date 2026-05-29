@@ -278,6 +278,9 @@ fn whitelist_static_calls_are_pure_regardless_of_arg() {
     assert!((classify("Number.isFinite(x)")).is_pure());
     assert!((classify("Number.isInteger(x)")).is_pure());
     assert!((classify("Number.isSafeInteger(x)")).is_pure());
+    // Object.is performs SameValue (ECMA-262 §20.1.2.13) with no
+    // coercion of either argument — fires no user code on any type.
+    assert!((classify("Object.is(a, b)")).is_pure());
 }
 
 #[test]

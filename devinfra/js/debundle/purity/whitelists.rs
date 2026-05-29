@@ -77,6 +77,13 @@ pub(super) const PURE_STATIC_CALLS: &[(&str, &str)] = &[
     ("Number", "isInteger"),
     ("Number", "isNaN"),
     ("Number", "isSafeInteger"),
+    // `Object.is(value1, value2)` — ECMA-262 §20.1.2.13 returns
+    // `SameValue(value1, value2)`. SameValue (§7.2.11) dispatches on
+    // the argument Types and compares structurally; it performs no
+    // `ToNumber` / `ToString` / `ToPrimitive` coercion, fires no
+    // iterator/proxy/getter path, and mutates nothing. Pure on any
+    // argument values.
+    ("Object", "is"),
 ];
 
 /// Pure global callables (no receiver). Same admission contract as
