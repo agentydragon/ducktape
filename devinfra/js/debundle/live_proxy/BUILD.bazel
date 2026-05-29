@@ -59,3 +59,12 @@ py_test(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "server_test",
+    srcs = ["server_test.py"],
+    deps = [
+        ":proxy_lib",
+        "@pypi//pytest",
+    ],
+)

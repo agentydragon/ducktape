@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -72,13 +73,46 @@ async def start_proxy_in_process(options: LiveProxyOptions):
     master = DumpMaster(mitm_options, with_termlog=False, with_dumper=False)
     master.addons.add(DebundleLiveProxyAddon(options))
     task = asyncio.create_task(master.run())
-    await wait_for_port(config.proxy_host, config.proxy_port)
-    print_startup_summary(config)
     try:
+        await wait_until_listening(task, config.proxy_host, config.proxy_port)
+        print_startup_summary(config)
         yield ProxyHandles(config=config)
     finally:
         master.shutdown()
-        await asyncio.wait([task], timeout=5)
+        done, _pending = await asyncio.wait([task], timeout=5)
+        if task in done:
+            # Retrieve the result so a proxy failure isn't lost as a
+            # "Task exception was never retrieved" warning. We're in teardown
+            # (the body already ran), so log rather than mask any exception
+            # already propagating out of the body.
+            if (exc := task.exception()) is not None:
+                log.warning("proxy task exited with error: %r", exc)
+        else:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+
+async def wait_until_listening(task: asyncio.Task, host: str, port: int, timeout_s: float = 10.0) -> None:
+    """Wait until the proxy accepts connections, or surface its startup failure.
+
+    Races `wait_for_port` against the proxy `task` so that if `master.run()`
+    fails during startup (e.g. the listen port can't be bound) the real error
+    is re-raised promptly instead of timing out with a generic message while
+    the task's exception is silently discarded.
+    """
+    port_ready = asyncio.ensure_future(wait_for_port(host, port, timeout_s))
+    try:
+        await asyncio.wait({task, port_ready}, return_when=asyncio.FIRST_COMPLETED)
+        if task.done():
+            task.result()  # re-raises master.run()'s exception if it failed
+            raise RuntimeError("proxy task exited before the listener was ready")
+        await port_ready  # re-raise wait_for_port's error if it timed out
+    finally:
+        if not port_ready.done():
+            port_ready.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await port_ready
 
 
 async def wait_for_port(host: str, port: int, timeout_s: float = 10.0) -> None:
