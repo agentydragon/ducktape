@@ -26,6 +26,67 @@ use spec_modules::{collect_module_files, is_residual_module_path, module_path_fr
 use crate::edit_gate::{gate_post_edit_partition, post_assign_spec, post_unassign_spec};
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
+/// A chunk-top binding's public identity.
+///
+/// Every binding has a minified hygiene name (`selector.binding.name`,
+/// e.g. `_ab`). The spec may additionally assign a readable `name:`
+/// (e.g. `parseUserId`). These were previously carried as a
+/// `(binding: String, readable: Option<String>, unrenamed: bool)`
+/// triple in which `unrenamed` was exactly `readable.is_none()` — a
+/// redundant derived field, and a shape that let "renamed but no
+/// readable name" be represented. The enum makes the renamed/unrenamed
+/// distinction the type and drops the derived bool.
+///
+/// Serializes internally-tagged so CLI JSON consumers can branch on
+/// `.kind` (`"minified"` | `"readable"`) and always read `.minified`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BindingName {
+    /// No readable name yet — still the minified hygiene identity.
+    Minified { minified: String },
+    /// Renamed: carries both the minified anchor and the readable name.
+    Readable { minified: String, name: String },
+}
+
+impl BindingName {
+    pub fn new(minified: String, readable: Option<String>) -> Self {
+        match readable {
+            Some(name) => Self::Readable { minified, name },
+            None => Self::Minified { minified },
+        }
+    }
+
+    /// The minified hygiene name (always present).
+    pub fn minified(&self) -> &str {
+        match self {
+            Self::Minified { minified } | Self::Readable { minified, .. } => minified,
+        }
+    }
+
+    /// The readable name, if one was assigned.
+    pub fn readable(&self) -> Option<&str> {
+        match self {
+            Self::Minified { .. } => None,
+            Self::Readable { name, .. } => Some(name),
+        }
+    }
+
+    /// The public-facing name: the readable name if set, else minified.
+    pub fn effective(&self) -> &str {
+        self.readable().unwrap_or_else(|| self.minified())
+    }
+
+    pub fn is_renamed(&self) -> bool {
+        matches!(self, Self::Readable { .. })
+    }
+
+    /// True when `query` matches either the minified or readable
+    /// spelling — the CLI's `<sym>` lookup rule.
+    pub fn matches(&self, query: &str) -> bool {
+        self.minified() == query || self.readable() == Some(query)
+    }
+}
+
 /// A located member inside a module file. Returned by [`find_matches`]
 /// and is the unit `assign` / `rename` mutate.
 #[derive(Debug, Clone)]
@@ -33,8 +94,7 @@ pub struct BindingMatch {
     pub file: PathBuf,
     pub module_path: String,
     pub member_index: usize,
-    pub binding_name: String,
-    pub readable_name: Option<String>,
+    pub name: BindingName,
     pub has_comment: bool,
 }
 
@@ -68,7 +128,7 @@ pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>>
             let Some(map) = member.as_mapping() else {
                 continue;
             };
-            let binding_name = map
+            let minified = map
                 .get(yk("selector"))
                 .and_then(Value::as_mapping)
                 .and_then(|s| s.get(yk("binding")))
@@ -81,15 +141,13 @@ pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>>
                 .and_then(Value::as_str)
                 .map(str::to_string);
             let has_comment = map.get(yk("comment")).is_some();
-            let binding_match = binding_name.as_deref() == Some(sym);
-            let readable_match = readable_name.as_deref() == Some(sym);
-            if binding_match || readable_match {
+            let name = BindingName::new(minified.unwrap_or_default(), readable_name);
+            if name.matches(sym) {
                 out.push(BindingMatch {
                     file: file.clone(),
                     module_path: module_path.clone(),
                     member_index: idx,
-                    binding_name: binding_name.unwrap_or_default(),
-                    readable_name,
+                    name,
                     has_comment,
                 });
             }
@@ -115,8 +173,8 @@ pub fn resolve_unambiguous(modules_root: &Path, sym: &str) -> Result<BindingMatc
                     format!(
                         "  {} (binding={}, name={})",
                         m.file.display(),
-                        m.binding_name,
-                        m.readable_name.as_deref().unwrap_or("-")
+                        m.name.minified(),
+                        m.name.readable().unwrap_or("-")
                     )
                 })
                 .collect();
@@ -140,16 +198,16 @@ pub struct BindingsListReport {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BindingEntry {
-    pub binding: String,
+    /// The binding's identity (minified, plus readable name if set).
+    /// Flattened into the entry, so JSON carries `kind`/`minified`/
+    /// (`name`) alongside `module`/`orphan`. The renamed/unrenamed
+    /// distinction is `name.kind`; there is no separate `unrenamed`
+    /// bool (it was a redundant restatement of `kind == "minified"`).
+    #[serde(flatten)]
+    pub name: BindingName,
     pub module: String,
-    /// Readable `name:` set on the member, or `None` if it's still
-    /// the minified name.
-    pub readable: Option<String>,
     /// `true` when this binding is the only member of its module.
     pub orphan: bool,
-    /// `true` when `readable` is `None` (binding still uses the
-    /// minified hygiene-aware identity).
-    pub unrenamed: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -172,11 +230,9 @@ pub fn run_bindings_list(
         per_module_counts.insert(module_path.clone(), module.members.len());
         for member in module.members {
             let entry = BindingEntry {
-                binding: member.selector.binding.name,
+                name: BindingName::new(member.selector.binding.name, member.name.clone()),
                 module: module_path.clone(),
-                readable: member.name.clone(),
                 orphan: false,
-                unrenamed: member.name.is_none(),
             };
             entries.push(entry);
         }
@@ -189,11 +245,11 @@ pub fn run_bindings_list(
     }
     entries.retain(|e| {
         (filters.in_module.as_deref().is_none_or(|m| e.module == m))
-            && (!filters.unrenamed || e.unrenamed)
+            && (!filters.unrenamed || !e.name.is_renamed())
             && (!filters.orphan || e.orphan)
     });
     entries.sort_by(|a, b| {
-        (a.module.as_str(), a.binding.as_str()).cmp(&(b.module.as_str(), b.binding.as_str()))
+        (a.module.as_str(), a.name.minified()).cmp(&(b.module.as_str(), b.name.minified()))
     });
     Ok(BindingsListReport { bindings: entries })
 }
@@ -258,7 +314,7 @@ pub fn rename_binding(
     }
     Ok(RenameOutcome {
         file: hit.file,
-        binding_name: hit.binding_name,
+        binding_name: hit.name.minified().to_string(),
         old_readable,
         new_readable: new.to_string(),
         action,
@@ -1028,6 +1084,37 @@ mod tests {
     }
 
     #[test]
+    fn binding_name_match_and_effective() {
+        let minified = BindingName::new("_ab".to_string(), None);
+        assert!(minified.matches("_ab"));
+        assert!(!minified.matches("parseUserId"));
+        assert_eq!(minified.effective(), "_ab");
+        assert!(!minified.is_renamed());
+
+        let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
+        // Both spellings resolve the same binding.
+        assert!(readable.matches("_ab"));
+        assert!(readable.matches("parseUserId"));
+        assert_eq!(readable.effective(), "parseUserId");
+        assert!(readable.is_renamed());
+    }
+
+    #[test]
+    fn binding_name_serializes_internally_tagged() {
+        let readable = BindingName::new("_ab".to_string(), Some("parseUserId".to_string()));
+        let json = serde_json::to_value(&readable).unwrap();
+        assert_eq!(json["kind"], "readable");
+        assert_eq!(json["minified"], "_ab");
+        assert_eq!(json["name"], "parseUserId");
+
+        let minified = BindingName::new("_ab".to_string(), None);
+        let json = serde_json::to_value(&minified).unwrap();
+        assert_eq!(json["kind"], "minified");
+        assert_eq!(json["minified"], "_ab");
+        assert!(json.get("name").is_none());
+    }
+
+    #[test]
     fn parse_move_triple_two_fields() {
         let m = parse_move_triple("XOe:runtime/plugins").unwrap();
         assert_eq!(m.sym, "XOe");
@@ -1317,15 +1404,15 @@ mod tests {
         let unrenamed: Vec<&str> = report
             .bindings
             .iter()
-            .filter(|e| e.unrenamed)
-            .map(|e| e.binding.as_str())
+            .filter(|e| !e.name.is_renamed())
+            .map(|e| e.name.minified())
             .collect();
         assert_eq!(unrenamed, vec!["a", "b"]);
         let orphans: Vec<&str> = report
             .bindings
             .iter()
             .filter(|e| e.orphan)
-            .map(|e| e.binding.as_str())
+            .map(|e| e.name.minified())
             .collect();
         assert_eq!(orphans, vec!["c"]);
     }
@@ -1353,6 +1440,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.bindings.len(), 1);
-        assert_eq!(report.bindings[0].binding, "a");
+        assert_eq!(report.bindings[0].name.minified(), "a");
     }
 }

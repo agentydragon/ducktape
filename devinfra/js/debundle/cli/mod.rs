@@ -812,13 +812,13 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
         if entry.orphan {
             flags.push("orphan");
         }
-        if entry.unrenamed {
+        if !entry.name.is_renamed() {
             flags.push("unrenamed");
         }
-        let readable = entry.readable.as_deref().unwrap_or("-");
+        let readable = entry.name.readable().unwrap_or("-");
         out.push_str(&format!(
             "  {}  {}  [{}]  {}\n",
-            entry.binding,
+            entry.name.minified(),
             entry.module,
             readable,
             flags.join(",")

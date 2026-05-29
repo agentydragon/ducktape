@@ -47,7 +47,7 @@ fn list_filters_unrenamed_and_orphan() {
     )
     .unwrap();
     assert_eq!(orphans.bindings.len(), 1);
-    assert_eq!(orphans.bindings[0].binding, "c");
+    assert_eq!(orphans.bindings[0].name.minified(), "c");
     let unrenamed = run_bindings_list(
         root,
         &BindingsListFilters {
