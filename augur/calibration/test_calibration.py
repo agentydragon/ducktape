@@ -11,7 +11,13 @@ import numpy as np
 import polars as pl
 import pytest_bazel
 
-from augur.calibration.calibration import CalibrationResult, mark_fan, run_calibration, wilson_interval
+from augur.calibration.calibration import (
+    CalibrationResult,
+    mark_fan,
+    run_calibration,
+    sample_private_equity_bundle,
+    wilson_interval,
+)
 from augur.calibration.catalog import MarketCatalog
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
@@ -165,6 +171,27 @@ def test_mark_fan_shape() -> None:
     assert fan.months[0].values == {"5.0": 50.0, "50.0": 50.0, "95.0": 50.0}
     # Round-trips to JSON for a backend.
     assert '"50.0"' in fan.model_dump_json()
+
+
+def test_run_calibration_reuses_supplied_bundle(tmp_path: Path) -> None:
+    # Sampling the bundle once and threading it into run_calibration must yield the same
+    # scoring as letting run_calibration sample internally — the backend reuses one bundle
+    # for both the clean/surfaced scoring and the mark_fan.
+    path = tmp_path / "catalog.yaml"
+    path.write_text(_CATALOG, encoding="utf-8")
+    catalog = MarketCatalog.from_yaml(path)
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(
+        _CraftedSampler(), issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds
+    )
+    from_bundle = run_calibration(
+        _CraftedSampler(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, bundle=bundle
+    )
+    internal = run_calibration(_CraftedSampler(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    assert from_bundle == internal
+    # The same bundle also drives the mark_fan, so both views come from one rollout.
+    fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(50.0,))
+    assert fan.months[0].values == {"50.0": 50.0}
 
 
 def test_wilson_interval_edges() -> None:

@@ -27,8 +27,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
-import yaml
-
+from augur.api.config import load_augur_config
 from augur.fit.data import load_historical
 from augur.fit.exogenous_model import FittableScorable, Scorable
 from augur.fit.metrics import held_out_predictive_score, multi_step_predictive_score, rolling_origin_predictive_score
@@ -48,15 +47,16 @@ class ModelMetricSpec:
 
 
 def _build_independent_from_testdata() -> Scorable:
-    config_path = get_required_path("_main/augur/api/testdata/config.yaml")
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    provider_payload = payload["exogenous_provider"]
-    if provider_payload.get("type") == "composite":
-        config = CompositeExogenousProviderConfig.model_validate(provider_payload).macro
+    augur_config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    provider = augur_config.exogenous_presets[augur_config.default_exogenous_preset_id]
+    if isinstance(provider, CompositeExogenousProviderConfig):
+        config = provider.macro
         if not isinstance(config, IndependentExogenousProviderConfig):
             raise TypeError("public fixture composite macro provider must be independent for metric scoring")
+    elif isinstance(provider, IndependentExogenousProviderConfig):
+        config = provider
     else:
-        config = IndependentExogenousProviderConfig.model_validate(provider_payload)
+        raise TypeError("public fixture default preset must be a composite or independent provider for metric scoring")
     return cast(Scorable, config.realize_model())
 
 

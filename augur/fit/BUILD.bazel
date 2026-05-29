@@ -106,11 +106,11 @@ py_binary(
         ":data",
         ":exogenous_model",
         ":metrics",
+        "//augur/api:config",
         "//augur/model:exogenous_provider_config",
         "//augur/model:independent_exogenous",
         "//augur/model:vecm",
         "//util/bazel:runfiles",
-        "@pypi//pyyaml",
     ],
 )
 

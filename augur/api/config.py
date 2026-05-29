@@ -79,6 +79,20 @@ class PropertySourceConfig(ApiModel):
         return self
 
 
+class CalibrationCatalogConfig(ApiModel):
+    """A prediction-market catalog the exogenous-only calibration endpoints can run.
+
+    `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
+    `property_source.properties_path`). `issuer` is the private-equity issuer id the
+    catalog scores; the chosen exogenous preset's model must include it. `default_preset_id`
+    suggests which preset to run against (a preset whose model includes `issuer`)."""
+
+    catalog_path: Path
+    issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    label: str | None = None
+    default_preset_id: str | None = None
+
+
 class LocationConfig(ApiModel):
     """A deployment-owned location identity and its local modeling inputs.
 
@@ -131,6 +145,14 @@ class Config(ApiModel):
             "key in `exogenous_presets`."
         )
     )
+    calibration_catalogs: dict[str, CalibrationCatalogConfig] = Field(
+        default_factory=dict,
+        description=(
+            "Named registry of prediction-market catalogs for the exogenous-only calibration "
+            "endpoints (`/api/calibration/*`). Each is loaded into a `MarketCatalog` at startup. "
+            "Empty by default; a deployment registers a catalog plus the issuer it scores."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -161,6 +183,16 @@ class Config(ApiModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_calibration_default_presets(self) -> Config:
+        for catalog_id, catalog in self.calibration_catalogs.items():
+            if catalog.default_preset_id is not None and catalog.default_preset_id not in self.exogenous_presets:
+                raise ValueError(
+                    f"calibration_catalogs[{catalog_id!r}].default_preset_id {catalog.default_preset_id!r} is not a "
+                    f"key in exogenous_presets (have {sorted(self.exogenous_presets)})"
+                )
+        return self
+
 
 def load_augur_config(path: Path) -> Config:
     """Parse + validate a Config from a YAML file.
@@ -170,7 +202,8 @@ def load_augur_config(path: Path) -> Config:
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
-    return _anchor_exogenous_provider_paths(config, base_dir=path.parent)
+    config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
+    return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
 
 
 def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
@@ -198,6 +231,20 @@ def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Confi
     if anchored == dict(config.exogenous_presets):
         return config
     return config.model_copy(update={"exogenous_presets": anchored})
+
+
+def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
+    anchored = {
+        catalog_id: (
+            catalog
+            if catalog.catalog_path.is_absolute()
+            else catalog.model_copy(update={"catalog_path": (base_dir / catalog.catalog_path).resolve()})
+        )
+        for catalog_id, catalog in config.calibration_catalogs.items()
+    }
+    if anchored == dict(config.calibration_catalogs):
+        return config
+    return config.model_copy(update={"calibration_catalogs": anchored})
 
 
 def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:

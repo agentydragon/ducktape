@@ -44,66 +44,104 @@ locations:
 location_selection:
   - location_a
   - location_b
-exogenous_provider:
-  # Public fixture uses a composite provider: macro/liquid/real-estate series in
-  # one independent block, private-equity price/event series in another. That
-  # mirrors production's split without requiring trained fixture artifacts.
-  type: composite
-  macro:
-    # GBM params are pre-computed from annual return / volatility:
-    #   monthly_log_return_sigma = annual_vol / sqrt(12)
-    #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
-    type: independent
-    series:
-      inflation: # annual return 3%, vol 1.5%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0024906250
-        monthly_log_return_sigma: 0.0043301270
-      sp500: # annual return 7%, vol 16%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0047666667
-        monthly_log_return_sigma: 0.0461880215
-      "crypto:btc":
-        kind: constant
-        value: 75000.0
-      "crypto:eth":
-        kind: constant
-        value: 2100.0
-      "home_value:location_a": # annual return 3.5%, vol 8%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0026500000
-        monthly_log_return_sigma: 0.0230940108
-      "home_value:location_b":
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0026500000
-        monthly_log_return_sigma: 0.0230940108
-      "rent:location_a": # annual return 3%, vol 3%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0024625000
-        monthly_log_return_sigma: 0.0086602540
-      "rent:location_b":
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0024625000
-        monthly_log_return_sigma: 0.0086602540
-  private_equity:
-    # Exercise the PE risk provider on the public devserver path while keeping
-    # fixture marks deterministic: zero monthly drift/vol, semiannual tenders.
-    type: private_equity_risk
-    issuers:
-      private_holding_a:
-        current_mark_usd: 25.0
-        monthly_log_return_mu: 0.0
-        monthly_log_return_sigma: 0.0
-        tender_interval_months_median: 6.0
-        tender_interval_log_sigma: 0.0
-        tender_price_log_discount_mu: 0.0
-        tender_price_log_discount_sigma: 0.0
+exogenous_presets:
+  current_exogenous_model:
+    # Public fixture uses a composite provider: macro/liquid/real-estate series in
+    # one independent block, private-equity price/event series in another. That
+    # mirrors production's split without requiring trained fixture artifacts.
+    type: composite
+    macro: &fixture_macro
+      # GBM params are pre-computed from annual return / volatility:
+      #   monthly_log_return_sigma = annual_vol / sqrt(12)
+      #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
+      type: independent
+      series:
+        inflation: # annual return 3%, vol 1.5%
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0024906250
+          monthly_log_return_sigma: 0.0043301270
+        sp500: # annual return 7%, vol 16%
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0047666667
+          monthly_log_return_sigma: 0.0461880215
+        "crypto:btc":
+          kind: constant
+          value: 75000.0
+        "crypto:eth":
+          kind: constant
+          value: 2100.0
+        "home_value:location_a": # annual return 3.5%, vol 8%
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0026500000
+          monthly_log_return_sigma: 0.0230940108
+        "home_value:location_b":
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0026500000
+          monthly_log_return_sigma: 0.0230940108
+        "rent:location_a": # annual return 3%, vol 3%
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0024625000
+          monthly_log_return_sigma: 0.0086602540
+        "rent:location_b":
+          kind: gbm
+          initial_value: 1.0
+          monthly_log_return_mu: 0.0024625000
+          monthly_log_return_sigma: 0.0086602540
+    private_equity:
+      # Exercise the PE risk provider on the public devserver path while keeping
+      # fixture marks deterministic: zero monthly drift/vol, semiannual tenders.
+      type: private_equity_risk
+      issuers:
+        private_holding_a:
+          current_mark_usd: 25.0
+          monthly_log_return_mu: 0.0
+          monthly_log_return_sigma: 0.0
+          tender_interval_months_median: 6.0
+          tender_interval_log_sigma: 0.0
+          tender_price_log_discount_mu: 0.0
+          tender_price_log_discount_sigma: 0.0
+  openai_pe:
+    # Composite preset whose PE block adds an `openai` issuer so the exogenous-only
+    # calibration endpoints can score the example OpenAI catalog. Reuses the same
+    # fixture macro block; keeps `private_holding_a` so the product sim path is happy
+    # if this preset is ever selected there too. The `openai` issuer carries nonzero
+    # going-public / collapse hazards so the catalog's event markets resolve to a
+    # non-trivial p_model in dev/CI.
+    type: composite
+    macro: *fixture_macro
+    private_equity:
+      type: private_equity_risk
+      issuers:
+        openai:
+          current_mark_usd: 100.0
+          monthly_log_return_mu: 0.0
+          monthly_log_return_sigma: 0.03
+          annual_public_market_probability: 0.08
+          public_market_lockup_months: 6
+          annual_collapse_probability: 0.02
+          collapsed_mark_fraction: 0.0
+          tender_interval_months_median: 12.0
+          tender_interval_log_sigma: 0.0
+        private_holding_a:
+          current_mark_usd: 25.0
+          monthly_log_return_mu: 0.0
+          monthly_log_return_sigma: 0.0
+          tender_interval_months_median: 6.0
+          tender_interval_log_sigma: 0.0
+default_exogenous_preset_id: current_exogenous_model
+calibration_catalogs:
+  openai:
+    # Worked example shipped with augur/calibration. `issuer: openai` must match a PE
+    # issuer in the chosen exogenous preset's model (here: the `openai_pe` preset).
+    catalog_path: ../../calibration/example_openai_catalog.yaml
+    issuer: openai
+    label: OpenAI (example Manifold catalog)
+    default_preset_id: openai_pe
 portfolio:
   accounts:
     - account_id: taxable_brokerage

@@ -190,6 +190,23 @@ def mark_fan(
     return MarkFan(issuer=str(issuer), channel=channel, percentiles=list(percentiles), months=months)
 
 
+def sample_private_equity_bundle(
+    model: Sampler, *, issuer: str, horizon_months: int, rollout_seeds: tuple[int, ...]
+) -> PrivateEquityBundle:
+    """Sample `model`'s private-equity bundle for one issuer over a horizon.
+
+    Factored out of `run_calibration` so a caller can reuse the same sampled bundle
+    for both the market scoring and a `mark_fan` (the bundle is the only thing both
+    need), instead of paying for two independent rollouts.
+    """
+    request = ExogenousSamplingRequest(
+        horizon_months=horizon_months,
+        rollout_seeds=rollout_seeds,
+        required_private_equity_issuers=frozenset({IssuerId(issuer)}),
+    )
+    return model.sample(request).private_equity
+
+
 def run_calibration(
     model: Sampler,
     catalog: MarketCatalog,
@@ -198,21 +215,24 @@ def run_calibration(
     horizon_months: int,
     rollout_seeds: tuple[int, ...],
     live: bool = False,
+    bundle: PrivateEquityBundle | None = None,
 ) -> CalibrationResult:
     """Score an exogenous model's rollouts against a curated prediction-market catalog.
 
     Samples `model` for `issuer` over `horizon_months`, resolves every `exact`
     market apples-to-apples, and surfaces the rest. Market price is the catalog
     curation snapshot, or current Manifold prices when `live` is set.
+
+    Pass a pre-sampled `bundle` (from `sample_private_equity_bundle` with the same
+    issuer/horizon/seeds) to reuse one rollout for both scoring and a `mark_fan`; when
+    omitted, `model` is sampled here.
     """
     as_of = _catalog_as_of(catalog)
     rollout_count = len(rollout_seeds)
-    request = ExogenousSamplingRequest(
-        horizon_months=horizon_months,
-        rollout_seeds=rollout_seeds,
-        required_private_equity_issuers=frozenset({IssuerId(issuer)}),
-    )
-    bundle = model.sample(request).private_equity
+    if bundle is None:
+        bundle = sample_private_equity_bundle(
+            model, issuer=issuer, horizon_months=horizon_months, rollout_seeds=rollout_seeds
+        )
     trajectories = list(
         trajectories_from_bundle(
             bundle, issuer=issuer, rollout_count=rollout_count, horizon_months=horizon_months, as_of=as_of

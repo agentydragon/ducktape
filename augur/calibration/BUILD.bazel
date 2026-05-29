@@ -2,6 +2,11 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+filegroup(
+    name = "example_openai_catalog",
+    srcs = ["example_openai_catalog.yaml"],
+)
+
 py_library(
     name = "resolvers",
     srcs = ["resolvers.py"],

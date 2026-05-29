@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from augur.api.bootstrap import BootstrapResponse
+from augur.api.calibration_wire import CalibrationCatalogsResponse, CalibrationRunRequest, CalibrationRunResponse
 from augur.api.deployment import DeploymentInfo
 from augur.product.portfolio import ProductPortfolioResponse
 from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
@@ -34,6 +35,14 @@ def create_schema_app() -> FastAPI:
 
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> RolloutResponse:
+        raise RuntimeError("schema-only route")
+
+    @app.get("/api/calibration/catalogs", response_model=CalibrationCatalogsResponse)
+    def calibration_catalogs() -> CalibrationCatalogsResponse:
+        raise RuntimeError("schema-only route")
+
+    @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
+    def calibration_run(request: CalibrationRunRequest) -> CalibrationRunResponse:
         raise RuntimeError("schema-only route")
 
     @app.get("/healthz", response_class=PlainTextResponse)
