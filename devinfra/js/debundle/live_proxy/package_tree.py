@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import os
 import posixpath
 from pathlib import Path
-from typing import Any, cast
 
 
 def default_packages_root() -> Path:
@@ -15,22 +13,6 @@ def default_packages_root() -> Path:
             if candidate.exists():
                 return candidate
     raise RuntimeError("Could not locate Bazel-provided package tree; pass packages_root explicitly")
-
-
-def read_installed_package_metadata(
-    package_name: str,
-    *,
-    package_root: Path | None = None,
-    package_roots: dict[str, Path] | None = None,
-    packages_root: Path | None = None,
-) -> dict:
-    resolved_package_root = package_root or resolve_package_root(
-        package_name, package_roots=package_roots, packages_root=packages_root
-    )
-    metadata_path = resolved_package_root / "package.json"
-    if not metadata_path.exists():
-        raise RuntimeError(f"Package metadata missing for {package_name}: {metadata_path}")
-    return cast(dict[str, Any], json.loads(metadata_path.read_text(encoding="utf-8")))
 
 
 def resolve_package_root(
@@ -106,44 +88,6 @@ def assert_subpath_does_not_escape(package_name: str, subpath: str, message: str
     # cases where the original subpath was an absolute path on Windows; the
     # absolute-check above plus this pure-forward-slash normalization is
     # sufficient on POSIX, which is the only target for this code path.
-
-
-def assert_path_within_root(path: Path, root: Path, message: str) -> None:
-    """Verify ``path.resolve()`` is contained in ``root.resolve()``.
-
-    Use this only when both paths are known to live on the same physical
-    branch of the filesystem (e.g. when ``path`` is an absolute caller-
-    supplied URL that has not been joined to ``root``). For checking that a
-    joined ``root / subpath`` stays inside the package, use
-    :func:`assert_subpath_does_not_escape` instead, which avoids symlink
-    resolution entirely.
-    """
-    try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise RuntimeError(f"{message}: {path}") from exc
-
-
-def assert_real_path_within_root(path: Path, root: Path, message: str) -> Path:
-    """Deprecated: use :func:`assert_subpath_does_not_escape` instead.
-
-    This function compared the real (symlink-resolved) path of ``path``
-    against the real path of ``root``. That check is incompatible with
-    Bazel's runfiles tree materialization, where package directories are
-    real directories whose leaf files are symlinks back to the original
-    ``bazel-out/.../bin/node_modules`` location. After resolving symlinks,
-    a perfectly legitimate file inside the package root ends up at a path
-    outside the runfiles tree, triggering a false escape error.
-
-    Kept as a no-op-style wrapper around :func:`assert_path_within_root`
-    so that existing callers continue to compile; new code should validate
-    the subpath string with :func:`assert_subpath_does_not_escape` before
-    joining it with the package root.
-    """
-    real_path = path.resolve()
-    real_root = root.resolve()
-    assert_path_within_root(real_path, real_root, message)
-    return real_path
 
 
 def package_path_segments(package_name: str) -> list[str]:

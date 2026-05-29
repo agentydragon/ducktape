@@ -37,41 +37,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Args as ClapArgs, Subcommand, ValueEnum};
+use clap::{Args as ClapArgs, ValueEnum};
 use serde_yaml::Value;
 
 use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
-
-/// Top-level `debundle bindings ...` argument shape.
-///
-/// Currently only carries `comment`. Future tasks (#82) extend this
-/// with `bindings list`, `bindings assign`, `bindings rename` etc.
-#[derive(Debug, ClapArgs)]
-pub struct BindingsArgs {
-    #[command(subcommand)]
-    command: BindingsCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum BindingsCommand {
-    /// Read, set, edit, or clear a binding's `comment:` field.
-    Comment(BindingCommentArgs),
-}
-
-/// Comment-only inner subcommand shape. Composed by the top-level
-/// `debundle modules ...` clap node alongside non-comment verbs
-/// (merge, propose) — see `cli.rs`.
-#[derive(Debug, ClapArgs)]
-pub struct ModulesArgs {
-    #[command(subcommand)]
-    command: ModulesCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ModulesCommand {
-    /// Read, set, edit, or clear a module's top-level `comment:` field.
-    Comment(ModuleCommentArgs),
-}
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 pub enum Format {
@@ -188,20 +157,6 @@ fn resolve_format(format: Option<Format>) -> Format {
         Format::Text
     } else {
         Format::Json
-    }
-}
-
-/// Entry point for `debundle bindings ...`.
-pub fn run_bindings_cli(args: BindingsArgs) -> Result<()> {
-    match args.command {
-        BindingsCommand::Comment(args) => run_binding_comment(args),
-    }
-}
-
-/// Entry point for `debundle modules ...`.
-pub fn run_modules_cli(args: ModulesArgs) -> Result<()> {
-    match args.command {
-        ModulesCommand::Comment(args) => run_module_comment(args),
     }
 }
 

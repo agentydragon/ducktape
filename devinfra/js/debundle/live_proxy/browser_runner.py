@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import re
-import socket
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
@@ -291,19 +290,6 @@ def chromium_executable() -> str | None:
     path = Path(root)
     candidate = path / "chrome-linux" / "headless_shell"
     return str(candidate if candidate.exists() else path)
-
-
-def allocate_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.bind(("127.0.0.1", 0))
-        return int(server.getsockname()[1])
-
-
-def positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise ValueError(f"must be positive, got {value}")
-    return parsed
 
 
 def format_json(value: Any) -> str:

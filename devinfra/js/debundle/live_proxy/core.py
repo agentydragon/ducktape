@@ -51,8 +51,6 @@ class LiveProxyOptions:
     packages_root: Path | None = None
     state_dir: Path | None = None
     help: bool = False
-    deprecated_asset_host: str | None = None
-    deprecated_asset_port: int | None = None
 
     def to_json_dict(self) -> dict:
         return {
@@ -122,8 +120,6 @@ class LocalAssetMapping:
 def parse_live_proxy_args(argv: list[str]) -> LiveProxyOptions:
     parser = NonExitingArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--app-manifest", type=Path)
-    parser.add_argument("--asset-host", dest="deprecated_asset_host")
-    parser.add_argument("--asset-port", type=port_arg, dest="deprecated_asset_port")
     parser.add_argument("--help", "-h", action="store_true")
     parser.add_argument("--internal-prefix")
     parser.add_argument("--package-root", action="append", default=[])
@@ -149,8 +145,6 @@ def parse_live_proxy_args(argv: list[str]) -> LiveProxyOptions:
         packages_root=resolve_path(namespace.packages_root) if namespace.packages_root else None,
         state_dir=resolve_path(namespace.state_dir) if namespace.state_dir else None,
         help=namespace.help,
-        deprecated_asset_host=namespace.deprecated_asset_host,
-        deprecated_asset_port=namespace.deprecated_asset_port,
     )
     if not options.help:
         if not options.app_manifest_path:

@@ -1048,13 +1048,6 @@ fn set_readable_name(doc: &mut Value, index: usize, name: &str) -> Result<()> {
     Ok(())
 }
 
-// Suppress unused-import warning when no caller references it yet.
-#[allow(dead_code)]
-fn _used_modules_root(_p: &Path) {}
-
-#[allow(dead_code)]
-fn _used_btreeset(_s: BTreeSet<String>) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
