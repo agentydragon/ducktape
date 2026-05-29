@@ -32,6 +32,7 @@ fn classify(src: &str) -> Purity {
         init,
         &BTreeSet::new(),
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
 }
@@ -52,6 +53,7 @@ fn classify_with_module(prefix: &str, expr_src: &str) -> Purity {
         init,
         &shadowed,
         &BTreeSet::new(),
+        &BTreeSet::new(),
         &ChunkCodeGraph::default(),
     )
 }
@@ -68,7 +70,13 @@ fn classify_with_declared_pure(prefix: &str, expr_src: &str, declared: &[&str]) 
         other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &declared_pure, &ChunkCodeGraph::default())
+    classify_expr_purity(
+        init,
+        &shadowed,
+        &BTreeSet::new(),
+        &declared_pure,
+        &ChunkCodeGraph::default(),
+    )
 }
 
 fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&str]) -> Purity {
@@ -87,7 +95,7 @@ fn classify_with_declared_pure_new(prefix: &str, expr_src: &str, declared: &[&st
         other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
+    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
 }
 
 fn classify_with_declared_pure_members(
@@ -115,7 +123,7 @@ fn classify_with_declared_pure_members(
         other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init expected");
-    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)
+    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
 }
 
 #[test]
@@ -749,7 +757,9 @@ fn object_keys_on_plain_data_binding_classifies_pure() {
         other => panic!("expected `const _ = …;`, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init expected");
-    assert!(classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph).is_pure());
+    assert!(
+        classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph).is_pure()
+    );
 }
 
 #[test]

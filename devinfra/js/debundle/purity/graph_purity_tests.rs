@@ -132,7 +132,10 @@ fn fn_purity_call_inherits_chunk_local_function_purity() {
         other => panic!("expected VarDecl, got {other:?}"),
     };
     let init = var.decls[0].init.as_deref().expect("init");
-    assert!((classify_expr_purity(init, &shadowed, &BTreeSet::new(), &graph)).is_pure());
+    assert!(
+        (classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph))
+            .is_pure()
+    );
 }
 
 #[test]
@@ -675,6 +678,44 @@ fn plain_data_rest_and_destructuring_param_writes_shadow_top_level_candidate() {
 "#;
     assert!(is_plain_data(src, "m"));
     assert_eq!(fn_purity(src, "readSystemToolId"), Some(true));
+}
+
+#[test]
+fn plain_data_member_read_on_param_shadowed_name_is_not_pure() {
+    // SOUNDNESS regression: chunk-top `const X = {a:1}` registers X as
+    // PlainData, but inside `function f(X)` the param `X` lexically
+    // shadows the const. `X.a` there reads the *argument* (which may be
+    // an object with a getter), so `f` must NOT classify Pure — admitting
+    // it would drop an S-edge and let a cyclic spec slip past the
+    // realizability validator. Mirrors
+    // `plain_data_rest_and_destructuring_param_writes_shadow_top_level_candidate`.
+    let src = r#"
+    const X = { a: 1 };
+    function f(X) { return X.a; }
+    const readReal = () => X.a;
+"#;
+    // The top-level const is still genuine PlainData (the param write
+    // targets the local binding, not the const).
+    assert!(is_plain_data(src, "X"));
+    // A genuine chunk-top read stays pure.
+    assert_eq!(fn_purity(src, "readReal"), Some(true));
+    // The shadowed read must be impure.
+    assert_eq!(fn_purity(src, "f"), Some(false));
+}
+
+#[test]
+fn plain_data_object_keys_arg_on_param_shadowed_name_is_not_pure() {
+    // Same soundness hole on the `Object.keys/values/entries(X)` arg path
+    // (`is_pure_plain_data_arg_for`): when `X` is a function param, the
+    // arg is the local value, not the plain-data const.
+    let src = r#"
+    const X = { a: 1 };
+    function f(X) { return Object.keys(X); }
+    const readReal = () => Object.keys(X);
+"#;
+    assert!(is_plain_data(src, "X"));
+    assert_eq!(fn_purity(src, "readReal"), Some(true));
+    assert_eq!(fn_purity(src, "f"), Some(false));
 }
 
 #[test]

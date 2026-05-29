@@ -621,11 +621,30 @@ fn item_purity(
     match kind {
         StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => Purity::Pure,
         StatementKind::VarDecl if has_local_effect => Purity::Pure,
+        // Top-level (non-function-body) scope: a chunk-top read of a
+        // PlainData const is legitimately pure, so no PlainData name is
+        // lexically shadowed here.
         StatementKind::VarDecl => var_decl_of_item(item)
-            .map(|var| classify_var_decl_purity(var, shadowed, &hints.declared_pure, graph))
+            .map(|var| {
+                classify_var_decl_purity(
+                    var,
+                    shadowed,
+                    &BTreeSet::new(),
+                    &hints.declared_pure,
+                    graph,
+                )
+            })
             .unwrap_or(Purity::Pure),
         StatementKind::ClassDecl => match class_of_item(item) {
-            Some(c) if class_has_static_observable(c, shadowed, &hints.declared_pure, graph) => {
+            Some(c)
+                if class_has_static_observable(
+                    c,
+                    shadowed,
+                    &BTreeSet::new(),
+                    &hints.declared_pure,
+                    graph,
+                ) =>
+            {
                 Purity::NotPure {
                     reasons: vec![PurityReason {
                         rule: PurityRule::ClassStaticObservable,
@@ -639,9 +658,13 @@ fn item_purity(
         },
         StatementKind::SideEffect if has_local_effect => Purity::Pure,
         StatementKind::SideEffect => match item {
-            ModuleItem::Stmt(Stmt::Expr(expr)) => {
-                classify_expr_purity(&expr.expr, shadowed, &hints.declared_pure, graph)
-            }
+            ModuleItem::Stmt(Stmt::Expr(expr)) => classify_expr_purity(
+                &expr.expr,
+                shadowed,
+                &BTreeSet::new(),
+                &hints.declared_pure,
+                graph,
+            ),
             // Bare blocks, control flow, loops, etc. — soundness-first.
             _ => Purity::NotPure {
                 reasons: vec![PurityReason {
