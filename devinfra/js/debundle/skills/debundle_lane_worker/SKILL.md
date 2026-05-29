@@ -55,6 +55,19 @@ A good module has a coherent reason to exist: stable public surface, internal
 references dominating external references, clear layer ownership, or multiple
 meaningful consumers. Member count alone is not the rule.
 
+Tiny modules are a smell — try to fold them. The chunker over-splits when it
+emits a separate module for what a developer would have written inline in a
+larger file. Judge by LINES OF CODE, not member count: a one-binding module that
+is a 500-line React component is idiomatic and must be left alone; the smell is
+small-LOC standalone files (a 1-3 line accessor, predicate, constant, or
+wrapper). Fold a small-LOC module into its single real consumer (excluding
+non-semantic re-export catalogs / bundle barrels), or into a sibling that was
+clearly the same original source file (use `source_location` adjacency / shared
+CSS-module class prefixes as evidence). Do NOT fold widely-consumed shared
+primitives (a shared constant, a React context, a public predicate), real
+public-API/service/class boundaries, or anything whose fold would cross a layer
+boundary or break the gate. See `references/module_shape.md`.
+
 Usually avoid standalone modules for:
 
 - primitive constants with one consumer

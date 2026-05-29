@@ -29,6 +29,39 @@ Member count is not the rule. A single substantial service, state machine, or
 component can be a module. A one-line constant with one consumer usually is
 not.
 
+## Tiny Modules Are a Smell — Try to Fold Them
+
+A debundle over-splits when the chunker (or atomic-unit granularity) emits a
+separate module for what a developer would have written inline in a larger
+file. Actively look for small modules and try to fold each into its true owner:
+its single real consumer, or a sibling that was clearly the same original
+source file.
+
+Judge by LINES OF CODE, not member count. A one-binding module that is a
+500-line React component is a perfectly idiomatic file and must be left alone.
+The smell is small-LOC standalone files: a 1-3 line accessor, predicate,
+constant, or wrapper sitting in its own module.
+
+Fold a small-LOC module when either holds:
+
+- it has a single real consumer (exclude non-semantic re-export catalogs /
+  bundle barrels) — fold into that consumer
+- it is a co-located helper/style/type of a sibling that was clearly the same
+  original source file — use `source_location` adjacency / shared CSS-module
+  class prefixes as evidence
+
+Do NOT fold:
+
+- small-LOC modules that are widely-consumed shared primitives (a shared
+  constant, a React context, a public predicate used across the app)
+- real public-API / service / class boundaries
+- anything whose fold would cross a layer boundary or break the realizability
+  gate
+
+Source-proximity — adjacent owner statement ordinals or line ranges in the
+upstream blob — is the strongest signal that several small modules were one
+original file.
+
 ## Locality vs Layer Ownership
 
 Co-consumption is evidence, but architecture ownership is stronger. Do not

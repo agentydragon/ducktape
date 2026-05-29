@@ -95,12 +95,22 @@ names, export names, and importer neighborhoods, then decide whether each name
 describes a durable concept or only the operation performed by one helper
 function.
 
-Also review tiny modules and one-consumer modules. A small file is not wrong by
-itself, and one consumer is not enough to prove ownership. The suspicious shape
-is a tiny helper/config/style/function module whose only meaningful caller is an
-adjacent component, command, service, parser, or state module. In that case,
-recommend merging or co-peeling the helper with the owner unless layer
-ownership argues against it.
+Actively hunt small-LOC modules to fold — tiny modules are a smell. A debundle
+over-splits when the chunker emits a separate module for what a developer would
+have written inline in a larger file. Judge by LINES OF CODE, not member count:
+a one-binding module that is a 500-line React component is idiomatic and must be
+left alone; the smell is small-LOC standalone files (a 1-3 line accessor,
+predicate, constant, or wrapper in its own module). The suspicious shape is such
+a small-LOC helper/config/style/function whose only real caller is an adjacent
+component, command, service, parser, or state module — exclude non-semantic
+re-export catalogs / bundle barrels when counting consumers. Recommend folding
+it into that single consumer, or into a sibling that was clearly the same
+original source file (use `source_location` adjacency / shared CSS-module class
+prefixes as evidence), unless layer ownership argues against it. Do NOT fold a
+small-LOC module that is a widely-consumed shared primitive (a shared constant,
+a React context, a public predicate), a real public-API/service/class boundary,
+or anything whose fold would cross a layer boundary or break the realizability
+gate. See `references/module_shape.md` for the full rule.
 
 Treat one-callable modules as a recurring antipattern when the module name is
 just the callable name and the callable is not itself the architecture boundary.
