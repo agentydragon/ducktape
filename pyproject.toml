@@ -106,6 +106,9 @@ dependencies = [
     # Matrix
     "mautrix>=0.20.0",
 
+    # Banking (plaid_utils)
+    "plaid-python>=18.0.0",
+
     # wt (worktree)
     "colorama>=0.4",
     "psutil>=5.9",

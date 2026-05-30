@@ -3783,6 +3783,10 @@ nodeenv==1.10.0 \
     --hash=sha256:5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827 \
     --hash=sha256:996c191ad80897d076bdfba80a41994c2b47c68e224c542b48feba42ba00f8bb
     # via pre-commit
+nulltype==2.3.1 \
+    --hash=sha256:16ae565745118e37e0558441f5821c76351d8c3a789640b5bca277cf65b2271b \
+    --hash=sha256:64aa3cb2ab5e904d1b37175b9b922bea268c13f9ce32e3d373313150ab5ef272
+    # via plaid-python
 numpy==2.4.2 \
     --hash=sha256:00ab83c56211a1d7c07c25e3217ea6695e50a3e2f255053686b081dc0b091a82 \
     --hash=sha256:068cdb2d0d644cdb45670810894f6a0600797a69c05f1ac478e8d31670b8ee75 \
@@ -4357,6 +4361,9 @@ pillow==12.1.1 \
 pint==0.25.2 \
     --hash=sha256:85a45d1da8fe9c9f7477fed8aef59ad2b939af3d6611507e1a9cbdacdcd3450a \
     --hash=sha256:ca35ab1d8eeeb6f7d9942b3cb5f34ca42b61cdd5fb3eae79531553dcca04dda7
+    # via ducktape (pyproject.toml)
+plaid-python==39.2.0 \
+    --hash=sha256:552aff15f8e4dbbf469fcab224465fa2359e68757b60df9c8ed40e8163aa6c20
     # via ducktape (pyproject.toml)
 platformdirs==4.9.4 \
     --hash=sha256:1ec356301b7dc906d83f371c8f487070e99d3ccf9e501686456394622a01a934 \
@@ -5634,6 +5641,7 @@ python-dateutil==2.9.0.post0 \
     #   kubernetes-asyncio
     #   matplotlib
     #   pandas
+    #   plaid-python
     #   posthog
 python-discovery==1.1.1 \
     --hash=sha256:584c08b141c5b7029f206b4e8b78b1a1764b22121e21519b89dec56936e95b0a \
@@ -7064,6 +7072,7 @@ urllib3==2.6.3 \
     #   inventree
     #   kubernetes
     #   kubernetes-asyncio
+    #   plaid-python
     #   pygithub
     #   requests
     #   requests-cache

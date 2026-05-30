@@ -1,14 +1,18 @@
-# plaid
+# plaid_utils
 
 Plaid client for personal bank accounts — pull transactions, balances, and
 credit-card liabilities. Backs the [Plaid MCP server](mcp_server/README.md).
 
-Reuses `//airlock/oauth:provider` (`PlaidProvider`) for link-token creation and
-public-token exchange. `client.py` adds the data endpoints PlaidProvider doesn't
-cover (`/sandbox/public_token/create`, `/accounts/get`, `/accounts/balance/get`,
-`/transactions/get`, `/transactions/sync`, `/liabilities/get`). Responses are parsed
-into the typed models in `models.py` at the boundary — callers get typed objects,
-not raw dicts.
+Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
+official `plaid` SDK — same convention as `openai_utils`.
+
+`client.py` is a thin async wrapper over the official [`plaid-python`](https://github.com/plaid/plaid-python)
+SDK (synchronous; calls run in threads via `asyncio.to_thread`). It exposes the read
+endpoints the MCP server needs (`/accounts/get`, `/accounts/balance/get`,
+`/transactions/get`, `/liabilities/get`) plus the sandbox helpers the smoke test uses
+(`/sandbox/public_token/create`, `/item/public_token/exchange`, `/transactions/sync`).
+Responses are run through the SDK's `sanitize_for_serialization` and validated into the
+typed models in `models.py` at the boundary — callers get typed objects, not raw dicts.
 
 ## Credentials
 
@@ -16,7 +20,7 @@ Stored SOPS-encrypted at `<../secrets/plaid.sops.yaml>` — single YAML with
 `client_id`, `secrets.sandbox`, `secrets.production`. Decryptable by the 5
 user-level age anchors (admin + wyrm2/rugged/atlas/iguana-agentydragon).
 
-`plaid.dev_creds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
+`plaid_utils.dev_creds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
 Fallback: if the file is missing, it reads `PLAID_CLIENT_ID`/`PLAID_SECRET` from env. This
 sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the MCP server never
 bundles it.
@@ -50,7 +54,7 @@ End-to-end, no Link UI: creates a fake public_token via `/sandbox/public_token/c
 exchanges it for an access_token, pulls `/accounts/get` and `/transactions/sync`.
 
 ```bash
-PLAID_ENV=sandbox bb run //plaid:sandbox_smoke
+PLAID_ENV=sandbox bb run //plaid_utils:sandbox_smoke
 ```
 
 ## Real-account link

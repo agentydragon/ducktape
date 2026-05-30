@@ -17,8 +17,8 @@ py_library(
     srcs = ["server.py"],
     deps = [
         ":config",
-        "//plaid:client",
-        "//plaid:models",
+        "//plaid_utils:client",
+        "//plaid_utils:models",
         "@pypi//fastmcp",
         "@pypi//pydantic",
         "@pypi//uvicorn",
@@ -27,7 +27,7 @@ py_library(
 
 py_binary(
     name = "server_cli",
-    main_module = "plaid.mcp_server.server",
+    main_module = "plaid_utils.mcp_server.server",
     deps = [":server"],
 )
 
@@ -68,8 +68,8 @@ py_library(
     deps = [
         ":config",
         ":server",
-        "//plaid:client",
-        "//plaid:models",
+        "//plaid_utils:client",
+        "//plaid_utils:models",
         "@pypi//fastmcp",
         "@pypi//pytest",
     ],

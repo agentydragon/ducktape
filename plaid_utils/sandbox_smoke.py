@@ -12,8 +12,8 @@ Run:
 import asyncio
 import logging
 
-from plaid.client import PlaidExtras, provider_for
-from plaid.dev_creds import load
+from plaid_utils.client import PlaidExtras
+from plaid_utils.dev_creds import load
 
 logger = logging.getLogger(__name__)
 
@@ -24,15 +24,13 @@ async def async_main() -> None:
         raise SystemExit(f"sandbox_smoke requires PLAID_ENV=sandbox, got {creds.env!r}")
 
     extras = PlaidExtras(creds)
-    provider = provider_for(creds, products=["transactions"], redirect_uri="http://localhost/unused")
 
     logger.info("creating sandbox public_token …")
     public_token = await extras.sandbox_public_token_create()
     logger.info("public_token=%s…", public_token[:24])
 
-    logger.info("exchanging for access_token via airlock PlaidProvider …")
-    token = await provider.exchange_public_token(public_token)
-    access_token = token.access_token
+    logger.info("exchanging for access_token …")
+    access_token = await extras.exchange_public_token(public_token)
     logger.info("access_token=%s…", access_token[:24])
 
     logger.info("fetching /accounts/get …")

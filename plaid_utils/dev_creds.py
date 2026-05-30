@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from plaid.client import PLAID_HOSTS, PlaidCreds
+from plaid_utils.client import PLAID_HOSTS, PlaidCreds
 
 DEFAULT_SOPS_PATH = Path("secrets/plaid.sops.yaml")
 

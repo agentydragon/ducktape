@@ -1,7 +1,7 @@
-# plaid/mcp_server
+# plaid_utils/mcp_server
 
 Read-only MCP server over the owner's Plaid-linked bank accounts. Built on
-[`//plaid:client`](../client.py) (typed Plaid client) and FastMCP. The server is
+[`//plaid_utils:client`](../client.py) (typed Plaid client) and FastMCP. The server is
 **auth-oblivious**: it speaks MCP over HTTP on `:8080` and a front proxy
 (`mcp-oauth-facade`) handles Authentik OAuth. One server holds every configured
 item's access token; every tool takes an `item` selector.
@@ -18,7 +18,7 @@ item's access token; every tool takes an `item` selector.
 - `get_live_balance(item, account_id?)` → `list[Account]`. Real-time; rate-limited
   5/min·30/hour per item — use sparingly.
 
-Tools return the typed [`plaid.models`](../models.py) shapes directly — the models already
+Tools return the typed [`plaid_utils.models`](../models.py) shapes directly — the models already
 cover only the fields exposed, so there's no separate projection layer.
 
 Amount sign on transactions: **positive = money out** (charges/debits), **negative = money
@@ -65,7 +65,7 @@ Each item's access token is read from the env var named by its `access_token_env
 ## Run locally
 
 ```bash
-bb run //plaid/mcp_server:server_cli
+bb run //plaid_utils/mcp_server:server_cli
 ```
 
 ## Deployment

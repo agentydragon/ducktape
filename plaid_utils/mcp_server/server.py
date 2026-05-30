@@ -18,9 +18,9 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from plaid.client import PlaidCreds, PlaidExtras
-from plaid.mcp_server.config import ItemSummary, ResolvedItem, ServerSettings
-from plaid.models import Account, Liabilities, TransactionPage
+from plaid_utils.client import PlaidCreds, PlaidExtras
+from plaid_utils.mcp_server.config import ItemSummary, ResolvedItem, ServerSettings
+from plaid_utils.models import Account, Liabilities, TransactionPage
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +83,8 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         account_ids = [account_id] if account_id is not None else None
         resp = await extras.transactions_get(
             resolve(item).access_token,
-            start_date=start_date.isoformat(),
-            end_date=end_date.isoformat(),
+            start_date=start_date,
+            end_date=end_date,
             account_ids=account_ids,
             offset=offset,
             count=count,

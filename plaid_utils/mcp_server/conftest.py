@@ -6,14 +6,15 @@ through an in-memory FastMCP client without any network.
 """
 
 from collections.abc import AsyncIterator
+from datetime import date
 
 import pytest
 from fastmcp.client import Client
 
-from plaid.client import PlaidExtras
-from plaid.mcp_server.config import ResolvedItem
-from plaid.mcp_server.server import build_server
-from plaid.models import (
+from plaid_utils.client import PlaidExtras
+from plaid_utils.mcp_server.config import ResolvedItem
+from plaid_utils.mcp_server.server import build_server
+from plaid_utils.models import (
     Account,
     AccountsGetResponse,
     Apr,
@@ -47,8 +48,8 @@ class FakePlaidExtras(PlaidExtras):
     async def transactions_get(
         self,
         access_token: str,
-        start_date: str,
-        end_date: str,
+        start_date: date,
+        end_date: date,
         account_ids: list[str] | None = None,
         offset: int = 0,
         count: int = 50,

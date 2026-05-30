@@ -3,18 +3,17 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "models",
     srcs = ["models.py"],
-    visibility = ["//plaid:__subpackages__"],
+    visibility = ["//plaid_utils:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "client",
     srcs = ["client.py"],
-    visibility = ["//plaid:__subpackages__"],
+    visibility = ["//plaid_utils:__subpackages__"],
     deps = [
         ":models",
-        "//airlock/oauth:provider",
-        "@pypi//httpx",
+        "@pypi//plaid_python",
     ],
 )
 
@@ -38,6 +37,6 @@ py_library(
 
 py_binary(
     name = "sandbox_smoke",
-    main_module = "plaid.sandbox_smoke",
+    main_module = "plaid_utils.sandbox_smoke",
     deps = [":sandbox_smoke_lib"],
 )

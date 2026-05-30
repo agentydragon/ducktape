@@ -375,6 +375,7 @@ manifest:
     networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
+    nulltype: nulltype
     numpy: numpy
     numpyro: numpyro
     oauthlib: oauthlib
@@ -426,6 +427,7 @@ manifest:
     persistqueue: persist_queue
     pexpect: pexpect
     pint: pint
+    plaid: plaid_python
     platformdirs: platformdirs
     playhouse: peewee
     playwright: playwright
@@ -542,7 +544,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -649,4 +651,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 380a07b619488b94a212f4334025539be28907877320889c7b5a5ae6a51b8629
+integrity: 08fbcd45577913214ff025053524b3ce72ebd44ad943dd16217d6a9c8650a60b
