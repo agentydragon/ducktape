@@ -25,14 +25,10 @@ class CalibrationRunRequest(ApiModel):
     horizon_months: PositiveInt = Field(default=120, le=MAX_HORIZON_MONTHS)
     rollouts: PositiveInt = Field(default=2000, description="Number of rollout paths (one seed each).")
     seed: int = Field(default=1701, ge=0, description="First rollout seed; seeds run [seed, seed + rollouts).")
-    live: bool = Field(
-        default=False,
-        description="Fetch current Manifold prices (requires network) instead of the catalog curation snapshot.",
-    )
 
 
 class CalibrationRunResponse(ApiModel):
-    """`CalibrationResult` (issuer, clean/surfaced rows, price source) plus the issuer mark fan."""
+    """`CalibrationResult` (issuer, clean/surfaced rows) plus the issuer mark fan."""
 
     preset_id: str
     result: CalibrationResult

@@ -30,6 +30,7 @@ from datetime import date
 from enum import Enum
 
 import numpy as np
+import numpy.typing as npt
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -56,9 +57,9 @@ class Resolution(Enum):
 class RolloutTrajectory:
     """One rollout's slice of the augur PE bundle for a single issuer (months 0..horizon)."""
 
-    mark_usd_per_unit: np.ndarray  # (horizon+1,) per-UNIT value (NOT a company valuation)
-    event_kind_code: np.ndarray  # (horizon+1,) PrivateEquityEventKindCode values
-    regime_code: np.ndarray  # (horizon+1,) PrivateEquityRegimeCode values
+    mark_usd_per_unit: npt.NDArray[np.float64]  # (horizon+1,) per-UNIT value (NOT a company valuation)
+    event_kind_code: npt.NDArray[np.int64]  # (horizon+1,) PrivateEquityEventKindCode values
+    regime_code: npt.NDArray[np.int64]  # (horizon+1,) PrivateEquityRegimeCode values
     as_of: date
 
     @property
@@ -95,7 +96,7 @@ def resolve_pre_ipo_failure(traj: RolloutTrajectory) -> Resolution:
     return Resolution.UNRESOLVED  # still private-operating at end of horizon
 
 
-def resolve_market(traj: RolloutTrajectory, *, mapping_kind: str, params: dict) -> Resolution:
+def resolve_market(traj: RolloutTrajectory, *, mapping_kind: str, params: dict[str, object]) -> Resolution:
     """Dispatch a cleanly-mappable (`exact`) catalog entry to its resolver.
 
     Only event-based kinds are handled; valuation/revenue markets are not scored
@@ -103,7 +104,9 @@ def resolve_market(traj: RolloutTrajectory, *, mapping_kind: str, params: dict) 
     """
     match mapping_kind:
         case "ipo_by_date":
-            return resolve_ipo_by_date(traj, by_month=traj.month_on_or_before(date.fromisoformat(params["by_date"])))
+            return resolve_ipo_by_date(
+                traj, by_month=traj.month_on_or_before(date.fromisoformat(str(params["by_date"])))
+            )
         case "pre_ipo_failure":
             return resolve_pre_ipo_failure(traj)
     raise ValueError(f"mapping_kind {mapping_kind!r} is not cleanly resolvable against augur (surface it instead)")

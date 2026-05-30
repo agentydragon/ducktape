@@ -1,7 +1,7 @@
 # Example prediction-market catalog: hand-curated Manifold markets about exogenous
 # OpenAI trajectories, used to compare an augur exogenous model against market-implied
 # probabilities. A real deployment supplies its own catalog (and chooses the issuer +
-# model on the calibration_cli command line); this file ships as a worked example.
+# model); this file ships as a worked example.
 #
 # DATA ONLY and read-only with respect to any model. calibration.py resolves the
 # cleanly-mappable (`exact`) markets per rollout and surfaces the rest. The verbatim
@@ -60,9 +60,9 @@ metadata:
     YES condition must occur by, per the question/criterion -- OFTEN DIFFERS from
     close_date (e.g. the Bayesian 2027/2028/2029 IPO series shares one trading-close
     time but resolves for different years). sim_signal/sim_fidelity = how p_model is
-    computed and how faithfully. curation_snapshot = informational price/liquidity at
-    curation time; calibration uses it unless `--live` fetches current Manifold prices.
-    Polymarket / Kalshi stay out of scope until the Manifold loop works end-to-end.
+    computed and how faithfully. p_market is ALWAYS fetched live from Manifold at scoring
+    time (this catalog stores only market metadata, no prices). Polymarket / Kalshi stay
+    out of scope until the Manifold loop works end-to-end.
 
 markets:
   # ============================================================================
@@ -84,7 +84,6 @@ markets:
       resolves based on when the actual IPO occurs, not when an IPO date is
       announced.
     notes: "Highest-signal IPO market (vol ~27k, 82 bettors). Resolves on the actual IPO, not announcement."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.752, total_liquidity: 1000, unique_bettors: 82, volume: 26892}
 
   - slug: openai-ipo-before-2028
     manifold_id: RPNylZcpZg
@@ -102,7 +101,6 @@ markets:
       resolution basis as openai-ipo-before-2027: resolves on the actual IPO
       occurring (not an announced date), before Jan 1, 2028.
     notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2028."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.888, total_liquidity: 1000, unique_bettors: 24, volume: 3189}
 
   - slug: openai-ipo-before-2029
     manifold_id: U5d5lNQLqR
@@ -120,7 +118,6 @@ markets:
       resolution basis as openai-ipo-before-2027: resolves on the actual IPO
       occurring (not an announced date), before Jan 1, 2029.
     notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2029."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.926, total_liquidity: 1000, unique_bettors: 16, volume: 3099}
 
   - slug: will-openai-ipo-by-2030
     manifold_id: 0nIGd2HdusAb3id9SqzH
@@ -135,7 +132,6 @@ markets:
     sim_fidelity: "exact (within 120-month horizon)."
     resolution_criterion_text: ""
     notes: "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended semantics."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.796, total_liquidity: 1000, unique_bettors: 54, volume: 4661}
 
   - slug: will-openai-go-public-in-2026
     manifold_id: Csgc56pdZc
@@ -157,7 +153,6 @@ markets:
       pricing, and first day of trading occurring in 2026. The resolution will be
       verified through major financial news sources (Bloomberg, Reuters, CNBC,
       WSJ) and official SEC filings if the IPO occurs in the United States.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.755, total_liquidity: 100, unique_bettors: 26, volume: 1556}
 
   - slug: will-openai-ipo-and-be-a-publicly-t-585cd5ee0be9
     manifold_id: NjpljpCCdCFW6aAG3SUa
@@ -172,7 +167,6 @@ markets:
     sim_fidelity: "exact up to monthly rounding (deadline 2026-10-31 -> month index for Oct 2026)."
     resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2026-10-31)."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.476, total_liquidity: 100, unique_bettors: 25, volume: 1395}
 
   - slug: will-openai-ipo-and-be-a-publicly-t-23bdd3484055
     manifold_id: 4EmLfjixbVhMfJzPc4C1
@@ -187,7 +181,6 @@ markets:
     sim_fidelity: "exact up to monthly rounding."
     resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2027-04-01)."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.868, total_liquidity: 100, unique_bettors: 13, volume: 1438}
 
   # ============================================================================
   # EXACT -- pre_ipo_failure  (absorbing COLLAPSED/ACQUIRED before any IPO)
@@ -210,7 +203,6 @@ markets:
       initial public offering. The market resolves NO if OpenAI successfully
       completes an IPO. If OpenAI files for IPO but the offering is withdrawn or
       fails to complete, the market resolves YES.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.092, total_liquidity: 100, unique_bettors: 14, volume: 1420}
 
   # ============================================================================
   # SURFACED (valuation) -- augur does NOT model company valuation; not scored.
@@ -235,7 +227,6 @@ markets:
       resolve as YES if Gemini determines the company's value is $1,000,000,000,000
       on Jan 1, 2027. Otherwise, it resolves as NO.
     notes: "Criterion evaluates valuation ON Jan 1, 2027 (title says 'end of 2027')."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.766, total_liquidity: 100, unique_bettors: 6, volume: 267}
 
   - slug: openai-completes-an-ipo-in-2026-and
     manifold_id: hdy0nPpEsA
@@ -258,7 +249,6 @@ markets:
       public stock exchange; announcement of a date or filings does not count. Market
       cap is the one on IPO day at market close, per yahoo finance; private valuations
       don't count.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.658, total_liquidity: 1000, unique_bettors: 10, volume: 873}
 
   # ============================================================================
   # CORRELATE -- augur has a related signal for context; not scored.
@@ -285,7 +275,6 @@ markets:
       registration statement (SEC Form S-1) at the U.S. Securities and Exchange
       Commission's EDGAR database before January 1, 2027.
     notes: "High liquidity (5100), strong signal -- valuable correlate even though not exact."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.846, total_liquidity: 5100, unique_bettors: 69, volume: 20559}
 
   - slug: will-openai-go-public-not-via-an-ip
     manifold_id: 95POzZAIhg
@@ -309,7 +298,6 @@ markets:
       exchange as a result of a non-IPO route (direct listing, SPAC/de-SPAC merger, or
       merger/acquisition resulting in listed OpenAI equity). If OpenAI goes public via
       a traditional underwritten IPO (Form S-1 primary IPO) by the deadline, resolve NO.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.132, total_liquidity: 1000, unique_bettors: 8, volume: 1570}
 
   - slug: openai-reaches-100b-revenue-in-2028
     manifold_id: ugRnhOtcqN
@@ -330,7 +318,6 @@ markets:
       Resolves on whether OpenAI reaches $100B revenue in 2028, per Epoch AI analysis.
       Open question (per FAQ) whether "total 2028 revenue" or "annualized run-rate by
       end of 2028" is the measure.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.590, total_liquidity: 1000, unique_bettors: 33, volume: 8836}
 
   - slug: will-openai-have-10-billion-in-reve-2ac7eb0f62f5
     manifold_id: mQB5gkPdsaqoQdaAlMoL
@@ -346,7 +333,6 @@ markets:
     sim_fidelity: "weak/indirect; market near-certain, low information."
     resolution_criterion_text: ""
     notes: "Empty description; classified from title."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.989, total_liquidity: 1000, unique_bettors: 27, volume: 16869}
 
   - slug: openai-will-be-nationalized-or-have
     manifold_id: HrMP25RvBmOw3FfGVOup
@@ -368,7 +354,6 @@ markets:
       legally required to follow US-government production directions, or is forced to
       sell/merge/share ownership with (or take a large investment from) the US
       government. NO if OpenAI still independently determines its own direction.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.337, total_liquidity: 10000, unique_bettors: 61, volume: 22680}
 
   - slug: will-openai-be-more-valuable-than-m
     manifold_id: x7ZzkewbkjWtnz3eGFg1
@@ -388,7 +373,6 @@ markets:
     resolution_criterion_text: |
       Resolves yes if OpenAI has a valuation (from a funding round etc.) or market cap
       greater than Microsoft at any point before Jan. 1st 2040.
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.280, total_liquidity: 1000, unique_bettors: 27, volume: 2090}
 
   # ============================================================================
   # UNMAPPABLE -- no meaningfully related augur signal.
@@ -407,4 +391,3 @@ markets:
     sim_fidelity: "not computable; no governance state in the sim."
     resolution_criterion_text: ""
     notes: "Empty description; classified from title."
-    curation_snapshot: {as_of: "2026-05-29", yes_prob: 0.937, total_liquidity: 2000, unique_bettors: 49, volume: 10218}

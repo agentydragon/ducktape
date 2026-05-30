@@ -231,6 +231,7 @@ py_library(
         ":schemas",
         "//augur/calibration",
         "//augur/calibration:catalog",
+        "//augur/calibration:manifold",
         "//augur/model:exogenous",
         "//augur/product:portfolio",
         "//augur/product:scenarios",

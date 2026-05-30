@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,6 +22,7 @@ from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.schemas import ApiModel
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle
 from augur.calibration.catalog import MarketCatalog
+from augur.calibration.manifold import ManifoldClient, PriceClient
 from augur.model.exogenous import Sampler
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
@@ -44,6 +45,9 @@ class ApiServerConfig:
     # The calibration catalog parsed at startup, or None when the deployment configures no
     # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
     calibration_catalog: LoadedCalibrationCatalog | None = None
+    # Live prediction-market price source for `/api/calibration/run` (per-market YES probs).
+    # Defaults to a real Manifold client; tests inject a hermetic stub.
+    price_client: PriceClient = field(default_factory=ManifoldClient)
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -131,7 +135,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             issuer=issuer,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            live=request.live,
+            price_client=config.price_client,
             bundle=bundle,
         )
         fan = mark_fan(
@@ -160,7 +164,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     return app
 
 
-def create_app_from_augur_config(augur_config: Config) -> FastAPI:
+def create_app_from_augur_config(augur_config: Config, *, price_client: PriceClient | None = None) -> FastAPI:
+    """Build the app from a `Config`.
+
+    `price_client` is the live prediction-market price source for `/api/calibration/run`
+    (a real `ManifoldClient` by default; the endpoint test injects a hermetic stub)."""
     exogenous_models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model())
         for preset_id, provider in augur_config.exogenous_presets.items()
@@ -171,11 +179,13 @@ def create_app_from_augur_config(augur_config: Config) -> FastAPI:
         if catalog_config is not None
         else None
     )
-    return create_app(
-        ApiServerConfig(
-            augur_config=augur_config, exogenous_models=exogenous_models, calibration_catalog=calibration_catalog
-        )
+    server_config = ApiServerConfig(
+        augur_config=augur_config,
+        exogenous_models=exogenous_models,
+        calibration_catalog=calibration_catalog,
+        price_client=price_client if price_client is not None else ManifoldClient(),
     )
+    return create_app(server_config)
 
 
 def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> None:

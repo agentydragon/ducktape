@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,6 +32,7 @@ py_library(
     srcs = ["manifold.py"],
     deps = [
         "//augur/api:casing",
+        "@pypi//httpx",
         "@pypi//pydantic",
     ],
 )
@@ -50,26 +51,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//statsmodels",
     ],
-)
-
-py_library(
-    name = "calibration_cli_lib",
-    srcs = ["calibration_cli.py"],
-    deps = [
-        ":calibration",
-        ":catalog",
-        "//augur/model:exogenous",
-        "//augur/model:exogenous_provider_config",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
-py_binary(
-    name = "calibration_cli",
-    main_module = "augur.calibration.calibration_cli",
-    deps = [":calibration_cli_lib"],
 )
 
 py_test(
@@ -104,12 +85,12 @@ py_test(
     deps = [
         ":calibration",
         ":catalog",
+        ":manifold",
         "//:conftest",
         "//augur/model:exogenous",
-        "//augur/model:private_equity_bundle",
         "//augur/model:series",
+        "//augur/model:testing",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pytest_bazel",
     ],
 )

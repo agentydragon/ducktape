@@ -1,8 +1,9 @@
 """TestClient coverage for the exogenous-only calibration surface.
 
 Builds the app from the public fixture config (which configures the example OpenAI
-catalog scored against the `openai_pe` preset). `/api/bootstrap` surfaces the catalog
-info; `/api/calibration/run` does a small, offline (`live=false`) run. No network.
+catalog scored against the `openai_pe` preset), injecting a stub price client so the
+run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
+`/api/calibration/run` does a small run with the injected live prices.
 """
 
 from __future__ import annotations
@@ -18,10 +19,18 @@ from augur.api.server import create_app_from_augur_config
 from util.bazel.runfiles import get_required_path
 
 
+class _StubPrices:
+    """A hermetic `PriceClient`: every market resolves to the same fixed YES probability."""
+
+    def fetch_yes_probability(self, market_id: str) -> float:
+        return 0.5
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-    with TestClient(create_app_from_augur_config(config)) as test_client:
+    app = create_app_from_augur_config(config, price_client=_StubPrices())
+    with TestClient(app) as test_client:
         yield test_client
 
 
@@ -46,19 +55,21 @@ def test_run_calibration(client: TestClient) -> None:
     assert result["issuer"] == "openai"
     assert result["horizon_months"] == 24
     assert result["rollout_count"] == 16
-    assert result["price_source"] == "curation-snapshot"
     # The example catalog ships both exact (scored) and surfaced markets.
     assert isinstance(result["clean"], list)
     assert result["clean"]
     assert isinstance(result["surfaced"], list)
     assert result["surfaced"]
     clean_row = result["clean"][0]
+    # Every market's p_market is the injected live stub price.
+    assert clean_row["p_market"] == 0.5
     # Snake_case on the wire (the frontend camelizes). p_model/abs_gap/resolution_deadline
     # are optional (dropped when None — e.g. no rollout resolved within the horizon), so we
     # only require the always-present fields here.
     assert {"slug", "mapping_kind", "p_market", "ci95", "n_resolved", "unresolved"} <= set(clean_row)
     surfaced_row = result["surfaced"][0]
     assert {"slug", "question", "mappability", "p_market"} <= set(surfaced_row)
+    assert surfaced_row["p_market"] == 0.5
 
     fan = body["mark_fan"]
     assert fan["issuer"] == "openai"
