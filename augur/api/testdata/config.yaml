@@ -169,7 +169,7 @@ portfolio:
       security_kind: etf
       symbol: VOO
       unit_value_usd: 500.0
-      value_series_id: sp500
+      value_series: { kind: sp500 }
     - position_id: btc_holding
       account_id: taxable_brokerage
       label: Bitcoin
@@ -181,7 +181,7 @@ portfolio:
       security_kind: cryptocurrency
       symbol: BTC
       unit_value_usd: 75000.0
-      value_series_id: crypto:btc
+      value_series: { kind: crypto, symbol: btc }
     - position_id: eth_holding
       account_id: taxable_brokerage
       label: Ethereum
@@ -193,7 +193,7 @@ portfolio:
       security_kind: cryptocurrency
       symbol: ETH
       unit_value_usd: 2100.0
-      value_series_id: crypto:eth
+      value_series: { kind: crypto, symbol: eth }
     - position_id: private_holding_a
       account_id: taxable_brokerage
       label: Private Holding A
@@ -205,7 +205,7 @@ portfolio:
       security_kind: private_equity
       symbol: PHA
       unit_value_usd: 25.0
-      value_series_id: private_equity:private_holding_a
+      value_series: { kind: private_equity, issuer_id: private_holding_a }
 property_source:
   properties_path: properties.json
 # Public e2e fixture; values are synthetic.

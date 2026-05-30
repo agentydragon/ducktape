@@ -63,7 +63,9 @@ def _holding_position(position: HoldingPositionConfig, *, account_label: str | N
         label=position.label,
         symbol=position.symbol,
         security_kind=str(position.security_kind),
-        value_series_id=position.value_series_id,
+        # Product wire field stays a wire string until the Phase 4 API-wire retype;
+        # derive it from the now-typed config `value_series`.
+        value_series_id=position.value_series.wire_id,
         unit_value_usd=float(position.unit_value_usd),
         quantity=float(position.total_quantity),
         current_value_usd=float(position.current_value_usd),

@@ -4,6 +4,7 @@ import pytest_bazel
 
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
+from augur.product.asset_key import SP500AssetKey
 from augur.product.portfolio import product_portfolio_response
 
 
@@ -21,7 +22,7 @@ def test_product_portfolio_response_includes_holding_positions_and_lots() -> Non
                     label="SP500 Proxy",
                     symbol="VOO",
                     security_kind="etf",
-                    value_series_id="sp500",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(

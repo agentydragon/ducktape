@@ -16,11 +16,10 @@ from functools import cached_property
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
 
 from augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
-from augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, SP500AssetKey, parse_asset_key
+from augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, SP500AssetKey
 from augur.sim.scenario import InitialLot
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
-_SERIES_ID_PATTERN = r"^[a-z0-9][a-z0-9_:\-]*$"
 
 
 class PortfolioConfigModel(BaseModel):
@@ -75,22 +74,15 @@ class HoldingPositionConfig(PortfolioConfigModel):
     label: str | None = None
     symbol: str
     security_kind: HoldingKind
-    value_series_id: str = Field(
-        pattern=_SERIES_ID_PATTERN,
+    value_series: AssetKey = Field(
         description=(
-            "Sim/model unit-value series used to value this security. This should be the held "
-            "security's unit series, e.g. voo or goog; the model can map that to broader factors."
-        ),
+            "Typed sim/model unit-value series used to value this security: an `AssetKey` "
+            "discriminated union (`{kind: sp500}`, `{kind: crypto, symbol: btc}`, "
+            "`{kind: private_equity, issuer_id: ...}`). Authored typed in YAML — no wire-string prefix."
+        )
     )
     unit_value_usd: PositiveFloat
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
-
-    @cached_property
-    def asset_key(self) -> AssetKey:
-        """Typed asset classification for this holding position, parsed once from
-        the YAML-supplied wire-id `value_series_id`."""
-
-        return parse_asset_key(self.value_series_id)
 
     @property
     def total_quantity(self) -> float:
@@ -137,18 +129,15 @@ class PortfolioConfig(PortfolioConfigModel):
         if duplicate_lots:
             raise ValueError(f"public security tax lots must have unique lot_id values: {duplicate_lots}")
 
-        series_unit_values: dict[str, float] = {}
+        series_unit_values: dict[AssetKey, float] = {}
         for position in self.holdings:
             unit_value = float(position.unit_value_usd)
-            if (
-                position.value_series_id in series_unit_values
-                and series_unit_values[position.value_series_id] != unit_value
-            ):
+            if position.value_series in series_unit_values and series_unit_values[position.value_series] != unit_value:
                 raise ValueError(
-                    f"public security positions sharing value_series_id {position.value_series_id!r} "
+                    f"public security positions sharing value_series {position.value_series.wire_id!r} "
                     "must share unit_value_usd"
                 )
-            series_unit_values[position.value_series_id] = unit_value
+            series_unit_values[position.value_series] = unit_value
 
         return self
 
@@ -162,7 +151,7 @@ class PortfolioConfig(PortfolioConfigModel):
         private_equity_anchors: dict[IssuerId, float] = {}
         for position in self.holdings:
             unit_value = float(position.unit_value_usd)
-            asset_key = position.asset_key
+            asset_key = position.value_series
             if isinstance(asset_key, PrivateEquityAssetKey):
                 private_equity_anchors[asset_key.issuer_id] = unit_value
             elif isinstance(asset_key, SP500AssetKey):
@@ -179,7 +168,8 @@ class PortfolioConfig(PortfolioConfigModel):
             InitialLot(
                 lot_id=lot.lot_id,
                 agent_id=account_by_id[position.account_id].owner_agent_id,
-                asset_id=position.value_series_id,
+                # InitialLot.asset_id is still a sim-frame wire string (typed in Phase 2/4).
+                asset_id=position.value_series.wire_id,
                 purchase_month_index=-int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
                 cost_basis_per_unit_usd=lot.cost_basis_per_unit_usd,
@@ -195,9 +185,8 @@ class PortfolioLevelAnchors:
 
     Non-PE level series anchors flow into the exogenous bundle's `levels` frame
     via `LevelSeriesKey`; PE issuer anchors flow into the `PrivateEquityBundle`
-    keyed by `IssuerId`. The split lives at the API/runtime boundary because
-    that's where wire-encoded `value_series_id` strings get parsed into typed
-    `AssetKey` values.
+    keyed by `IssuerId`. The split lives at the API/runtime boundary, dispatching
+    on each holding's typed `value_series` `AssetKey`.
     """
 
     level_series_anchors: dict[LevelSeriesKey, float]

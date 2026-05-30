@@ -27,6 +27,7 @@ from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
+from augur.product.asset_key import SP500AssetKey
 
 
 def _minimal_config(**overrides: object) -> Config:
@@ -117,7 +118,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
                     account_id="taxable_brokerage",
                     symbol="VOO",
                     security_kind="etf",
-                    value_series_id="voo",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(

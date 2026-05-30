@@ -5,6 +5,8 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
+from augur.model.series import CryptoSymbol
+from augur.product.asset_key import CryptoAssetKey, SP500AssetKey
 
 
 def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
@@ -16,7 +18,7 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
                 account_id="taxable_brokerage",
                 symbol="VOO",
                 security_kind="etf",
-                value_series_id="voo",
+                value_series=SP500AssetKey(),
                 unit_value_usd=500.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -39,8 +41,8 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
     assert portfolio.holdings[0].total_cost_basis_usd == 39_000.0
     assert portfolio.total_holdings_value_usd == 60_000.0
     assert [(lot.lot_id, lot.agent_id, lot.asset_id, lot.purchase_month_index) for lot in lots] == [
-        ("voo_2024_05_20", "agent_a", "voo", -24),
-        ("voo_2026_05_20", "agent_a", "voo", 0),
+        ("voo_2024_05_20", "agent_a", "sp500", -24),
+        ("voo_2026_05_20", "agent_a", "sp500", 0),
     ]
     assert lots[0].quantity == 100.0
     assert lots[0].cost_basis_per_unit_usd == 300.0
@@ -56,7 +58,7 @@ def test_one_account_can_hold_multiple_holding_positions() -> None:
                 account_id="taxable_brokerage",
                 symbol="VOO",
                 security_kind="etf",
-                value_series_id="voo",
+                value_series=SP500AssetKey(),
                 unit_value_usd=500.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -69,7 +71,9 @@ def test_one_account_can_hold_multiple_holding_positions() -> None:
                 account_id="taxable_brokerage",
                 symbol="GOOG",
                 security_kind="stock",
-                value_series_id="goog",
+                # Distinct asset key from the VOO position above — two positions only
+                # need a shared unit_value when they share a value_series.
+                value_series=CryptoAssetKey(symbol=CryptoSymbol("eth")),
                 unit_value_usd=180.0,
                 lots=(
                     HoldingTaxLotConfig(
@@ -93,7 +97,7 @@ def test_holding_positions_must_reference_known_accounts() -> None:
                     account_id="missing",
                     symbol="VOO",
                     security_kind="etf",
-                    value_series_id="voo",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -116,7 +120,7 @@ def test_holding_lot_ids_must_be_unique() -> None:
                     account_id=account.account_id,
                     symbol="VOO",
                     security_kind="etf",
-                    value_series_id="voo",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -132,7 +136,7 @@ def test_holding_lot_ids_must_be_unique() -> None:
                     account_id=account.account_id,
                     symbol="GOOG",
                     security_kind="stock",
-                    value_series_id="goog",
+                    value_series=CryptoAssetKey(symbol=CryptoSymbol("eth")),
                     unit_value_usd=180.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -158,7 +162,7 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                     account_id=account.account_id,
                     symbol="SP500",
                     security_kind="other",
-                    value_series_id="sp500",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=500.0,
                     lots=(
                         HoldingTaxLotConfig(
@@ -174,7 +178,7 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                     account_id=account.account_id,
                     symbol="SP500",
                     security_kind="other",
-                    value_series_id="sp500",
+                    value_series=SP500AssetKey(),
                     unit_value_usd=600.0,
                     lots=(
                         HoldingTaxLotConfig(
