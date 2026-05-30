@@ -275,6 +275,8 @@ py_library(
     deps = [
         ":dilution_prior",
         ":private_equity",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
@@ -292,5 +294,17 @@ py_test(
         ":private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_derive_dilution_prior",
+    srcs = ["test_derive_dilution_prior.py"],
+    deps = [
+        ":derive_dilution_prior_lib",
+        ":dilution_prior",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
