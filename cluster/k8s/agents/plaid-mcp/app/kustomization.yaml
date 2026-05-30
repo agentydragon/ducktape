@@ -1,5 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# Sets metadata.namespace on every resource, including the configMapGenerator output
+# below — generators don't inherit a namespace, and Flux's server-side apply rejects a
+# namespaced resource (the plaid-mcp-items ConfigMap) that doesn't have one.
+namespace: plaid-mcp
 # plaid-client-credentials and plaid-{chase,bofa}-access-token are mirrored from
 # the `airlock` namespace by the ExternalSecrets in external-secret.yaml (ESO
 # Kubernetes provider). plaid-mcp-oidc (facade Authentik creds) is created by the
