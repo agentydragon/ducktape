@@ -9,7 +9,7 @@ The runtime typed boundary (`LevelSeriesKey`, `AssetKey`) already exists, but
 prefixes still survive in **config**, **in-memory polars frames**, **on-disk
 trained artifacts**, and the **API wire**. The endpoint is zero magic-prefix
 strings anywhere — identity carried structurally (typed unions in config/API;
-`kind` + `qualifier` columns in frames; typed factor records in artifacts).
+per-kind frames carrying only a sub-id column; typed factor records in artifacts).
 
 This is the columnar/serialized analog of the existing `PrivateEquityBundle`,
 which already carries PE state as a bare `issuer_id` column + typed channel
@@ -154,9 +154,9 @@ End state: nothing on disk carries prefixes.
 
 ## Phase 4 — API wire + final deletion + CI guard
 
-| #   | Field                                                                                                                                           | Change                                                                                                                                                                                                                                                                                                                                                             |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 13  | `product/wire.py` `asset_id: str` (`HoldingSaleEvent`, `PrivateEquityMarkerEvent`, `PrivateEquityOpportunityEvent`) + `spend_index: SpendIndex` | typed `AssetKey` / `LevelSeriesKey` reference (serializes `{kind,qualifier}`). Update `product/decode.py` wire construction + `api/server_test.py` assertions. **Verify the frontend** — sub-agent found no TS refs to `series_id`/`asset_id`, but confirm `asset_id`/`spend_index` consumption before changing the shape (the one external/JSON-breaking surface) |
+| #   | Field                                                                                                                                           | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 13  | `product/wire.py` `asset_id: str` (`HoldingSaleEvent`, `PrivateEquityMarkerEvent`, `PrivateEquityOpportunityEvent`) + `spend_index: SpendIndex` | `asset: AssetKey` / `spend_index: LevelSeriesKey` — nested object, serializes `{"kind":"crypto","symbol":"btc"}` (the discriminated union, same repr as config typed-key spots). Update `product/decode.py` wire construction + `api/server_test.py` assertions. **Verify the frontend** — sub-agent found no TS refs to `series_id`/`asset_id`, but confirm `asset_id`/`spend_index` consumption before changing the shape (the one external/JSON-breaking surface) |
 
 Then: **delete** `wire_id`, `parse_level_series_key`, `try_parse_level_series_key`,
 `parse_asset_key`, `try_parse_asset_key`. Add the CI grep guard (Definition of
