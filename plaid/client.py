@@ -1,4 +1,4 @@
-"""Minimal Plaid client for plaid experiments and the Plaid MCP server.
+"""Minimal Plaid client for the Plaid MCP server and experiments.
 
 Reuses `airlock.oauth.provider.PlaidProvider` for link_token creation and
 public_token exchange. Adds the data endpoints PlaidProvider doesn't cover
@@ -6,22 +6,18 @@ public_token exchange. Adds the data endpoints PlaidProvider doesn't cover
 `/transactions/get`, `/transactions/sync`, `/liabilities/get`).
 
 Data endpoints parse Plaid JSON into typed models from `plaid.models` at the
-boundary; callers get typed objects, not raw dicts.
+boundary; callers get typed objects, not raw dicts. Credentials are passed in as a
+`PlaidCreds`; loading them from sops/env lives in `plaid.dev_creds` (dev-only) so the
+MCP server never bundles that machinery.
 """
 
-import os
-import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import httpx
-import yaml
 
 from airlock.oauth.provider import PlaidProvider, PlaidProviderConfig, TokenSecretConfig
 from plaid.models import AccountsGetResponse, LiabilitiesGetResponse, TransactionsGetResponse
-
-DEFAULT_SOPS_PATH = Path("secrets/plaid.sops.yaml")
 
 PLAID_HOSTS = {"sandbox": "https://sandbox.plaid.com", "production": "https://production.plaid.com"}
 
@@ -31,36 +27,6 @@ class PlaidCreds:
     client_id: str
     secret: str
     env: str
-
-    @classmethod
-    def from_env(cls) -> "PlaidCreds":
-        env = os.environ["PLAID_ENV"]
-        if env not in PLAID_HOSTS:
-            raise ValueError(f"PLAID_ENV must be one of {list(PLAID_HOSTS)}, got {env!r}")
-        return cls(client_id=os.environ["PLAID_CLIENT_ID"], secret=os.environ["PLAID_SECRET"], env=env)
-
-    @classmethod
-    def from_sops(cls, env: str, path: Path = DEFAULT_SOPS_PATH) -> "PlaidCreds":
-        if env not in PLAID_HOSTS:
-            raise ValueError(f"env must be one of {list(PLAID_HOSTS)}, got {env!r}")
-        plaintext = subprocess.run(["sops", "-d", str(path)], check=True, capture_output=True, text=True).stdout
-        data = yaml.safe_load(plaintext)
-        return cls(client_id=data["client_id"], secret=data["secrets"][env], env=env)
-
-    @classmethod
-    def load(cls) -> "PlaidCreds":
-        """Prefer SOPS file (default `<workspace>/secrets/plaid.sops.yaml`); fall back to env vars."""
-        env = os.environ["PLAID_ENV"]
-        override = os.environ.get("PLAID_SECRETS_PATH")
-        if override:
-            sops_path = Path(override)
-        else:
-            # `bazel run` sets BUILD_WORKING_DIRECTORY to the invocation cwd.
-            root = Path(os.environ.get("BUILD_WORKING_DIRECTORY", "."))
-            sops_path = root / DEFAULT_SOPS_PATH
-        if sops_path.exists():
-            return cls.from_sops(env, sops_path)
-        return cls.from_env()
 
     @property
     def host(self) -> str:

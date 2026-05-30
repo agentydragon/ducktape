@@ -12,13 +12,14 @@ Run:
 import asyncio
 import logging
 
-from plaid.client import PlaidCreds, PlaidExtras, provider_for
+from plaid.client import PlaidExtras, provider_for
+from plaid.dev_creds import load
 
 logger = logging.getLogger(__name__)
 
 
 async def async_main() -> None:
-    creds = PlaidCreds.load()
+    creds = load()
     if creds.env != "sandbox":
         raise SystemExit(f"sandbox_smoke requires PLAID_ENV=sandbox, got {creds.env!r}")
 

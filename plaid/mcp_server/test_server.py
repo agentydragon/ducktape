@@ -42,22 +42,25 @@ async def test_list_transactions_paginates_within_range(client: Client) -> None:
     assert page["total"] == 5
     assert [t["transaction_id"] for t in page["transactions"]] == ["txn_1", "txn_2"]
     assert page["transactions"][0]["amount"] == 11.0
-    assert page["transactions"][0]["category"]["primary"] == "FOOD_AND_DRINK"
+    assert page["transactions"][0]["personal_finance_category"]["primary"] == "FOOD_AND_DRINK"
 
 
-async def test_get_credit_card_liabilities(client: Client) -> None:
-    cards = unwrap(await client.call_tool("get_credit_card_liabilities", {"item": "chase"}))
+async def test_get_liabilities(client: Client) -> None:
+    liabilities = unwrap(await client.call_tool("get_liabilities", {"item": "chase"}))
+    # Card-only item: mortgage/student arrays are null.
+    assert liabilities["mortgage"] is None
+    assert liabilities["student"] is None
+    cards = liabilities["credit"]
     assert len(cards) == 1
-    assert cards[0]["name"] == "Sapphire Reserve"
-    assert cards[0]["mask"] == "4021"
+    assert cards[0]["account_id"] == "acc_cc"
     assert cards[0]["last_statement_balance"] == 1543.21
-    assert cards[0]["aprs"][0]["type"] == "purchase_apr"
+    assert cards[0]["aprs"][0]["apr_type"] == "purchase_apr"
 
 
 async def test_liabilities_rejects_item_without_product(client: Client) -> None:
     # bofa is configured without the 'liabilities' product.
     with pytest.raises(ToolError):
-        await client.call_tool("get_credit_card_liabilities", {"item": "bofa"})
+        await client.call_tool("get_liabilities", {"item": "bofa"})
 
 
 async def test_unknown_item_raises(client: Client) -> None:

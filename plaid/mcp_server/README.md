@@ -9,13 +9,17 @@ item's access token; every tool takes an `item` selector.
 ## Tools
 
 - `list_items` → `list[ItemSummary]`. Call first — discovers `item` keys and each item's products.
-- `list_accounts(item)` → `list[AccountOut]`. Cached balances (Plaid refreshes 1–4×/day).
+- `list_accounts(item)` → `list[Account]`. Cached balances (Plaid refreshes 1–4×/day).
 - `list_transactions(item, start_date, end_date, account_id?, offset?, count?)` → `TransactionPage`.
   Date range + `offset`/`count` pagination; `total` is the full in-range count before slicing.
-- `get_credit_card_liabilities(item)` → `list[CardLiabilityOut]`. Only for items with the
-  `liabilities` product; `aprs` is often empty (issuer-dependent).
-- `get_live_balance(item, account_id?)` → `list[AccountOut]`. Real-time; rate-limited
+- `get_liabilities(item)` → `Liabilities` (`credit` / `mortgage` / `student`, each null when the
+  item has none). Only for items with the `liabilities` product; a card's `aprs` is often empty
+  (issuer-dependent). Correlate each entry's `account_id` with `list_accounts` for the name/mask.
+- `get_live_balance(item, account_id?)` → `list[Account]`. Real-time; rate-limited
   5/min·30/hour per item — use sparingly.
+
+Tools return the typed [`plaid.models`](../models.py) shapes directly — the models already
+cover only the fields exposed, so there's no separate projection layer.
 
 Amount sign on transactions: **positive = money out** (charges/debits), **negative = money
 in** (payments/refunds/deposits). See [`../README.md`](../README.md) for the full set of
@@ -38,7 +42,7 @@ re-link via airlock).
       "iso_currency_code": "USD",
       "name": "WHOLE FOODS",
       "merchant_name": "Whole Foods Market",
-      "category": { "primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_GROCERIES" },
+      "personal_finance_category": { "primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_GROCERIES" },
       "pending": false,
       "pending_transaction_id": null
     }

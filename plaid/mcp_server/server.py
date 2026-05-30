@@ -1,8 +1,11 @@
-"""Plaid MCP server: read-only transactions, balances, and credit-card liabilities.
+"""Plaid MCP server: read-only transactions, balances, and liabilities.
 
 Auth-oblivious by design — a front proxy (`mcp-oauth-facade`) handles Authentik
 OAuth; this server only speaks MCP over HTTP on its configured port. One server
 holds every configured item's access token; tools take an `item` selector.
+
+Tools return the typed `plaid.models` shapes directly (the models already cover only
+the fields we expose) — there is no separate projection layer.
 """
 
 import logging
@@ -16,24 +19,16 @@ from fastmcp.exceptions import ToolError
 from pydantic import Field
 
 from plaid.client import PlaidCreds, PlaidExtras
-from plaid.mcp_server.config import ResolvedItem, ServerSettings
-from plaid.mcp_server.projections import (
-    AccountOut,
-    CardLiabilityOut,
-    ItemSummary,
-    TransactionPage,
-    account_out,
-    card_liability_out,
-    transaction_out,
-)
+from plaid.mcp_server.config import ItemSummary, ResolvedItem, ServerSettings
+from plaid.models import Account, Liabilities, TransactionPage
 
 logger = logging.getLogger(__name__)
 
 INSTRUCTIONS = (
     "Read-only access to the owner's Plaid-linked bank accounts: transactions, balances, and "
-    "credit-card liabilities. Call list_items first to discover the `item` selectors and which "
-    "products each supports. Transaction amount sign: positive = money out (charges/debits), "
-    "negative = money in (payments/refunds/deposits)."
+    "liabilities (credit cards, mortgages, student loans). Call list_items first to discover the "
+    "`item` selectors and which products each supports. Transaction amount sign: positive = money "
+    "out (charges/debits), negative = money in (payments/refunds/deposits)."
 )
 
 _ItemArg = Annotated[str, Field(description="Item selector from list_items, e.g. 'chase' or 'bofa'.")]
@@ -53,19 +48,18 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         """List the configured Plaid items.
 
         Call this first: each `key` is a valid `item` argument for the other tools, and only
-        items whose `products` include 'liabilities' accept get_credit_card_liabilities.
+        items whose `products` include 'liabilities' accept get_liabilities.
         """
         return [ItemSummary(key=i.key, institution=i.institution, products=i.products) for i in items.values()]
 
     @mcp.tool
-    async def list_accounts(item: _ItemArg) -> list[AccountOut]:
+    async def list_accounts(item: _ItemArg) -> list[Account]:
         """Accounts for an item with CACHED balances.
 
         Balances reflect Plaid's last pull (refreshed 1-4x/day); use get_live_balance for a
         real-time figure. The returned account_id values feed the filters on the other tools.
         """
-        resp = await extras.accounts_get(resolve(item).access_token)
-        return [account_out(a) for a in resp.accounts]
+        return (await extras.accounts_get(resolve(item).access_token)).accounts
 
     @mcp.tool
     async def list_transactions(
@@ -95,17 +89,17 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
             offset=offset,
             count=count,
         )
-        return TransactionPage(
-            total=resp.total_transactions, transactions=[transaction_out(t) for t in resp.transactions]
-        )
+        return TransactionPage(total=resp.total_transactions, transactions=resp.transactions)
 
     @mcp.tool
-    async def get_credit_card_liabilities(item: _ItemArg) -> list[CardLiabilityOut]:
-        """Credit-card liabilities: statement balance, due dates, minimum payment, and APRs.
+    async def get_liabilities(item: _ItemArg) -> Liabilities:
+        """Liabilities for an item: `credit` cards, `mortgage`s, and `student` loans.
 
-        Backed by /liabilities/get; credit-card accounts only. Valid only for items whose
-        products include 'liabilities' (see list_items). Most fields are nullable and
-        issuer-dependent, and `aprs` is often empty (many issuers don't report APRs).
+        Backed by /liabilities/get. Each array is null when the item has no accounts of that
+        type (e.g. a card-only item returns mortgage=null, student=null). Valid only for items
+        whose products include 'liabilities' (see list_items). Most fields are nullable and
+        issuer-dependent — e.g. a credit card's `aprs` is often empty. Each entry carries an
+        account_id; correlate with list_accounts for the account name/mask.
         """
         resolved = resolve(item)
         if "liabilities" not in resolved.products:
@@ -113,10 +107,7 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
                 f"Item {resolved.key!r} has no 'liabilities' product (products: {resolved.products}). "
                 "Use list_items to see which items support liabilities."
             )
-        resp = await extras.liabilities_get(resolved.access_token)
-        accounts_by_id = {a.account_id: a for a in resp.accounts}
-        credit = resp.liabilities.credit or []
-        return [card_liability_out(c, accounts_by_id) for c in credit]
+        return (await extras.liabilities_get(resolved.access_token)).liabilities
 
     @mcp.tool
     async def get_live_balance(
@@ -125,15 +116,14 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
             str | None,
             Field(description="Restrict to one account_id to conserve the per-item rate budget; omit for all."),
         ] = None,
-    ) -> list[AccountOut]:
+    ) -> list[Account]:
         """Real-time balances via /accounts/balance/get (hits the bank, uncached).
 
         Heavily rate-limited: 5/min and 30/hour per item. Prefer list_accounts (cached) for
         routine reads; pass account_id to fetch a single account and conserve the budget.
         """
         account_ids = [account_id] if account_id is not None else None
-        resp = await extras.accounts_balance_get(resolve(item).access_token, account_ids=account_ids)
-        return [account_out(a) for a in resp.accounts]
+        return (await extras.accounts_balance_get(resolve(item).access_token, account_ids=account_ids)).accounts
 
     return mcp
 

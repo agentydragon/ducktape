@@ -28,6 +28,14 @@ class ResolvedItem(BaseModel):
     access_token: str
 
 
+class ItemSummary(BaseModel):
+    """list_items output: a configured item without its access token."""
+
+    key: str
+    institution: str
+    products: list[str]
+
+
 class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PLAID_MCP_")
 

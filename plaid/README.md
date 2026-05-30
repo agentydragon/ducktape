@@ -16,8 +16,10 @@ Stored SOPS-encrypted at `<../secrets/plaid.sops.yaml>` — single YAML with
 `client_id`, `secrets.sandbox`, `secrets.production`. Decryptable by the 5
 user-level age anchors (admin + wyrm2/rugged/atlas/iguana-agentydragon).
 
-`PlaidCreds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
-Fallback: if the file is missing, it reads `PLAID_CLIENT_ID`/`PLAID_SECRET` from env.
+`plaid.dev_creds.load()` reads it via `sops -d` and selects the secret by `$PLAID_ENV`.
+Fallback: if the file is missing, it reads `PLAID_CLIENT_ID`/`PLAID_SECRET` from env. This
+sops/env loader lives in `dev_creds.py`, separate from `client.py`, so the MCP server never
+bundles it.
 
 Plaid removed the `development` environment in 2024 — only `sandbox` (fake
 banks, free, unlimited) and `production` (real banks, paid; first 10 Items

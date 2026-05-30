@@ -15,6 +15,14 @@ py_library(
         ":models",
         "//airlock/oauth:provider",
         "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "dev_creds",
+    srcs = ["dev_creds.py"],
+    deps = [
+        ":client",
         "@pypi//pyyaml",
     ],
 )
@@ -24,7 +32,7 @@ py_library(
     srcs = ["sandbox_smoke.py"],
     deps = [
         ":client",
-        "//airlock/oauth:provider",
+        ":dev_creds",
     ],
 )
 

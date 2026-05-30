@@ -3,10 +3,12 @@
 These mirror Plaid's `/accounts/get`, `/transactions/get`, `/liabilities/get`, and
 `/accounts/balance/get` payloads. Only the fields we consume are modelled; unknown
 Plaid fields are ignored on validation (Pydantic's default). Parsing happens at the
-client boundary so the rest of the code sees typed objects, never raw dicts.
+client boundary so the rest of the code sees typed objects, never raw dicts. These
+typed models are what the MCP tools return directly — there is no separate projection
+layer.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Balances(BaseModel):
@@ -63,10 +65,51 @@ class CreditLiability(BaseModel):
     last_payment_date: str | None = None
 
 
+class MortgageInterestRate(BaseModel):
+    percentage: float | None = None
+    type: str | None = None
+
+
+class Mortgage(BaseModel):
+    account_id: str
+    interest_rate: MortgageInterestRate | None = None
+    last_payment_amount: float | None = None
+    last_payment_date: str | None = None
+    next_monthly_payment: float | None = None
+    next_payment_due_date: str | None = None
+    maturity_date: str | None = None
+    origination_date: str | None = None
+    origination_principal_amount: float | None = None
+    past_due_amount: float | None = None
+    ytd_interest_paid: float | None = None
+    ytd_principal_paid: float | None = None
+    loan_type_description: str | None = None
+
+
+class StudentLoan(BaseModel):
+    account_id: str
+    loan_name: str | None = None
+    interest_rate_percentage: float | None = None
+    is_overdue: bool | None = None
+    last_payment_amount: float | None = None
+    last_payment_date: str | None = None
+    last_statement_balance: float | None = None
+    last_statement_issue_date: str | None = None
+    minimum_payment_amount: float | None = None
+    next_payment_due_date: str | None = None
+    expected_payoff_date: str | None = None
+    outstanding_interest_amount: float | None = None
+    origination_date: str | None = None
+    origination_principal_amount: float | None = None
+    ytd_interest_paid: float | None = None
+    ytd_principal_paid: float | None = None
+
+
 class Liabilities(BaseModel):
-    # Plaid sets each product array to null when the Item has no accounts of that
-    # type; we only consume credit cards.
+    # Plaid sets each product array to null when the Item has no accounts of that type.
     credit: list[CreditLiability] | None = None
+    mortgage: list[Mortgage] | None = None
+    student: list[StudentLoan] | None = None
 
 
 class AccountsGetResponse(BaseModel):
@@ -80,6 +123,13 @@ class TransactionsGetResponse(BaseModel):
     transactions: list[Transaction]
     # Total matching the date range before offset/count slicing (Plaid-provided).
     total_transactions: int
+
+
+class TransactionPage(BaseModel):
+    total: int = Field(
+        description="Full count matching the date range before offset/count slicing; page until offset + count >= total."
+    )
+    transactions: list[Transaction]
 
 
 class LiabilitiesGetResponse(BaseModel):
