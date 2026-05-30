@@ -90,7 +90,8 @@ class PlaidExtras:
             )
             if r.is_error:
                 raise RuntimeError(f"POST {path} -> {r.status_code}: {r.text}")
-            return r.json()
+            result: dict[str, Any] = r.json()
+            return result
 
     async def sandbox_public_token_create(
         self, institution_id: str = "ins_109508", initial_products: list[str] | None = None

@@ -67,9 +67,12 @@ async def test_client_reconnects_after_server_restart(
             a2 = await agent.call_echo("after-restart", session_key=session_key)
             assert a2.key.action_seq > a1.key.action_seq
 
-        # Approve via operator and verify execution
+        # Approve via operator and wait for execution to finish (decide() returns
+        # before the backend call completes — it only resolves the decision future).
         async with GateClient(operator_transport(base_url, operator_jwt)) as operator:
             await operator.approve(a2.key)
+            with anyio.fail_after(10.0):
+                await operator.wait_for(a2.key, ActionStatus.DONE)
 
         assert "after-restart" in echo_backend.calls
 
