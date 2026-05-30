@@ -106,13 +106,13 @@ def _pair_price_and_valuation(
     # date -> (gap_days, valuation_usd, price); on a duplicate price date keep the closer match.
     best: dict[dt.date, tuple[int, float, float]] = {}
     for price in prices:
-        nearest = min(valuations, key=lambda val: abs((val.date - price.date).days))
-        gap = abs((nearest.date - price.date).days)
+        nearest = min(valuations, key=lambda val: abs((val.observed_at - price.observed_at).days))
+        gap = abs((nearest.observed_at - price.observed_at).days)
         if gap > tolerance_days:
             continue
-        existing = best.get(price.date)
+        existing = best.get(price.observed_at)
         if existing is None or gap < existing[0]:
-            best[price.date] = (gap, nearest.valuation_usd, price.price_usd_per_share)
+            best[price.observed_at] = (gap, nearest.valuation_usd, price.price_usd_per_share)
     return sorted((date, price, valuation_usd) for date, (_gap, valuation_usd, price) in best.items())
 
 
@@ -176,10 +176,10 @@ def _fit_valuation_drift_and_vol(valuations: list[ValuationObservation]) -> tupl
 
     if len(valuations) < 2:
         return None, None
-    ordered = sorted(valuations, key=lambda obs: obs.date)
+    ordered = sorted(valuations, key=lambda obs: obs.observed_at)
     monthly_log_returns = [
         math.log(later.valuation_usd / earlier.valuation_usd)
-        / max(1.0, (later.date - earlier.date).days / _DAYS_PER_MONTH)
+        / max(1.0, (later.observed_at - earlier.observed_at).days / _DAYS_PER_MONTH)
         for earlier, later in pairwise(ordered)
     ]
     mu = sum(monthly_log_returns) / len(monthly_log_returns)

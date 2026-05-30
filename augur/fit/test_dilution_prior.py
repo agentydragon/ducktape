@@ -15,6 +15,29 @@ from augur.fit.private_equity import PriceObservation, ValuationObservation
 _BASE_DATE = dt.date(2020, 1, 1)
 
 
+def _price(observed_at: dt.date, price_usd_per_share: float) -> PriceObservation:
+    return PriceObservation(
+        type="price_observation",
+        issuer_id="synthetic",
+        observed_at=observed_at,
+        kind="tender_price",
+        price_usd_per_share=price_usd_per_share,
+        uncertainty_log_sigma=0.1,
+        source_id="test",
+    )
+
+
+def _valuation(observed_at: dt.date, valuation_usd: float) -> ValuationObservation:
+    return ValuationObservation(
+        type="valuation_observation",
+        issuer_id="synthetic",
+        observed_at=observed_at,
+        valuation_usd=valuation_usd,
+        uncertainty_log_sigma=0.15,
+        source_id="test",
+    )
+
+
 def _synthetic_pairs(
     *, r_true: float, noise_log_sigma: float, n_points: int = 6, months_between: int = 8, seed: int = 0
 ) -> tuple[list[PriceObservation], list[ValuationObservation]]:
@@ -33,11 +56,14 @@ def _synthetic_pairs(
     prices: list[PriceObservation] = []
     valuations: list[ValuationObservation] = []
     for k in range(n_points):
-        date = _BASE_DATE + dt.timedelta(days=round(k * months_between * 365.25 / 12.0))
-        months = k * months_between
-        shares = shares0 * (1.0 + r_true) ** (months / 12.0) * math.exp(rng.gauss(0.0, noise_log_sigma))
-        prices.append(PriceObservation(date=date, price_usd_per_share=v0 / shares))
-        valuations.append(ValuationObservation(date=date, valuation_usd=v0))
+        observed_at = _BASE_DATE + dt.timedelta(days=round(k * months_between * 365.25 / 12.0))
+        # Grow shares over the SAME day-count the fit measures time on (whole-day date delta
+        # over 365.25), not idealized integer months -- otherwise the day-rounding leaves
+        # zero-noise points slightly off the OLS line and exact rate recovery fails.
+        delta_years = (observed_at - _BASE_DATE).days / 365.25
+        shares = shares0 * (1.0 + r_true) ** delta_years * math.exp(rng.gauss(0.0, noise_log_sigma))
+        prices.append(_price(observed_at, v0 / shares))
+        valuations.append(_valuation(observed_at, v0))
     return prices, valuations
 
 
@@ -91,10 +117,7 @@ def test_refreshes_valuation_drift_and_vol() -> None:
 
     prices, valuations = _synthetic_pairs(r_true=0.12, noise_log_sigma=0.0, n_points=6)
     # Give the valuation series a real upward drift so mu is positive and sigma defined.
-    valuations = [
-        ValuationObservation(date=obs.date, valuation_usd=1_000_000_000.0 * (1.02**k))
-        for k, obs in enumerate(valuations)
-    ]
+    valuations = [_valuation(obs.observed_at, 1_000_000_000.0 * (1.02**k)) for k, obs in enumerate(valuations)]
     prior = fit_dilution_prior(prices, valuations, refresh_valuation_drift=True)
     assert prior.valuation_monthly_log_return_mu is not None
     assert prior.valuation_monthly_log_return_mu > 0.0
@@ -110,8 +133,8 @@ def test_drift_refresh_can_be_disabled() -> None:
 
 def test_fewer_than_two_paired_points_raises() -> None:
     # A single in-window pair cannot identify a slope.
-    prices = [PriceObservation(date=_BASE_DATE, price_usd_per_share=10.0)]
-    valuations = [ValuationObservation(date=_BASE_DATE, valuation_usd=1_000_000_000.0)]
+    prices = [_price(_BASE_DATE, 10.0)]
+    valuations = [_valuation(_BASE_DATE, 1_000_000_000.0)]
     with pytest.raises(ValueError, match="need >= 2 paired"):
         fit_dilution_prior(prices, valuations)
 
@@ -121,7 +144,7 @@ def test_unpaired_observations_are_dropped() -> None:
 
     prices, valuations = _synthetic_pairs(r_true=0.15, noise_log_sigma=0.0, n_points=5)
     # Add a stray price far from any valuation date; it must not enter the fit.
-    prices = [*prices, PriceObservation(date=dt.date(2030, 1, 1), price_usd_per_share=5.0)]
+    prices = [*prices, _price(dt.date(2030, 1, 1), 5.0)]
     prior = fit_dilution_prior(prices, valuations, pairing_tolerance_days=31)
     assert len(prior.implied_share_points) == 5
     assert all(point.date.year < 2030 for point in prior.implied_share_points)

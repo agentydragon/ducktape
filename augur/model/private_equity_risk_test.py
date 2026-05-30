@@ -518,14 +518,16 @@ def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.nd
     """The M2.2-A per-rollout `_dilution_factor` at sigma=0 over a single rollout, as a
     `(T+1,)` row -- i.e. the legacy deterministic factor recovered through the unified path."""
 
-    return _dilution_factor(
-        annual_dilution_rate=rate,
-        annual_dilution_rate_log_sigma=0.0,
-        rollout_seeds=(7,),
-        issuer_id="acme",
-        rollout_count=1,
-        horizon_months=horizon_months,
-    )[0]
+    return np.asarray(
+        _dilution_factor(
+            annual_dilution_rate=rate,
+            annual_dilution_rate_log_sigma=0.0,
+            rollout_seeds=(7,),
+            issuer_id="acme",
+            rollout_count=1,
+            horizon_months=horizon_months,
+        )[0]
+    )
 
 
 def test_dilution_factor_shape_and_values() -> None:
@@ -696,6 +698,35 @@ def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -
     return issuer.annual_dilution_rate * np.exp(issuer.annual_dilution_rate_log_sigma * z)
 
 
+def _latent_coupled_mark(
+    issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int, horizon_months: int
+) -> np.ndarray:
+    """Reconstruct the sampler's LATENT coupled mark `current_mark * (V(t)/V0) / dilution(t)`.
+
+    The observed `_IssuerPaths.mark` channel is piecewise-constant between observation events
+    (it only refreshes when a tender/admin/public-market/forced-sale event fires), so it does
+    NOT continuously track the latent mark. These dilution tests probe the continuous coupling,
+    so they reconstruct the latent mark from the same building blocks the sampler composes,
+    using the same `:pe_risk_valuation` / `:pe_risk_dilution` seed streams.
+    """
+
+    assert issuer.current_valuation_usd is not None
+    seeds = tuple(range(1, rollout_count + 1))
+    valuation_seeds = derive_stream_rollout_seeds(seeds, stream_id="acme:pe_risk_valuation")
+    company_valuation_usd = _sample_company_valuation_vectorized(
+        issuer, valuation_seeds=valuation_seeds, horizon_months=horizon_months
+    )
+    dilution = _dilution_factor(
+        annual_dilution_rate=issuer.annual_dilution_rate,
+        annual_dilution_rate_log_sigma=issuer.annual_dilution_rate_log_sigma,
+        rollout_seeds=seeds,
+        issuer_id="acme",
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+    )
+    return issuer.current_mark_usd * (company_valuation_usd / issuer.current_valuation_usd) / dilution
+
+
 def test_sigma_zero_unified_path_is_byte_identical_to_deterministic_factor() -> None:
     """sigma=0 must degenerate through the UNIFIED per-rollout path with NO special-case.
 
@@ -710,11 +741,12 @@ def test_sigma_zero_unified_path_is_byte_identical_to_deterministic_factor() -> 
     rate = 0.20
     issuer = _dilution_issuer(annual_dilution_rate=rate, annual_dilution_rate_log_sigma=0.0)
     paths = _sample_dilution_paths(issuer, rollout_count=rollout_count, horizon_months=horizon)
+    latent_mark = _latent_coupled_mark(issuer, rollout_count=rollout_count, horizon_months=horizon)
 
     months = np.arange(horizon + 1, dtype=np.float64)
     deterministic_dilution = np.power(1.0 + rate, months / 12.0)[None, :]
     expected_mark = 100.0 * (paths.company_valuation_usd / 1_000_000_000.0) / deterministic_dilution
-    np.testing.assert_array_equal(paths.mark, expected_mark)
+    np.testing.assert_array_equal(latent_mark, expected_mark)
 
 
 def test_widening_cone_cross_rollout_variance_grows_in_time_and_with_sigma() -> None:
@@ -725,16 +757,16 @@ def test_widening_cone_cross_rollout_variance_grows_in_time_and_with_sigma() -> 
     spread = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.3)
     flat = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.0)
 
-    spread_paths = _sample_dilution_paths(spread, rollout_count=rollout_count, horizon_months=horizon)
-    flat_paths = _sample_dilution_paths(flat, rollout_count=rollout_count, horizon_months=horizon)
+    spread_mark = _latent_coupled_mark(spread, rollout_count=rollout_count, horizon_months=horizon)
+    flat_mark = _latent_coupled_mark(flat, rollout_count=rollout_count, horizon_months=horizon)
 
-    spread_log = np.log(spread_paths.mark)
+    spread_log = np.log(spread_mark)
     var_m12 = float(np.var(spread_log[:, 12]))
     var_m120 = float(np.var(spread_log[:, 120]))
     # Quadratic-in-t widening cone from the per-rollout rate draw.
     assert var_m120 > var_m12
     # The sigma=0 case carries only V(t) spread; turning sigma on must add per-share spread at m120.
-    assert var_m120 > float(np.var(np.log(flat_paths.mark)[:, 120]))
+    assert var_m120 > float(np.var(np.log(flat_mark)[:, 120]))
 
 
 def test_drawn_rate_median_is_anchored_at_annual_dilution_rate() -> None:
@@ -803,8 +835,9 @@ def test_zero_rate_with_positive_sigma_yields_no_dilution_and_no_spread() -> Non
     # sigma -- the dilution channel contributes zero spread.
     issuer = _dilution_issuer(annual_dilution_rate=0.0, annual_dilution_rate_log_sigma=0.5)
     paths = _sample_dilution_paths(issuer, rollout_count=rollout_count, horizon_months=horizon)
+    latent_mark = _latent_coupled_mark(issuer, rollout_count=rollout_count, horizon_months=horizon)
     expected = 100.0 * (paths.company_valuation_usd / 1_000_000_000.0)
-    np.testing.assert_array_equal(paths.mark, expected)
+    np.testing.assert_array_equal(latent_mark, expected)
 
 
 if __name__ == "__main__":
