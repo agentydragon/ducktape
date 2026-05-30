@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "models",
@@ -11,7 +11,20 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = ["//plaid_utils:__subpackages__"],
-    deps = ["@pypi//plaid_python"],
+    deps = [
+        "@pypi//certifi",
+        "@pypi//plaid_python",
+    ],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        "@pypi//certifi",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(

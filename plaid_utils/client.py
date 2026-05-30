@@ -9,6 +9,7 @@ lives in `plaid_utils.dev_creds` so the MCP server never bundles that machinery.
 
 from dataclasses import dataclass
 
+import certifi
 import plaid
 from plaid.api import plaid_api
 
@@ -27,4 +28,9 @@ def plaid_client(creds: PlaidCreds) -> plaid_api.PlaidApi:
     configuration = plaid.Configuration(
         host=PLAID_HOSTS[creds.env], api_key={"clientId": creds.client_id, "secret": creds.secret}
     )
+    # plaid-python (urllib3) passes ca_certs=ssl_ca_cert; left unset urllib3 falls back to the
+    # system trust store, which the debian_slim runtime image ships empty -> production.plaid.com
+    # fails with CERTIFICATE_VERIFY_FAILED. Point it at certifi's bundle (already in the image via
+    # fastmcp -> httpx), matching how the other MCP servers get their CA roots.
+    configuration.ssl_ca_cert = certifi.where()
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
