@@ -30,9 +30,7 @@ from plaid.models import (
 class FakePlaidExtras(PlaidExtras):
     """In-memory PlaidExtras: canned typed responses, no creds/network."""
 
-    def __init__(
-        self, accounts: list[Account], transactions: list[Transaction], credit: list[CreditLiability]
-    ) -> None:
+    def __init__(self, accounts: list[Account], transactions: list[Transaction], credit: list[CreditLiability]) -> None:
         self._accounts = accounts
         self._transactions = transactions
         self._credit = credit
@@ -116,7 +114,14 @@ def sample_credit() -> list[CreditLiability]:
     return [
         CreditLiability(
             account_id="acc_cc",
-            aprs=[Apr(apr_type="purchase_apr", apr_percentage=22.49, balance_subject_to_apr=1543.21, interest_charge_amount=0.0)],
+            aprs=[
+                Apr(
+                    apr_type="purchase_apr",
+                    apr_percentage=22.49,
+                    balance_subject_to_apr=1543.21,
+                    interest_charge_amount=0.0,
+                )
+            ],
             is_overdue=False,
             last_statement_balance=1543.21,
             last_statement_issue_date="2026-05-05",

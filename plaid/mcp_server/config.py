@@ -15,7 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class PlaidItem(BaseModel):
     key: str = Field(description="Selector used in tool `item` args, e.g. 'chase'.")
     institution: str = Field(description="Human-readable institution name.")
-    products: list[str] = Field(description="Plaid products enabled for the item, e.g. ['transactions', 'liabilities'].")
+    products: list[str] = Field(
+        description="Plaid products enabled for the item, e.g. ['transactions', 'liabilities']."
+    )
     access_token_env: str = Field(description="Name of the env var holding this item's Plaid access_token.")
 
 
