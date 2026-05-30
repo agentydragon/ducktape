@@ -1,7 +1,7 @@
 # plaid_utils/mcp_server
 
-Read-only MCP server over the owner's Plaid-linked bank accounts. Built on
-[`//plaid_utils:client`](../client.py) (typed Plaid client) and FastMCP. The server is
+Read-only MCP server over the owner's Plaid-linked bank accounts. Built on the
+[`plaid-python`](../client.py) SDK client (via the `//plaid_utils:client` factory) and FastMCP. The server is
 **auth-oblivious**: it speaks MCP over HTTP on `:8080` and a front proxy
 (`mcp-oauth-facade`) handles Authentik OAuth. One server holds every configured
 item's access token; every tool takes an `item` selector.

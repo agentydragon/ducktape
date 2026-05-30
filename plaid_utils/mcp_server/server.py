@@ -1,26 +1,42 @@
 """Plaid MCP server: read-only transactions, balances, and liabilities.
 
-Auth-oblivious by design — a front proxy (`mcp-oauth-facade`) handles Authentik
-OAuth; this server only speaks MCP over HTTP on its configured port. One server
-holds every configured item's access token; tools take an `item` selector.
+Auth-oblivious by design — a front proxy (`mcp-oauth-facade`) handles Authentik OAuth;
+this server only speaks MCP over HTTP on its configured port. One server holds every
+configured item's access token; tools take an `item` selector.
 
-Tools return the typed `plaid_utils.models` shapes directly (the models already cover
-only the fields we expose) — there is no separate projection layer.
+Tools call the plaid-python SDK client directly, run its responses through
+`sanitize_for_serialization`, and validate them into the typed `plaid_utils.models` shapes
+(the models already cover only the fields we expose). The SDK's `ApiException` propagates
+to FastMCP's error boundary, which surfaces Plaid's message (PRODUCT_NOT_READY,
+ITEM_LOGIN_REQUIRED, RATE_LIMIT_EXCEEDED, ...) to the agent.
 """
 
 import logging
 import sys
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any, Protocol
 
 import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
+from plaid.model.accounts_balance_get_request_options import AccountsBalanceGetRequestOptions
+from plaid.model.accounts_get_request import AccountsGetRequest
+from plaid.model.liabilities_get_request import LiabilitiesGetRequest
+from plaid.model.transactions_get_request import TransactionsGetRequest
+from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from pydantic import BaseModel, Field
 
-from plaid_utils.client import PlaidCreds, PlaidExtras
+from plaid_utils.client import PlaidCreds, plaid_client
 from plaid_utils.mcp_server.config import ResolvedItem, ServerSettings
-from plaid_utils.models import Account, Liabilities, TransactionPage
+from plaid_utils.models import (
+    Account,
+    AccountsGetResponse,
+    Liabilities,
+    LiabilitiesGetResponse,
+    TransactionPage,
+    TransactionsGetResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +49,21 @@ class ItemSummary(BaseModel):
     products: list[str]
 
 
+class PlaidApiLike(Protocol):
+    """The slice of `plaid_api.PlaidApi` the server uses, so tests can inject a fake.
+
+    Requests/responses are the SDK's own types (`Any` here); `api_client` carries
+    `sanitize_for_serialization`. The real `plaid_api.PlaidApi` satisfies it structurally.
+    """
+
+    api_client: Any
+
+    def accounts_get(self, request: Any, /) -> Any: ...
+    def accounts_balance_get(self, request: Any, /) -> Any: ...
+    def transactions_get(self, request: Any, /) -> Any: ...
+    def liabilities_get(self, request: Any, /) -> Any: ...
+
+
 INSTRUCTIONS = (
     "Read-only access to the owner's Plaid-linked bank accounts: transactions, balances, and "
     "liabilities (credit cards, mortgages, student loans). Call list_items first to discover the "
@@ -43,8 +74,9 @@ INSTRUCTIONS = (
 _ItemArg = Annotated[str, Field(description="Item selector from list_items, e.g. 'chase' or 'bofa'.")]
 
 
-def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP:
+def build_server(api: PlaidApiLike, items: dict[str, ResolvedItem]) -> FastMCP:
     mcp: FastMCP = FastMCP("Plaid MCP", instructions=INSTRUCTIONS)
+    sanitize = api.api_client.sanitize_for_serialization
 
     def resolve(item: str) -> ResolvedItem:
         resolved = items.get(item)
@@ -68,7 +100,8 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         Balances reflect Plaid's last pull (refreshed 1-4x/day); use get_live_balance for a
         real-time figure. The returned account_id values feed the filters on the other tools.
         """
-        return extras.accounts_get(resolve(item).access_token).accounts
+        resp = api.accounts_get(AccountsGetRequest(access_token=resolve(item).access_token))
+        return AccountsGetResponse.model_validate(sanitize(resp)).accounts
 
     @mcp.tool
     def list_transactions(
@@ -89,16 +122,16 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         a posted row whose pending_transaction_id points back to the pending id (dedupe on it).
         Recently linked/refreshed items can briefly raise PRODUCT_NOT_READY.
         """
-        account_ids = [account_id] if account_id is not None else None
-        resp = extras.transactions_get(
-            resolve(item).access_token,
-            start_date=start_date,
-            end_date=end_date,
-            account_ids=account_ids,
-            offset=offset,
-            count=count,
+        options = TransactionsGetRequestOptions(offset=offset, count=count)
+        if account_id is not None:
+            options.account_ids = [account_id]
+        resp = api.transactions_get(
+            TransactionsGetRequest(
+                access_token=resolve(item).access_token, start_date=start_date, end_date=end_date, options=options
+            )
         )
-        return TransactionPage(total=resp.total_transactions, transactions=resp.transactions)
+        parsed = TransactionsGetResponse.model_validate(sanitize(resp))
+        return TransactionPage(total=parsed.total_transactions, transactions=parsed.transactions)
 
     @mcp.tool
     def get_liabilities(item: _ItemArg) -> Liabilities:
@@ -116,7 +149,8 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
                 f"Item {resolved.key!r} has no 'liabilities' product (products: {resolved.products}). "
                 "Use list_items to see which items support liabilities."
             )
-        return extras.liabilities_get(resolved.access_token).liabilities
+        resp = api.liabilities_get(LiabilitiesGetRequest(access_token=resolved.access_token))
+        return LiabilitiesGetResponse.model_validate(sanitize(resp)).liabilities
 
     @mcp.tool
     def get_live_balance(
@@ -131,8 +165,11 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         Heavily rate-limited: 5/min and 30/hour per item. Prefer list_accounts (cached) for
         routine reads; pass account_id to fetch a single account and conserve the budget.
         """
-        account_ids = [account_id] if account_id is not None else None
-        return extras.accounts_balance_get(resolve(item).access_token, account_ids=account_ids).accounts
+        request = AccountsBalanceGetRequest(access_token=resolve(item).access_token)
+        if account_id is not None:
+            request.options = AccountsBalanceGetRequestOptions(account_ids=[account_id])
+        resp = api.accounts_balance_get(request)
+        return AccountsGetResponse.model_validate(sanitize(resp)).accounts
 
     return mcp
 
@@ -141,8 +178,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = ServerSettings()
     items = settings.resolved_items()
-    creds = PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
-    mcp = build_server(PlaidExtras(creds), items)
+    api = plaid_client(PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env))
+    mcp = build_server(api, items)
     logger.info("plaid-mcp listening on %s:%d (items: %s)", settings.host, settings.port, sorted(items))
     uvicorn.run(mcp.http_app(path="/mcp"), host=settings.host, port=settings.port, log_level="info")
 

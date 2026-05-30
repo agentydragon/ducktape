@@ -11,10 +11,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = ["//plaid_utils:__subpackages__"],
-    deps = [
-        ":models",
-        "@pypi//plaid_python",
-    ],
+    deps = ["@pypi//plaid_python"],
 )
 
 py_library(
@@ -32,6 +29,7 @@ py_library(
     deps = [
         ":client",
         ":dev_creds",
+        "@pypi//plaid_python",
     ],
 )
 

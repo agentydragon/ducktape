@@ -20,6 +20,7 @@ py_library(
         "//plaid_utils:client",
         "//plaid_utils:models",
         "@pypi//fastmcp",
+        "@pypi//plaid_python",
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
@@ -68,7 +69,6 @@ py_library(
     deps = [
         ":config",
         ":server",
-        "//plaid_utils:client",
         "//plaid_utils:models",
         "@pypi//fastmcp",
         "@pypi//pytest",

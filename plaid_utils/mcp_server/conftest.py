@@ -1,66 +1,66 @@
 """Fixtures for the Plaid MCP server tests.
 
-`FakePlaidExtras` returns canned typed responses (real `plaid.models` instances —
-no mocking), so tests exercise the real tool registration, schemas, and handlers
-through an in-memory FastMCP client without any network.
+`FakePlaidApi` stands in for `plaid_api.PlaidApi`: it reads the SDK request objects via
+`.to_dict()` and returns canned responses as plain JSON-able dicts (built from real
+`plaid_utils.models`), so the tools' `sanitize_for_serialization` + `model_validate` path
+runs end-to-end through an in-memory FastMCP client with no network.
 """
 
 from collections.abc import AsyncIterator
-from datetime import date
+from typing import Any
 
 import pytest
 from fastmcp.client import Client
 
-from plaid_utils.client import PlaidExtras
 from plaid_utils.mcp_server.config import ResolvedItem
 from plaid_utils.mcp_server.server import build_server
-from plaid_utils.models import (
-    Account,
-    AccountsGetResponse,
-    Apr,
-    Balances,
-    CreditLiability,
-    Liabilities,
-    LiabilitiesGetResponse,
-    PersonalFinanceCategory,
-    Transaction,
-    TransactionsGetResponse,
-)
+from plaid_utils.models import Account, Apr, Balances, CreditLiability, PersonalFinanceCategory, Transaction
 
 
-class FakePlaidExtras(PlaidExtras):
-    """In-memory PlaidExtras: canned typed responses, no creds/network."""
+class _IdentityApiClient:
+    @staticmethod
+    def sanitize_for_serialization(obj: Any) -> Any:
+        return obj  # FakePlaidApi already returns JSON-able dicts
+
+
+class FakePlaidApi:
+    """In-memory stand-in for plaid_api.PlaidApi: canned responses, no network."""
 
     def __init__(self, accounts: list[Account], transactions: list[Transaction], credit: list[CreditLiability]) -> None:
+        self.api_client = _IdentityApiClient()
         self._accounts = accounts
         self._transactions = transactions
         self._credit = credit
 
-    def accounts_get(self, access_token: str) -> AccountsGetResponse:
-        return AccountsGetResponse(accounts=self._accounts)
+    def _accounts_payload(self) -> list[dict[str, Any]]:
+        return [a.model_dump() for a in self._accounts]
 
-    def accounts_balance_get(self, access_token: str, account_ids: list[str] | None = None) -> AccountsGetResponse:
-        accounts = self._accounts if account_ids is None else [a for a in self._accounts if a.account_id in account_ids]
-        return AccountsGetResponse(accounts=accounts)
+    def accounts_get(self, request: Any) -> dict[str, Any]:
+        return {"accounts": self._accounts_payload()}
 
-    def transactions_get(
-        self,
-        access_token: str,
-        start_date: date,
-        end_date: date,
-        account_ids: list[str] | None = None,
-        offset: int = 0,
-        count: int = 50,
-    ) -> TransactionsGetResponse:
+    def accounts_balance_get(self, request: Any) -> dict[str, Any]:
+        ids = request.to_dict().get("options", {}).get("account_ids")
+        accounts = self._accounts if ids is None else [a for a in self._accounts if a.account_id in ids]
+        return {"accounts": [a.model_dump() for a in accounts]}
+
+    def transactions_get(self, request: Any) -> dict[str, Any]:
+        options = request.to_dict().get("options", {})
+        offset, count = options.get("offset", 0), options.get("count", 50)
+        account_ids = options.get("account_ids")
         txns = self._transactions
         if account_ids is not None:
             txns = [t for t in txns if t.account_id in account_ids]
-        return TransactionsGetResponse(
-            accounts=self._accounts, transactions=txns[offset : offset + count], total_transactions=len(txns)
-        )
+        return {
+            "accounts": self._accounts_payload(),
+            "transactions": [t.model_dump() for t in txns[offset : offset + count]],
+            "total_transactions": len(txns),
+        }
 
-    def liabilities_get(self, access_token: str) -> LiabilitiesGetResponse:
-        return LiabilitiesGetResponse(accounts=self._accounts, liabilities=Liabilities(credit=self._credit))
+    def liabilities_get(self, request: Any) -> dict[str, Any]:
+        return {
+            "accounts": self._accounts_payload(),
+            "liabilities": {"credit": [c.model_dump() for c in self._credit], "mortgage": None, "student": None},
+        }
 
 
 @pytest.fixture
@@ -145,13 +145,13 @@ def items() -> dict[str, ResolvedItem]:
 
 
 @pytest.fixture
-def fake_extras(
+def fake_api(
     sample_accounts: list[Account], sample_transactions: list[Transaction], sample_credit: list[CreditLiability]
-) -> FakePlaidExtras:
-    return FakePlaidExtras(accounts=sample_accounts, transactions=sample_transactions, credit=sample_credit)
+) -> FakePlaidApi:
+    return FakePlaidApi(accounts=sample_accounts, transactions=sample_transactions, credit=sample_credit)
 
 
 @pytest.fixture
-async def client(fake_extras: FakePlaidExtras, items: dict[str, ResolvedItem]) -> AsyncIterator[Client]:
-    async with Client(build_server(fake_extras, items)) as connected:
+async def client(fake_api: FakePlaidApi, items: dict[str, ResolvedItem]) -> AsyncIterator[Client]:
+    async with Client(build_server(fake_api, items)) as connected:
         yield connected

@@ -1,4 +1,4 @@
-"""End-to-end tool tests via an in-memory FastMCP client (FakePlaidExtras, no network)."""
+"""End-to-end tool tests via an in-memory FastMCP client (FakePlaidApi, no network)."""
 
 from typing import Any
 

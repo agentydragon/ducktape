@@ -6,14 +6,13 @@ credit-card liabilities. Backs the [Plaid MCP server](mcp_server/README.md).
 Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
 official `plaid` SDK — same convention as `openai_utils`.
 
-`client.py` is a thin wrapper over the official [`plaid-python`](https://github.com/plaid/plaid-python)
-SDK. The SDK is synchronous (urllib3, no asyncio API), so the client is synchronous too —
-FastMCP runs the MCP tool functions in a worker thread, so nothing blocks an event loop.
-It exposes the read endpoints the MCP server needs (`/accounts/get`, `/accounts/balance/get`,
-`/transactions/get`, `/liabilities/get`) plus the sandbox helpers the smoke test uses
-(`/sandbox/public_token/create`, `/item/public_token/exchange`, `/transactions/sync`).
-Responses are run through the SDK's `sanitize_for_serialization` and validated into the
-typed models in `models.py` at the boundary — callers get typed objects, not raw dicts.
+`client.py` is just a factory: `plaid_client(creds)` builds a `plaid_api.PlaidApi` from the
+official [`plaid-python`](https://github.com/plaid/plaid-python) SDK. The MCP server calls
+that SDK client directly (the SDK is synchronous — urllib3, no asyncio — and FastMCP runs
+the tools in a worker thread, so nothing blocks an event loop), runs each response through
+`sanitize_for_serialization`, and validates it into the typed models in `models.py` at the
+tool boundary, so callers get typed objects, not raw dicts. The SDK's `ApiException`
+propagates to FastMCP's error boundary.
 
 ## Credentials
 
