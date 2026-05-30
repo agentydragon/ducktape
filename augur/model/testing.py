@@ -29,7 +29,9 @@ class PrivateEquityChannels:
 
     `mark_usd_per_unit` is required; every other channel has a neutral
     default (`PRIVATE_OPERATING` regime, no events, full capacity /
-    eligibility, no forced sale, no liquidity block, no recovery cashout).
+    eligibility, no forced sale, no liquidity block, no recovery cashout,
+    and the opt-in M2 company-valuation channel off — `company_valuation_usd`
+    all-zeros).
     """
 
     mark_usd_per_unit: LevelOverride
@@ -41,6 +43,7 @@ class PrivateEquityChannels:
     forced_sale_fraction: LevelOverride = 0.0
     liquidity_blocked: EventOverride = False
     forced_recovery_cashout_usd: LevelOverride = 0.0
+    company_valuation_usd: LevelOverride = 0.0
 
 
 @dataclass
@@ -103,6 +106,7 @@ def _pe_bundle_from_channels(
         forced_sale_fraction=_level_matrix(channels.forced_sale_fraction, request),
         liquidity_blocked=_event_matrix(channels.liquidity_blocked, request),
         forced_recovery_cashout_usd=_level_matrix(channels.forced_recovery_cashout_usd, request),
+        company_valuation_usd=_level_matrix(channels.company_valuation_usd, request),
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
     )

@@ -110,6 +110,46 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     annual_collapse_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     collapsed_mark_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
 
+    # -- M2 coupled valuation + dilution channel (opt-in) --------------------
+    #
+    # When `current_valuation_usd` is set, the per-unit latent mark stops being
+    # a standalone Student-t random walk and instead becomes a quantity DERIVED
+    # from a sampled company valuation V(t) and a deterministic dilution factor:
+    #
+    #     latent_mark(t) = current_mark_usd * (V(t) / V0) / dilution_factor(t)
+    #
+    # Leaving `current_valuation_usd` unset keeps today's independent latent-mark
+    # random walk byte-for-byte (zero-value regression for existing configs).
+    current_valuation_usd: float | None = Field(default=None, gt=0)
+    """Company market-cap anchor `V0` (USD).
+
+    `None` disables the valuation channel AND selects the legacy independent
+    latent-mark random walk. Must be set together with
+    `shares_outstanding_initial`.
+    """
+    valuation_monthly_log_return_mu: float = 0.0
+    """Monthly log-space drift of V(t). Only meaningful when the channel is on."""
+    valuation_monthly_log_return_sigma: float = Field(default=0.0, ge=0.0)
+    """Monthly log-space volatility of V(t). Only meaningful when the channel is on."""
+    valuation_student_t_nu: float = Field(default=5.0, gt=2.0)
+    """Degrees of freedom for V(t)'s Student-t shocks. Only meaningful when the channel is on."""
+    shares_outstanding_initial: float | None = Field(default=None, gt=0)
+    """Initial share count `shares0`.
+
+    Required together with `current_valuation_usd`. In v1 only the *ratio*
+    `shares(t)/shares0` enters the mark via the dilution factor, so V0 and
+    shares0 cancel at t=0; we still require it set so the process is honestly
+    specified for the Bayesian fit (M2.2 / TODO #1734).
+    """
+    annual_dilution_rate: float = Field(default=0.0, ge=0.0)
+    """Continuous per-year share-count growth (employee mint + baseline).
+
+    Drives `dilution_factor(t) = (1 + annual_dilution_rate) ** (t / 12)`. This
+    is a v1 point estimate: the primary-round / secondary-trade distinction and
+    the hierarchical Bayesian fit are DEFERRED to M2.2 (TODO #1734). Only
+    meaningful when the valuation channel is on.
+    """
+
     @model_validator(mode="after")
     def _validate_ranges(self) -> PrivateEquityRiskIssuerConfig:
         if self.liquidity_suspension_months_max < self.liquidity_suspension_months_min:
@@ -122,7 +162,21 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
         cumulatives = [anchor.cumulative_probability for anchor in self.public_market_cdf_anchors]
         if any(later < earlier for earlier, later in itertools.pairwise(cumulatives)):
             raise ValueError("public_market_cdf_anchors must be non-decreasing in cumulative_probability")
+        # `current_valuation_usd` (V0) and `shares_outstanding_initial` (shares0)
+        # must be set together or both left unset: you need both to form the
+        # coupled mark honestly. `annual_dilution_rate` and the valuation RW
+        # params are only meaningful when the channel is on; they default to
+        # inert values and are simply ignored when it is off, so they are left
+        # deliberately unguarded.
+        if (self.current_valuation_usd is None) != (self.shares_outstanding_initial is None):
+            raise ValueError("current_valuation_usd and shares_outstanding_initial must be set together or both unset")
         return self
+
+    @property
+    def valuation_channel_enabled(self) -> bool:
+        """Whether the opt-in coupled valuation + dilution channel is active."""
+
+        return self.current_valuation_usd is not None
 
 
 class PrivateEquityRiskProviderConfig(FrozenModel):
@@ -158,6 +212,7 @@ class PrivateEquityRiskModel:
                     forced_sale_fraction=paths.forced_sale_fraction.astype(np.float64),
                     liquidity_blocked=(paths.liquidity_blocked >= 0.5).astype(np.bool_),
                     forced_recovery_cashout_usd=paths.forced_recovery_cashout_usd.astype(np.float64),
+                    company_valuation_usd=paths.company_valuation_usd.astype(np.float64),
                     rollout_count=rollout_count,
                     horizon_months=horizon_months,
                 )
@@ -187,6 +242,9 @@ class _IssuerPaths:
     forced_sale_fraction: FloatMatrix
     liquidity_blocked: FloatMatrix
     forced_recovery_cashout_usd: FloatMatrix
+    # Company market cap V(t), (R, T+1). All-zeros when the valuation channel
+    # is off (no `current_valuation_usd` anchor).
+    company_valuation_usd: FloatMatrix
 
 
 # Plan-derived constants (realization_risk_model_plan.md §Liquidity And Legal Execution Shocks).
@@ -246,7 +304,32 @@ def _sample_issuer(
     level_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_level")
     event_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_event")
 
-    latent_mark = _sample_latent_marks_vectorized(issuer, level_seeds=level_seeds, horizon_months=horizon_months)
+    # M2 coupled valuation + dilution channel (opt-in via `current_valuation_usd`).
+    #
+    # Channel ON: V(t) is the primitive (its OWN derived seed stream, independent
+    # of the latent-mark/event streams), and the per-unit latent mark is DERIVED
+    #   latent_mark(t) = current_mark_usd * (V(t)/V0) / dilution_factor(t).
+    # Because only ratios enter, V0 and shares0 cancel at t=0, so latent_mark[:,0]
+    # == current_mark_usd exactly. The event-noisy marks below already read
+    # `latent_mark[branch, t]`, so tender/admin/public-market/forced-sale noise
+    # composes on TOP of the coupled mark unchanged.
+    #
+    # Channel OFF: the legacy independent Student-t latent-mark walk is used
+    # verbatim and the valuation path is all-zeros. The valuation seed stream is
+    # NOT derived in this branch, so neither the level nor the event RNG stream
+    # is perturbed — the mark/event arrays stay byte-identical to pre-M2.
+    # Direct `is not None` check (equivalent to `issuer.valuation_channel_enabled`) so
+    # mypy narrows `current_valuation_usd` to `float` for the division/log below.
+    if issuer.current_valuation_usd is not None:
+        valuation_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_valuation")
+        company_valuation_usd = _sample_company_valuation_vectorized(
+            issuer, valuation_seeds=valuation_seeds, horizon_months=horizon_months
+        )
+        dilution = _dilution_factor(annual_dilution_rate=issuer.annual_dilution_rate, horizon_months=horizon_months)
+        latent_mark = issuer.current_mark_usd * (company_valuation_usd / issuer.current_valuation_usd) / dilution
+    else:
+        latent_mark = _sample_latent_marks_vectorized(issuer, level_seeds=level_seeds, horizon_months=horizon_months)
+        company_valuation_usd = np.zeros(shape, dtype=np.float64)
 
     # Per-rollout deterministic event-month masks ((R, T+1) booleans). One Generator
     # seeded by the hash of all per-rollout event seeds; vectorization gives up the
@@ -535,6 +618,7 @@ def _sample_issuer(
         forced_sale_fraction=forced_sale_fraction,
         liquidity_blocked=liquidity_blocked,
         forced_recovery_cashout_usd=forced_recovery_cashout_usd,
+        company_valuation_usd=company_valuation_usd,
     )
 
 
@@ -563,6 +647,53 @@ def _sample_latent_marks_vectorized(
     if not np.all(np.isfinite(paths)) or np.any(paths <= 0.0):
         raise ValueError("private-equity risk model produced invalid marks")
     return paths
+
+
+def _sample_company_valuation_vectorized(
+    issuer: PrivateEquityRiskIssuerConfig, *, valuation_seeds: tuple[int, ...], horizon_months: int
+) -> FloatMatrix:
+    """Vectorized company-valuation V(t) sampler: returns (R, horizon_months + 1).
+
+    Mirrors `_sample_latent_marks_vectorized` EXACTLY (same log-space Student-t
+    random walk) but anchored at `current_valuation_usd` and driven by the
+    valuation-specific RW params off an independent seed stream. Column 0 equals
+    `current_valuation_usd` for every rollout. Only called when the valuation
+    channel is enabled, so `current_valuation_usd` is not None.
+    """
+
+    # Caller only invokes this when the channel is on, so V0 is set; assert to narrow for mypy.
+    current_valuation_usd = issuer.current_valuation_usd
+    assert current_valuation_usd is not None
+    rollout_count = len(valuation_seeds)
+    paths = np.empty((rollout_count, horizon_months + 1), dtype=np.float64)
+    paths[:, 0] = current_valuation_usd
+    if horizon_months == 0:
+        return paths
+    rng = np.random.default_rng(_seed_from_rollout_seeds(valuation_seeds))
+    shocks = rng.standard_t(df=issuer.valuation_student_t_nu, size=(rollout_count, horizon_months))
+    shocks *= issuer.valuation_monthly_log_return_sigma
+    log_path = math.log(current_valuation_usd) + np.cumsum(issuer.valuation_monthly_log_return_mu + shocks, axis=1)
+    try:
+        with np.errstate(over="raise", invalid="raise"):
+            paths[:, 1:] = np.exp(log_path)
+    except FloatingPointError as error:
+        raise ValueError("private-equity risk model produced non-finite company valuation") from error
+    if not np.all(np.isfinite(paths)) or np.any(paths <= 0.0):
+        raise ValueError("private-equity risk model produced invalid company valuation")
+    return paths
+
+
+def _dilution_factor(*, annual_dilution_rate: float, horizon_months: int) -> FloatMatrix:
+    """Per-month dilution factor row `(horizon_months + 1,)`.
+
+    `dilution_factor(t) = (1 + annual_dilution_rate) ** (t / 12)` with
+    `dilution_factor(0) == 1`. v1 point estimate; the primary-round /
+    secondary-trade split is DEFERRED (TODO #1734). Broadcasts against the
+    `(R, T+1)` valuation ratio so the coupled mark divides by it per month.
+    """
+
+    months = np.arange(horizon_months + 1, dtype=np.float64)
+    return np.power(1.0 + annual_dilution_rate, months / 12.0)
 
 
 def _sample_event_month_mask_vectorized(

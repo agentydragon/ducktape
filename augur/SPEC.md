@@ -67,7 +67,7 @@ deployment config are not supported by the product endpoint yet.
 
 PE state crosses the model↔sim boundary as a single typed
 `PrivateEquityBundle` — one wide polars frame keyed by
-`(rollout_index, month_index, issuer_id)` with nine dtype-typed channels.
+`(rollout_index, month_index, issuer_id)` with ten dtype-typed channels.
 The model layer must emit a complete per-issuer entry whenever a
 scenario holds the issuer; producing an issuer with any channel missing
 is a schema violation, not a runtime sim-compile failure. Channels
@@ -80,6 +80,7 @@ group by dtype:
 |                             | `eligible_fraction`           | Fraction of currently held units eligible for voluntary sale.                                                                                                        |
 |                             | `forced_sale_fraction`        | Fraction of currently held units forcibly sold in that month.                                                                                                        |
 |                             | `forced_recovery_cashout_usd` | Dollar recovery paid for the remaining position in that month.                                                                                                       |
+|                             | `company_valuation_usd`       | Opt-in M2 company market cap `V(t)`. All-zeros when the valuation channel is off (no `current_valuation_usd` anchor); a positive market cap is never all-zeros.      |
 | `PrivateEquityIntChannel`   | `regime_code`                 | `PrivateEquityRegimeCode`: `PRIVATE_OPERATING`, `PUBLIC_MARKET`, `ACQUIRED`, `COLLAPSED`.                                                                            |
 |                             | `event_kind_code`             | `PrivateEquityEventKindCode`: `NONE`, `TENDER`, `ADMIN_MARK_UPDATE`, `PUBLIC_MARKET_OPEN`, `ACQUISITION_CASHOUT`, `LEGAL_IMPAIRMENT`, `FORCED_RECOVERY`, `COLLAPSE`. |
 | `PrivateEquityBoolChannel`  | `sale_opportunity_active`     | Discrete voluntary tender opportunity flag. Public-market saleability is represented by the `PUBLIC_MARKET` regime, not by this flag.                                |

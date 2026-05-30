@@ -3895,6 +3895,7 @@ def _pe_external_series(
             forced_recovery_cashout_usd=forced_recovery_cashout_usd
             if forced_recovery_cashout_usd is not None
             else default_float(0.0),
+            company_valuation_usd=default_float(0.0),
             rollout_count=rollout_count,
             horizon_months=horizon_months,
         ),

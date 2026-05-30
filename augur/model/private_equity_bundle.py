@@ -1,6 +1,6 @@
 """Wide private-equity protocol bundle.
 
-The PE protocol carries 9 conceptually-parallel channels per issuer:
+The PE protocol carries 10 conceptually-parallel channels per issuer:
 
 | Channel                       | Type    | Meaning                                      |
 | ----------------------------- | ------- | -------------------------------------------- |
@@ -13,6 +13,7 @@ The PE protocol carries 9 conceptually-parallel channels per issuer:
 | `forced_sale_fraction`        | float   | Fraction forcibly sold in that month         |
 | `liquidity_blocked`           | bool    | Voluntary sales blocked                       |
 | `forced_recovery_cashout_usd` | float   | Dollar recovery for the remaining position   |
+| `company_valuation_usd`       | float   | Company market cap `V(t)` (0 == channel off) |
 
 Producers used to emit these as 8 separate level series + 1 event series +
 a separate typed protocol frame, validated together at sim compile time.
@@ -21,6 +22,11 @@ polars DataFrame: every channel is a required column, and producers must
 go through `PrivateEquityBundle.from_issuer_arrays` which keyword-only
 requires every channel matrix. Missing any one is a `TypeError`, not a
 sim-compile validation error.
+
+`company_valuation_usd` is the M2 coupled-valuation channel.  It carries the
+sampled company market cap `V(t)` and is all-zeros for issuers whose valuation
+channel is disabled (no `current_valuation_usd` anchor) — zero is a valid
+sentinel for "no valuation modeled", distinct from any positive market cap.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ class PrivateEquityFloatChannel(StrEnum):
     ELIGIBLE_FRACTION = "eligible_fraction"
     FORCED_SALE_FRACTION = "forced_sale_fraction"
     FORCED_RECOVERY_CASHOUT_USD = "forced_recovery_cashout_usd"
+    COMPANY_VALUATION_USD = "company_valuation_usd"
 
 
 class PrivateEquityIntChannel(StrEnum):
@@ -77,6 +84,7 @@ PRIVATE_EQUITY_BUNDLE_SCHEMA = pl.Schema(
         "forced_sale_fraction": pl.Float64(),
         "liquidity_blocked": pl.Boolean(),
         "forced_recovery_cashout_usd": pl.Float64(),
+        "company_valuation_usd": pl.Float64(),
     }
 )
 
@@ -90,6 +98,7 @@ _FLOAT_COLUMNS = frozenset(
         "eligible_fraction",
         "forced_sale_fraction",
         "forced_recovery_cashout_usd",
+        "company_valuation_usd",
     }
 )
 _INT_COLUMNS = frozenset({"regime_code", "event_kind_code"})
@@ -134,10 +143,16 @@ class PrivateEquityBundle:
         forced_sale_fraction: FloatMatrix,
         liquidity_blocked: BoolMatrix,
         forced_recovery_cashout_usd: FloatMatrix,
+        company_valuation_usd: FloatMatrix,
         rollout_count: int,
         horizon_months: int,
     ) -> PrivateEquityBundle:
-        """Build a single-issuer bundle. Every channel is a required keyword."""
+        """Build a single-issuer bundle. Every channel is a required keyword.
+
+        ``company_valuation_usd`` is the M2 coupled-valuation channel; producers
+        with no valuation concept pass an all-zeros matrix (channel off). Zeros
+        are valid (non-negative); only negatives are rejected.
+        """
 
         expected_shape = (rollout_count, horizon_months + 1)
         _require_float_matrix(mark_usd_per_unit, expected_shape, "mark_usd_per_unit")
@@ -153,6 +168,10 @@ class PrivateEquityBundle:
         _require_float_matrix(forced_recovery_cashout_usd, expected_shape, "forced_recovery_cashout_usd")
         if np.any(forced_recovery_cashout_usd < 0.0):
             raise ValueError(f"PE issuer {issuer_id!r} forced_recovery_cashout_usd must be non-negative")
+        _require_float_matrix(company_valuation_usd, expected_shape, "company_valuation_usd")
+        # Market cap is non-negative; all-zeros means the valuation channel is off.
+        if np.any(company_valuation_usd < 0.0):
+            raise ValueError(f"PE issuer {issuer_id!r} company_valuation_usd must be non-negative")
         _require_code_values(regime_code, frozenset(int(c) for c in PrivateEquityRegimeCode), "regime_code")
         _require_code_values(event_kind_code, frozenset(int(c) for c in PrivateEquityEventKindCode), "event_kind_code")
         # Invariant: a voluntary tender opportunity (`sale_opportunity_active`) is the same
@@ -180,6 +199,7 @@ class PrivateEquityBundle:
                 "forced_sale_fraction": forced_sale_fraction.reshape(-1),
                 "liquidity_blocked": liquidity_blocked.reshape(-1),
                 "forced_recovery_cashout_usd": forced_recovery_cashout_usd.reshape(-1),
+                "company_valuation_usd": company_valuation_usd.reshape(-1),
             },
             schema=PRIVATE_EQUITY_BUNDLE_SCHEMA,
         )

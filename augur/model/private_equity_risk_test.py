@@ -19,7 +19,9 @@ from augur.model.private_equity_risk import (
     PrivateEquityRiskIssuerConfig,
     PrivateEquityRiskProviderConfig,
     PublicMarketCdfAnchor,
+    _dilution_factor,
     _public_market_open_hazard_by_month,
+    _sample_company_valuation_vectorized,
 )
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
@@ -441,6 +443,195 @@ def test_public_market_open_realized_probability_tracks_anchor_cdf() -> None:
     assert realized[7] == pytest.approx(0.75, abs=0.02)
     assert realized[19] == pytest.approx(0.89, abs=0.02)
     assert realized[31] == pytest.approx(0.93, abs=0.02)
+
+
+def _valuation_issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
+    """An issuer with the opt-in M2 coupled valuation+dilution channel enabled.
+
+    Adverse hazards are all left at their (zero) defaults so the only thing moving
+    the mark is the coupled V(t)/dilution machinery — keeps the assertions clean.
+    """
+
+    return _issuer(
+        current_valuation_usd=1.0e11,
+        shares_outstanding_initial=1.0e9,
+        valuation_monthly_log_return_mu=0.02,
+        valuation_monthly_log_return_sigma=0.10,
+        valuation_student_t_nu=5.0,
+        # No legacy latent-mark drift/vol: when the channel is ON these are unused,
+        # but keeping them inert makes the channel-OFF baseline below unambiguous.
+        monthly_log_return_mu=0.0,
+        monthly_log_return_sigma=0.0,
+        # Push tender/admin precursors past the horizon so mark[:,0] and the coupled
+        # path aren't perturbed by event-price noise in the first columns.
+        tender_interval_months_median=600.0,
+        **updates,
+    )
+
+
+def test_valuation_channel_off_by_default() -> None:
+    """`current_valuation_usd` unset ⇒ channel off ⇒ `company_valuation_usd` all-zeros."""
+
+    sampled = _sample(_issuer(), horizon_months=4)
+    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=4)
+    np.testing.assert_array_equal(valuation, np.zeros((1, 5), dtype=np.float64))
+    assert not _issuer().valuation_channel_enabled
+
+
+def test_valuation_channel_on_anchors_columns_zero() -> None:
+    """Channel ON: valuation[:,0] == V0 and mark[:,0] == current_mark_usd exactly."""
+
+    issuer = _valuation_issuer()
+    assert issuer.valuation_channel_enabled
+    sampled = _sample(issuer, horizon_months=6)
+
+    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
+    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
+
+    np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
+    assert mark[0, 0] == pytest.approx(100.0)
+    # The coupled valuation is a strictly positive market cap, never the all-zeros sentinel.
+    assert np.all(valuation > 0.0)
+
+
+def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
+    """Two samples with identical `rollout_seeds` produce identical coupled arrays."""
+
+    issuer = _valuation_issuer()
+    request = ExogenousSamplingRequest(
+        horizon_months=8, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({IssuerId("acme")})
+    )
+    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    first = model.sample(request)
+    second = model.sample(request)
+
+    for channel in (PrivateEquityFloatChannel.COMPANY_VALUATION_USD, PrivateEquityFloatChannel.MARK_USD_PER_UNIT):
+        a = first.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
+        b = second.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
+        np.testing.assert_array_equal(a, b)
+
+
+def test_dilution_factor_shape_and_values() -> None:
+    """`dilution_factor(t) = (1+rate)^(t/12)`, with t=0 ⇒ 1 and t=12 ⇒ 1+rate."""
+
+    rate = 0.30
+    factor = _dilution_factor(annual_dilution_rate=rate, horizon_months=24)
+    assert factor.shape == (25,)
+    assert factor[0] == pytest.approx(1.0)
+    assert factor[12] == pytest.approx(1.0 + rate)
+    assert factor[24] == pytest.approx((1.0 + rate) ** 2)
+    # Zero dilution ⇒ identity row.
+    np.testing.assert_allclose(_dilution_factor(annual_dilution_rate=0.0, horizon_months=6), np.ones(7))
+
+
+def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio() -> None:
+    """`annual_dilution_rate > 0` ⇒ the coupled latent mark grows strictly slower than V(t)/V0.
+
+    The coupled latent mark is `current_mark × (V(t)/V0) / dilution_factor(t)` with
+    `dilution_factor(t) = (1+rate)^(t/12) > 1` for t > 0. Verified directly on the
+    sampler's building blocks (`_sample_company_valuation_vectorized` + `_dilution_factor`),
+    since the observed `mark_usd_per_unit` channel is piecewise-constant between observation
+    events and so doesn't continuously track the latent mark. Same V(t) used for both rates
+    (identical valuation seed stream), so the only difference is the dilution divisor.
+    """
+
+    rate = 0.30
+    horizon = 12
+    issuer = _valuation_issuer(annual_dilution_rate=rate)
+    valuation_seeds = (900, 901, 902, 903)
+    valuation = _sample_company_valuation_vectorized(issuer, valuation_seeds=valuation_seeds, horizon_months=horizon)
+    valuation_ratio = valuation / valuation[:, [0]]
+
+    diluted = _dilution_factor(annual_dilution_rate=rate, horizon_months=horizon)
+    undiluted = _dilution_factor(annual_dilution_rate=0.0, horizon_months=horizon)
+    coupled_mark = issuer.current_mark_usd * valuation_ratio / diluted
+    coupled_mark_no_dilution = issuer.current_mark_usd * valuation_ratio / undiluted
+
+    mark_ratio = coupled_mark / coupled_mark[:, [0]]
+    # t == 0: mark ratio equals valuation ratio (dilution_factor(0) == 1).
+    np.testing.assert_allclose(mark_ratio[:, 0], valuation_ratio[:, 0])
+    # t > 0: strictly below the valuation ratio, by exactly the dilution factor.
+    assert np.all(mark_ratio[:, 1:] < valuation_ratio[:, 1:])
+    np.testing.assert_allclose(mark_ratio, valuation_ratio / diluted)
+    # Zero dilution ⇒ coupled mark tracks V(t)/V0 exactly.
+    np.testing.assert_allclose(coupled_mark_no_dilution / issuer.current_mark_usd, valuation_ratio)
+
+
+def test_valuation_channel_off_is_byte_identical_to_pre_m2_baseline() -> None:
+    """Zero-regression guard: turning the channel off must leave mark/event arrays
+    bit-identical to a model with NO valuation fields at all (the pre-M2 shape).
+
+    Both issuers share every legacy parameter and a non-trivial mark random walk plus
+    live adverse hazards, exercised over many rollouts so any perturbation of the level
+    or event RNG streams (e.g. an accidentally-derived valuation seed stream) would show
+    up as a difference. The valuation-fields-present-but-disabled issuer must reproduce
+    the bare issuer exactly, and emit an all-zeros valuation channel.
+    """
+
+    legacy_params: dict[str, object] = {
+        "monthly_log_return_mu": 0.01,
+        "monthly_log_return_sigma": 0.08,
+        "tender_interval_months_median": 9.0,
+        "tender_interval_log_sigma": 0.3,
+        "annual_public_market_probability": 0.05,
+        "annual_collapse_probability": 0.02,
+        "annual_legal_event_probability": 0.05,
+        "annual_forced_sale_probability": 0.02,
+    }
+    rollout_count = 256
+    rollout_seeds = tuple(range(4242, 4242 + rollout_count))
+    request = ExogenousSamplingRequest(
+        horizon_months=18, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+    )
+
+    # Pre-M2 shape: no valuation fields set at all.
+    bare = PrivateEquityRiskProviderConfig(issuers={"acme": _issuer(**legacy_params)}).realize_model().sample(request)
+    # M2 fields present but channel OFF (current_valuation_usd unset). Set the inert
+    # valuation RW params to NON-zero values to prove they cannot leak when the channel
+    # is off (their seed stream is never derived).
+    disabled = (
+        PrivateEquityRiskProviderConfig(
+            issuers={
+                "acme": _issuer(
+                    valuation_monthly_log_return_mu=0.5,
+                    valuation_monthly_log_return_sigma=0.5,
+                    valuation_student_t_nu=3.0,
+                    annual_dilution_rate=0.4,
+                    **legacy_params,
+                )
+            }
+        )
+        .realize_model()
+        .sample(request)
+    )
+
+    def matrix(bundle: SampledExogenousBundle, channel: PrivateEquityFloatChannel) -> np.ndarray:
+        return bundle.private_equity.issuer_float_matrix(
+            "acme", str(channel), rollout_count=rollout_count, horizon_months=18
+        )
+
+    def int_matrix(bundle: SampledExogenousBundle, channel: PrivateEquityIntChannel) -> np.ndarray:
+        return bundle.private_equity.issuer_int_matrix(
+            "acme", str(channel), rollout_count=rollout_count, horizon_months=18
+        )
+
+    # Mark and event-kind arrays must be byte-identical between the bare and disabled issuers.
+    np.testing.assert_array_equal(
+        matrix(bare, PrivateEquityFloatChannel.MARK_USD_PER_UNIT),
+        matrix(disabled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT),
+    )
+    np.testing.assert_array_equal(
+        int_matrix(bare, PrivateEquityIntChannel.EVENT_KIND_CODE),
+        int_matrix(disabled, PrivateEquityIntChannel.EVENT_KIND_CODE),
+    )
+    np.testing.assert_array_equal(
+        int_matrix(bare, PrivateEquityIntChannel.REGIME_CODE), int_matrix(disabled, PrivateEquityIntChannel.REGIME_CODE)
+    )
+    # Disabled channel emits the all-zeros sentinel.
+    np.testing.assert_array_equal(
+        matrix(disabled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD),
+        np.zeros((rollout_count, 19), dtype=np.float64),
+    )
 
 
 if __name__ == "__main__":

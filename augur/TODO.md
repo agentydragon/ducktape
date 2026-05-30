@@ -103,16 +103,21 @@ are deleted and the CI prefix-guard is in place.
       `macro_market_bundle_provider` shape directly; mine it only for
       data loading/config ideas after the native `SampledExogenousBundle`
       API is the target.
-- [ ] **Fit the PE valuation + share-dilution process, not just a static
-      scale.** M2 (`augur/plans/prediction_market_calibration.md`) adds a
-      company-valuation channel `V = mark × shares(t)` plus a dilution
-      process, but v1 uses point estimates (`shares₀`, `annual_dilution_rate`).
-      The trainer already ingests `valuation_observation`s but collapses them to
-      a single static `scale_prior.current_market_cap_usd`; make the scale
-      **dynamic and Bayesian** — fit a posterior over the dilution rate and the
+- [ ] **Fit the PE valuation + share-dilution process, not just static
+      points (M2.2).** M2 (`augur/plans/prediction_market_calibration.md`) landed
+      the coupled, opt-in company-valuation channel:
+      `latent_mark = current_mark × (V(t)/V₀) / dilution_factor(t)` on
+      `current_valuation_usd`, with `V(t)` a Student-t random walk and
+      `dilution_factor(t) = (1 + annual_dilution_rate)^(t/12)`, flowing out on the
+      `PrivateEquityBundle.company_valuation_usd` channel and scoring
+      `valuation_by_date` markets. Still v1 point estimates: `shares_outstanding_initial`
+      and `annual_dilution_rate` are hand-set, and the valuation RW params are not
+      evidence-fit. The trainer also still collapses `valuation_observation`s to a
+      single static `scale_prior.current_market_cap_usd`. Remaining work: make the
+      scale **dynamic and Bayesian** — fit a posterior over the dilution rate and the
       valuation drift/vol jointly from the paired (price, valuation) series so
-      `shares(t)` / `V(t)` carry real uncertainty instead of hand-set points.
-      Distinguish primary-issuance dilution (funding rounds) from secondaries
+      `shares(t)` / `V(t)` carry real uncertainty instead of hand-set points — and
+      distinguish primary-issuance dilution (funding rounds) from secondaries
       (no new shares) and employee-equity (PPU/RSU) issuance.
 
 ## Liquidity Policy

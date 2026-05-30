@@ -14,8 +14,10 @@ read-only with respect to the model; model changes are deliberate and land in
     `model_anchor_date` property month indices are measured from).
   - `resolvers.py` — per-rollout resolution: a `RolloutTrajectory` (one rollout's slice
     of the augur→sim `PrivateEquityBundle`) resolves each `exact` market to YES / NO /
-    UNRESOLVED. Only EVENT markets map cleanly (`ipo_by_date`, `pre_ipo_failure`); augur
-    models neither company valuation nor revenue.
+    UNRESOLVED. Event markets always map cleanly (`ipo_by_date`, `pre_ipo_failure`); with
+    the opt-in M2 valuation channel, `valuation_by_date` ("valuation ≥ $X by date") is also
+    scoreable for issuers carrying `company_valuation_usd` (UNRESOLVED otherwise). Revenue
+    remains unmodeled.
   - `manifold.py` — an injectable `ManifoldClient` (httpx) fetching live YES
     probabilities per market; tests inject a hermetic stub.
   - `calibration.py` — `run_calibration(...) -> CalibrationResult` (p_model + Wilson CI +
@@ -76,15 +78,40 @@ below 2029's 0.93). Competing risks (collapse can preempt) make realized P(IPO b
 under the anchors; M1 also pulls pre-IPO-failure down. The `(cdf_anchors → monthly hazard +
 tail)` machinery is generic — reusable for any event we get market term structure for.
 
-### M2 — company valuation + dilution, decoupled from per-unit mark
+### M2 — company valuation + dilution, coupled to the per-unit mark ✅ (mark v1 landed)
 
-augur emits only a per-**unit** mark, so (a) the valuation markets ($1T-by-date) are
-unmappable and (b) the per-share value the user holds ignores **dilution** (new shares in
-funding rounds erode per-share value even as the company cap grows). Add a company
-market-cap trajectory + a share-count/dilution process with `mark = cap / shares`: the
-valuation markets become scoreable (more calibration signal) and the holding value reflects
-dilution — the most realistic-but-missing piece for the actual finance question. Cost: a few
-more parameters to fit. **Worth it — stage after M1.**
+augur used to emit only a per-**unit** mark, so (a) the valuation markets ($1T-by-date) were
+unmappable and (b) the per-share value the user holds ignored **dilution** (new shares in
+funding rounds erode per-share value even as the company cap grows).
+
+**Landed (v1, opt-in).** `PrivateEquityRiskIssuerConfig` gains a `current_valuation_usd`
+anchor (`V0`); when set, the per-unit latent mark stops being a standalone Student-t random
+walk and becomes a quantity DERIVED from a sampled company valuation `V(t)` and a
+deterministic dilution factor:
+
+```
+latent_mark(t) = current_mark_usd × (V(t) / V0) / dilution_factor(t)
+dilution_factor(t) = (1 + annual_dilution_rate) ** (t / 12)   # dilution_factor(0) = 1
+```
+
+`V(t)` is a log-space Student-t random walk anchored at `V0`, driven by its OWN derived seed
+stream (`<issuer>:pe_risk_valuation`) and its own RW params (`valuation_monthly_log_return_mu/
+sigma`, `valuation_student_t_nu`). Only ratios enter the mark, so `V0`/`shares0` cancel at
+`t=0` and `latent_mark[:,0] == current_mark_usd` exactly while `company_valuation_usd[:,0] ==
+current_valuation_usd`. The valuation flows out on the new `PrivateEquityBundle`
+`company_valuation_usd` channel, which makes `valuation_by_date` markets scoreable
+(`resolvers.py`).
+
+**Opt-in / zero-regression.** Leaving `current_valuation_usd` unset selects the legacy
+independent latent-mark random walk verbatim and emits an all-zeros `company_valuation_usd`
+channel (the channel-off sentinel: a positive market cap is never all-zeros). The valuation
+seed stream is NOT derived in the off branch, so the mark/event arrays stay byte-identical to
+pre-M2 for every existing config — guarded by a fixed-seed regression test.
+
+**Deferred to M2.2** (TODO.md "Fit the PE valuation + share-dilution process"): `shares0` and
+`annual_dilution_rate` are v1 point estimates; the primary-issuance vs secondary-trade
+dilution split and the hierarchical Bayesian fit of the dilution rate + valuation drift/vol
+from paired (price, valuation) series are not yet done.
 
 ### M3 — IPO lockup: probabilistic + refined
 

@@ -42,7 +42,8 @@ def neutral_private_equity_issuer_bundle(
 
     Private operating regime; tender event kind on tender months, `NONE` otherwise;
     full sale capacity and eligibility; no forced sales; no liquidity block; no forced
-    recovery cashout.
+    recovery cashout. The opt-in M2 company-valuation channel is off here (all-zeros):
+    this protocol has no market-cap concept, only a per-unit mark.
     """
 
     expected_shape = (rollout_count, horizon_months + 1)
@@ -62,6 +63,7 @@ def neutral_private_equity_issuer_bundle(
         forced_sale_fraction=np.zeros(expected_shape, dtype=np.float64),
         liquidity_blocked=np.zeros(expected_shape, dtype=np.bool_),
         forced_recovery_cashout_usd=np.zeros(expected_shape, dtype=np.float64),
+        company_valuation_usd=np.zeros(expected_shape, dtype=np.float64),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
     )

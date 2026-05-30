@@ -26,7 +26,7 @@ def test_fetch_yes_probability_raises_when_probability_missing() -> None:
     # A market with no `probability` (e.g. a non-binary market) has no YES probability,
     # so the wrapper raises rather than inventing one.
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"id": "NOPROB"})
+        return httpx.Response(200, json={"id": "NOPROB", "url": "https://manifold.markets/test/NOPROB"})
 
     client = ManifoldClient(client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert client.get_market("NOPROB").probability is None
@@ -40,7 +40,7 @@ def test_get_market_caches_within_ttl_and_refetches_after() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         calls["count"] += 1
-        return httpx.Response(200, json={"id": "AAA", "probability": 0.3})
+        return httpx.Response(200, json={"id": "AAA", "url": "https://manifold.markets/test/AAA", "probability": 0.3})
 
     client = ManifoldClient(
         cache_ttl_seconds=120.0, clock=lambda: now[0], client=httpx.Client(transport=httpx.MockTransport(handler))
