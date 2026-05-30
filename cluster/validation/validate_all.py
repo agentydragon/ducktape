@@ -85,7 +85,7 @@ async def validate(
     errors.extend(check_goldilocks_explicit_decision(cluster))
     errors.extend(validate_dependencies(cluster, root))
     errors.extend(check_controller_health_checks(cluster, root))
-    errors.extend(check_image_automation_webhook(root))
+    errors.extend(check_image_automation_webhook(cluster))
 
     if not skip_flux_build:
         errors.extend(await validate_flux_build(root))

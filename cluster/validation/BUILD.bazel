@@ -110,7 +110,10 @@ py_library(
 py_library(
     name = "image_automation",
     srcs = ["image_automation.py"],
-    deps = ["@pypi//pyyaml"],
+    deps = [
+        ":cluster",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -284,6 +287,7 @@ py_test(
         ":cluster",
         ":dependencies",
         ":health_checks",
+        ":image_automation",
         ":kustomize",
         "//util/bazel:runfiles",
         "@pypi//pytest",
@@ -296,8 +300,9 @@ py_test(
     name = "test_image_automation",
     srcs = ["test_image_automation.py"],
     deps = [
+        ":cluster",
         ":image_automation",
-        "@pypi//pytest",
+        ":kustomize",
         "@pypi//pytest_bazel",
     ],
 )

@@ -1,77 +1,78 @@
-"""Tests for check_image_automation_webhook."""
+"""Tests for check_image_automation_webhook.
+
+Drives the check the way the validator does — through `ParsedCluster.build_results`
+(rendered kustomize docs) — rather than raw source files, so it exercises the same
+path that runs in CI / pre-commit. The real-tree coverage lives in
+test_cluster_integration.py::test_image_automation_webhook_consistency.
+"""
 
 from pathlib import Path
+from typing import Any
 
 import pytest_bazel
 
+from cluster.validation.cluster import ParsedCluster
 from cluster.validation.image_automation import check_image_automation_webhook
+from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def _write(root: Path, rel: str, content: str) -> None:
-    p = root / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content)
+def _repo(name: str) -> dict[str, Any]:
+    return {
+        "apiVersion": "image.toolkit.fluxcd.io/v1beta2",
+        "kind": "ImageRepository",
+        "metadata": {"name": name, "namespace": "flux-system"},
+    }
 
 
-def _repo(name: str) -> str:
-    return (
-        "apiVersion: image.toolkit.fluxcd.io/v1beta2\n"
-        "kind: ImageRepository\n"
-        f"metadata: {{name: {name}, namespace: flux-system}}\n"
-    )
+def _policy(name: str, repo: str) -> dict[str, Any]:
+    return {
+        "apiVersion": "image.toolkit.fluxcd.io/v1",
+        "kind": "ImagePolicy",
+        "metadata": {"name": name, "namespace": "flux-system"},
+        "spec": {"imageRepositoryRef": {"name": repo}},
+    }
 
 
-def _policy(name: str, repo: str) -> str:
-    return (
-        "apiVersion: image.toolkit.fluxcd.io/v1\n"
-        "kind: ImagePolicy\n"
-        f"metadata: {{name: {name}, namespace: flux-system}}\n"
-        f"spec: {{imageRepositoryRef: {{name: {repo}}}}}\n"
-    )
+def _receiver(repos: list[str]) -> dict[str, Any]:
+    return {
+        "apiVersion": "notification.toolkit.fluxcd.io/v1",
+        "kind": "Receiver",
+        "metadata": {"name": "github", "namespace": "flux-system"},
+        "spec": {
+            "type": "github",
+            "resources": [
+                {"apiVersion": "image.toolkit.fluxcd.io/v1beta2", "kind": "ImageRepository", "name": r} for r in repos
+            ],
+        },
+    }
 
 
-def _receiver(repos: list[str]) -> str:
-    if repos:
-        entries = "\n".join(
-            f"    - {{apiVersion: image.toolkit.fluxcd.io/v1beta2, kind: ImageRepository, name: {r}}}" for r in repos
-        )
-        resources = f"  resources:\n{entries}\n"
-    else:
-        resources = "  resources: []\n"
-    return (
-        "apiVersion: notification.toolkit.fluxcd.io/v1\n"
-        "kind: Receiver\n"
-        "metadata: {name: github, namespace: flux-system}\n"
-        "spec:\n"
-        "  type: github\n"
-        f"{resources}"
-    )
+def _cluster(*docs: dict[str, Any]) -> ParsedCluster:
+    """A ParsedCluster whose single build result renders the given manifests."""
+    result = KustomizeBuildResult(kustomization_path=Path("flux/kustomization.yaml"), docs=list(docs))
+    return ParsedCluster(build_results=[result])
 
 
-def test_consistent_is_clean(tmp_path: Path) -> None:
-    _write(tmp_path, "flux-image-automation-ghcr/foo.yaml", _repo("foo") + "---\n" + _policy("foo", "foo"))
-    _write(tmp_path, "flux-webhook/github-webhook-receiver.yaml", _receiver(["foo"]))
-    assert check_image_automation_webhook(tmp_path) == []
+def test_consistent_is_clean() -> None:
+    cluster = _cluster(_repo("foo"), _policy("foo", "foo"), _receiver(["foo"]))
+    assert check_image_automation_webhook(cluster) == []
 
 
-def test_repository_missing_from_webhook(tmp_path: Path) -> None:
-    _write(tmp_path, "flux-image-automation-ghcr/foo.yaml", _repo("foo") + "---\n" + _policy("foo", "foo"))
-    _write(tmp_path, "flux-webhook/github-webhook-receiver.yaml", _receiver([]))
-    errors = check_image_automation_webhook(tmp_path)
+def test_repository_missing_from_webhook() -> None:
+    cluster = _cluster(_repo("foo"), _policy("foo", "foo"), _receiver([]))
+    errors = check_image_automation_webhook(cluster)
     assert any("foo" in e and "github-webhook-receiver" in e for e in errors)
 
 
-def test_stale_webhook_entry(tmp_path: Path) -> None:
-    _write(tmp_path, "flux-image-automation-ghcr/foo.yaml", _repo("foo") + "---\n" + _policy("foo", "foo"))
-    _write(tmp_path, "flux-webhook/github-webhook-receiver.yaml", _receiver(["foo", "gone"]))
-    errors = check_image_automation_webhook(tmp_path)
+def test_stale_webhook_entry() -> None:
+    cluster = _cluster(_repo("foo"), _policy("foo", "foo"), _receiver(["foo", "gone"]))
+    errors = check_image_automation_webhook(cluster)
     assert any("gone" in e for e in errors)
 
 
-def test_dangling_policy_reference(tmp_path: Path) -> None:
-    _write(tmp_path, "flux-image-automation-ghcr/bar.yaml", _policy("bar", "ghost"))
-    _write(tmp_path, "flux-webhook/github-webhook-receiver.yaml", _receiver([]))
-    errors = check_image_automation_webhook(tmp_path)
+def test_dangling_policy_reference() -> None:
+    cluster = _cluster(_policy("bar", "ghost"), _receiver([]))
+    errors = check_image_automation_webhook(cluster)
     assert any("bar" in e and "ghost" in e for e in errors)
 
 

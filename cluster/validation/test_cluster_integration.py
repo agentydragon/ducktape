@@ -27,6 +27,7 @@ from cluster.validation.checks import (
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
+from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
 from util.bazel.runfiles import get_required_path
 
@@ -76,6 +77,17 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
 
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
     errors = check_controller_health_checks(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_image_automation_webhook_consistency(cluster: ParsedCluster) -> None:
+    """Every rendered ImageRepository is in the webhook Receiver; every ImagePolicy ref resolves.
+
+    Runs against the real built cluster (not synthetic fixtures), so it also guards the
+    check against crashing on the actual manifest set — the gap that hid the earlier
+    raw-YAML-walking bug.
+    """
+    errors = check_image_automation_webhook(cluster)
     assert not errors, "\n".join(errors)
 
 
