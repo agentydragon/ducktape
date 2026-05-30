@@ -22,8 +22,11 @@ from augur.model.private_equity_risk import (
     _dilution_factor,
     _public_market_open_hazard_by_month,
     _sample_company_valuation_vectorized,
+    _sample_issuer,
+    _seed_from_rollout_seeds,
 )
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series_model import derive_stream_rollout_seeds
 
 
 def _issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
@@ -511,17 +514,31 @@ def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
         np.testing.assert_array_equal(a, b)
 
 
+def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.ndarray:
+    """The M2.2-A per-rollout `_dilution_factor` at sigma=0 over a single rollout, as a
+    `(T+1,)` row -- i.e. the legacy deterministic factor recovered through the unified path."""
+
+    return _dilution_factor(
+        annual_dilution_rate=rate,
+        annual_dilution_rate_log_sigma=0.0,
+        rollout_seeds=(7,),
+        issuer_id="acme",
+        rollout_count=1,
+        horizon_months=horizon_months,
+    )[0]
+
+
 def test_dilution_factor_shape_and_values() -> None:
     """`dilution_factor(t) = (1+rate)^(t/12)`, with t=0 ⇒ 1 and t=12 ⇒ 1+rate."""
 
     rate = 0.30
-    factor = _dilution_factor(annual_dilution_rate=rate, horizon_months=24)
+    factor = _deterministic_dilution_factor(rate=rate, horizon_months=24)
     assert factor.shape == (25,)
     assert factor[0] == pytest.approx(1.0)
     assert factor[12] == pytest.approx(1.0 + rate)
     assert factor[24] == pytest.approx((1.0 + rate) ** 2)
     # Zero dilution ⇒ identity row.
-    np.testing.assert_allclose(_dilution_factor(annual_dilution_rate=0.0, horizon_months=6), np.ones(7))
+    np.testing.assert_allclose(_deterministic_dilution_factor(rate=0.0, horizon_months=6), np.ones(7))
 
 
 def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio() -> None:
@@ -542,8 +559,8 @@ def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio()
     valuation = _sample_company_valuation_vectorized(issuer, valuation_seeds=valuation_seeds, horizon_months=horizon)
     valuation_ratio = valuation / valuation[:, [0]]
 
-    diluted = _dilution_factor(annual_dilution_rate=rate, horizon_months=horizon)
-    undiluted = _dilution_factor(annual_dilution_rate=0.0, horizon_months=horizon)
+    diluted = _deterministic_dilution_factor(rate=rate, horizon_months=horizon)
+    undiluted = _deterministic_dilution_factor(rate=0.0, horizon_months=horizon)
     coupled_mark = issuer.current_mark_usd * valuation_ratio / diluted
     coupled_mark_no_dilution = issuer.current_mark_usd * valuation_ratio / undiluted
 
@@ -632,6 +649,162 @@ def test_valuation_channel_off_is_byte_identical_to_pre_m2_baseline() -> None:
         matrix(disabled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD),
         np.zeros((rollout_count, 19), dtype=np.float64),
     )
+
+
+# ---- M2.2-A: per-rollout stochastic dilution rate ----------------------------------------
+
+# A valuation-channel-ON issuer with a non-trivial dilution rate. The dispersion knob is
+# overridden per test; the base leaves it at its inert default (0.0). Mark-overwriting events
+# are suppressed (tenders pushed far beyond any test horizon with zero price noise; no other
+# hazards) so the coupled mark equals current_mark * (V/V0) / dilution at every month -- letting
+# tests compare the mark directly against the dilution formula.
+_DILUTION_ISSUER_KWARGS = {
+    "current_mark_usd": 100.0,
+    "current_valuation_usd": 1_000_000_000.0,
+    "shares_outstanding_initial": 10_000_000.0,
+    "valuation_monthly_log_return_mu": 0.0,
+    "valuation_monthly_log_return_sigma": 0.05,
+    "valuation_student_t_nu": 5.0,
+    "annual_dilution_rate": 0.20,
+    "tender_interval_months_median": 100_000.0,
+    "tender_price_log_discount_sigma": 0.0,
+}
+
+
+def _dilution_issuer(**overrides: object) -> PrivateEquityRiskIssuerConfig:
+    return _issuer(**{**_DILUTION_ISSUER_KWARGS, **overrides})
+
+
+def _sample_dilution_paths(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int, horizon_months: int):
+    """Run `_sample_issuer` directly over `rollout_count` rollouts (one seed each)."""
+
+    request = ExogenousSamplingRequest(
+        horizon_months=horizon_months,
+        rollout_seeds=tuple(range(1, rollout_count + 1)),
+        required_private_equity_issuers=frozenset({IssuerId("acme")}),
+    )
+    return _sample_issuer("acme", issuer, request)
+
+
+def _drawn_rates(issuer: PrivateEquityRiskIssuerConfig, *, rollout_count: int) -> np.ndarray:
+    """Reproduce the per-rollout dilution-rate draw the sampler performs."""
+
+    seeds = tuple(range(1, rollout_count + 1))
+    dilution_seeds = derive_stream_rollout_seeds(seeds, stream_id="acme:pe_risk_dilution")
+    rng = np.random.default_rng(_seed_from_rollout_seeds(dilution_seeds))
+    z = rng.standard_normal(rollout_count)
+    return issuer.annual_dilution_rate * np.exp(issuer.annual_dilution_rate_log_sigma * z)
+
+
+def test_sigma_zero_unified_path_is_byte_identical_to_deterministic_factor() -> None:
+    """sigma=0 must degenerate through the UNIFIED per-rollout path with NO special-case.
+
+    With the dispersion knob at its default (0.0) and the valuation channel on, the mark must
+    equal `current_mark * (V/V0) / (1 + rate)^(t/12)` byte-for-byte, over many rollouts and a
+    multi-year horizon with a non-trivial rate. This proves `exp(0) == 1` collapses the
+    LogNormal naturally -- there is no `if sigma == 0` branch.
+    """
+
+    rollout_count = 64
+    horizon = 120
+    rate = 0.20
+    issuer = _dilution_issuer(annual_dilution_rate=rate, annual_dilution_rate_log_sigma=0.0)
+    paths = _sample_dilution_paths(issuer, rollout_count=rollout_count, horizon_months=horizon)
+
+    months = np.arange(horizon + 1, dtype=np.float64)
+    deterministic_dilution = np.power(1.0 + rate, months / 12.0)[None, :]
+    expected_mark = 100.0 * (paths.company_valuation_usd / 1_000_000_000.0) / deterministic_dilution
+    np.testing.assert_array_equal(paths.mark, expected_mark)
+
+
+def test_widening_cone_cross_rollout_variance_grows_in_time_and_with_sigma() -> None:
+    """rate=0.20, sigma=0.3 -> cross-rollout var(log mark) at m120 > at m12, and > the sigma=0 case."""
+
+    rollout_count = 400
+    horizon = 120
+    spread = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.3)
+    flat = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.0)
+
+    spread_paths = _sample_dilution_paths(spread, rollout_count=rollout_count, horizon_months=horizon)
+    flat_paths = _sample_dilution_paths(flat, rollout_count=rollout_count, horizon_months=horizon)
+
+    spread_log = np.log(spread_paths.mark)
+    var_m12 = float(np.var(spread_log[:, 12]))
+    var_m120 = float(np.var(spread_log[:, 120]))
+    # Quadratic-in-t widening cone from the per-rollout rate draw.
+    assert var_m120 > var_m12
+    # The sigma=0 case carries only V(t) spread; turning sigma on must add per-share spread at m120.
+    assert var_m120 > float(np.var(np.log(flat_paths.mark)[:, 120]))
+
+
+def test_drawn_rate_median_is_anchored_at_annual_dilution_rate() -> None:
+    """median(r) ~ annual_dilution_rate over many rollouts (median-anchored LogNormal)."""
+
+    rate = 0.20
+    issuer = _dilution_issuer(annual_dilution_rate=rate, annual_dilution_rate_log_sigma=0.4)
+    rates = _drawn_rates(issuer, rollout_count=5000)
+    # LogNormal median == exp(mu) == rate; the sample median converges to it (NOT the mean,
+    # which would sit at rate * exp(sigma**2 / 2) ~ 0.217 here).
+    assert float(np.median(rates)) == pytest.approx(rate, rel=0.05)
+
+
+def test_positive_sigma_is_deterministic_under_fixed_seeds() -> None:
+    issuer = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.3)
+    first = _sample_dilution_paths(issuer, rollout_count=32, horizon_months=60)
+    second = _sample_dilution_paths(issuer, rollout_count=32, horizon_months=60)
+    np.testing.assert_array_equal(first.mark, second.mark)
+
+
+def test_dilution_sigma_does_not_perturb_event_or_regime_arrays() -> None:
+    """Turning sigma from 0 to >0 leaves event_kind_code / regime_code byte-identical.
+
+    The dilution draw is off the INDEPENDENT `:pe_risk_dilution` stream, so it must not touch
+    the level/event RNG streams driving event timing and regime transitions. We use an issuer
+    with live event hazards so the arrays are non-trivial.
+    """
+
+    rollout_count = 128
+    horizon = 96
+    base = {
+        "annual_public_market_probability": 0.05,
+        "annual_collapse_probability": 0.02,
+        "annual_legal_event_probability": 0.03,
+        "tender_interval_months_median": 12.0,
+        "tender_interval_log_sigma": 0.4,
+    }
+    flat = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.0, **base)
+    spread = _dilution_issuer(annual_dilution_rate=0.20, annual_dilution_rate_log_sigma=0.5, **base)
+
+    flat_paths = _sample_dilution_paths(flat, rollout_count=rollout_count, horizon_months=horizon)
+    spread_paths = _sample_dilution_paths(spread, rollout_count=rollout_count, horizon_months=horizon)
+
+    np.testing.assert_array_equal(flat_paths.event_kind_code, spread_paths.event_kind_code)
+    np.testing.assert_array_equal(flat_paths.regime_code, spread_paths.regime_code)
+    # Valuation channel is driven by its own stream too, so V(t) is unchanged.
+    np.testing.assert_array_equal(flat_paths.company_valuation_usd, spread_paths.company_valuation_usd)
+
+
+def test_zero_rate_with_positive_sigma_yields_no_dilution_and_no_spread() -> None:
+    """rate=0, sigma>0 -> dilution factor all ones (0 * exp(sigma z) == 0), so no per-share spread."""
+
+    rollout_count = 200
+    horizon = 120
+    factor = _dilution_factor(
+        annual_dilution_rate=0.0,
+        annual_dilution_rate_log_sigma=0.5,
+        rollout_seeds=tuple(range(1, rollout_count + 1)),
+        issuer_id="acme",
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+    )
+    np.testing.assert_array_equal(factor, np.ones((rollout_count, horizon + 1)))
+
+    # End-to-end: with rate 0 the coupled mark is exactly current_mark * V(t)/V0 regardless of
+    # sigma -- the dilution channel contributes zero spread.
+    issuer = _dilution_issuer(annual_dilution_rate=0.0, annual_dilution_rate_log_sigma=0.5)
+    paths = _sample_dilution_paths(issuer, rollout_count=rollout_count, horizon_months=horizon)
+    expected = 100.0 * (paths.company_valuation_usd / 1_000_000_000.0)
+    np.testing.assert_array_equal(paths.mark, expected)
 
 
 if __name__ == "__main__":

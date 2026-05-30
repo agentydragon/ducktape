@@ -1,8 +1,9 @@
 """Fit a per-rollout dilution prior from paired price + valuation observations.
 
 This is the M2.2-A fit half. It turns an issuer's paired per-share prices and company
-post-money valuations (the `augur.fit.evidence_config` observation types) into the dilution
-config block consumed by `PrivateEquityRiskIssuerConfig`:
+post-money valuations (the `augur.fit.private_equity` observation types -- the same
+`PriceObservation` / `ValuationObservation` the `train_private_equity` binary ingests) into
+the dilution config block consumed by `PrivateEquityRiskIssuerConfig`:
 
     annual_dilution_rate            (median per-rollout dilution rate)
     annual_dilution_rate_log_sigma  (per-rollout dilution-rate dispersion)
@@ -13,7 +14,7 @@ series alone.
 Method -- implied-shares log-linear regression. For each date carrying BOTH a price and a
 (near-dated) valuation, the implied share count is
 
-    implied_shares = valuation_usd / price_usd
+    implied_shares = valuation_usd / price_usd_per_share
 
 (robust to primary-vs-secondary: it is a per-date ratio, so a primary round that both mints
 shares and resets the post-money still lands on the same shares-vs-time curve; the
@@ -27,7 +28,9 @@ with delta_years measured from the first paired date, and recover
     annual_dilution_rate = exp(slope_per_year) - 1.
 
 The residual scatter of `log(implied_shares)` about the fit line gives the per-rollout
-dispersion `annual_dilution_rate_log_sigma` (see `_log_sigma_from_residuals`).
+dispersion `annual_dilution_rate_log_sigma` (see `_log_sigma_from_residuals`). This mirrors
+the implied-share-count idea already used by `private_equity._estimate_current_market_cap`,
+but fits the *slope over time* (dilution) rather than collapsing to a single point estimate.
 
 HONEST LIMITATIONS (see augur/plans/prediction_market_calibration.md, M2.2 section):
 
@@ -47,7 +50,7 @@ import datetime as dt
 import math
 from dataclasses import dataclass
 
-from augur.fit.evidence_config import PriceObservation, ValuationObservation
+from augur.fit.private_equity import PriceObservation, ValuationObservation
 
 # Default window for pairing a price observation with a valuation observation on a "near"
 # date. Tender prices and post-money valuations are rarely struck on the exact same calendar
@@ -64,7 +67,7 @@ class ImpliedSharePoint:
     """One paired observation: implied shares = valuation / price on (near-)coincident dates."""
 
     date: dt.date
-    price_usd: float
+    price_usd_per_share: float
     valuation_usd: float
     implied_shares: float
     delta_years: float
@@ -93,13 +96,13 @@ def _pair_price_and_valuation(
 ) -> list[tuple[dt.date, float, float]]:
     """Pair each price with its nearest-dated valuation within `tolerance_days`.
 
-    Returns `(date, price_usd, valuation_usd)` triples (the price's date), deduplicated by
-    date and sorted. A price with no valuation inside the window is dropped.
+    Returns `(date, price_usd_per_share, valuation_usd)` triples (the price's date),
+    deduplicated by date and sorted. A price with no valuation inside the window is dropped.
     """
 
     if not valuations:
         return []
-    # date -> (gap_days, valuation_usd, price_usd); on a duplicate price date keep the closer match.
+    # date -> (gap_days, valuation_usd, price); on a duplicate price date keep the closer match.
     best: dict[dt.date, tuple[int, float, float]] = {}
     for price in prices:
         nearest = min(valuations, key=lambda val: abs((val.date - price.date).days))
@@ -108,8 +111,8 @@ def _pair_price_and_valuation(
             continue
         existing = best.get(price.date)
         if existing is None or gap < existing[0]:
-            best[price.date] = (gap, nearest.valuation_usd, price.price_usd)
-    return sorted((date, price_usd, valuation_usd) for date, (_gap, valuation_usd, price_usd) in best.items())
+            best[price.date] = (gap, nearest.valuation_usd, price.price_usd_per_share)
+    return sorted((date, price, valuation_usd) for date, (_gap, valuation_usd, price) in best.items())
 
 
 def _ordinary_least_squares(xs: list[float], ys: list[float]) -> tuple[float, float, float]:
@@ -217,7 +220,9 @@ def fit_dilution_prior(
     )
 
     points = tuple(
-        ImpliedSharePoint(date=date, price_usd=price, valuation_usd=valuation, implied_shares=shares, delta_years=x)
+        ImpliedSharePoint(
+            date=date, price_usd_per_share=price, valuation_usd=valuation, implied_shares=shares, delta_years=x
+        )
         for (date, price, valuation), shares, x in zip(triples, implied_shares, xs, strict=True)
     )
 

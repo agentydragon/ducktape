@@ -266,7 +266,7 @@ py_test(
 py_library(
     name = "dilution_prior",
     srcs = ["dilution_prior.py"],
-    deps = [":evidence_config"],
+    deps = [":private_equity"],
 )
 
 py_library(
@@ -274,8 +274,7 @@ py_library(
     srcs = ["derive_dilution_prior.py"],
     deps = [
         ":dilution_prior",
-        ":evidence_config",
-        "@pypi//more_itertools",
+        ":private_equity",
     ],
 )
 
@@ -290,7 +289,7 @@ py_test(
     srcs = ["test_dilution_prior.py"],
     deps = [
         ":dilution_prior",
-        ":evidence_config",
+        ":private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

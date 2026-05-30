@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from augur.fit.dilution_prior import fit_dilution_prior
-from augur.fit.evidence_config import PriceObservation, ValuationObservation
+from augur.fit.private_equity import PriceObservation, ValuationObservation
 
 _BASE_DATE = dt.date(2020, 1, 1)
 
@@ -23,8 +23,8 @@ def _synthetic_pairs(
         shares(t) = shares0 * (1 + r_true) ** (t / 12)   (t in months)
 
     with multiplicative log-noise. Valuation is held constant at V0 so that
-    `implied_shares = V0 / price` reproduces shares(t); injecting noise on shares is
-    equivalent to scatter on log(implied_shares) about the fit line.
+    `implied_shares = V0 / price_usd_per_share` reproduces shares(t); injecting noise on
+    shares is equivalent to scatter on log(implied_shares) about the fit line.
     """
 
     rng = random.Random(seed)
@@ -36,7 +36,7 @@ def _synthetic_pairs(
         date = _BASE_DATE + dt.timedelta(days=round(k * months_between * 365.25 / 12.0))
         months = k * months_between
         shares = shares0 * (1.0 + r_true) ** (months / 12.0) * math.exp(rng.gauss(0.0, noise_log_sigma))
-        prices.append(PriceObservation(date=date, price_usd=v0 / shares))
+        prices.append(PriceObservation(date=date, price_usd_per_share=v0 / shares))
         valuations.append(ValuationObservation(date=date, valuation_usd=v0))
     return prices, valuations
 
@@ -81,7 +81,7 @@ def test_implied_share_points_recorded_for_transparency() -> None:
     assert len(prior.implied_share_points) == 5
     first = prior.implied_share_points[0]
     # implied_shares == valuation / price, and delta_years measured from the first paired date.
-    assert first.implied_shares == pytest.approx(first.valuation_usd / first.price_usd)
+    assert first.implied_shares == pytest.approx(first.valuation_usd / first.price_usd_per_share)
     assert first.delta_years == pytest.approx(0.0)
     assert prior.implied_share_points[-1].delta_years > 0.0
 
@@ -110,7 +110,7 @@ def test_drift_refresh_can_be_disabled() -> None:
 
 def test_fewer_than_two_paired_points_raises() -> None:
     # A single in-window pair cannot identify a slope.
-    prices = [PriceObservation(date=_BASE_DATE, price_usd=10.0)]
+    prices = [PriceObservation(date=_BASE_DATE, price_usd_per_share=10.0)]
     valuations = [ValuationObservation(date=_BASE_DATE, valuation_usd=1_000_000_000.0)]
     with pytest.raises(ValueError, match="need >= 2 paired"):
         fit_dilution_prior(prices, valuations)
@@ -121,7 +121,7 @@ def test_unpaired_observations_are_dropped() -> None:
 
     prices, valuations = _synthetic_pairs(r_true=0.15, noise_log_sigma=0.0, n_points=5)
     # Add a stray price far from any valuation date; it must not enter the fit.
-    prices = [*prices, PriceObservation(date=dt.date(2030, 1, 1), price_usd=5.0)]
+    prices = [*prices, PriceObservation(date=dt.date(2030, 1, 1), price_usd_per_share=5.0)]
     prior = fit_dilution_prior(prices, valuations, pairing_tolerance_days=31)
     assert len(prior.implied_share_points) == 5
     assert all(point.date.year < 2030 for point in prior.implied_share_points)

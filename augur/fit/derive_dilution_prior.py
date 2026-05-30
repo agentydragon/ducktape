@@ -1,9 +1,10 @@
 """Binary: fit a per-rollout dilution prior from an evidence file and print a config block.
 
-Mirrors `augur/calibration/ipo_prior.py`'s `derive_ipo_prior`: load an `EvidenceConfig` YAML
-(per-issuer paired per-share `price_observations` + company post-money `valuation_observations`),
-run the implied-shares log-linear fit for the chosen issuer, and print a paste-ready YAML block
-plus a provenance comment listing the implied-share points it used.
+Mirrors `augur/calibration/ipo_prior.py`'s `derive_ipo_prior`: load a private-markets evidence
+file (the same `{"issuers": {issuer_id: [observations]}}` shape `train_private_equity` ingests,
+parsed with `augur.fit.private_equity`'s loader), run the implied-shares log-linear fit for the
+chosen issuer, and print a paste-ready YAML block plus a provenance comment listing the
+implied-share points it used.
 """
 
 from __future__ import annotations
@@ -11,20 +12,27 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from more_itertools import one
-
 from augur.fit.dilution_prior import DilutionPrior, fit_dilution_prior
-from augur.fit.evidence_config import EvidenceConfig, IssuerEvidence
+from augur.fit.private_equity import PriceObservation, ValuationObservation, _load_evidence_payload, _parse_observations
 
 
-def _select_issuer(config: EvidenceConfig, issuer_id: str | None) -> IssuerEvidence:
-    """Pick the issuer to fit: the named one, or the sole issuer when there is exactly one."""
+def _select_issuer_observations(
+    by_issuer: dict[str, list], issuer_id: str | None
+) -> tuple[str, list[PriceObservation], list[ValuationObservation]]:
+    """Pick the issuer to fit (named, or the sole issuer) and split its observations by kind."""
 
-    if issuer_id is not None:
-        return one(issuer for issuer in config.issuers if issuer.issuer_id == issuer_id)
-    return one(
-        config.issuers, too_long=ValueError("evidence file has multiple issuers; pass --issuer-id to choose one")
-    )
+    if not by_issuer:
+        raise ValueError("evidence file contains no issuers")
+    if issuer_id is None:
+        if len(by_issuer) != 1:
+            raise ValueError(f"evidence file has {len(by_issuer)} issuers; pass --issuer-id to choose one")
+        issuer_id = next(iter(by_issuer))
+    if issuer_id not in by_issuer:
+        raise ValueError(f"issuer {issuer_id!r} not found; available: {sorted(by_issuer)}")
+    observations = by_issuer[issuer_id]
+    prices = [obs for obs in observations if isinstance(obs, PriceObservation)]
+    valuations = [obs for obs in observations if isinstance(obs, ValuationObservation)]
+    return issuer_id, prices, valuations
 
 
 def _format_config_block(prior: DilutionPrior, *, issuer_id: str) -> str:
@@ -43,13 +51,13 @@ def _format_config_block(prior: DilutionPrior, *, issuer_id: str) -> str:
     lines.append("#")
     lines.append(f"# Provenance: implied-shares log-linear fit on n={n} paired (price, valuation) points.")
     lines.append(f"#   shares0 (intercept) = {prior.shares0:.2f}; residual log-std = {prior.residual_log_std:.6f}")
-    lines.append("#   implied_shares = valuation_usd / price_usd per paired date:")
-    for point in prior.implied_share_points:
-        lines.append(
-            f"#     {point.date.isoformat()}  d_years={point.delta_years:.3f}  "
-            f"price={point.price_usd:.4f}  valuation={point.valuation_usd:.0f}  "
-            f"implied_shares={point.implied_shares:.2f}"
-        )
+    lines.append("#   implied_shares = valuation_usd / price_usd_per_share per paired date:")
+    lines.extend(
+        f"#     {point.date.isoformat()}  d_years={point.delta_years:.3f}  "
+        f"price={point.price_usd_per_share:.4f}  valuation={point.valuation_usd:.0f}  "
+        f"implied_shares={point.implied_shares:.2f}"
+        for point in prior.implied_share_points
+    )
     lines.append("#")
     lines.append("# NOTE (M2.2-A): point/log-linear fit. With ~5 points the log-sigma is weakly identified")
     lines.append("#   and intentionally wide. The discrete primary-round event kind (M2.2-C) and the full")
@@ -59,7 +67,7 @@ def _format_config_block(prior: DilutionPrior, *, issuer_id: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("evidence", type=Path, help="Path to an EvidenceConfig YAML file.")
+    parser.add_argument("evidence", type=Path, help="Path to a private-markets evidence file (JSON/YAML).")
     parser.add_argument(
         "--issuer-id", default=None, help="Issuer to fit. Optional when the evidence file has exactly one issuer."
     )
@@ -71,14 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    config = EvidenceConfig.from_yaml_file(args.evidence)
-    issuer = _select_issuer(config, args.issuer_id)
-    prior = fit_dilution_prior(
-        list(issuer.price_observations),
-        list(issuer.valuation_observations),
-        pairing_tolerance_days=args.pairing_tolerance_days,
-    )
-    print(_format_config_block(prior, issuer_id=issuer.issuer_id))
+    by_issuer = _parse_observations(_load_evidence_payload(args.evidence))
+    issuer_id, prices, valuations = _select_issuer_observations(by_issuer, args.issuer_id)
+    prior = fit_dilution_prior(prices, valuations, pairing_tolerance_days=args.pairing_tolerance_days)
+    print(_format_config_block(prior, issuer_id=issuer_id))
     return 0
 
 
