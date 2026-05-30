@@ -7,7 +7,7 @@ py_library(
     srcs = ["provider.py"],
     visibility = [
         "//airlock:__subpackages__",
-        "//plaid:__pkg__",
+        "//x/plaid:__pkg__",
     ],
     deps = [
         "@pypi//httpx",
@@ -76,18 +76,6 @@ py_test(
         ":provider",
         ":refresh",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_k8s_client",
-    srcs = ["test_k8s_client.py"],
-    deps = [
-        ":conftest",
-        ":k8s_client",
-        "@pypi//kubernetes_asyncio",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],

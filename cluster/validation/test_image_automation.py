@@ -31,17 +31,20 @@ def _policy(name: str, repo: str) -> str:
 
 
 def _receiver(repos: list[str]) -> str:
-    lines = "\n".join(
-        f"    - {{apiVersion: image.toolkit.fluxcd.io/v1beta2, kind: ImageRepository, name: {r}}}" for r in repos
-    )
+    if repos:
+        entries = "\n".join(
+            f"    - {{apiVersion: image.toolkit.fluxcd.io/v1beta2, kind: ImageRepository, name: {r}}}" for r in repos
+        )
+        resources = f"  resources:\n{entries}\n"
+    else:
+        resources = "  resources: []\n"
     return (
         "apiVersion: notification.toolkit.fluxcd.io/v1\n"
         "kind: Receiver\n"
         "metadata: {name: github, namespace: flux-system}\n"
         "spec:\n"
         "  type: github\n"
-        "  resources:\n"
-        f"{lines}\n"
+        f"{resources}"
     )
 
 

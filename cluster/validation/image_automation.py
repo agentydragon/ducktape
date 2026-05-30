@@ -29,17 +29,20 @@ def check_image_automation_webhook(root: Path) -> list[str]:
             continue
         for doc in _docs(f):
             if doc["kind"] == "ImageRepository":
-                image_repos.add((doc.get("metadata") or {}).get("name"))
+                image_repos.add(doc.get("metadata", {}).get("name"))
             elif doc["kind"] == "ImagePolicy":
-                ref = ((doc.get("spec") or {}).get("imageRepositoryRef") or {}).get("name")
-                policy_refs[(doc.get("metadata") or {}).get("name")] = ref
+                policy_refs[doc.get("metadata", {}).get("name")] = (
+                    doc.get("spec", {}).get("imageRepositoryRef", {}).get("name")
+                )
 
     webhook_repos: set[str] = set()
     for doc in _docs(root / "flux-webhook" / "github-webhook-receiver.yaml"):
         if doc["kind"] == "Receiver":
-            for ref in (doc.get("spec") or {}).get("resources") or []:
+            for ref in doc.get("spec", {}).get("resources", []):
                 if isinstance(ref, dict) and ref.get("kind") == "ImageRepository":
-                    webhook_repos.add(ref.get("name"))
+                    name = ref.get("name")
+                    if name:
+                        webhook_repos.add(name)
 
     return [
         *(
