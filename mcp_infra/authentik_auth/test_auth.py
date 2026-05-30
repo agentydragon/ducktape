@@ -17,6 +17,7 @@ from mcp_infra.authentik_auth.auth import (
     AuthentikAuthConfig,
     AuthentikExchangeAuth,
     _cache_key,
+    build_authentik_auth,
 )
 
 # ── AuthentikAuthConfig tests ─────────────────────────────────────────────
@@ -68,6 +69,45 @@ def test_normalized_public_base_url_strips_trailing_slash() -> None:
 def test_proxy_client_id_optional() -> None:
     cfg = _config()
     assert cfg.proxy_client_id is None
+
+
+# ── build_authentik_auth tests ────────────────────────────────────────────
+
+
+def test_build_authentik_auth_uses_jwks_uri_from_discovery() -> None:
+    """JWTVerifier must receive the jwks_uri advertised by the OIDC discovery
+    doc — not a hand-built path. Authentik serves JWKS at `<issuer>/jwks/`,
+    not `<issuer>/.well-known/jwks`; baking the wrong URL into auth.py once
+    silently broke JWT validation on every /mcp call.
+    """
+    advertised_jwks = "https://auth.example.com/application/o/test/jwks/"
+    discovery_doc = {
+        "issuer": "https://auth.example.com/application/o/test/",
+        "jwks_uri": advertised_jwks,
+        "authorization_endpoint": "https://auth.example.com/application/o/authorize/",
+        "token_endpoint": "https://auth.example.com/application/o/token/",
+    }
+
+    discovery_response = AsyncMock()
+    discovery_response.raise_for_status = lambda: discovery_response
+    discovery_response.json = lambda: discovery_doc
+
+    with (
+        patch("mcp_infra.authentik_auth.auth.httpx.get", return_value=discovery_response) as http_get,
+        patch("mcp_infra.authentik_auth.auth.OIDCProxy") as oidc_proxy_cls,
+        patch("mcp_infra.authentik_auth.auth.JWTVerifier") as jwt_verifier_cls,
+        patch("mcp_infra.authentik_auth.auth.MultiAuth"),
+    ):
+        oidc_proxy_cls.return_value.client_registration_options = AsyncMock()
+        build_authentik_auth(_config())
+
+    assert any("/.well-known/openid-configuration" in str(call.args[0]) for call in http_get.call_args_list)
+    jwt_verifier_cls.assert_called_once()
+    kwargs = jwt_verifier_cls.call_args.kwargs
+    assert kwargs["jwks_uri"] == advertised_jwks, (
+        f"JWTVerifier got hand-built jwks_uri {kwargs['jwks_uri']!r} instead of the "
+        f"discovery-advertised {advertised_jwks!r}"
+    )
 
 
 # ── AuthentikExchangeAuth tests ───────────────────────────────────────────
