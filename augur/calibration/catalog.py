@@ -41,6 +41,27 @@ class Mappability(StrEnum):
     UNMAPPABLE = "unmappable"
 
 
+class CatalogMetadata(BaseModel):
+    """Provenance/documentation block at the top of a catalog YAML.
+
+    `extra="allow"` (not the repo default `extra="forbid"`): the metadata block is a
+    hand-curated, per-catalog bag of provenance and reader notes (`source`, glossary
+    `mapping_kinds`, `valuation_caveat`, `field_semantics`, ...) whose shape varies by
+    catalog. Only the anchor dates are load-bearing, so we type those and preserve the
+    rest verbatim rather than forcing every documentation key into the schema.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    as_of: date
+    augur_model_as_of: date | None = None
+
+    @property
+    def model_anchor_date(self) -> date:
+        """Date month indices for `resolution_deadline`s are measured from."""
+        return self.augur_model_as_of or self.as_of
+
+
 class _MarketBase(BaseModel):
     """Market metadata shared by every mappability variant."""
 
@@ -92,7 +113,7 @@ MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(d
 class MarketCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    metadata: dict[str, object]
+    metadata: CatalogMetadata
     markets: list[MarketSpec]
 
     @classmethod

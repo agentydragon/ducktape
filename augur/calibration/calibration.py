@@ -112,14 +112,6 @@ class MarkFan(BaseModel):
     months: list[MonthBand]
 
 
-def _catalog_as_of(catalog: MarketCatalog) -> date:
-    """Model anchor date for month indexing, from catalog metadata."""
-    for key in ("augur_model_as_of", "as_of"):
-        if (raw := catalog.metadata.get(key)) is not None:
-            return date.fromisoformat(str(raw))
-    raise ValueError("catalog metadata must carry 'augur_model_as_of' or 'as_of' to anchor month indices")
-
-
 def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], p_market: float) -> CleanRow:
     counts = Counter(
         resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
@@ -238,7 +230,7 @@ def run_calibration(
     """
     if price_client is None:
         price_client = ManifoldClient()
-    as_of = _catalog_as_of(catalog)
+    as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     if bundle is None:
         bundle = sample_private_equity_bundle(
