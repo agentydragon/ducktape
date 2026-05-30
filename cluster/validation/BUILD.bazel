@@ -108,6 +108,12 @@ py_library(
 )
 
 py_library(
+    name = "image_automation",
+    srcs = ["image_automation.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_library(
     name = "validate_all",
     srcs = ["validate_all.py"],
     deps = [
@@ -118,6 +124,7 @@ py_library(
         ":flux",
         ":health_checks",
         ":helm_templates",
+        ":image_automation",
         ":kustomize",
     ],
 )
@@ -282,5 +289,15 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_image_automation",
+    srcs = ["test_image_automation.py"],
+    deps = [
+        ":image_automation",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

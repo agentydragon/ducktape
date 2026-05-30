@@ -15,6 +15,9 @@ Checks:
    enable in pre-commit with DUCKTAPE_HELM_VALIDATE=1)
 9. Blueprint completeness: All authentik blueprint files must be listed in configMapGenerator
 10. Goldilocks explicit decision: Namespaces with workloads must explicitly set goldilocks enabled label
+11. Image automation <-> webhook: every ImageRepository is listed in the GitHub webhook
+    receiver (so pushes reconcile immediately, not just on the 5m poll), and every ImagePolicy
+    references a defined ImageRepository
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 """
@@ -38,6 +41,7 @@ from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.flux import validate_flux_build
 from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.helm_templates import validate_helm_templates
+from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildError, run_kustomize_build
 
 
@@ -81,6 +85,7 @@ async def validate(
     errors.extend(check_goldilocks_explicit_decision(cluster))
     errors.extend(validate_dependencies(cluster, root))
     errors.extend(check_controller_health_checks(cluster, root))
+    errors.extend(check_image_automation_webhook(root))
 
     if not skip_flux_build:
         errors.extend(await validate_flux_build(root))
