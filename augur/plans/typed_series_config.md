@@ -1,166 +1,185 @@
-# Kill magic-prefix wire strings everywhere in augur
+# Kill magic-prefix wire strings everywhere in augur (staged)
 
 ## Goal
 
 Augur encodes the _kind_ of a series/asset in a magic string prefix
 (`"crypto:btc"`, `"home_value:san_francisco_ca"`, `"rent:vallejo_ca"`,
-`"private_equity:openai"`) and dispatches on it. The runtime typed boundary
-(`LevelSeriesKey`, `AssetKey`) already exists, but prefixes still survive in
-**config**, in **in-memory polars frames**, in **on-disk trained artifacts**, and
-in one **API field**. Remove the prefix from ALL of them: identity is carried
-structurally (typed unions in config/API; `kind` + `qualifier` columns in
-frames; typed factor records in artifacts), never as a parseable string.
+`"private_equity:openai"`) and dispatches on it (`.startswith` / `partition(":")`).
+The runtime typed boundary (`LevelSeriesKey`, `AssetKey`) already exists, but
+prefixes still survive in **config**, **in-memory polars frames**, **on-disk
+trained artifacts**, and the **API wire**. The endpoint is zero magic-prefix
+strings anywhere — identity carried structurally (typed unions in config/API;
+`kind` + `qualifier` columns in frames; typed factor records in artifacts).
 
 This is the columnar/serialized analog of the existing `PrivateEquityBundle`,
 which already carries PE state as a bare `issuer_id` column + typed channel
 columns rather than magic-prefixed rows.
 
-## Design principle (REVERSED from the first draft)
+## Staging contract
 
-- **No magic-prefix string is carried anywhere** — not config, not polars
-  columns, not artifact JSON/npz, not the API. The earlier "serialization
-  boundaries keep wire strings" rule is dropped per explicit decision.
-- **Identity is structural.** A `LevelSeriesKey`/`AssetKey` decomposes into a
-  `kind` discriminator + a `qualifier` payload (symbol / location_id /
-  issuer_id; `None` for singletons). Columns/records carry that pair.
-- **No backcompat.** Old configs/artifacts/frames must fail loudly. gaffer-private
-  may be red between the ducktape push and the gaffer migration — accepted.
+The work is **staged** across 4 phases (below). Staging is allowed because each
+phase lands in a coherent, green, independently-reviewable state — **and**
+because this roadmap commits to the endpoint and is tracked in
+`augur/TODO.md` so it cannot be stranded half-done.
 
-## Chosen frame shape: Option 1 — tag + payload columns
+**Definition of done (the whole effort):** no magic-prefix string is constructed
+or parsed anywhere. `wire_id` / `parse_level_series_key` /
+`try_parse_level_series_key` / `parse_asset_key` / `try_parse_asset_key` are
+**deleted**. The final phase adds a CI guard (a `rg`-based test) asserting the
+source tree contains no `partition(":")` / `startswith("crypto:"|"home_value:"|…)`
+series/asset dispatch, so regressions fail the build.
 
-The prefix encodes TWO things (kind discriminator + sub-id), so a single bare
-string cannot replace it (`san_francisco_ca` would collide between `home_value`
-and `rent`). Surface both as columns:
+Distinguish "magic-prefix string" (kind encoded in a prefix; must be parsed —
+the target) from a **bare identifier** (`issuer_id="openai"`, `symbol="btc"`,
+`location_id="san_francisco_ca"` in their own typed column). Bare ids in a typed
+column are fine; the PE bundle already uses a bare `issuer_id` column. The goal
+is to eliminate prefix-encoding/parsing, not to ban identifier strings.
+
+**No backcompat.** Old configs/artifacts/frames must fail loudly. gaffer-private
+may be red between a ducktape phase landing and its gaffer follow-up — accepted.
+
+## Frame shape decision: Option 1 — `kind` + `qualifier` columns
+
+The prefix encodes TWO things (kind discriminator + sub-id), and a single bare
+string cannot replace it — `"san_francisco_ca"` would collide between
+`home_value` and `rent` (sub-agent inventory confirmed this is the one real
+collision). Surface both as columns:
 
 ```python
 # was: {rollout_index, month_index, series_id: Utf8, value: Float64}
 SERIES_LEVELS_SCHEMA = SERIES_VALUES_SCHEMA = pl.Schema({
     "rollout_index": pl.Int64(), "month_index": pl.Int64(),
-    "kind": pl.Utf8(),        # LevelSeriesKind StrEnum value: inflation|sp500|crypto|home_value|rent
+    "kind": pl.Utf8(),        # LevelSeriesKind StrEnum: inflation|sp500|crypto|home_value|rent
     "qualifier": pl.Utf8(),   # null for inflation/sp500; symbol for crypto; location_id for home_value/rent
     "value": pl.Float64(),
 })
 # filter: .filter((pl.col("kind") == LevelSeriesKind.CRYPTO) & (pl.col("qualifier") == "btc"))
+# join keys become ["rollout_index","month_index","kind","qualifier"]
 ```
 
 `(kind, qualifier)` IS the typed key — reconstructed by a `match`, never by
-prefix-splitting.
+prefix-splitting. The `asset_id` column splits the same way into
+`asset_kind` + `asset_qualifier`.
 
-## Typed-key API: replace `wire_id` / `parse_*` with `(kind, qualifier)`
+## Typed-key API: `(kind, qualifier)` replaces `wire_id` / `parse_*`
 
 In `augur/model/series.py` and `augur/product/asset_key.py`:
 
 - `LevelSeriesKind` / `AssetKind`: `IntEnum` → **`StrEnum`** (verified pure
-  discriminators; the column now stores the enum value, e.g. `"crypto"`). PE
+  discriminators; the column stores the enum value, e.g. `"crypto"`).
   `PrivateEquityRegimeCode` / `PrivateEquityEventKindCode` stay `IntEnum` (real
-  numeric codes).
-- Add to each key variant: `qualifier: str | None` property (None / symbol /
+  numeric codes in frames + `sample_sanity.yaml`).
+- Each key variant gains a `qualifier: str | None` property (None / symbol /
   location_id / issuer_id).
-- Add module factories: `level_series_key_from_columns(kind, qualifier)` and
-  `asset_key_from_columns(kind, qualifier)` — `match` on kind.
-- **Delete** `wire_id`, `parse_level_series_key`, `try_parse_level_series_key`,
-  `parse_asset_key`, `try_parse_asset_key`. Keep only a `__str__` (renders
-  `kind` or `kind:qualifier`) for **diagnostics/log/error messages** — never
-  parsed back. This is the only "stringish" remnant and it is display-only.
-
-## Surfaces
-
-### A. Config (typed discriminated unions; `series` collapsed under `independent`)
-
-| #   | File / class                                                                    | New shape                                                                                                                                                 |
-| --- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `model/independent_exogenous.py` `IndependentExogenousProviderConfig`           | inherit `LevelSeriesGroups[ScalarSeriesSpec]` (per-kind fields, no `series:` wrapper) + `type` + `private_equity_marks: dict[IssuerId, ScalarSeriesSpec]` |
-| 2   | `model/series_model.py` `IndependentSeriesModels` (sim/bench twin)              | same collapse                                                                                                                                             |
-| 3   | `api/portfolio.py` `HoldingPositionConfig`                                      | `value_series: AssetKey` (typed in YAML); drop `value_series_id`/`asset_key` re-parse                                                                     |
-| 4   | `model/conditioning.py` `ExogenousConditioningContext`                          | `LevelSeriesGroups[tuple[ExogenousObservedPoint, ...]]` + `start_at`; `NormalizedObservation.key: LevelSeriesKey`                                         |
-| 5   | `model/location_series_sources.py` `LocationSeriesSourcesConfig`                | `home_value/rent: dict[LocationId, LocationId]`                                                                                                           |
-| 6   | `model/vecm.py` `VecmExogenousProviderConfig` / `VecmModel.latest_observations` | typed; level entries via `LevelSeriesGroups[float]`; blob-aux keys modeled explicitly                                                                     |
-| 7   | `model/sample_sanity.py` checks                                                 | `key: LevelSeriesKey`, `required_level_series: tuple[LevelSeriesKey,...]`, `issuer_id: IssuerId`                                                          |
+- Module factories `level_series_key_from_columns(kind, qualifier)` and
+  `asset_key_from_columns(kind, qualifier)` (`match` on kind) replace the
+  `parse_*` functions.
+- Keep a display-only `__str__` (renders `kind` or `kind:qualifier`) for
+  log/error messages — never parsed back.
 
 `LevelSeriesGroups[ValueT]` — new `model/level_series_groups.py`, `FrozenModel`,
 `Generic[ValueT]`, fields `inflation/sp500: ValueT|None`, `crypto:
 dict[CryptoSymbol, ValueT]`, `home_value/rent: dict[LocationId, ValueT]`, plus
 `by_level_key() -> dict[LevelSeriesKey, ValueT]`. `extra="forbid"` ⇒ a stray
-`"crypto:btc"` key fails at load.
+`"crypto:btc"` key fails at load. Reused by config surfaces 1/4/6.
 
-### B. In-memory polars frames (Option 1: kind + qualifier)
+---
 
-| #   | Schema / column                                                                    | Change                                                                                                                                                                                                                                  |
-| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8   | `model/exogenous.py` `SERIES_LEVELS_SCHEMA` / `SERIES_VALUES_SCHEMA` (`series_id`) | → `kind`, `qualifier`. Rewrite `series_levels_frame`, `level_values`, `level_series_ids`, `required_level_series_from_frame`, `series_values_from_bundle`.                                                                              |
-| 9   | `sim/external_series.py` `SERIES_EVENTS_SCHEMA` (`event_id`)                       | → `kind`, `qualifier` (or **drop the frame** — events are a "legacy holdover", PE tender moved to a bundle channel; confirm dead first, prefer deletion).                                                                               |
-| 10  | `sim/codec/assets.py` `asset_id` column                                            | → `asset_kind`, `asset_qualifier`. Rewrite `asset_ids_to_issuer_ids`, `primary_asset_ids`, `is_private_equity_asset`, `asset_id_column`, `asset_kind_label` to take/return typed `AssetKey` / the two columns. `ASSET_ID_COLUMN` split. |
+## Phase 1 — Config (the original task)
 
-**Sim engine sweep (same commit as #8/#10):** the join from `series_values` to a
-holding's value-series, and any `asset_id`/`series_id` reference in
-`sim/compiler/plan.py`, `sim/runtime.py`, `sim/slice.py`, `sim/tax.py`,
-`sim/projections.py`, `product/decode.py`, `product/scenarios.py`, becomes a
-two-column `(kind, qualifier)` match. Enumerate exact call sites at impl time
-(rg `series_id|asset_id|event_id`).
+Typed discriminated unions in YAML; `series` collapsed under `independent`.
+Internally still emits frame wire strings (keeps `parse_*` alive for now).
+Independently valuable + landable.
 
-### C. On-disk trained artifacts (forces regeneration)
+| #   | File / class                                                                    | New shape                                                                                                                                                                                            |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `model/independent_exogenous.py` `IndependentExogenousProviderConfig`           | inherit `LevelSeriesGroups[ScalarSeriesSpec]` (per-kind fields, no `series:` wrapper) + `type` + `private_equity_marks: dict[IssuerId, ScalarSeriesSpec]`; drop `_classified_series` prefix re-parse |
+| 2   | `model/series_model.py` `IndependentSeriesModels` (sim/bench twin)              | same collapse                                                                                                                                                                                        |
+| 3   | `api/portfolio.py` `HoldingPositionConfig`                                      | `value_series: AssetKey` typed in YAML; drop `value_series_id` + `asset_key` re-parse; `_validate_references`/`level_anchors`/`to_initial_lots` consume the typed key                                |
+| 4   | `model/conditioning.py` `ExogenousConditioningContext`                          | `LevelSeriesGroups[tuple[ExogenousObservedPoint, ...]]` + `start_at`; `NormalizedObservation.key: LevelSeriesKey`                                                                                    |
+| 5   | `model/location_series_sources.py` `LocationSeriesSourcesConfig`                | `home_value/rent: dict[LocationId, LocationId]` (consumer rebuilds the key; `state_space.py:441` already does this)                                                                                  |
+| 6   | `model/vecm.py` `VecmExogenousProviderConfig` / `VecmModel.latest_observations` | level entries via `LevelSeriesGroups[float]`; blob-aux keys (`spy_adjusted_close_latest`, `*_by_factor`) modeled explicitly                                                                          |
+| 7   | `model/sample_sanity.py` checks                                                 | `key: LevelSeriesKey`, `required_level_series: tuple[LevelSeriesKey,...]`, `issuer_id: IssuerId`                                                                                                     |
 
-| #   | Artifact                                                   | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| --- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11  | `model/state_space.py` `StateSpaceModelArtifact` JSON      | `factor_names: tuple[str,...]` → `factors: tuple[FactorKey, ...]` (typed union: level-series variants + a PE-mark variant carrying `issuer_id`; serializes as `{kind, qualifier}`). The four wire-keyed `dict[str,float]` maps (`latest_level_by_factor`, `monthly_log_return_mu`, `filtered_log_state_mean`, + PE-prior dicts) → **positional** `tuple[float,...]` aligned to `factors` (covariance is already positional), so NO string keys remain. `_classify_factor`/`_series_factor_map` consume typed factors. |
-| 12  | `model/vecm.py` `.npz` blob (`VECM_BLOB_FACTOR_NAMES_KEY`) | replace the `factor_names` string array with two parallel arrays `factor_kinds` + `factor_qualifiers`; bump `VECM_BLOB_SCHEMA_VERSION_KEY`. Messiest item.                                                                                                                                                                                                                                                                                                                                                            |
+Plus: ducktape test configs/fixtures (`sim/simulate_test.py` ~40,
+`sim/test_rental_lifecycle_e2e.py` ~20, `model/*_test.py`, `fit/*`,
+`api/testdata/config.yaml`). Then gaffer: repin + migrate
+`exogenous_provider.yaml`, `sample_sanity.yaml`, `k8s/augur/config.yaml`,
+`config/train.yaml`; resolve the pre-existing `config_test.py` import of
+`private_equity_level_series_ids` / `private_equity_sale_event_id`.
 
-**Artifact regeneration** (schema change invalidates checked-in blobs):
+End state: config carries zero prefixes; frames/artifacts/API still do.
 
-- ducktape testdata (`augur/model/testdata/fixture_*.json`,
-  `augur/fit/calibrated/trained_vecm_provider.yaml` + its `.npz`): regenerate via
-  the fit/`save()` paths.
-- gaffer artifacts (`state_space_macro_artifact.json`, `state_space_artifact.json`,
-  `openai_private_equity_model.json`) + the `trained_vecm.npz` baked into the
-  augur OCI image: regenerated in the gaffer phase.
+## Phase 2 — In-memory polars frames
 
-### D. API
+Replace prefix columns with `kind`+`qualifier`. Sub-agent inventory (~11 files
+beyond the schema defs):
 
-| #   | Field                                    | Change                                                                                                                                                                              |
-| --- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 13  | `product/wire.py:127` `spend_index: str` | → typed `LevelSeriesKey` reference. Check `product/scenarios.py` + whether the frontend sends `spend_index` (no TS refs to `series_id`/`asset_id` found, but verify `spend_index`). |
+| #   | Schema / column                                                                    | Change                                                                                                                                                                                                                                                          |
+| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8   | `model/exogenous.py` `SERIES_LEVELS_SCHEMA` / `SERIES_VALUES_SCHEMA` (`series_id`) | → `kind`,`qualifier`. Rewrite `series_levels_frame`, `series_values_from_bundle`, `level_matrix`, `validate_sample_satisfies_request`, `anchor_sampled_series_levels` (join keys), `parse_levels_frame_keys` → `level_keys_in_frame`, `_matrix_from_long_frame` |
+| 9   | `sim/external_series.py` `SERIES_EVENTS_SCHEMA` (`event_id`)                       | events are a "legacy holdover" (PE tender moved to a bundle channel) — **confirm dead and delete the frame**; else → `kind`,`qualifier`                                                                                                                         |
+| 10  | `sim/codec/assets.py` `asset_id` column                                            | → `asset_kind`,`asset_qualifier`; rewrite producers (`decode_asset_lots`, `decode_pe_*`)                                                                                                                                                                        |
 
-## Commit plan (ducktape, branch `claude/determined-darwin-TLzqj`)
+Sim-engine sweep (same phase): `sim/compiler/plan.py` (series/event index maps,
+`lot_asset_series_index`, `_reject_missing_property_sale_home_values`),
+`sim/compiler/series.py` (`collect_series_ids`, `external_values_cube`,
+`external_event_values_cube`), `sim/projections.py` (`TRANSACTION_SCHEMA`
+`asset_id` + the asset_lots↔series_values join ~382), `sim/state.py`
+(`ASSET_LOT_FRAME` `asset_id`), `sim/events.py` (event-frame `asset_id`
+columns), `product/decode.py` (group_by/filter/wire-build on `asset_id`),
+`model/composite_exogenous.py` (`_reject_duplicate_ids` on `series_id`).
+Update all frame test data.
 
-Each self-consistent and green (`bazelisk --server_javabase=$JAVA_HOME … --config=rbe test`):
+The sim string-interning table (`series_index_by_id`) keys on the wire string
+today; it becomes keyed on `(kind, qualifier)` tuples (or a small frozen
+`LevelSeriesKey`/`AssetKey`). No external artifact churn in this phase.
 
-1. Typed-key core: `StrEnum` flip + `qualifier` props + `*_from_columns`
-   factories; keep `wire_id`/`parse_*` temporarily so the tree still builds.
-2. `level_series_groups.py` generic + test.
-3. Config surfaces 1–2 (provider + twin) + sim consumers + test configs.
-4. Config surface 3 (portfolio `value_series`) + `api/testdata/config.yaml`.
-5. Config surfaces 4–7 (conditioning / location / vecm config / sample_sanity).
-6. Frame surfaces 8–10 + sim-engine sweep + frame test data.
-7. Artifact surface 11 (state_space) + regen ducktape testdata.
-8. Artifact surface 12 (vecm .npz) + regen ducktape vecm fixtures.
-9. API surface 13 (`spend_index`).
-10. Delete `wire_id` + `parse_*` (now unused); final `rg` for any prefix/`:`
-    splitting; docs/docstrings refresh (`series.py`, `asset_key.py`,
-    `private_equity_bundle.py`, `exogenous.py`, `external_series.py`).
+End state: no prefix strings in memory; artifacts + API still carry them.
 
-Push branch.
+## Phase 3 — On-disk trained artifacts (forces regeneration)
 
-## Gaffer migration (after ducktape pushed)
+| #   | Artifact                                              | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11  | `model/state_space.py` `StateSpaceModelArtifact` JSON | `factor_names: tuple[str,...]` → `factors: tuple[FactorKey,...]` (typed union: level variants + PE-mark variant w/ `issuer_id`; serializes `{kind,qualifier}`). The wire-keyed `dict[str,float]` maps (`latest_level_by_factor`, `monthly_log_return_mu`, `filtered_log_state_mean`, PE-prior dicts) → **positional** `tuple[float,...]` aligned to `factors` (cov is already positional). `_classify_factor`/`_series_factor_map` consume typed factors |
+| 12  | `model/vecm.py` `.npz` blob                           | replace the `factor_names` object-array with parallel `factor_kinds`+`factor_qualifiers` arrays; bump blob schema version. `save()`/`load()` at `vecm.py` ~352/376                                                                                                                                                                                                                                                                                       |
 
-1. Bump `archive_override` pin in gaffer `MODULE.bazel` to the new ducktape
-   commit (repin: `nix-prefetch-url --print-path …/<commit>.tar.gz` + integrity).
-2. Migrate gaffer YAML to typed shapes: `exogenous_provider.yaml` (conditioning
-   observations, location_series_sources), `sample_sanity.yaml`,
-   `k8s/augur/config.yaml` (portfolio `value_series`, provider, `spend_index`),
-   check `config/train.yaml`.
-3. **Regenerate gaffer trained artifacts** (state_space JSONs, PE model JSON,
-   `trained_vecm.npz`) under the new schema; rebuild the augur OCI image layer
-   that bakes the npz.
-4. Resolve the pre-existing `gaffer_augur/config_test.py` import of
-   `private_equity_level_series_ids` / `private_equity_sale_event_id` (exist in
-   neither local ducktape nor the pinned commit) — rewrite against the typed API.
-5. `nix develop` + `pre-commit` + `bazelisk … --config=rbe test //...` green; push.
+Regenerate checked-in blobs via the fit/`save()` paths: ducktape
+`augur/model/testdata/fixture_*.json`, `augur/fit/calibrated/trained_vecm.npz`
+(+ `trained_vecm_provider.yaml`); gaffer `state_space_*_artifact.json`,
+`openai_private_equity_model.json`, and the `trained_vecm.npz` baked into the
+augur OCI image (rebuild that image layer).
+
+End state: nothing on disk carries prefixes.
+
+## Phase 4 — API wire + final deletion + CI guard
+
+| #   | Field                                                                                                                                           | Change                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 13  | `product/wire.py` `asset_id: str` (`HoldingSaleEvent`, `PrivateEquityMarkerEvent`, `PrivateEquityOpportunityEvent`) + `spend_index: SpendIndex` | typed `AssetKey` / `LevelSeriesKey` reference (serializes `{kind,qualifier}`). Update `product/decode.py` wire construction + `api/server_test.py` assertions. **Verify the frontend** — sub-agent found no TS refs to `series_id`/`asset_id`, but confirm `asset_id`/`spend_index` consumption before changing the shape (the one external/JSON-breaking surface) |
+
+Then: **delete** `wire_id`, `parse_level_series_key`, `try_parse_level_series_key`,
+`parse_asset_key`, `try_parse_asset_key`. Add the CI grep guard (Definition of
+done). Final `rg` sweep for any `:`-splitting on series/asset ids.
+
+End state: zero magic-prefix strings; guard prevents regressions.
+
+---
+
+## Per-phase sequencing (each: ducktape first, then gaffer)
+
+1. ducktape branch `claude/determined-darwin-TLzqj`: land the phase's commits,
+   each green via `bazelisk --server_javabase=$JAVA_HOME … --config=rbe test`.
+2. push ducktape.
+3. gaffer: bump `archive_override` pin to the new ducktape commit
+   (`nix-prefetch-url --print-path …/<commit>.tar.gz` + integrity), migrate the
+   phase's gaffer surfaces, green, push.
 
 ## Operational prerequisites (verified)
 
-- **System Java 21** at `/usr/lib/jvm/java-21-openjdk-amd64`; pass as a startup
-  flag: `bazelisk --server_javabase=$JAVA_HOME build … --config=rbe`
-  (`--server_javabase` is startup-only, NOT a build flag).
+- **System Java 21** at `/usr/lib/jvm/java-21-openjdk-amd64`; startup flag:
+  `bazelisk --server_javabase=$JAVA_HOME build … --config=rbe`
+  (`--server_javabase` is startup-only, not a build flag).
 - **BuildBuddy key**: `sops -d --extract '["buildbuddy_api_key"]'
 secrets/buildbuddy.yaml`; export `BUILDBUDDY_API_KEY` (also wired into
   `~/.config/bazel/buildbuddy.bazelrc` by `setup_buildbuddy.sh`).
@@ -173,14 +192,12 @@ secrets/buildbuddy.yaml`; export `BUILDBUDDY_API_KEY` (also wired into
 
 ## Risks / open items
 
-- **Artifact regeneration is the biggest risk** (#11/#12): changing on-disk
-  schema invalidates every checked-in trained blob; the vecm `.npz` is baked into
-  the augur OCI image, so the image layer must be rebuilt. Confirm a clean
-  regen path (fit entrypoints) before touching schemas.
-- **SERIES_EVENTS_SCHEMA (#9)** may be fully dead — prefer deleting the frame
-  over retyping it; confirm no engine path still reads it.
-- **Two-column joins** in the sim compiler (#8/#10) — verify no perf-sensitive
-  hot path regresses vs the single-string join.
-- **`spend_index` frontend** (#13) — confirm whether the frontend emits it before
-  changing the API type.
-- **gaffer `config_test.py`** import discrepancy — resolved in gaffer phase.
+- **Phase 4 API + frontend** is the only external-breaking surface; verify
+  frontend consumption before changing wire shape.
+- **Phase 3 artifact regen** must have a clean fit→`save()` path; the vecm `.npz`
+  is baked into the augur OCI image (rebuild needed).
+- **Phase 2 two-column joins** in the sim hot path — watch for perf regression
+  vs the single-string join/intern.
+- **SERIES_EVENTS_SCHEMA** is likely fully dead — prefer deleting over retyping.
+- **gaffer `config_test.py`** imports symbols absent from both local and pinned
+  ducktape — resolved in Phase 1's gaffer step.
