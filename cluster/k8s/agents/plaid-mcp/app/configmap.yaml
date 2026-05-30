@@ -15,8 +15,8 @@ data:
   MCP_FACADE_PERSISTENCE__DB: "0"
   # --- plaid-mcp-server (upstream container), non-secret settings ---
   PLAID_MCP_PLAID_ENV: "production"
-  # Item registry: each item's access token is read from the named env var (a
-  # reflected Secret). Add items here as more accounts are linked in airlock.
+  # Item registry: each item's access token is read from the named env var (an
+  # ESO-mirrored Secret). Add items here as more accounts are linked in airlock.
   PLAID_MCP_ITEMS_META: |
     [
       {"key": "chase", "institution": "Chase", "products": ["transactions", "liabilities"], "access_token_env": "PLAID_CHASE_ACCESS_TOKEN"},

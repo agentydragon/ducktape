@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: plaid-mcp
   annotations:
-    description: "Authentik-gated, read-only Plaid MCP. Two containers in one network namespace: the auth-oblivious plaid-mcp-server (transactions/balances/liabilities for Chase + BofA) on localhost:8080, fronted by the shared mcp-oauth-facade with OIDCProxy on :8765. Only agentydragon passes the OAuth consent step. Plaid creds + per-item access tokens arrive as Secrets reflected from the airlock namespace."
+    description: "Authentik-gated, read-only Plaid MCP. Two containers in one network namespace: the auth-oblivious plaid-mcp-server (transactions/balances/liabilities for Chase + BofA) on localhost:8080, fronted by the shared mcp-oauth-facade with OIDCProxy on :8765. Only agentydragon passes the OAuth consent step. Plaid creds + per-item access tokens arrive as Secrets mirrored from the airlock namespace by ESO (external-secret.yaml)."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1

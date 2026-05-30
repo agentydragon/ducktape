@@ -1,6 +1,6 @@
 # plaid-mcp
 
-Standalone, Authentik-gated deployment of the [Plaid MCP server](../../../../plaid/mcp_server/README.md)
+Standalone, Authentik-gated deployment of the [Plaid MCP server](../../../../plaid_utils/mcp_server/README.md)
 at `https://plaid-mcp.allegedly.works`.
 
 ## Architecture
@@ -25,9 +25,12 @@ upstream `:8080` is reachable only in-pod via loopback.
 
 ## Secrets
 
-The `plaid-mcp-server` container consumes three Secrets that are **not** in this
-kustomization — they arrive in the `plaid-mcp` namespace by reflection from the
-`airlock` namespace (emberstack reflector):
+The `plaid-mcp-server` container consumes three Secrets mirrored from the `airlock`
+namespace into `plaid-mcp` by the ExternalSecrets in
+[`app/external-secret.yaml`](app/external-secret.yaml) — ESO's Kubernetes provider via
+the shared `kubernetes-airlock-secret-store` ClusterSecretStore. ESO re-syncs every
+minute, so (unlike the previous emberstack-reflector setup) no source-side annotations
+or re-link dance are needed — each Secret appears here as soon as airlock holds it:
 
 - `plaid-client-credentials` (`client_id`, `client_secret`) — airlock SOPS secret, the Plaid app creds.
 - `plaid-chase-access-token` (`access_token`) — written by airlock at Plaid Link time.
@@ -36,26 +39,14 @@ kustomization — they arrive in the `plaid-mcp` namespace by reflection from th
 `plaid-mcp-oidc` (facade Authentik `client_id`/`client_secret`) is created by the
 `agent-machine-access` Terraform module.
 
-## One-time operator steps
+## Prerequisite: link the accounts in airlock
 
-Two source-side reflector changes can't be fully automated from this repo and must be
-applied once by an operator with the cluster age key:
-
-1. **Reflect `plaid-client-credentials` to `plaid-mcp`.** Add the four
-   `reflector.v1.k8s.emberstack.com/reflection-{allowed,allowed-namespaces,auto-enabled,auto-namespaces}`
-   annotations (with `plaid-mcp` as the namespace) to
-   `cluster/k8s/agents/airlock/plaid-client-credentials.sops.yaml` **via `sops`** (a plain
-   text edit breaks the file — sops's MAC covers unencrypted metadata, so it must be
-   re-encrypted; running `sops <file>` and editing does this).
-2. **Re-link Chase and BofA in airlock** (`https://airlock.allegedly.works`). The
-   `plaid-mcp` reflection target was added to both access secrets in airlock's
-   `config.yaml`, but airlock only (re)writes those secrets when it writes a token — and
-   Plaid access tokens never auto-refresh. Re-linking each item rewrites its
-   `plaid-{chase,bofa}-access-token` secret with the updated reflection list, after which
-   the reflector copies it into `plaid-mcp`.
-
-Until both are done the `plaid-mcp` pod stays pending on the missing Secrets (the Flux
-kustomization's health check won't go ready).
+The two access-token Secrets only exist once each item has been linked through airlock's
+Plaid Link UI (`https://airlock.allegedly.works`) at least once — Plaid access tokens are
+minted at Link time and never auto-refresh. `plaid-client-credentials` is already present
+(airlock deploys it from SOPS). Until both items are linked, ESO has nothing to mirror for
+the missing token and the `plaid-mcp` pod stays pending on it (the Flux kustomization's
+health check won't go ready).
 
 ## Verification
 
