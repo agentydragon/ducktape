@@ -337,12 +337,7 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }
     <CurrencyDisplayProvider value={currencyDisplayContext}>
       <div className="min-w-0 space-y-5">
         <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          <CalibrationForm
-            input={input}
-            catalog={catalog}
-            exogenousModel={exogenousModel}
-            onChange={updateInput}
-          />
+          <CalibrationForm input={input} catalog={catalog} exogenousModel={exogenousModel} onChange={updateInput} />
 
           <div className="min-w-0 space-y-5">
             {runError ? (
