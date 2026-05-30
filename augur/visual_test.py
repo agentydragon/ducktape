@@ -70,8 +70,9 @@ def _wait_for_product_chart_geometry(page: Page) -> None:
           const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
           const horizonInput = document.querySelector("input[aria-label='Horizon']");
           if (!chart || !horizonInput) return false;
-          const horizonMonths = Number(String(horizonInput.value || "").replace(/,/g, ""));
-          if (!Number.isFinite(horizonMonths)) return false;
+          // The header's Horizon NumberInput renders a " mo" suffix; keep only the digits.
+          const horizonMonths = Number(String(horizonInput.value || "").replace(/[^0-9]/g, ""));
+          if (!Number.isFinite(horizonMonths) || horizonMonths <= 0) return false;
           const expectedFinalYear = `${Math.max(1, Math.ceil(horizonMonths / 12))} yr`;
           const finalYearTick = Array.from(chart.querySelectorAll("text")).find(
             (node) => node.textContent.trim() === expectedFinalYear
@@ -196,12 +197,11 @@ def _wait_for_calibration_page(page: Page) -> None:
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
-# `?s=4.240...........location_a_property` selects the fixture property `location_a_property`
-# with horizonMonths=240. The dots between "240" and the value are the empty positions for
-# firstSeed..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
-# Schema version 4 (matches the v4 schema bump that dropped `rolloutCount`, now the tab-shared
-# `?n=` control).
-_PROPERTY_LIFECYCLE_URL = "/product?s=4.240...........location_a_property&lc=r24:50~c60:50000~s120:6"
+# `?s=5...........location_a_property` selects the fixture property `location_a_property`; the
+# leading dots are the empty positions for firstSeed..rentalLocationId (all defaults). The horizon
+# (240 months) now rides the tab-shared `?h=` control, not `?s=`. `?lc=` carries three lifecycle
+# events. Schema version 5 (the v5 bump moved `horizonMonths` out of `?s=` into `?h=`).
+_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=5...........location_a_property&lc=r24:50~c60:50000~s120:6"
 
 VISUAL_CASES = (
     VisualCase(

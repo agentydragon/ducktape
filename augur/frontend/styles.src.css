@@ -205,12 +205,14 @@
     @apply text-xs font-semibold leading-none text-slate-500 dark:text-slate-400;
   }
 
+  /* Top-level views read as navigation, not buttons: a quiet tab with an accent underline on the
+     active view (and a faint one on hover) rather than a filled primary-button pill. */
   .augur-view-tab {
-    @apply rounded-md px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+    @apply border-b-2 border-transparent px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:border-slate-300 hover:text-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100;
   }
 
   .augur-view-tab[data-active] {
-    @apply bg-blue-600 text-white shadow-sm dark:bg-blue-500;
+    @apply border-blue-600 font-semibold text-slate-900 dark:border-blue-400 dark:text-white;
   }
 
   .augur-table-wrap {

@@ -6,7 +6,7 @@ import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
-import { FAN_PERCENTILES, clampRolloutCount } from "./input_helpers.js";
+import { FAN_PERCENTILES, clampRolloutCount, clampHorizonMonths } from "./input_helpers.js";
 import { markFanRows } from "./data_helpers.js";
 
 // The issuer mark fan is a per-unit USD price. `chartValue` ending in `Usd` makes the shared
@@ -14,10 +14,10 @@ import { markFanRows } from "./data_helpers.js";
 // mark (NOT a valuation — augur models no shares / market cap).
 const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
 
-// `rollouts` is intentionally absent: the rollout count is a tab-shared control owned by the app
-// shell (see `rolloutCountFromSearch`), passed in as a prop and woven into the run request below.
+// `rollouts` and `horizonMonths` are intentionally absent: both are tab-shared controls owned by
+// the app shell (see `rolloutCountFromSearch` / `horizonMonthsFromSearch`), passed in as props and
+// woven into the run request below. Only the seed (calibration-specific, tucked away) lives here.
 const CALIBRATION_INPUT_DEFAULTS = {
-  horizonMonths: 120,
   seed: 1701,
 };
 
@@ -25,22 +25,24 @@ function fmtProb(value) {
   return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
 }
 
-function fmtDeadline(value) {
-  return value ? String(value) : "—";
+// `D_KL(market ‖ model)` in bits: 0 = model matches the market, larger = louder disagreement.
+function fmtBits(value) {
+  return value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(3)} bits`;
 }
 
-// Bigger model-vs-market gaps get a louder tint so the eye lands on the disagreements first.
-function gapToneClass(absGap) {
-  if (absGap == null || !Number.isFinite(Number(absGap))) return "";
-  if (absGap >= 0.3) return "bg-rose-50 dark:bg-rose-950/30";
-  if (absGap >= 0.15) return "bg-amber-50 dark:bg-amber-950/30";
+// Bigger model-vs-market divergences get a louder tint so the eye lands on the disagreements
+// first. Thresholds are in bits of D_KL (≈0.03 bits ≈ a 0.4-vs-0.25 forecast gap).
+function klToneClass(klBits) {
+  if (klBits == null || !Number.isFinite(Number(klBits))) return "";
+  if (klBits >= 0.15) return "bg-rose-50 dark:bg-rose-950/30";
+  if (klBits >= 0.05) return "bg-amber-50 dark:bg-amber-950/30";
   return "";
 }
 
-function gapTextClass(absGap) {
-  if (absGap == null || !Number.isFinite(Number(absGap))) return "augur-muted";
-  if (absGap >= 0.3) return "font-semibold text-rose-700 dark:text-rose-300";
-  if (absGap >= 0.15) return "font-semibold text-amber-700 dark:text-amber-300";
+function klTextClass(klBits) {
+  if (klBits == null || !Number.isFinite(Number(klBits))) return "augur-muted";
+  if (klBits >= 0.15) return "font-semibold text-rose-700 dark:text-rose-300";
+  if (klBits >= 0.05) return "font-semibold text-amber-700 dark:text-amber-300";
   return "augur-tabular";
 }
 
@@ -66,28 +68,31 @@ function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
             <div className="mt-1 text-sm font-semibold augur-strong" data-calibration-model={exogenousModel ?? ""}>
               {exogenousModel ?? "(no presets)"}
             </div>
-            <div className="text-xs augur-muted">Choose the model in the header — shared with the product tab.</div>
+          </div>
+          <div className="text-xs augur-muted">
+            Horizon and rollouts are set in the header (shared with the product tab).
           </div>
         </div>
-        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
-          <NumberField
-            label="Horizon"
-            value={input.horizonMonths}
-            min={1}
-            max={1200}
-            step={12}
-            suffix="mo"
-            onChange={(horizonMonths) => onChange({ horizonMonths })}
-          />
-          <NumberField
-            label="Seed"
-            value={input.seed}
-            min={0}
-            max={2 ** 31 - 1}
-            step={1}
-            onChange={(seed) => onChange({ seed })}
-          />
-        </div>
+        <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
+          <summary className="augur-eyebrow cursor-pointer list-none">
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+                ▸
+              </span>
+              Advanced
+            </span>
+          </summary>
+          <div className="mt-3">
+            <NumberField
+              label="Seed"
+              value={input.seed}
+              min={0}
+              max={2 ** 31 - 1}
+              step={1}
+              onChange={(seed) => onChange({ seed })}
+            />
+          </div>
+        </details>
       </div>
     </aside>
   );
@@ -97,19 +102,19 @@ function CleanTable({ rows }) {
   if (rows.length === 0) {
     return <div className="px-4 py-6 text-sm augur-muted">No apples-to-apples (scored) markets in this catalog.</div>;
   }
-  // Loudest disagreements first; rows the model couldn't resolve (no `absGap`) sink to the bottom.
-  const sorted = rows.slice().sort((left, right) => (right.absGap ?? -Infinity) - (left.absGap ?? -Infinity));
+  // Loudest disagreements first; rows the model couldn't resolve (no `klBits`) sink to the bottom.
+  const sorted = rows.slice().sort((left, right) => (right.klBits ?? -Infinity) - (left.klBits ?? -Infinity));
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
         <thead>
           <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
             <th className="px-4 py-2 font-semibold">Market</th>
-            <th className="px-3 py-2 text-left font-semibold">Mapping</th>
-            <th className="px-3 py-2 text-right font-semibold">Deadline</th>
             <th className="px-3 py-2 text-right font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Model (95% CI)</th>
-            <th className="px-3 py-2 text-right font-semibold">|gap|</th>
+            <th className="px-3 py-2 text-right font-semibold" title="D_KL(market ‖ model)">
+              KL
+            </th>
             <th className="px-3 py-2 text-right font-semibold">Unresolved</th>
           </tr>
         </thead>
@@ -119,16 +124,12 @@ function CleanTable({ rows }) {
             const unresolvedPct =
               row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
             return (
-              <tr key={row.slug} className={gapToneClass(row.absGap)} data-calibration-clean-row={row.slug}>
+              <tr key={row.slug} className={klToneClass(row.klBits)} data-calibration-clean-row={row.slug}>
                 <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                   <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                     {row.question}
                   </a>
                 </th>
-                <td className="px-3 py-2 text-left augur-muted">{row.mappingKind}</td>
-                <td className="px-3 py-2 text-right augur-tabular augur-muted">
-                  {fmtDeadline(row.resolutionDeadline)}
-                </td>
                 <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {row.pModel == null ? (
@@ -144,9 +145,7 @@ function CleanTable({ rows }) {
                     </>
                   )}
                 </td>
-                <td className={`px-3 py-2 text-right ${gapTextClass(row.absGap)}`}>
-                  {row.absGap == null ? "—" : fmtProb(row.absGap)}
-                </td>
+                <td className={`px-3 py-2 text-right ${klTextClass(row.klBits)}`}>{fmtBits(row.klBits)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {unresolvedPct == null ? "—" : fmtPct(unresolvedPct)}
                 </td>
@@ -159,47 +158,57 @@ function CleanTable({ rows }) {
   );
 }
 
-function SurfacedList({ rows }) {
+function SurfacedTable({ rows }) {
   if (rows.length === 0) {
     return <div className="px-4 py-6 text-sm augur-muted">No surfaced (context-only) markets in this catalog.</div>;
   }
   return (
-    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-      {rows.map((row) => (
-        <li key={row.slug} className="px-4 py-3" data-calibration-surfaced-row={row.slug}>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div className="min-w-0">
-              <div className="font-semibold augur-strong">{row.question}</div>
-              <div className="text-xs augur-muted">
-                {row.slug}
-                {" · "}
-                <span className="font-semibold">{row.mappability}</span>
-                {row.correlateOf ? ` · correlate of ${row.correlateOf}` : ""}
-              </div>
-            </div>
-            <div className="whitespace-nowrap text-right">
-              <div className="augur-tabular font-semibold">{fmtProb(row.pMarket)}</div>
-              <div className="text-[11px] uppercase tracking-wide augur-muted">market</div>
-            </div>
-          </div>
-          {row.reason && <div className="mt-1 text-xs augur-body">{row.reason}</div>}
-          {row.augurContext && (
-            <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-sky-400/20 dark:bg-sky-950/20">
-              <div className="font-semibold augur-accent-text">
-                Augur signal (related, not scored): {row.augurContext.signal}
-              </div>
-              <div className="mt-0.5 augur-body">
-                {row.augurContext.pModel == null ? "n/a" : fmtProb(row.augurContext.pModel)} · {row.augurContext.note}
-              </div>
-            </div>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="overflow-x-auto">
+      <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
+        <thead>
+          <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <th className="px-4 py-2 font-semibold">Market</th>
+            <th className="px-3 py-2 text-right font-semibold">Market</th>
+            <th className="px-3 py-2 text-right font-semibold">Augur signal</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          {rows.map((row) => (
+            <tr key={row.slug} data-calibration-surfaced-row={row.slug}>
+              <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
+                  {row.question}
+                </a>
+                <div className="mt-0.5 text-[11px] font-normal augur-muted">
+                  <span className="font-semibold">{row.mappability}</span>
+                  {row.correlateOf ? ` · correlate of ${row.correlateOf}` : ""}
+                </div>
+                {row.reason && <div className="mt-0.5 text-xs font-normal augur-body">{row.reason}</div>}
+              </th>
+              <td className="px-3 py-2 text-right align-top augur-tabular font-semibold">{fmtProb(row.pMarket)}</td>
+              <td className="px-3 py-2 text-right align-top">
+                {row.augurContext ? (
+                  <>
+                    <div className="augur-tabular font-semibold augur-accent-text">
+                      {row.augurContext.pModel == null ? "n/a" : fmtProb(row.augurContext.pModel)}
+                    </div>
+                    <div className="mt-0.5 text-[11px] augur-muted" title={row.augurContext.note}>
+                      {row.augurContext.signal}
+                    </div>
+                  </>
+                ) : (
+                  <span className="augur-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function MarkFanPanel({ markFan }) {
+function MarkFanPanel({ markFan, metricScale }) {
   const rows = useMemo(() => markFanRows(markFan), [markFan]);
   const percentiles = markFan?.percentiles?.length ? markFan.percentiles : FAN_PERCENTILES;
   return (
@@ -215,7 +224,7 @@ function MarkFanPanel({ markFan }) {
         <MetricFanChart
           rows={rows}
           metric={MARK_METRIC}
-          metricScale="linear"
+          metricScale={metricScale}
           percentiles={percentiles}
           selectedRows={[]}
           selectedEvents={[]}
@@ -234,7 +243,7 @@ function MarkFanPanel({ markFan }) {
   );
 }
 
-function CalibrationResults({ response }) {
+function CalibrationResults({ response, metricScale }) {
   const { result, markFan } = response;
   return (
     <div className="min-w-0 space-y-5">
@@ -254,29 +263,30 @@ function CalibrationResults({ response }) {
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div className="augur-eyebrow">Scored markets (model vs market)</div>
           <div className="mt-1 text-xs augur-muted">
-            Apples-to-apples: markets augur models as events. Sorted by absolute model-vs-market gap.
+            Apples-to-apples: markets augur models as events. KL = D<sub>KL</sub>(market ‖ model) in bits, the
+            model-vs-market disagreement we optimize. Sorted loudest-first.
           </div>
         </div>
         <CleanTable rows={result.clean ?? []} />
       </section>
 
-      <MarkFanPanel markFan={markFan} />
+      <MarkFanPanel markFan={markFan} metricScale={metricScale} />
 
       <section className="augur-panel overflow-hidden" aria-label="Surfaced markets">
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div className="augur-eyebrow">Surfaced markets (not scored / context only)</div>
           <div className="mt-1 text-xs augur-muted">
-            Markets augur has no event concept for. Shown with the market price plus, where one exists, a related (NOT
-            equal) augur signal.
+            Markets augur has no event concept for. The market price sits beside a related (NOT equal) augur signal
+            where one exists.
           </div>
         </div>
-        <SurfacedList rows={result.surfaced ?? []} />
+        <SurfacedTable rows={result.surfaced ?? []} />
       </section>
     </div>
   );
 }
 
-export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel, horizonMonths, metricScale }) {
   const catalog = bootstrap.calibration ?? null;
 
   const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS });
@@ -285,18 +295,19 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }
 
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
-  // The calibration run is fully determined by these inputs plus the tab-shared exogenous model
-  // (`exogenousModel`, owned by the app shell via `?x=`); memoizing keeps the auto-run effect from
-  // re-firing on unrelated re-renders (it keys on this request).
+  // The calibration run is fully determined by the seed plus the tab-shared controls — the exogenous
+  // model (`?x=`), rollout count (`?n=`), and horizon (`?h=`), all owned by the app shell. Memoizing
+  // keeps the auto-run effect from re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
+  const horizon = clampHorizonMonths(horizonMonths, bootstrap);
   const request = useMemo(
     () => ({
       presetId: exogenousModel,
-      horizonMonths: input.horizonMonths,
+      horizonMonths: horizon,
       rollouts,
       seed: input.seed,
     }),
-    [exogenousModel, input.horizonMonths, rollouts, input.seed]
+    [exogenousModel, horizon, rollouts, input.seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -337,18 +348,13 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }
     <CurrencyDisplayProvider value={currencyDisplayContext}>
       <div className="min-w-0 space-y-5">
         <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          <CalibrationForm
-            input={input}
-            catalog={catalog}
-            exogenousModel={exogenousModel}
-            onChange={updateInput}
-          />
+          <CalibrationForm input={input} catalog={catalog} exogenousModel={exogenousModel} onChange={updateInput} />
 
           <div className="min-w-0 space-y-5">
             {runError ? (
               <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
             ) : response ? (
-              <CalibrationResults response={response} />
+              <CalibrationResults response={response} metricScale={metricScale} />
             ) : (
               <RolloutResultsSkeleton />
             )}

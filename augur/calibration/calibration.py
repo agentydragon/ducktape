@@ -48,6 +48,29 @@ def wilson_interval(yes: int, n: int) -> tuple[float, float]:
     return (float(low), float(high))
 
 
+def kl_bits_market_vs_model(p_market: float, p_model: float) -> float:
+    """`D_KL(market ‖ model)` for the two Bernoulli forecasts, in bits.
+
+    The markets are unresolved, so there is no realized label to score against; we instead
+    measure how far the model's forecast is from the market's, treating the live market price
+    as the reference distribution. This is the reducible part of the cross-entropy (xent minus
+    the market's own entropy) and is exactly what calibrating the model toward the market drives
+    to zero — so it sorts cleanly by "loudest disagreement" (0 iff the forecasts match).
+
+    The model probability is clamped off {0, 1} (a single unanimous rollout batch would otherwise
+    send the divergence to +inf); the `0·log0 = 0` convention handles market endpoints.
+    """
+    eps = 1e-6
+    q = min(1.0 - eps, max(eps, p_model))
+    total = 0.0
+    if p_market > 0.0:
+        total += p_market * math.log2(p_market / q)
+    if p_market < 1.0:
+        total += (1.0 - p_market) * math.log2((1.0 - p_market) / (1.0 - q))
+    return max(0.0, total)
+
+
+
 class AugurContext(BaseModel):
     """A related (NOT equal) augur signal surfaced next to a market that isn't scored."""
 
@@ -76,7 +99,9 @@ class CleanRow(BaseModel):
     ci95: tuple[float, float]
     n_resolved: int
     unresolved: int
-    abs_gap: float | None = None
+    # `D_KL(market ‖ model)` in bits: the model-vs-market disagreement we actually optimize.
+    # None when no rollout resolved (p_model is None), matching p_model's nullability.
+    kl_bits: float | None = None
 
 
 class SurfacedRow(BaseModel):
@@ -84,6 +109,9 @@ class SurfacedRow(BaseModel):
 
     slug: str
     question: str
+    # Canonical Manifold market page, fetched live alongside the price (see CleanRow.url).
+    # The frontend links the question title to this URL, same as the scored table.
+    url: str
     mappability: str
     # Optional (`= None`) to match the endpoint's drop-None wire; see CleanRow above.
     correlate_of: str | None = None
@@ -136,7 +164,7 @@ def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], manif
         ci95=wilson_interval(yes, n),
         n_resolved=n,
         unresolved=unresolved,
-        abs_gap=abs(p_model - p_market) if p_model is not None else None,
+        kl_bits=kl_bits_market_vs_model(p_market, p_model) if p_model is not None else None,
     )
 
 
@@ -163,13 +191,16 @@ def _augur_context(market: SurfacedMarket, trajectories: list[RolloutTrajectory]
     )
 
 
-def _surfaced_row(market: SurfacedMarket, trajectories: list[RolloutTrajectory], p_market: float) -> SurfacedRow:
+def _surfaced_row(
+    market: SurfacedMarket, trajectories: list[RolloutTrajectory], manifold: ManifoldMarket
+) -> SurfacedRow:
     return SurfacedRow(
         slug=market.slug,
         question=market.question,
+        url=manifold.url,
         mappability=market.mappability,
         correlate_of=market.correlate_of if isinstance(market, CorrelateMarket) else None,
-        p_market=p_market,
+        p_market=manifold.require_probability(),
         reason=" ".join(market.reason.split()) if market.reason else None,
         augur_context=_augur_context(market, trajectories),
     )
@@ -260,7 +291,7 @@ def run_calibration(
             for market in catalog.exact_markets()
         ],
         surfaced=[
-            _surfaced_row(market, trajectories, price_client.fetch_yes_probability(market.manifold_id))
+            _surfaced_row(market, trajectories, price_client.get_market(market.manifold_id))
             for market in catalog.surfaced_markets()
         ],
     )

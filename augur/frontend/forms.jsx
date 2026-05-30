@@ -51,7 +51,7 @@ function propertyLabel(property) {
   return `${head} — ${meta}`;
 }
 
-export function PropertyPurchasePanel({ bootstrap, input, onChange }) {
+export function PropertyPurchasePanel({ bootstrap, input, onChange, horizonMonths }) {
   const properties = bootstrap.properties ?? [];
   const selected = properties.find((property) => property.id === input.propertyId) ?? null;
   const mortgageActive = input.propertyId != null && input.financingKind === "mortgage";
@@ -189,7 +189,7 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange }) {
             <RentalPanel input={input} property={selected} onChange={onChange} />
             <LifecycleEventsEditor
               events={input.propertyLifecycleEvents ?? []}
-              horizonMonths={input.horizonMonths}
+              horizonMonths={horizonMonths}
               onChange={(propertyLifecycleEvents) => onChange({ propertyLifecycleEvents })}
             />
           </>
@@ -714,7 +714,7 @@ function sumCurrentValueUsd(positions) {
   return positions.reduce((total, position) => total + (position.currentValueUsd ?? 0), 0);
 }
 
-export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset }) {
+export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset, horizonMonths }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
@@ -725,16 +725,8 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
               Reset form
             </Button>
           </div>
-          <div className="mt-3">
-            <NumberField
-              label="Horizon"
-              value={input.horizonMonths}
-              min={1}
-              max={bootstrap.maxHorizonMonths}
-              step={12}
-              suffix="mo"
-              onChange={(horizonMonths) => onChange({ horizonMonths })}
-            />
+          <div className="mt-2 text-xs augur-muted">
+            Horizon is set in the header — shared with the calibration tab.
           </div>
         </div>
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
@@ -767,7 +759,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           />
         </div>
         <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
-        <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={onChange} />
+        <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={onChange} horizonMonths={horizonMonths} />
         <div className="px-4 py-3">
           <div className="augur-eyebrow">Taxes</div>
           <div className="mt-2 text-xs augur-muted">Federal + California · single filer</div>

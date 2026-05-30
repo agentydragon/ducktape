@@ -104,12 +104,12 @@ export function productInputDefaults(bootstrap) {
   const overrides = bootstrap.productInputDefaults ?? {};
   const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
   const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
-  // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so
-  // we always respect `max_*_samples` and only fall back to the first location when YAML
-  // didn't pin a `rental_location_id`.
+  // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so we
+  // only fall back to the first location when YAML didn't pin a `rental_location_id`. `horizonMonths`
+  // is NOT part of the input object — it's the tab-shared `?h=` control (see `horizonMonthsDefault`).
+  const { horizonMonths: _horizonMonths, ...baseWithoutHorizon } = base;
   return {
-    ...base,
-    horizonMonths: clampInteger(base.horizonMonths, 1, bootstrap.maxHorizonMonths),
+    ...baseWithoutHorizon,
     rentalLocationId: base.rentalLocationId ?? bootstrap.locations[0]?.id ?? null,
   };
 }
@@ -149,6 +149,32 @@ export function exogenousModelFromSearch(searchString, bootstrap) {
   return requested && presets.includes(requested) ? requested : exogenousModelDefault(bootstrap);
 }
 
+// Tab-shared horizon (months). Like the rollout count, the app shell owns the live value and
+// persists it to `?h=`; the product scenario and the calibration run both read it. The default
+// honors a deployment's `product_input_defaults.horizon_months` override, clamped to
+// `max_horizon_months`.
+export function horizonMonthsDefault(bootstrap) {
+  const override = bootstrap.productInputDefaults?.horizonMonths;
+  return clampInteger(override ?? DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths);
+}
+
+export function clampHorizonMonths(value, bootstrap) {
+  return clampInteger(value, 1, bootstrap.maxHorizonMonths);
+}
+
+export function horizonMonthsFromSearch(searchString, bootstrap) {
+  const raw = new URLSearchParams(searchString).get("h");
+  if (raw == null) return horizonMonthsDefault(bootstrap);
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? clampHorizonMonths(numeric, bootstrap) : horizonMonthsDefault(bootstrap);
+}
+
+// Tab-shared chart scale (linear/log), owned by the app shell and persisted to `?scale=`. Both
+// the product metric fan and the calibration mark fan honor it. Default is linear.
+export function metricScaleFromSearch(searchString) {
+  return new URLSearchParams(searchString).get("scale") === "log" ? "log" : "linear";
+}
+
 // URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
 // separated string. A version letter prefix gates schema changes; trailing default values are
 // trimmed; enums use one-letter codes. Examples:
@@ -164,10 +190,12 @@ export function exogenousModelFromSearch(searchString, bootstrap) {
 // `rolloutCount` (now the tab-shared `?n=` control) and the trailing `exogenousModelId` (now the
 // tab-shared `?x=` control). Dropping the trailing `exogenousModelId` slot shifts no other
 // position, so v4 `?s=` strings that never set it decode identically.
-const INPUT_SCHEMA_VERSION = "4";
+// v5 dropped the leading `horizonMonths` (now the tab-shared `?h=` control); dropping a
+// non-trailing slot shifts the rest, so the bump makes older URLs fall back to defaults rather
+// than misread their positions.
+const INPUT_SCHEMA_VERSION = "5";
 
 const INPUT_FIELDS = [
-  { key: "horizonMonths", type: "number" },
   { key: "firstSeed", type: "number" },
   { key: "monthlySpendUsd", type: "number" },
   { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
@@ -442,14 +470,14 @@ export function sellOrderBuckets(sellOrderCodes) {
   return buckets;
 }
 
-export function productScenario(input, bootstrap, exogenousModelId) {
+export function productScenario(input, bootstrap, exogenousModelId, horizonMonths) {
   const sellOrder = sellOrderBuckets(input.sellOrder);
   const autoSellEnabled = sellOrder.length > 0;
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
     exogenousModelId: exogenousModelId || exogenousModelDefault(bootstrap),
-    horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
+    horizonMonths: clampHorizonMonths(horizonMonths, bootstrap),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
     fundingPolicy: {
@@ -476,9 +504,12 @@ export function productRolloutSeeds(input, bootstrap, rolloutCount) {
   return Array.from({ length: count }, (_, index) => firstSeed + index);
 }
 
-export function productMetricFanRequest(input, bootstrap, metric, rolloutCount, exogenousModelId) {
+// The tab-shared controls (rollout count, exogenous model, horizon) are passed in `shared`
+// rather than read from `input`, since the app shell owns them (see `?n=`/`?x=`/`?h=`).
+export function productMetricFanRequest(input, bootstrap, metric, shared) {
+  const { rolloutCount, exogenousModel, horizonMonths } = shared;
   return {
-    scenario: productScenario(input, bootstrap, exogenousModelId),
+    scenario: productScenario(input, bootstrap, exogenousModel, horizonMonths),
     rolloutSeeds: productRolloutSeeds(input, bootstrap, rolloutCount),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,

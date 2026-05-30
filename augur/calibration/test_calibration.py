@@ -109,8 +109,9 @@ def test_clean_rows_score_events() -> None:
     assert ipo.unresolved == 0
     assert ipo.p_model == 0.25
     assert ipo.p_market == 0.40  # injected stub price
-    assert ipo.abs_gap is not None
-    assert math.isclose(ipo.abs_gap, 0.15)
+    # D_KL(market ‖ model) in bits for p_market=0.40 vs p_model=0.25.
+    assert ipo.kl_bits is not None
+    assert math.isclose(ipo.kl_bits, 0.07807190511263762)
 
     # pre_ipo_failure: rollout 2 YES (collapse before IPO); rollouts 0,1 NO (IPO first);
     # rollout 3 UNRESOLVED (still private at horizon end).
@@ -126,6 +127,7 @@ def test_surfaced_row_carries_augur_context() -> None:
     assert [row.slug for row in result.surfaced] == ["valuation-1t"]
     surfaced = result.surfaced[0]
     assert surfaced.correlate_of == "ipo_by_date"
+    assert surfaced.url == "https://manifold.markets/test/CCC"
     assert surfaced.p_market == 0.66  # injected stub price
     assert surfaced.reason == "The >=$1T cap conjunct needs a valuation augur does not model."
     # deadline 2026-12-31 is month 7 from as_of 2026-05-27; rollout 0 IPOs at month 7 (<=7),

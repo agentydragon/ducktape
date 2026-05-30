@@ -31,6 +31,10 @@ import {
   clampRolloutCount,
   exogenousModelFromSearch,
   exogenousModelDefault,
+  horizonMonthsFromSearch,
+  horizonMonthsDefault,
+  clampHorizonMonths,
+  metricScaleFromSearch,
 } from "./input_helpers.js";
 import {
   metricFanRows,
@@ -39,11 +43,6 @@ import {
   selectedRolloutEvents,
   visibleMetricOptions,
 } from "./data_helpers.js";
-
-const METRIC_SCALE_OPTIONS = [
-  { value: "linear", label: "Linear" },
-  { value: "log", label: "Log" },
-];
 
 const CURRENCY_DISPLAY_OPTIONS = [
   { value: "exact", label: "Exact" },
@@ -102,6 +101,29 @@ function writeExogenousModelToSearch(value, bootstrap) {
   }
 }
 
+// The shared horizon (`?h=`) and chart scale (`?scale=`) are also top-level, owned by the shell.
+function writeHorizonMonthsToSearch(value, bootstrap) {
+  const params = new URLSearchParams(window.location.search);
+  if (value == null || value === horizonMonthsDefault(bootstrap)) params.delete("h");
+  else params.set("h", String(value));
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+function writeMetricScaleToSearch(value) {
+  const params = new URLSearchParams(window.location.search);
+  if (value === "log") params.set("scale", "log");
+  else params.delete("scale");
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
 function AugurTabBar({ tab, onSelectTab }) {
   return (
     <nav className="flex items-center gap-1" aria-label="Augur views" data-augur-tab-bar="">
@@ -127,7 +149,6 @@ function RolloutResultsPanel({
   selectedMetric,
   onSelectMetric,
   metricScale,
-  onSelectMetricScale,
   rolloutSummaries,
   selectedSeed,
   onSelectSeed,
@@ -163,15 +184,6 @@ function RolloutResultsPanel({
                 onChange={onSelectCurrencyDisplay}
               />
             </div>
-            <div data-product-chart-scale-control>
-              <SegmentedControl
-                aria-label="Chart scale"
-                size="xs"
-                value={metricScale}
-                data={METRIC_SCALE_OPTIONS}
-                onChange={onSelectMetricScale}
-              />
-            </div>
           </div>
         </div>
       </div>
@@ -184,21 +196,34 @@ function RolloutResultsPanel({
         onSelect={onSelectSeed}
       />
       {fanRows.length > 0 ? (
-        <MetricFanChart
-          rows={fanRows}
-          metric={selectedMetric}
-          metricScale={metricScale}
-          percentiles={percentiles}
-          selectedRows={selectedRows}
-          selectedEvents={selectedEvents}
-          selectedSeed={selectedSeed}
-          selectedFailed={selectedSummary?.failed ?? false}
-          visibleEventKinds={visibleEventKinds.visible}
-          selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
-          hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
-          onSelectEventMonth={eventSelection.onSelectEventMonth}
-          onHoverEventMonth={eventSelection.onHoverEventMonth}
-        />
+        <div className="relative">
+          <MetricFanChart
+            rows={fanRows}
+            metric={selectedMetric}
+            metricScale={metricScale}
+            percentiles={percentiles}
+            selectedRows={selectedRows}
+            selectedEvents={selectedEvents}
+            selectedSeed={selectedSeed}
+            selectedFailed={selectedSummary?.failed ?? false}
+            visibleEventKinds={visibleEventKinds.visible}
+            selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
+            hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
+            onSelectEventMonth={eventSelection.onSelectEventMonth}
+            onHoverEventMonth={eventSelection.onHoverEventMonth}
+          />
+          {selectedRolloutLoading && (
+            <div
+              className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/40 backdrop-blur-[1px] dark:bg-slate-950/40"
+              data-product-selected-rollout-loading=""
+            >
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900/90 dark:text-slate-300">
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 dark:border-slate-600 dark:border-t-blue-400" />
+                Loading rollout {selectedSeed}…
+              </span>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
       )}
@@ -270,12 +295,8 @@ function DeploymentCommitSummary({ deployment }) {
   );
 }
 
-function viewPrefsFromSearch(searchString) {
-  const params = new URLSearchParams(searchString);
-  return {
-    metricScale: params.get("scale") === "log" ? "log" : "linear",
-    currencyDisplay: params.get("fmt") === "exact" ? "exact" : "compact",
-  };
+function currencyDisplayFromSearch(searchString) {
+  return new URLSearchParams(searchString).get("fmt") === "exact" ? "exact" : "compact";
 }
 
 function ProductProjectionWorkspace({
@@ -287,12 +308,14 @@ function ProductProjectionWorkspace({
   onChangeRolloutCount,
   exogenousModel,
   onChangeExogenousModel,
+  horizonMonths,
+  onChangeHorizonMonths,
+  metricScale,
+  onChangeMetricScale,
 }) {
-  const initialViewPrefs = viewPrefsFromSearch(window.location.search);
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
-  const [metricScale, setMetricScale] = useState(initialViewPrefs.metricScale);
-  const [currencyDisplay, setCurrencyDisplay] = useState(initialViewPrefs.currencyDisplay);
+  const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -306,8 +329,8 @@ function ProductProjectionWorkspace({
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const request = useMemo(
-    () => productMetricFanRequest(input, bootstrap, selectedMetric, rolloutCount, exogenousModel),
-    [input, bootstrap, selectedMetric, rolloutCount, exogenousModel]
+    () => productMetricFanRequest(input, bootstrap, selectedMetric, { rolloutCount, exogenousModel, horizonMonths }),
+    [input, bootstrap, selectedMetric, rolloutCount, exogenousModel, horizonMonths]
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
@@ -330,21 +353,21 @@ function ProductProjectionWorkspace({
 
   useEffect(() => {
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
-    if (metricScale !== "linear") params.set("scale", "log");
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shared rollout count (`?n=`) and exogenous model (`?x=`) are owned by the shell, not the
-    // product input. Carry the current values across so rewriting the product state doesn't drop them.
+    // The shell-owned shared params (rollout count `?n=`, exogenous model `?x=`, horizon `?h=`,
+    // chart scale `?scale=`) live outside the product input. Carry whichever are currently set
+    // across so rewriting the product `?s=` state doesn't drop them.
     const currentParams = new URLSearchParams(window.location.search);
-    const sharedRolloutCount = currentParams.get("n");
-    if (sharedRolloutCount != null) params.set("n", sharedRolloutCount);
-    const sharedExogenousModel = currentParams.get("x");
-    if (sharedExogenousModel != null) params.set("x", sharedExogenousModel);
+    for (const key of ["n", "x", "h", "scale"]) {
+      const value = currentParams.get(key);
+      if (value != null) params.set(key, value);
+    }
     const search = params.toString();
     const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.replaceState(null, "", newUrl);
     }
-  }, [input, bootstrap, metricScale, currencyDisplay]);
+  }, [input, bootstrap, currencyDisplay]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -433,6 +456,11 @@ function ProductProjectionWorkspace({
           exogenousModel={exogenousModel}
           onChangeExogenousModel={onChangeExogenousModel}
           exogenousPresets={bootstrap.exogenousPresets}
+          horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
+          maxHorizonMonths={bootstrap.maxHorizonMonths}
+          metricScale={metricScale}
+          onChangeMetricScale={onChangeMetricScale}
           rightSlot={<DeploymentCommitSummary deployment={deployment} />}
         />
 
@@ -445,6 +473,7 @@ function ProductProjectionWorkspace({
               portfolioError={portfolioError}
               onChange={updateInput}
               onReset={() => setInput(productInputDefaults(bootstrap))}
+              horizonMonths={horizonMonths}
             />
 
             <div className="min-w-0 space-y-5">
@@ -475,7 +504,6 @@ function ProductProjectionWorkspace({
                   selectedMetric={selectedMetric}
                   onSelectMetric={setSelectedMetricValue}
                   metricScale={metricScale}
-                  onSelectMetricScale={setMetricScale}
                   rolloutSummaries={rolloutSummaries}
                   selectedSeed={selectedSeed}
                   onSelectSeed={setSelectedSeed}
@@ -509,6 +537,10 @@ function CalibrationAppSurface({
   onChangeRolloutCount,
   exogenousModel,
   onChangeExogenousModel,
+  horizonMonths,
+  onChangeHorizonMonths,
+  metricScale,
+  onChangeMetricScale,
 }) {
   return (
     <div
@@ -523,10 +555,21 @@ function CalibrationAppSurface({
         exogenousModel={exogenousModel}
         onChangeExogenousModel={onChangeExogenousModel}
         exogenousPresets={bootstrap.exogenousPresets}
+        horizonMonths={horizonMonths}
+        onChangeHorizonMonths={onChangeHorizonMonths}
+        maxHorizonMonths={bootstrap.maxHorizonMonths}
+        metricScale={metricScale}
+        onChangeMetricScale={onChangeMetricScale}
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <CalibrationWorkspace bootstrap={bootstrap} rolloutCount={rolloutCount} exogenousModel={exogenousModel} />
+        <CalibrationWorkspace
+          bootstrap={bootstrap}
+          rolloutCount={rolloutCount}
+          exogenousModel={exogenousModel}
+          horizonMonths={horizonMonths}
+          metricScale={metricScale}
+        />
       </main>
     </div>
   );
@@ -542,6 +585,8 @@ function LoadedAppShell({ bootstrap, deployment }) {
   const [exogenousModel, setExogenousModel] = useState(() =>
     exogenousModelFromSearch(window.location.search, bootstrap)
   );
+  const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
+  const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
 
   const onSelectTab = (next) => {
     setTab(next);
@@ -559,6 +604,17 @@ function LoadedAppShell({ bootstrap, deployment }) {
     writeExogenousModelToSearch(value, bootstrap);
   };
 
+  const onChangeHorizonMonths = (value) => {
+    const next = value == null ? value : clampHorizonMonths(value, bootstrap);
+    setHorizonMonths(next);
+    writeHorizonMonthsToSearch(next, bootstrap);
+  };
+
+  const onChangeMetricScale = (value) => {
+    setMetricScale(value);
+    writeMetricScaleToSearch(value);
+  };
+
   const sharedProps = {
     bootstrap,
     deployment,
@@ -568,6 +624,10 @@ function LoadedAppShell({ bootstrap, deployment }) {
     onChangeRolloutCount,
     exogenousModel,
     onChangeExogenousModel,
+    horizonMonths,
+    onChangeHorizonMonths,
+    metricScale,
+    onChangeMetricScale,
   };
   if (tab === "calibration") {
     return <CalibrationAppSurface {...sharedProps} />;

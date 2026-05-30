@@ -1,5 +1,10 @@
 import React from "react";
-import { NativeSelect, NumberInput } from "@mantine/core";
+import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
+
+const SCALE_OPTIONS = [
+  { value: "linear", label: "Linear" },
+  { value: "log", label: "Log" },
+];
 
 // Tab-shared rollout count control. It lives in the header — the only region common to both the
 // product and calibration surfaces — so a single control drives the rollout count on every page.
@@ -23,6 +28,40 @@ function RolloutCountControl({ value, onChange, max }) {
         }}
       />
     </label>
+  );
+}
+
+// Tab-shared horizon control (months). Drives both the product projection and the calibration run.
+function HorizonControl({ value, onChange, max }) {
+  return (
+    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-horizon-control="">
+      <span className="augur-eyebrow">Horizon</span>
+      <NumberInput
+        aria-label="Horizon"
+        size="xs"
+        min={1}
+        max={max}
+        step={12}
+        value={value ?? ""}
+        hideControls
+        suffix=" mo"
+        classNames={{ input: "augur-tabular w-20 text-right" }}
+        onChange={(next) => {
+          const number = typeof next === "number" ? next : Number(next);
+          onChange(Number.isFinite(number) ? number : null);
+        }}
+      />
+    </label>
+  );
+}
+
+// Tab-shared chart scale (linear/log). Both the product metric fan and the calibration mark fan
+// honor it, so the toggle lives once in the header rather than per-chart on each page.
+function ScaleControl({ value, onChange }) {
+  return (
+    <div data-augur-scale-control="">
+      <SegmentedControl aria-label="Chart scale" size="xs" value={value} data={SCALE_OPTIONS} onChange={onChange} />
+    </div>
   );
 }
 
@@ -54,9 +93,15 @@ export function AugurHeader({
   exogenousModel,
   onChangeExogenousModel,
   exogenousPresets = [],
+  horizonMonths,
+  onChangeHorizonMonths,
+  maxHorizonMonths,
+  metricScale,
+  onChangeMetricScale,
 }) {
   const showExogenousControl = onChangeExogenousModel && exogenousPresets.length > 1;
-  const rightGroup = onChangeRolloutCount || showExogenousControl || rightSlot;
+  const rightGroup =
+    onChangeRolloutCount || onChangeHorizonMonths || onChangeMetricScale || showExogenousControl || rightSlot;
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -76,9 +121,13 @@ export function AugurHeader({
                 presets={exogenousPresets}
               />
             )}
+            {onChangeHorizonMonths && (
+              <HorizonControl value={horizonMonths} onChange={onChangeHorizonMonths} max={maxHorizonMonths} />
+            )}
             {onChangeRolloutCount && (
               <RolloutCountControl value={rolloutCount} onChange={onChangeRolloutCount} max={maxRolloutCount} />
             )}
+            {onChangeMetricScale && <ScaleControl value={metricScale} onChange={onChangeMetricScale} />}
             {rightSlot}
           </div>
         )}
