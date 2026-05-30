@@ -55,39 +55,43 @@ exogenous_presets:
       #   monthly_log_return_sigma = annual_vol / sqrt(12)
       #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
       type: independent
-      series:
-        inflation: # annual return 3%, vol 1.5%
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0024906250
-          monthly_log_return_sigma: 0.0043301270
-        sp500: # annual return 7%, vol 16%
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0047666667
-          monthly_log_return_sigma: 0.0461880215
-        "crypto:btc":
+      # Per-kind typed groups: singletons (inflation/sp500) are scalar; crypto is
+      # keyed by symbol; home_value/rent by location id. No magic-prefix keys.
+      inflation: # annual return 3%, vol 1.5%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0024906250
+        monthly_log_return_sigma: 0.0043301270
+      sp500: # annual return 7%, vol 16%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0047666667
+        monthly_log_return_sigma: 0.0461880215
+      crypto:
+        btc:
           kind: constant
           value: 75000.0
-        "crypto:eth":
+        eth:
           kind: constant
           value: 2100.0
-        "home_value:location_a": # annual return 3.5%, vol 8%
+      home_value:
+        location_a: # annual return 3.5%, vol 8%
           kind: gbm
           initial_value: 1.0
           monthly_log_return_mu: 0.0026500000
           monthly_log_return_sigma: 0.0230940108
-        "home_value:location_b":
+        location_b:
           kind: gbm
           initial_value: 1.0
           monthly_log_return_mu: 0.0026500000
           monthly_log_return_sigma: 0.0230940108
-        "rent:location_a": # annual return 3%, vol 3%
+      rent:
+        location_a: # annual return 3%, vol 3%
           kind: gbm
           initial_value: 1.0
           monthly_log_return_mu: 0.0024625000
           monthly_log_return_sigma: 0.0086602540
-        "rent:location_b":
+        location_b:
           kind: gbm
           initial_value: 1.0
           monthly_log_return_mu: 0.0024625000

@@ -143,13 +143,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
     model = provider.model_copy(
         update={
             "macro": provider.macro.model_copy(
-                update={
-                    "series": {
-                        series_id: spec
-                        for series_id, spec in provider.macro.series.items()
-                        if series_id != "crypto:btc"
-                    }
-                }
+                update={"crypto": {symbol: spec for symbol, spec in provider.macro.crypto.items() if symbol != "btc"}}
             )
         }
     ).realize_model()

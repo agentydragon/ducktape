@@ -1,17 +1,16 @@
 type: composite
 macro:
   type: independent
-  series:
-    inflation:
-      kind: gbm
-      initial_value: 330.0
-      monthly_log_return_mu: 0.002
-      monthly_log_return_sigma: 0.003
-    sp500:
-      kind: gbm
-      initial_value: 7000.0
-      monthly_log_return_mu: 0.005
-      monthly_log_return_sigma: 0.04
+  inflation:
+    kind: gbm
+    initial_value: 330.0
+    monthly_log_return_mu: 0.002
+    monthly_log_return_sigma: 0.003
+  sp500:
+    kind: gbm
+    initial_value: 7000.0
+    monthly_log_return_mu: 0.005
+    monthly_log_return_sigma: 0.04
 private_equity:
   type: trained_private_equity
   trained_model_path: fixture_private_equity_model.json
