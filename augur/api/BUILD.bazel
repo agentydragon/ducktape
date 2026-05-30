@@ -346,6 +346,23 @@ py_binary(
     deps = [":export_schema"],
 )
 
+py_test(
+    name = "export_schema_test",
+    srcs = ["test_export_schema.py"],
+    # Source follows the test_<module>.py convention while the target keeps the
+    # conventional <name>_test label, so the inferred main wouldn't match srcs.
+    main = "test_export_schema.py",
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    deps = [
+        ":export_schema",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 filegroup(
     name = "public_fixture_config",
     srcs = ["testdata/config.yaml"],

@@ -15,6 +15,15 @@ py_library(
     deps = ["@rules_python//python/runfiles"],
 )
 
+py_test(
+    name = "test_runfiles",
+    srcs = ["test_runfiles.py"],
+    deps = [
+        ":runfiles",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "subprocess",
     srcs = ["subprocess.py"],
