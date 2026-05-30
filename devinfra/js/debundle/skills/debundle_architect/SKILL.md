@@ -282,24 +282,24 @@ Prose conventions decay: an architect writes "`shared/` is framework-agnostic"
 or "panel logic should live under `app/panel`," workers drift from it, and
 nobody notices until the next manual audit. Whenever you draft a desired
 layering or cross-module dependency relationship — the structure you believe
-*should* exist in the debundled app — also encode it as a **rerunnable metric
+_should_ exist in the debundled app — also encode it as a **rerunnable metric
 script** that measures how well the current output meets it, and run those
 scripts on every architect pass.
 
 This serves two distinct purposes, and you should label which one each metric
 is for:
 
-- **RULE** — a boundary you are asserting *should* hold. Any violation is a
+- **RULE** — a boundary you are asserting _should_ hold. Any violation is a
   finding to route to a worker. Example: "no module under `shared/` may import
   from `domains/`, `features/`, or `app/`."
-- **OBSERVATORY** — a hypothesis you are *not yet* asserting. You suspect a
+- **OBSERVATORY** — a hypothesis you are _not yet_ asserting. You suspect a
   structure but want to watch what naturally happens and track how it evolves.
   Record the current value plus a baseline; report drift, do not fail.
   Example: "what fraction of edges point 'up' the layer stack, and is it
   creeping?"
 
 An observatory that stabilizes can be promoted to a rule; a rule that reality
-keeps violating for good reasons is a signal that the *assumption was wrong* —
+keeps violating for good reasons is a signal that the _assumption was wrong_ —
 update the rule (or conclude the debundle should be restructured), don't just
 keep failing it. This is the same hypothesis→rule lifecycle as Convention
 Induction, made executable.
@@ -324,7 +324,7 @@ Induction, made executable.
   up in review diffs, and update them deliberately with an explicit flag after
   an intentional structural shift.
 - Keep the script in the **project's** tree (adapter-owned), not in the generic
-  skill — the *method* is generic, the *expectations* are project-specific.
+  skill — the _method_ is generic, the _expectations_ are project-specific.
 
 ### Example expectations
 
