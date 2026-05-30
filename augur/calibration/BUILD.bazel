@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -53,6 +53,26 @@ py_library(
     ],
 )
 
+py_library(
+    name = "ipo_prior",
+    srcs = ["ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":resolvers",
+        "//augur/model:private_equity_risk",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "derive_ipo_prior",
+    main_module = "augur.calibration.ipo_prior",
+    deps = [":ipo_prior"],
+)
+
 py_test(
     name = "test_resolvers",
     srcs = ["test_resolvers.py"],
@@ -91,6 +111,18 @@ py_test(
         "//augur/model:series",
         "//augur/model:testing",
         "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ipo_prior",
+    srcs = ["test_ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":ipo_prior",
+        "//:conftest",
+        "//augur/model:private_equity_risk",
         "@pypi//pytest_bazel",
     ],
 )

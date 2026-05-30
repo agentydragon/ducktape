@@ -37,6 +37,12 @@ from augur.model.series import IssuerId, PrivateEquityEventKindCode
 
 _DAYS_PER_MONTH = 365.2425 / 12
 
+
+def months_after(anchor: date, when: date) -> int:
+    """Month offset of `when` from `anchor` (floored). May be negative if `when` precedes `anchor`."""
+    return math.floor((when - anchor).days / _DAYS_PER_MONTH)
+
+
 _PUBLIC_MARKET_OPEN = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
 # An IPO is preempted by any absorbing pre-IPO exit: collapse, forced recovery
 # (collapse-flavored), or acquisition cashout.
@@ -68,7 +74,7 @@ class RolloutTrajectory:
 
     def month_on_or_before(self, when: date) -> int:
         """Largest month index falling on/before `when`. May exceed horizon or be negative."""
-        return math.floor((when - self.as_of).days / _DAYS_PER_MONTH)
+        return months_after(self.as_of, when)
 
     def first_event_month(self, *codes: int) -> int | None:
         hits = np.flatnonzero(np.isin(self.event_kind_code, codes))
