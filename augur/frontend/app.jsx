@@ -16,6 +16,7 @@ import { TerminalDistributionHistogram } from "./histogram.jsx";
 import { TerminalMetricTable } from "./metric_table.jsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.jsx";
 import { ProductScenarioForm } from "./forms.jsx";
+import { CalibrationWorkspace } from "./calibration.jsx";
 import { AugurHeader } from "./header.jsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.jsx";
 import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.js";
@@ -43,6 +44,51 @@ const CURRENCY_DISPLAY_OPTIONS = [
   { value: "exact", label: "Exact" },
   { value: "compact", label: "Compact" },
 ];
+
+// Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
+// (omitted for the default), following the same replaceState pattern as the product `?s=` state.
+const TABS = [
+  { value: "product", label: "Product" },
+  { value: "calibration", label: "Calibration" },
+];
+const TAB_VALUES = new Set(TABS.map((tab) => tab.value));
+const DEFAULT_TAB = "product";
+
+export function tabFromSearch(searchString) {
+  const requested = new URLSearchParams(searchString).get("tab");
+  return requested && TAB_VALUES.has(requested) ? requested : DEFAULT_TAB;
+}
+
+function writeTabToSearch(tab) {
+  const params = new URLSearchParams(window.location.search);
+  if (tab === DEFAULT_TAB) params.delete("tab");
+  else params.set("tab", tab);
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+function AugurTabBar({ tab, onSelectTab }) {
+  return (
+    <nav className="flex items-center gap-1" aria-label="Augur views" data-augur-tab-bar="">
+      {TABS.map((entry) => (
+        <button
+          key={entry.value}
+          type="button"
+          className="augur-view-tab"
+          data-active={tab === entry.value ? "" : undefined}
+          aria-current={tab === entry.value ? "page" : undefined}
+          data-augur-tab={entry.value}
+          onClick={() => onSelectTab(entry.value)}
+        >
+          {entry.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 function RolloutResultsPanel({
   visibleMetrics,
@@ -200,7 +246,7 @@ function viewPrefsFromSearch(searchString) {
   };
 }
 
-function ProductProjectionWorkspace({ bootstrap, deployment }) {
+function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab }) {
   const initialViewPrefs = viewPrefsFromSearch(window.location.search);
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -332,6 +378,7 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
         className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
       >
         <AugurHeader
+          nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
           rightSlot={
             <>
               <DeploymentCommitSummary deployment={deployment} />

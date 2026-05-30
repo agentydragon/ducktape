@@ -1,0 +1,457 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Button, Checkbox } from "@mantine/core";
+
+import { fetchCalibrationCatalogs, fetchCalibrationRun } from "./client.js";
+import { NativeSelectField, NumberField } from "./lib/controls.jsx";
+import { fmtNumber, fmtPct, fmtUsd } from "./lib/format.js";
+import { AugurHeader } from "./header.jsx";
+import { MetricFanChart } from "./fan_chart.jsx";
+import { RolloutResultsSkeleton } from "./skeleton.jsx";
+import { CurrencyDisplayProvider } from "./hooks.js";
+import { FAN_PERCENTILES } from "./input_helpers.js";
+import { markFanRows } from "./data_helpers.js";
+
+// The issuer mark fan is a per-unit USD price. `chartValue` ending in `Usd` makes the shared
+// `MetricFanChart` axis/tooltip format it as currency; the label keeps it honest as a per-unit
+// mark (NOT a valuation — augur models no shares / market cap).
+const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
+
+const CALIBRATION_INPUT_DEFAULTS = {
+  horizonMonths: 120,
+  rollouts: 2000,
+  seed: 1701,
+  live: false,
+};
+
+function fmtProb(value) {
+  return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
+}
+
+function fmtDeadline(value) {
+  return value ? String(value) : "—";
+}
+
+// Bigger model-vs-market gaps get a louder tint so the eye lands on the disagreements first.
+function gapToneClass(absGap) {
+  if (absGap == null || !Number.isFinite(Number(absGap))) return "";
+  if (absGap >= 0.3) return "bg-rose-50 dark:bg-rose-950/30";
+  if (absGap >= 0.15) return "bg-amber-50 dark:bg-amber-950/30";
+  return "";
+}
+
+function gapTextClass(absGap) {
+  if (absGap == null || !Number.isFinite(Number(absGap))) return "augur-muted";
+  if (absGap >= 0.3) return "font-semibold text-rose-700 dark:text-rose-300";
+  if (absGap >= 0.15) return "font-semibold text-amber-700 dark:text-amber-300";
+  return "augur-tabular";
+}
+
+function CalibrationForm({ input, catalogs, presets, defaultPresetId, onChange, onRun, running, disabled }) {
+  const catalogOptions = catalogs.map((catalog) => ({ value: catalog.id, label: catalog.label || catalog.id }));
+  const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
+  return (
+    <aside className="min-w-0">
+      <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
+        <div className="px-4 py-3">
+          <div className="augur-eyebrow">Calibration run</div>
+          <div className="mt-1 text-xs augur-muted">
+            Score a built-in exogenous model's rollouts against a curated prediction-market catalog
+            (exogenous-only — no portfolio, no product scenario).
+          </div>
+        </div>
+        <div className="grid gap-3 px-4 py-3">
+          <NativeSelectField
+            label="Market catalog"
+            aria-label="Market catalog"
+            value={input.catalogId ?? ""}
+            disabled={catalogs.length === 0}
+            data={
+              catalogs.length === 0 ? [{ value: "", label: "(no catalogs registered)" }] : catalogOptions
+            }
+            onChange={(event) => onChange({ catalogId: event.target.value || null })}
+          />
+          <NativeSelectField
+            label="Model preset"
+            aria-label="Model preset"
+            description={defaultPresetId ? `Catalog default: ${defaultPresetId}` : undefined}
+            value={input.presetId ?? ""}
+            disabled={presets.length === 0}
+            data={presets.length === 0 ? [{ value: "", label: "(no presets)" }] : presetOptions}
+            onChange={(event) => onChange({ presetId: event.target.value || null })}
+          />
+        </div>
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
+          <NumberField
+            label="Horizon"
+            value={input.horizonMonths}
+            min={1}
+            max={1200}
+            step={12}
+            suffix="mo"
+            onChange={(horizonMonths) => onChange({ horizonMonths })}
+          />
+          <NumberField
+            label="Rollouts"
+            value={input.rollouts}
+            min={1}
+            step={500}
+            onChange={(rollouts) => onChange({ rollouts })}
+          />
+          <NumberField
+            label="Seed"
+            value={input.seed}
+            min={0}
+            max={2 ** 31 - 1}
+            step={1}
+            onChange={(seed) => onChange({ seed })}
+          />
+        </div>
+        <div className="px-4 py-3">
+          <Checkbox
+            label="Live Manifold prices"
+            aria-label="Live Manifold prices"
+            checked={Boolean(input.live)}
+            classNames={{ label: "text-sm font-semibold augur-strong" }}
+            onChange={(event) => onChange({ live: event.currentTarget.checked })}
+          />
+          <div className="mt-1 text-xs augur-muted">
+            Off uses the catalog's curation snapshot (offline). On fetches current YES prices from
+            Manifold (requires network).
+          </div>
+        </div>
+        <div className="px-4 py-3">
+          <Button
+            fullWidth
+            data-calibration-run
+            loading={running}
+            disabled={disabled}
+            onClick={onRun}
+          >
+            Run calibration
+          </Button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function CleanTable({ rows }) {
+  if (rows.length === 0) {
+    return <div className="px-4 py-6 text-sm augur-muted">No apples-to-apples (scored) markets in this catalog.</div>;
+  }
+  // Loudest disagreements first; rows the model couldn't resolve (no `absGap`) sink to the bottom.
+  const sorted = rows
+    .slice()
+    .sort((left, right) => (right.absGap ?? -Infinity) - (left.absGap ?? -Infinity));
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
+        <thead>
+          <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <th className="px-4 py-2 font-semibold">Market</th>
+            <th className="px-3 py-2 text-left font-semibold">Mapping</th>
+            <th className="px-3 py-2 text-right font-semibold">Deadline</th>
+            <th className="px-3 py-2 text-right font-semibold">Market</th>
+            <th className="px-3 py-2 text-right font-semibold">Model (95% CI)</th>
+            <th className="px-3 py-2 text-right font-semibold">|gap|</th>
+            <th className="px-3 py-2 text-right font-semibold">Resolved</th>
+            <th className="px-3 py-2 text-right font-semibold">Unresolved</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+          {sorted.map((row) => {
+            const ci = row.ci95 ?? [];
+            const unresolvedPct =
+              row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
+            return (
+              <tr key={row.slug} className={gapToneClass(row.absGap)} data-calibration-clean-row={row.slug}>
+                <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                  {row.slug}
+                </th>
+                <td className="px-3 py-2 text-left augur-muted">{row.mappingKind}</td>
+                <td className="px-3 py-2 text-right augur-tabular augur-muted">{fmtDeadline(row.resolutionDeadline)}</td>
+                <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
+                <td className="px-3 py-2 text-right augur-tabular">
+                  {row.pModel == null ? (
+                    <span className="augur-muted">n/a</span>
+                  ) : (
+                    <>
+                      {fmtProb(row.pModel)}
+                      {ci.length === 2 && (
+                        <span className="ml-1 text-xs augur-muted">
+                          [{fmtProb(ci[0])}–{fmtProb(ci[1])}]
+                        </span>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className={`px-3 py-2 text-right ${gapTextClass(row.absGap)}`}>
+                  {row.absGap == null ? "—" : fmtProb(row.absGap)}
+                </td>
+                <td className="px-3 py-2 text-right augur-tabular">{fmtNumber(row.nResolved)}</td>
+                <td className="px-3 py-2 text-right augur-tabular">
+                  {unresolvedPct == null ? "—" : fmtPct(unresolvedPct)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SurfacedList({ rows }) {
+  if (rows.length === 0) {
+    return <div className="px-4 py-6 text-sm augur-muted">No surfaced (context-only) markets in this catalog.</div>;
+  }
+  return (
+    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+      {rows.map((row) => (
+        <li key={row.slug} className="px-4 py-3" data-calibration-surfaced-row={row.slug}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="min-w-0">
+              <div className="font-semibold augur-strong">{row.question}</div>
+              <div className="text-xs augur-muted">
+                {row.slug}
+                {" · "}
+                <span className="font-semibold">{row.mappability}</span>
+                {row.correlateOf ? ` · correlate of ${row.correlateOf}` : ""}
+              </div>
+            </div>
+            <div className="whitespace-nowrap text-right">
+              <div className="augur-tabular font-semibold">{fmtProb(row.pMarket)}</div>
+              <div className="text-[11px] uppercase tracking-wide augur-muted">market</div>
+            </div>
+          </div>
+          {row.reason && <div className="mt-1 text-xs augur-body">{row.reason}</div>}
+          {row.augurContext && (
+            <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs dark:border-sky-400/20 dark:bg-sky-950/20">
+              <div className="font-semibold augur-accent-text">
+                Augur signal (related, not scored): {row.augurContext.signal}
+              </div>
+              <div className="mt-0.5 augur-body">
+                {row.augurContext.pModel == null ? "n/a" : fmtProb(row.augurContext.pModel)} · {row.augurContext.note}
+              </div>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MarkFanPanel({ markFan }) {
+  const rows = useMemo(() => markFanRows(markFan), [markFan]);
+  const percentiles = markFan?.percentiles?.length ? markFan.percentiles : FAN_PERCENTILES;
+  return (
+    <section className="augur-panel overflow-hidden" aria-label="Issuer mark fan" data-calibration-mark-fan="">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="augur-eyebrow">Issuer per-unit mark</div>
+        <div className="mt-1 text-xs augur-muted">
+          Percentile bands of {markFan.issuer}'s modelled per-unit mark over the horizon. This is a
+          per-UNIT price, NOT a company valuation (augur models no shares or market cap).
+        </div>
+      </div>
+      {rows.length > 0 ? (
+        <MetricFanChart
+          rows={rows}
+          metric={MARK_METRIC}
+          metricScale="linear"
+          percentiles={percentiles}
+          selectedRows={[]}
+          selectedEvents={[]}
+          selectedSeed={null}
+          selectedFailed={false}
+          visibleEventKinds={new Set()}
+          selectedEventMonthIndex={null}
+          hoveredEventMonthIndex={null}
+          onSelectEventMonth={() => {}}
+          onHoverEventMonth={() => {}}
+        />
+      ) : (
+        <div className="flex min-h-[18rem] items-center justify-center text-sm augur-muted">No mark fan data.</div>
+      )}
+    </section>
+  );
+}
+
+function CalibrationResults({ response }) {
+  const { result, markFan } = response;
+  const priceSourceLabel =
+    result.priceSource === "manifold-live" ? "Manifold live prices" : "catalog curation snapshot";
+  return (
+    <div className="min-w-0 space-y-5">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="augur-card p-4">
+          <div className="augur-eyebrow">Issuer</div>
+          <div className="mt-2 text-2xl font-semibold augur-tabular">{result.issuer}</div>
+          <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
+        </div>
+        <div className="augur-card p-4">
+          <div className="augur-eyebrow">Rollouts</div>
+          <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtNumber(result.rolloutCount)}</div>
+          <div className="mt-1 text-xs augur-muted">horizon {fmtNumber(result.horizonMonths)} mo</div>
+        </div>
+        <div className="augur-card p-4">
+          <div className="augur-eyebrow">Price source</div>
+          <div className="mt-2 text-sm font-semibold augur-tabular">{priceSourceLabel}</div>
+        </div>
+      </div>
+
+      <section className="augur-panel overflow-hidden" aria-label="Scored markets">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <div className="augur-eyebrow">Scored markets (model vs market)</div>
+          <div className="mt-1 text-xs augur-muted">
+            Apples-to-apples: markets augur models as events. Sorted by absolute model-vs-market gap.
+          </div>
+        </div>
+        <CleanTable rows={result.clean ?? []} />
+      </section>
+
+      <MarkFanPanel markFan={markFan} />
+
+      <section className="augur-panel overflow-hidden" aria-label="Surfaced markets">
+        <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <div className="augur-eyebrow">Surfaced markets (not scored / context only)</div>
+          <div className="mt-1 text-xs augur-muted">
+            Markets augur has no event concept for. Shown with the market price plus, where one
+            exists, a related (NOT equal) augur signal.
+          </div>
+        </div>
+        <SurfacedList rows={result.surfaced ?? []} />
+      </section>
+    </div>
+  );
+}
+
+export function CalibrationWorkspace({ bootstrap }) {
+  const [catalogs, setCatalogs] = useState(null);
+  const [catalogsError, setCatalogsError] = useState(null);
+  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, catalogId: null, presetId: null });
+  const [response, setResponse] = useState(null);
+  const [runError, setRunError] = useState(null);
+  const [running, setRunning] = useState(false);
+
+  const presets = bootstrap.exogenousPresets ?? [];
+  const selectedCatalog = useMemo(
+    () => (catalogs ?? []).find((catalog) => catalog.id === input.catalogId) ?? null,
+    [catalogs, input.catalogId]
+  );
+  const defaultPresetId = selectedCatalog?.defaultPresetId ?? null;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchCalibrationCatalogs({ signal: controller.signal })
+      .then((payload) => {
+        setCatalogs(payload.catalogs);
+        setCatalogsError(null);
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setCatalogs([]);
+        setCatalogsError(error?.message || String(error));
+      });
+    return () => controller.abort();
+  }, []);
+
+  // Once catalogs load (or change), pin the catalog + its default preset when nothing is chosen yet.
+  useEffect(() => {
+    if (!catalogs || catalogs.length === 0) return;
+    setInput((previous) => {
+      if (previous.catalogId != null) return previous;
+      const first = catalogs[0];
+      const presetId =
+        first.defaultPresetId && presets.includes(first.defaultPresetId)
+          ? first.defaultPresetId
+          : bootstrap.defaultExogenousPresetId;
+      return { ...previous, catalogId: first.id, presetId };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogs]);
+
+  const updateInput = (patch) => {
+    setInput((previous) => {
+      const next = { ...previous, ...patch };
+      // Switching catalogs re-points the preset to the new catalog's default (unless the user is
+      // explicitly editing the preset in this same patch).
+      if (patch.catalogId != null && patch.presetId === undefined) {
+        const catalog = (catalogs ?? []).find((entry) => entry.id === patch.catalogId);
+        const wanted = catalog?.defaultPresetId;
+        next.presetId = wanted && presets.includes(wanted) ? wanted : bootstrap.defaultExogenousPresetId;
+      }
+      return next;
+    });
+  };
+
+  const runReady = Boolean(input.catalogId) && Boolean(input.presetId) && !running;
+
+  const runCalibration = () => {
+    if (!input.catalogId || !input.presetId) return;
+    setRunning(true);
+    setRunError(null);
+    fetchCalibrationRun({
+      catalogId: input.catalogId,
+      presetId: input.presetId,
+      horizonMonths: input.horizonMonths,
+      rollouts: input.rollouts,
+      seed: input.seed,
+      live: input.live,
+    })
+      .then((payload) => {
+        setResponse(payload);
+        setRunError(null);
+      })
+      .catch((error) => {
+        setResponse(null);
+        setRunError(error?.message || String(error));
+      })
+      .finally(() => setRunning(false));
+  };
+
+  const currencyDisplayContext = useMemo(() => ({ display: "compact", setDisplay: () => {} }), []);
+
+  return (
+    <CurrencyDisplayProvider value={currencyDisplayContext}>
+      <div className="min-w-0 space-y-5">
+        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+          {catalogs == null ? (
+            <aside className="min-w-0">
+              <div className="augur-card px-4 py-6 text-sm augur-muted">Loading catalogs...</div>
+            </aside>
+          ) : (
+            <CalibrationForm
+              input={input}
+              catalogs={catalogs}
+              presets={presets}
+              defaultPresetId={defaultPresetId}
+              onChange={updateInput}
+              onRun={runCalibration}
+              running={running}
+              disabled={!runReady}
+            />
+          )}
+
+          <div className="min-w-0 space-y-5">
+            {catalogsError && (
+              <div className="augur-note-danger p-4 text-sm">Failed to load catalogs: {catalogsError}</div>
+            )}
+            {runError && <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>}
+            {running ? (
+              <RolloutResultsSkeleton />
+            ) : response ? (
+              <CalibrationResults response={response} />
+            ) : (
+              !catalogsError && (
+                <div className="augur-note p-4">
+                  Pick a catalog and model preset, then run a calibration to compare the model's
+                  rollouts against market prices.
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      </div>
+    </CurrencyDisplayProvider>
+  );
+}

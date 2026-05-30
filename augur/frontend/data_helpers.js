@@ -119,6 +119,27 @@ export function metricFanRows(result) {
     }));
 }
 
+// Adapt a calibration `MarkFan` (`months: [{ monthIndex, values: { "5.0": float, ... } }]`)
+// to the row shape `MetricFanChart` consumes: `{ monthIndex, year, values: Map<pct, value> }`.
+// The fan's `percentiles` are numbers (5, 25, ...) while each month's `values` is keyed by the
+// stringified percentile ("5.0", ...), so we re-key the Map by `Number(...)` to line up with the
+// `percentiles` prop the chart sorts over (`Number("5.0") === 5`).
+export function markFanRows(markFan) {
+  if (!markFan?.months) return [];
+  return markFan.months
+    .map((month) => ({
+      monthIndex: Number(month.monthIndex),
+      year: Number(month.monthIndex) / 12,
+      values: new Map(
+        Object.entries(month.values ?? {})
+          .map(([percentile, value]) => [Number(percentile), Number(value)])
+          .filter(([percentile, value]) => Number.isFinite(percentile) && Number.isFinite(value))
+      ),
+    }))
+    .filter((row) => Number.isFinite(row.monthIndex))
+    .sort((left, right) => left.monthIndex - right.monthIndex);
+}
+
 export function terminalPercentileValue(result, percentile) {
   if (!result?.terminalMetricPercentiles) return null;
   for (const row of rowsFrom(result?.terminalMetricPercentiles)) {

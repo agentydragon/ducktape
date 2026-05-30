@@ -135,9 +135,28 @@ js_library(
 )
 
 js_library(
+    name = "calibration",
+    srcs = ["calibration.jsx"],
+    deps = [
+        ":client",
+        ":data_helpers",
+        ":fan_chart",
+        ":header",
+        ":hooks",
+        ":input_helpers",
+        ":skeleton",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//augur/frontend/lib:controls",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
     name = "app",
     srcs = ["app.jsx"],
     deps = [
+        ":calibration",
         ":client",
         ":data_helpers",
         ":events_panel",
@@ -188,6 +207,7 @@ filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "app.jsx",
+        "calibration.jsx",
         "client.js",
         "data_helpers.js",
         "events_panel.jsx",

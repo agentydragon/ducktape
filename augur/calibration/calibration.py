@@ -50,7 +50,9 @@ class AugurContext(BaseModel):
     """A related (NOT equal) augur signal surfaced next to a market that isn't scored."""
 
     signal: str
-    p_model: float | None
+    # `= None` (not bare `| None`) so the field is optional in the exported OpenAPI/Zod
+    # schema, matching the server's `exclude_none=True` wire (None -> key dropped).
+    p_model: float | None = None
     note: str
 
 
@@ -59,13 +61,16 @@ class CleanRow(BaseModel):
 
     slug: str
     mapping_kind: str
-    resolution_deadline: date | None
+    # The nullable fields default to None so the generated Zod schema treats them as
+    # optional. The endpoint drops None-valued keys (`exclude_none=True`); without a
+    # default the codegen emits required `.nullable()` and rejects the omitted key.
+    resolution_deadline: date | None = None
     p_market: float
-    p_model: float | None  # None when no rollout resolved YES/NO within the horizon
+    p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
     ci95: tuple[float, float]
     n_resolved: int
     unresolved: int
-    abs_gap: float | None
+    abs_gap: float | None = None
 
 
 class SurfacedRow(BaseModel):
@@ -74,10 +79,11 @@ class SurfacedRow(BaseModel):
     slug: str
     question: str
     mappability: str
-    correlate_of: str | None
+    # Optional (`= None`) to match the endpoint's drop-None wire; see CleanRow above.
+    correlate_of: str | None = None
     p_market: float
-    reason: str | None
-    augur_context: AugurContext | None
+    reason: str | None = None
+    augur_context: AugurContext | None = None
 
 
 class CalibrationResult(BaseModel):
