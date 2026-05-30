@@ -24,7 +24,14 @@ def mock_manifold_client(
 
     def handler(request: httpx.Request) -> httpx.Response:
         market_id = request.url.path.rstrip("/").rsplit("/", 1)[-1]
-        return httpx.Response(200, json={"id": market_id, "probability": prices[market_id]})
+        return httpx.Response(
+            200,
+            json={
+                "id": market_id,
+                "url": f"https://manifold.markets/test/{market_id}",
+                "probability": prices[market_id],
+            },
+        )
 
     return ManifoldClient(
         clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))

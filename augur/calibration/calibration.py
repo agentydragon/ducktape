@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from statsmodels.stats.proportion import proportion_confint
 
 from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog, SurfacedMarket
-from augur.calibration.manifold import ManifoldClient
+from augur.calibration.manifold import ManifoldClient, ManifoldMarket
 from augur.calibration.resolvers import (
     Resolution,
     RolloutTrajectory,
@@ -62,6 +62,10 @@ class CleanRow(BaseModel):
     """An apples-to-apples comparison: a market augur models as an event."""
 
     slug: str
+    question: str
+    # Canonical Manifold market page, fetched live alongside the price (the catalog stores
+    # only a slug). The frontend links the question title to this URL.
+    url: str
     mapping_kind: str
     # The nullable fields default to None so the generated Zod schema treats them as
     # optional. The endpoint drops None-valued keys (`exclude_none=True`); without a
@@ -113,7 +117,8 @@ class MarkFan(BaseModel):
     months: list[MonthBand]
 
 
-def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], p_market: float) -> CleanRow:
+def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], manifold: ManifoldMarket) -> CleanRow:
+    p_market = manifold.require_probability()
     counts = Counter(
         resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
     )
@@ -122,6 +127,8 @@ def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], p_mar
     p_model = yes / n if n else None
     return CleanRow(
         slug=market.slug,
+        question=market.question,
+        url=manifold.url,
         mapping_kind=market.mapping_kind,
         resolution_deadline=market.resolution_deadline,
         p_market=p_market,
@@ -249,7 +256,7 @@ def run_calibration(
         horizon_months=horizon_months,
         rollout_count=rollout_count,
         clean=[
-            _clean_row(market, trajectories, price_client.fetch_yes_probability(market.manifold_id))
+            _clean_row(market, trajectories, price_client.get_market(market.manifold_id))
             for market in catalog.exact_markets()
         ],
         surfaced=[

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
 import { NativeSelectField, NumberField } from "./lib/controls.jsx";
-import { fmtNumber, fmtPct } from "./lib/format.js";
+import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
@@ -119,7 +119,6 @@ function CleanTable({ rows }) {
             <th className="px-3 py-2 text-right font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Model (95% CI)</th>
             <th className="px-3 py-2 text-right font-semibold">|gap|</th>
-            <th className="px-3 py-2 text-right font-semibold">Resolved</th>
             <th className="px-3 py-2 text-right font-semibold">Unresolved</th>
           </tr>
         </thead>
@@ -130,8 +129,15 @@ function CleanTable({ rows }) {
               row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
             return (
               <tr key={row.slug} className={gapToneClass(row.absGap)} data-calibration-clean-row={row.slug}>
-                <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
-                  {row.slug}
+                <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                  <a
+                    href={row.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="augur-accent-text hover:underline"
+                  >
+                    {row.question}
+                  </a>
                 </th>
                 <td className="px-3 py-2 text-left augur-muted">{row.mappingKind}</td>
                 <td className="px-3 py-2 text-right augur-tabular augur-muted">
@@ -155,7 +161,6 @@ function CleanTable({ rows }) {
                 <td className={`px-3 py-2 text-right ${gapTextClass(row.absGap)}`}>
                   {row.absGap == null ? "—" : fmtProb(row.absGap)}
                 </td>
-                <td className="px-3 py-2 text-right augur-tabular">{fmtNumber(row.nResolved)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {unresolvedPct == null ? "—" : fmtPct(unresolvedPct)}
                 </td>
@@ -247,16 +252,11 @@ function CalibrationResults({ response }) {
   const { result, markFan } = response;
   return (
     <div className="min-w-0 space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="augur-card p-4">
           <div className="augur-eyebrow">Issuer</div>
           <div className="mt-2 text-2xl font-semibold augur-tabular">{result.issuer}</div>
           <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
-        </div>
-        <div className="augur-card p-4">
-          <div className="augur-eyebrow">Rollouts</div>
-          <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtNumber(result.rolloutCount)}</div>
-          <div className="mt-1 text-xs augur-muted">horizon {fmtNumber(result.horizonMonths)} mo</div>
         </div>
         <div className="augur-card p-4">
           <div className="augur-eyebrow">Price source</div>

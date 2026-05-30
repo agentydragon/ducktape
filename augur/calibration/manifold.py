@@ -34,7 +34,16 @@ class ManifoldMarket(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     id: str
+    # Canonical market page (`https://manifold.markets/<creator>/<slug>`); the catalog stores
+    # only a slug, so the link text/href the frontend renders comes from the live payload.
+    url: str
     probability: float | None = None
+
+    def require_probability(self) -> float:
+        """This market's YES probability; raises when the payload carries none."""
+        if self.probability is None:
+            raise ValueError(f"Manifold market {self.id!r} returned no YES probability")
+        return self.probability
 
 
 def _headers() -> dict[str, str]:
@@ -79,10 +88,7 @@ class ManifoldClient:
 
     def fetch_yes_probability(self, market_id: str) -> float:
         """Current YES probability for one binary market; raises if it carries none."""
-        market = self.get_market(market_id)
-        if market.probability is None:
-            raise ValueError(f"Manifold market {market_id!r} returned no YES probability")
-        return market.probability
+        return self.get_market(market_id).require_probability()
 
     def close(self) -> None:
         self._client.close()
