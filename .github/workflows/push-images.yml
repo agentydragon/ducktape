@@ -104,6 +104,7 @@ jobs:
               test_target: "//x/authentik_mcp_poc/...",
             }
           - { image: "//x/grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//x/grocy_mcp/..." }
+          - { image: "//plaid/mcp_server:server_image", image_name: plaid-mcp-server, test_target: "//plaid/..." }
           - { image: "//x/study_casino:image", image_name: study-casino, test_target: "//x/study_casino/..." }
           # Untested images: always-push if content changed. Explicit
           # `test_target: ""` so the `matrix.test_target != ''` check on
