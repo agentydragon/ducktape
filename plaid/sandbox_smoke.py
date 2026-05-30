@@ -5,14 +5,14 @@ accounts and one page of transactions. Verifies creds work and the airlock
 PlaidProvider exchange path runs cleanly.
 
 Run:
-    set -a; source x/plaid/.creds.env; set +a
-    bb run //x/plaid:sandbox_smoke
+    set -a; source plaid/.creds.env; set +a
+    bb run //plaid:sandbox_smoke
 """
 
 import asyncio
 import logging
 
-from x.plaid.client import PlaidCreds, PlaidExtras, provider_for
+from plaid.client import PlaidCreds, PlaidExtras, provider_for
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +36,16 @@ async def async_main() -> None:
 
     logger.info("fetching /accounts/get …")
     accounts = await extras.accounts_get(access_token)
-    for acct in accounts["accounts"]:
-        bal = acct["balances"]
+    for acct in accounts.accounts:
+        bal = acct.balances
         logger.info(
             "  %-20s %-12s %-15s available=%s current=%s %s",
-            acct["name"],
-            acct["type"],
-            acct["subtype"],
-            bal.get("available"),
-            bal.get("current"),
-            bal.get("iso_currency_code"),
+            acct.name,
+            acct.type,
+            acct.subtype,
+            bal.available,
+            bal.current,
+            bal.iso_currency_code,
         )
 
     logger.info('fetching /transactions/sync (cursor="") …')

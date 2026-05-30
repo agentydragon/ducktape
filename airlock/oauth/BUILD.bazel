@@ -7,7 +7,7 @@ py_library(
     srcs = ["provider.py"],
     visibility = [
         "//airlock:__subpackages__",
-        "//x/plaid:__pkg__",
+        "//plaid:__pkg__",
     ],
     deps = [
         "@pypi//httpx",
