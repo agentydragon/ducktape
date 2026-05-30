@@ -25,6 +25,20 @@ def test_level_series_key_round_trip_through_wire_id() -> None:
         assert parse_level_series_key(key.wire_id) == key
 
 
+def test_level_series_key_kind_serializes_as_readable_string_and_round_trips() -> None:
+    # The StrEnum discriminator is the reason the key is typed-but-readable: a
+    # serialized key carries a readable string `kind` (not an opaque int) and
+    # reconstructs from that plain dict. Config, API wire, and trained-artifact
+    # serialization in later phases all rely on this.
+    inflation_dump = InflationKey().model_dump(mode="json")
+    assert isinstance(inflation_dump["kind"], str)
+    assert InflationKey.model_validate(inflation_dump) == InflationKey()
+
+    crypto_dump = CryptoKey(symbol="btc").model_dump(mode="json")
+    assert isinstance(crypto_dump["kind"], str)
+    assert CryptoKey.model_validate(crypto_dump) == CryptoKey(symbol="btc")
+
+
 def test_parse_level_series_key_rejects_unknown_wire_ids() -> None:
     for wire_id in ("", "unknown", "home_value", "private_equity:acme", "private_equity_regime_code:acme"):
         with pytest.raises(ValueError, match="unrecognized level-series wire id"):

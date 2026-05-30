@@ -5,7 +5,7 @@ magic prefix on its string id (`"home_value:..."`, `"crypto:..."`,
 `"private_equity_regime_code:..."`, etc.) and have every consumer dispatch on
 `series_id.startswith(...)`. That dispatch is now typed: every non-PE level
 series is identified by a `LevelSeriesKey` variant (a Pydantic discriminated
-union with an `IntEnum` `kind` discriminator), and the PE protocol bundle
+union with a `StrEnum` `kind` discriminator), and the PE protocol bundle
 lives in its own typed `PrivateEquityBundle` indexed by `IssuerId`.
 
 The wire string format is preserved for serialization and human-readable
@@ -16,7 +16,7 @@ boundary functions, no augur code should be matching prefixes.
 
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Annotated, Literal, NewType
 
 from pydantic import Field
@@ -28,14 +28,21 @@ LocationId = NewType("LocationId", str)
 CryptoSymbol = NewType("CryptoSymbol", str)
 
 
-class LevelSeriesKind(IntEnum):
-    """Discriminator for `LevelSeriesKey` variants."""
+class LevelSeriesKind(StrEnum):
+    """Discriminator for `LevelSeriesKey` variants.
 
-    INFLATION = 1
-    SP500 = 2
-    HOME_VALUE = 3
-    RENT = 4
-    CRYPTO = 5
+    `StrEnum` (not `IntEnum`) so the discriminator renders as a human-readable
+    `kind: crypto` wherever a `LevelSeriesKey` is Pydantic-serialized (config,
+    API wire, trained artifacts). The values double as the per-kind field names
+    on the sampled-levels bundle and on `LevelSeriesGroups`, so `key.kind` is
+    both the discriminator and the bundle attribute name.
+    """
+
+    INFLATION = "inflation"
+    SP500 = "sp500"
+    HOME_VALUE = "home_value"
+    RENT = "rent"
+    CRYPTO = "crypto"
 
 
 class _LevelKeyBase(FrozenModel):

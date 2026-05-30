@@ -4,7 +4,7 @@
 `asset_id` field on product wire events used to encode the asset's kind in a
 magic prefix (`"private_equity:..."`, `"crypto:..."`) that Python dispatch
 sites then matched with `.startswith(...)`. That dispatch is now typed: an
-`AssetKey` is a Pydantic discriminated union with an `IntEnum` `kind`
+`AssetKey` is a Pydantic discriminated union with a `StrEnum` `kind`
 discriminator, recovered from the wire string by `parse_asset_key`.
 
 The wire string format is preserved for serialization (JSON, polars
@@ -13,7 +13,7 @@ columns, fixture YAML). Producers obtain it via `AssetKey.wire_id`.
 
 from __future__ import annotations
 
-from enum import IntEnum
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -22,12 +22,18 @@ from augur.model.schemas import FrozenModel
 from augur.model.series import CryptoSymbol, IssuerId
 
 
-class AssetKind(IntEnum):
-    """Discriminator for `AssetKey` variants."""
+class AssetKind(StrEnum):
+    """Discriminator for `AssetKey` variants.
 
-    SP500 = 1
-    CRYPTO = 2
-    PRIVATE_EQUITY = 3
+    `StrEnum` (not `IntEnum`) so the discriminator renders as a human-readable
+    `kind: crypto` wherever an `AssetKey` is Pydantic-serialized (portfolio
+    `value_series`, API wire). Pure discriminator — wire ids come from each
+    variant's `wire_id`, never from this enum.
+    """
+
+    SP500 = "sp500"
+    CRYPTO = "crypto"
+    PRIVATE_EQUITY = "private_equity"
 
 
 class _AssetKeyBase(FrozenModel):
