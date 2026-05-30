@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import cached_property
 from pathlib import Path
 from typing import Literal
 
@@ -19,7 +18,7 @@ from augur.model.exogenous_provider_config import (
     VecmExogenousProviderConfig,
 )
 from augur.model.schemas import FrozenModel
-from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, parse_level_series_key
+from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -94,7 +93,7 @@ class LevelThresholdProbabilityBound(FrozenModel):
 
 
 class LevelSeriesSanityCheck(FrozenModel):
-    series_id: str
+    key: LevelSeriesKey
     initial_value: float | None = None
     initial_atol: float = Field(default=1e-6, ge=0.0)
     initial_rtol: float = Field(default=1e-9, ge=0.0)
@@ -105,17 +104,11 @@ class LevelSeriesSanityCheck(FrozenModel):
     ratio_percentile_ranges: tuple[PercentileRangeBound, ...] = ()
     threshold_probability_bounds: tuple[LevelThresholdProbabilityBound, ...] = ()
 
-    @cached_property
-    def level_key(self) -> LevelSeriesKey:
-        """Typed level-series key parsed once from the YAML-supplied `series_id`."""
-
-        return parse_level_series_key(self.series_id)
-
 
 class EventSeriesSanityCheck(FrozenModel):
     """Sanity check on the `sale_opportunity_active` channel of one PE issuer."""
 
-    issuer_id: str
+    issuer_id: IssuerId
     active_count_percentile_bounds: tuple[EventCountPercentileBound, ...] = ()
     active_count_percentile_ranges: tuple[EventCountPercentileRangeBound, ...] = ()
 
@@ -129,7 +122,7 @@ class EventKindObservedCheck(FrozenModel):
     "at least one TENDER or PUBLIC_MARKET_OPEN by month 24" by listing both codes.
     """
 
-    issuer_id: str
+    issuer_id: IssuerId
     event_kind_codes: tuple[int, ...] = Field(min_length=1)
     by_month: int = Field(ge=0)
     count_op: Literal["at_least_one", "exactly_zero"]
@@ -148,7 +141,7 @@ class EventKindObservedCheck(FrozenModel):
 
 
 class PrivateEquityProtocolSanityCheck(FrozenModel):
-    issuer_id: str
+    issuer_id: IssuerId
     allowed_regime_codes: tuple[int, ...] = ()
     allowed_event_kind_codes: tuple[int, ...] = ()
 
@@ -161,7 +154,7 @@ class PrivateEquityMarkSanityCheck(FrozenModel):
     are not level series.
     """
 
-    issuer_id: str
+    issuer_id: IssuerId
     initial_value: float | None = None
     initial_atol: float = Field(default=1e-6, ge=0.0)
     initial_rtol: float = Field(default=1e-9, ge=0.0)
@@ -176,8 +169,8 @@ class SampleSanitySpec(FrozenModel):
     horizon_months: int = Field(ge=0)
     rollout_seed_start: int = Field(default=1301, ge=0)
     rollout_count: int = Field(gt=0)
-    required_level_series: tuple[str, ...] = ()
-    required_private_equity_issuers: tuple[str, ...] = ()
+    required_level_series: tuple[LevelSeriesKey, ...] = ()
+    required_private_equity_issuers: tuple[IssuerId, ...] = ()
     level_checks: tuple[LevelSeriesSanityCheck, ...] = ()
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
     event_kind_observed_checks: tuple[EventKindObservedCheck, ...] = ()
@@ -201,46 +194,48 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
     request = ExogenousSamplingRequest(
         horizon_months=spec.horizon_months,
         rollout_seeds=spec.rollout_seeds,
-        required_level_series=frozenset(parse_level_series_key(series_id) for series_id in spec.required_level_series),
-        required_private_equity_issuers=frozenset(IssuerId(issuer) for issuer in spec.required_private_equity_issuers),
+        required_level_series=frozenset(spec.required_level_series),
+        required_private_equity_issuers=frozenset(spec.required_private_equity_issuers),
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
 
     for level_check in spec.level_checks:
         levels = sampled.level_matrix(
-            level_check.level_key, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
+            level_check.key, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
         )
-        _assert_finite(levels, label=level_check.series_id)
+        _assert_finite(levels, label=level_check.key.wire_id)
         if level_check.require_positive and np.any(levels <= 0.0):
-            raise AssertionError(f"series {level_check.series_id!r} produced non-positive level(s)")
+            raise AssertionError(f"series {level_check.key.wire_id!r} produced non-positive level(s)")
         if level_check.initial_value is not None:
             np.testing.assert_allclose(
                 levels[:, 0],
                 np.full(spec.rollout_count, float(level_check.initial_value), dtype=np.float64),
                 atol=level_check.initial_atol,
                 rtol=level_check.initial_rtol,
-                err_msg=f"series {level_check.series_id!r} month-0 anchor mismatch",
+                err_msg=f"series {level_check.key.wire_id!r} month-0 anchor mismatch",
             )
         for value_bound in level_check.value_percentile_bounds:
             _check_percentile_bound(
-                levels[:, value_bound.month], value_bound, label=f"{level_check.series_id} value m{value_bound.month}"
+                levels[:, value_bound.month], value_bound, label=f"{level_check.key.wire_id} value m{value_bound.month}"
             )
         for value_range in level_check.value_percentile_ranges:
             _check_percentile_range_bound(
-                levels[:, value_range.month], value_range, label=f"{level_check.series_id} value m{value_range.month}"
+                levels[:, value_range.month], value_range, label=f"{level_check.key.wire_id} value m{value_range.month}"
             )
         for ratio_bound in level_check.ratio_percentile_bounds:
             ratios = levels[:, ratio_bound.month] / levels[:, 0]
-            _check_percentile_bound(ratios, ratio_bound, label=f"{level_check.series_id} ratio m{ratio_bound.month}/m0")
+            _check_percentile_bound(
+                ratios, ratio_bound, label=f"{level_check.key.wire_id} ratio m{ratio_bound.month}/m0"
+            )
         for ratio_range in level_check.ratio_percentile_ranges:
             ratios = levels[:, ratio_range.month] / levels[:, 0]
             _check_percentile_range_bound(
-                ratios, ratio_range, label=f"{level_check.series_id} ratio m{ratio_range.month}/m0"
+                ratios, ratio_range, label=f"{level_check.key.wire_id} ratio m{ratio_range.month}/m0"
             )
         for threshold_bound in level_check.threshold_probability_bounds:
             _check_threshold_probability_bound(
-                levels, threshold_bound, series_id=level_check.series_id, rollout_count=spec.rollout_count
+                levels, threshold_bound, series_id=level_check.key.wire_id, rollout_count=spec.rollout_count
             )
 
     for event_kind_check in spec.event_kind_observed_checks:

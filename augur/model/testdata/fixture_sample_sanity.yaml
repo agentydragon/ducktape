@@ -3,12 +3,12 @@ horizon_months: 12
 rollout_seed_start: 1301
 rollout_count: 512
 required_level_series:
-  - inflation
-  - sp500
+  - kind: inflation
+  - kind: sp500
 required_private_equity_issuers:
   - private_company_a
 level_checks:
-  - series_id: inflation
+  - key: { kind: inflation }
     initial_value: 330.0
     ratio_percentile_ranges:
       - month: 12
@@ -16,7 +16,7 @@ level_checks:
         upper_percentile: 99
         lower: 0.99
         upper: 1.06
-  - series_id: sp500
+  - key: { kind: sp500 }
     initial_value: 7000.0
     ratio_percentile_ranges:
       - month: 12
