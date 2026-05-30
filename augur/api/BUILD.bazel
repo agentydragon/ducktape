@@ -328,15 +328,13 @@ oci_load(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    data = [
-        ":public_fixture_calibration_catalog",
-        ":public_fixture_config",
-        ":public_fixture_properties",
-    ],
     deps = [
+        ":bootstrap",
         ":config",
+        ":finance",
+        ":local_regulation",
         ":server_lib",
-        "//util/bazel:runfiles",
+        "//augur/model:independent_exogenous",
     ],
 )
 
@@ -349,11 +347,6 @@ py_binary(
 py_test(
     name = "export_schema_test",
     srcs = ["test_export_schema.py"],
-    data = [
-        ":public_fixture_calibration_catalog",
-        ":public_fixture_config",
-        ":public_fixture_properties",
-    ],
     # Source follows the test_<module>.py convention while the target keeps the
     # conventional <name>_test label, so the inferred main wouldn't match srcs.
     main = "test_export_schema.py",

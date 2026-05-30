@@ -1,10 +1,9 @@
-"""Test that export_schema emits a valid OpenAPI doc from its own-repo fixture.
+"""Test that export_schema emits a valid OpenAPI doc for the frontend Zod/TS codegen.
 
-This exercises the repo-agnostic fixture lookup the frontend Zod codegen relies on
-(`get_required_own_repo_path("augur/api/testdata/config.yaml")`): it must resolve
-the `data`-dep fixture and build the real app end to end. Running as the ducktape
-main repo proves the `_main` runfiles prefix still resolves after the migration off
-the previously-hardcoded prefix.
+`export_schema.main()` builds the real FastAPI app from an in-Python `Config` (no YAML /
+runfiles fixture) and dumps `.openapi()`. This asserts the emitted document is well-formed
+and carries the routes + component schemas the frontend consumes — proving the in-Python
+deployment registers the full app end to end.
 """
 
 from __future__ import annotations
@@ -27,11 +26,10 @@ def test_export_schema_emits_openapi_with_components() -> None:
     # A well-formed OpenAPI document with the component schemas the frontend's
     # Zod/TS codegen consumes.
     assert doc["openapi"].startswith("3.")
-    assert doc["paths"], "expected the fixture app to register routes"
+    assert doc["paths"], "expected the app to register routes"
     assert doc["components"]["schemas"], "expected component schemas for Zod codegen"
-    # The calibration routes are the reason the fixture builds the full app; their
-    # presence confirms the fixture config (and its calibration catalog data dep)
-    # resolved, not a degenerate empty app.
+    # The calibration routes are registered unconditionally; their presence confirms the
+    # in-Python config built the full app, not a degenerate empty one.
     assert any(path.startswith("/api/calibration/") for path in doc["paths"])
 
 
