@@ -56,9 +56,6 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   // `{ kind, month, ...kind-specific }`. Persisted to the URL as a separate `lc` param
   // (a flat-positional `s=` packing can't represent variable-length structured lists).
   propertyLifecycleEvents: [],
-  // Exogenous-bundle preset id. `null` means use bootstrap.defaultExogenousPresetId.
-  // The deployment's available presets are listed in bootstrap.exogenousPresets.
-  exogenousModelId: null,
 };
 
 export const LIFECYCLE_KINDS = [
@@ -136,6 +133,22 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
   return Number.isFinite(numeric) ? clampRolloutCount(numeric, bootstrap) : rolloutCountDefault(bootstrap);
 }
 
+// Tab-shared exogenous model preset. Like the rollout count, the app shell owns the live value
+// and persists it to `?x=`; the product scenario and the calibration run both read it. A value
+// not present in `bootstrap.exogenousPresets` (stale URL, empty) falls back to the deployment
+// default. The selected id is always one of `bootstrap.exogenousPresets`.
+export function exogenousModelDefault(bootstrap) {
+  const presets = bootstrap.exogenousPresets ?? [];
+  const preferred = bootstrap.defaultExogenousPresetId;
+  return presets.includes(preferred) ? preferred : (presets[0] ?? null);
+}
+
+export function exogenousModelFromSearch(searchString, bootstrap) {
+  const requested = new URLSearchParams(searchString).get("x");
+  const presets = bootstrap.exogenousPresets ?? [];
+  return requested && presets.includes(requested) ? requested : exogenousModelDefault(bootstrap);
+}
+
 // URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
 // separated string. A version letter prefix gates schema changes; trailing default values are
 // trimmed; enums use one-letter codes. Examples:
@@ -148,7 +161,9 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
 // defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
 // v2 stores rentalFractionRentedPct as a 0..100 percentage, v3 dropped `rentItOut` so the
 // rental fields are always present and `fractionRentedPct == 0` means "not rented", v4 dropped
-// `rolloutCount` which became the tab-shared `?n=` control).
+// `rolloutCount` (now the tab-shared `?n=` control) and the trailing `exogenousModelId` (now the
+// tab-shared `?x=` control). Dropping the trailing `exogenousModelId` slot shifts no other
+// position, so v4 `?s=` strings that never set it decode identically.
 const INPUT_SCHEMA_VERSION = "4";
 
 const INPUT_FIELDS = [
@@ -427,13 +442,13 @@ export function sellOrderBuckets(sellOrderCodes) {
   return buckets;
 }
 
-export function productScenario(input, bootstrap) {
+export function productScenario(input, bootstrap, exogenousModelId) {
   const sellOrder = sellOrderBuckets(input.sellOrder);
   const autoSellEnabled = sellOrder.length > 0;
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
-    exogenousModelId: input.exogenousModelId || bootstrap.defaultExogenousPresetId,
+    exogenousModelId: exogenousModelId || exogenousModelDefault(bootstrap),
     horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
@@ -461,9 +476,9 @@ export function productRolloutSeeds(input, bootstrap, rolloutCount) {
   return Array.from({ length: count }, (_, index) => firstSeed + index);
 }
 
-export function productMetricFanRequest(input, bootstrap, metric, rolloutCount) {
+export function productMetricFanRequest(input, bootstrap, metric, rolloutCount, exogenousModelId) {
   return {
-    scenario: productScenario(input, bootstrap),
+    scenario: productScenario(input, bootstrap, exogenousModelId),
     rolloutSeeds: productRolloutSeeds(input, bootstrap, rolloutCount),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,

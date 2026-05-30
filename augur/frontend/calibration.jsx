@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
-import { NativeSelectField, NumberField } from "./lib/controls.jsx";
+import { NumberField } from "./lib/controls.jsx";
 import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
@@ -44,8 +44,7 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange }) {
-  const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
+function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
@@ -62,15 +61,13 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange })
             <div className="mt-1 text-sm font-semibold augur-strong">{catalog.label}</div>
             <div className="text-xs augur-muted">issuer: {catalog.issuer}</div>
           </div>
-          <NativeSelectField
-            label="Model preset"
-            aria-label="Model preset"
-            description={defaultPresetId ? `Deployment default: ${defaultPresetId}` : undefined}
-            value={input.presetId ?? ""}
-            disabled={presets.length === 0}
-            data={presets.length === 0 ? [{ value: "", label: "(no presets)" }] : presetOptions}
-            onChange={(event) => onChange({ presetId: event.target.value || null })}
-          />
+          <div>
+            <div className="augur-eyebrow">Exogenous model</div>
+            <div className="mt-1 text-sm font-semibold augur-strong" data-calibration-model={exogenousModel ?? ""}>
+              {exogenousModel ?? "(no presets)"}
+            </div>
+            <div className="text-xs augur-muted">Choose the model in the header — shared with the product tab.</div>
+          </div>
         </div>
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
           <NumberField
@@ -279,29 +276,27 @@ function CalibrationResults({ response }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap, rolloutCount }) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }) {
   const catalog = bootstrap.calibration ?? null;
-  const presets = bootstrap.exogenousPresets ?? [];
-  const defaultPresetId = bootstrap.defaultExogenousPresetId;
-  const initialPresetId = presets.includes(defaultPresetId) ? defaultPresetId : (presets[0] ?? null);
 
-  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, presetId: initialPresetId });
+  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS });
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
 
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
-  // The calibration run is fully determined by these four inputs; memoizing keeps the
-  // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  // The calibration run is fully determined by these inputs plus the tab-shared exogenous model
+  // (`exogenousModel`, owned by the app shell via `?x=`); memoizing keeps the auto-run effect from
+  // re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const request = useMemo(
     () => ({
-      presetId: input.presetId,
+      presetId: exogenousModel,
       horizonMonths: input.horizonMonths,
       rollouts,
       seed: input.seed,
     }),
-    [input.presetId, input.horizonMonths, rollouts, input.seed]
+    [exogenousModel, input.horizonMonths, rollouts, input.seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -345,8 +340,7 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount }) {
           <CalibrationForm
             input={input}
             catalog={catalog}
-            presets={presets}
-            defaultPresetId={defaultPresetId}
+            exogenousModel={exogenousModel}
             onChange={updateInput}
           />
 

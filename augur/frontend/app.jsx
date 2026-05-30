@@ -29,6 +29,8 @@ import {
   rolloutCountFromSearch,
   rolloutCountDefault,
   clampRolloutCount,
+  exogenousModelFromSearch,
+  exogenousModelDefault,
 } from "./input_helpers.js";
 import {
   metricFanRows,
@@ -80,6 +82,19 @@ function writeRolloutCountToSearch(value, bootstrap) {
   const params = new URLSearchParams(window.location.search);
   if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");
   else params.set("n", String(value));
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+// The shared exogenous model is likewise a top-level concern (both tabs run against it), so it
+// gets its own `?x=` param. Omitted when at the deployment default, like the `?n=` param above.
+function writeExogenousModelToSearch(value, bootstrap) {
+  const params = new URLSearchParams(window.location.search);
+  if (value == null || value === exogenousModelDefault(bootstrap)) params.delete("x");
+  else params.set("x", value);
   const search = params.toString();
   const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
   if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -263,7 +278,16 @@ function viewPrefsFromSearch(searchString) {
   };
 }
 
-function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, rolloutCount, onChangeRolloutCount }) {
+function ProductProjectionWorkspace({
+  bootstrap,
+  deployment,
+  tab,
+  onSelectTab,
+  rolloutCount,
+  onChangeRolloutCount,
+  exogenousModel,
+  onChangeExogenousModel,
+}) {
   const initialViewPrefs = viewPrefsFromSearch(window.location.search);
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -282,8 +306,8 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const request = useMemo(
-    () => productMetricFanRequest(input, bootstrap, selectedMetric, rolloutCount),
-    [input, bootstrap, selectedMetric, rolloutCount]
+    () => productMetricFanRequest(input, bootstrap, selectedMetric, rolloutCount, exogenousModel),
+    [input, bootstrap, selectedMetric, rolloutCount, exogenousModel]
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
@@ -308,10 +332,13 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
     if (metricScale !== "linear") params.set("scale", "log");
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shared rollout count (`?n=`) is owned by the shell, not the product input. Carry the
-    // current value across so rewriting the product state doesn't drop it.
-    const sharedRolloutCount = new URLSearchParams(window.location.search).get("n");
+    // The shared rollout count (`?n=`) and exogenous model (`?x=`) are owned by the shell, not the
+    // product input. Carry the current values across so rewriting the product state doesn't drop them.
+    const currentParams = new URLSearchParams(window.location.search);
+    const sharedRolloutCount = currentParams.get("n");
     if (sharedRolloutCount != null) params.set("n", sharedRolloutCount);
+    const sharedExogenousModel = currentParams.get("x");
+    if (sharedExogenousModel != null) params.set("x", sharedExogenousModel);
     const search = params.toString();
     const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -403,6 +430,9 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
           rolloutCount={rolloutCount}
           onChangeRolloutCount={onChangeRolloutCount}
           maxRolloutCount={bootstrap.maxRolloutSamples}
+          exogenousModel={exogenousModel}
+          onChangeExogenousModel={onChangeExogenousModel}
+          exogenousPresets={bootstrap.exogenousPresets}
           rightSlot={<DeploymentCommitSummary deployment={deployment} />}
         />
 
@@ -470,7 +500,16 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
   );
 }
 
-function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab, rolloutCount, onChangeRolloutCount }) {
+function CalibrationAppSurface({
+  bootstrap,
+  deployment,
+  tab,
+  onSelectTab,
+  rolloutCount,
+  onChangeRolloutCount,
+  exogenousModel,
+  onChangeExogenousModel,
+}) {
   return (
     <div
       data-augur-surface="calibration"
@@ -481,10 +520,13 @@ function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab, rollou
         rolloutCount={rolloutCount}
         onChangeRolloutCount={onChangeRolloutCount}
         maxRolloutCount={bootstrap.maxRolloutSamples}
+        exogenousModel={exogenousModel}
+        onChangeExogenousModel={onChangeExogenousModel}
+        exogenousPresets={bootstrap.exogenousPresets}
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <CalibrationWorkspace bootstrap={bootstrap} rolloutCount={rolloutCount} />
+        <CalibrationWorkspace bootstrap={bootstrap} rolloutCount={rolloutCount} exogenousModel={exogenousModel} />
       </main>
     </div>
   );

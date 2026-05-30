@@ -748,22 +748,6 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           />
           <IndexPicker value={input.spendIndex} onChange={(spendIndex) => onChange({ spendIndex })} />
         </div>
-        {bootstrap.exogenousPresets && bootstrap.exogenousPresets.length > 1 ? (
-          <div className="grid gap-3 px-4 py-3">
-            <NativeSelectField
-              label="Exogenous model"
-              aria-label="Exogenous model preset"
-              value={input.exogenousModelId ?? bootstrap.defaultExogenousPresetId}
-              data={bootstrap.exogenousPresets.map((preset) => ({ value: preset, label: preset }))}
-              onChange={(event) =>
-                onChange({
-                  exogenousModelId:
-                    event.target.value === bootstrap.defaultExogenousPresetId ? null : event.target.value,
-                })
-              }
-            />
-          </div>
-        ) : null}
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
           <NumberField
             label="Monthly rent"
