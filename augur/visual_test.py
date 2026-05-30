@@ -178,6 +178,18 @@ def _wait_for_property_panel(page: Page) -> None:
     page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
 
 
+def _wait_for_calibration_page(page: Page) -> None:
+    """Wait for the calibration tab's catalog form (no run triggered -- no network)."""
+    page.add_style_tag(content=deterministic_style())
+    page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
+    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
+    page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-calibration-catalog]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-calibration-run]").wait_for(state="visible", timeout=30_000)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+
+
 # `?s=3.240............location_a_property` selects the fixture property `location_a_property`
 # with horizonMonths=240. The 12 dots between "240" and the value are the empty positions for
 # rolloutCount..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
@@ -189,6 +201,7 @@ VISUAL_CASES = (
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
+    VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )
 
 
@@ -266,6 +279,10 @@ def page(browser: Browser) -> Iterator[Page]:
 
 
 def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
+    # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
+    # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
+    # interaction) would otherwise leave the header floating over the middle of the screenshot.
+    page.evaluate("() => window.scrollTo(0, 0)")
     previous_bytes: bytes | None = None
     previous_path: Path | None = None
     for attempt in range(6):

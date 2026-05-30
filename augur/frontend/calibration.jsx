@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Button, Checkbox } from "@mantine/core";
+import { Button } from "@mantine/core";
 
 import { fetchCalibrationRun } from "./client.js";
 import { NativeSelectField, NumberField } from "./lib/controls.jsx";
@@ -19,7 +19,6 @@ const CALIBRATION_INPUT_DEFAULTS = {
   horizonMonths: 120,
   rollouts: 2000,
   seed: 1701,
-  live: false,
 };
 
 function fmtProb(value) {
@@ -98,19 +97,6 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, o
             step={1}
             onChange={(seed) => onChange({ seed })}
           />
-        </div>
-        <div className="px-4 py-3">
-          <Checkbox
-            label="Live Manifold prices"
-            aria-label="Live Manifold prices"
-            checked={Boolean(input.live)}
-            classNames={{ label: "text-sm font-semibold augur-strong" }}
-            onChange={(event) => onChange({ live: event.currentTarget.checked })}
-          />
-          <div className="mt-1 text-xs augur-muted">
-            Off uses the catalog's curation snapshot (offline). On fetches current YES prices from Manifold (requires
-            network).
-          </div>
         </div>
         <div className="px-4 py-3">
           <Button fullWidth data-calibration-run loading={running} disabled={disabled} onClick={onRun}>
@@ -265,8 +251,6 @@ function MarkFanPanel({ markFan }) {
 
 function CalibrationResults({ response }) {
   const { result, markFan } = response;
-  const priceSourceLabel =
-    result.priceSource === "manifold-live" ? "Manifold live prices" : "catalog curation snapshot";
   return (
     <div className="min-w-0 space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -282,7 +266,7 @@ function CalibrationResults({ response }) {
         </div>
         <div className="augur-card p-4">
           <div className="augur-eyebrow">Price source</div>
-          <div className="mt-2 text-sm font-semibold augur-tabular">{priceSourceLabel}</div>
+          <div className="mt-2 text-sm font-semibold augur-tabular">Manifold live prices</div>
         </div>
       </div>
 
@@ -339,7 +323,6 @@ export function CalibrationWorkspace({ bootstrap }) {
       horizonMonths: input.horizonMonths,
       rollouts: input.rollouts,
       seed: input.seed,
-      live: input.live,
     })
       .then((payload) => {
         setResponse(payload);
