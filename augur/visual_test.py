@@ -196,11 +196,12 @@ def _wait_for_calibration_page(page: Page) -> None:
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
-# `?s=3.240............location_a_property` selects the fixture property `location_a_property`
-# with horizonMonths=240. The 12 dots between "240" and the value are the empty positions for
-# rolloutCount..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
-# Schema version 3 (matches the v3 schema bump that dropped the `rentItOut` toggle).
-_PROPERTY_LIFECYCLE_URL = "/product?s=3.240............location_a_property&lc=r24:50~c60:50000~s120:6"
+# `?s=4.240...........location_a_property` selects the fixture property `location_a_property`
+# with horizonMonths=240. The dots between "240" and the value are the empty positions for
+# firstSeed..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
+# Schema version 4 (matches the v4 schema bump that dropped `rolloutCount`, now the tab-shared
+# `?n=` control).
+_PROPERTY_LIFECYCLE_URL = "/product?s=4.240...........location_a_property&lc=r24:50~c60:50000~s120:6"
 
 VISUAL_CASES = (
     VisualCase(

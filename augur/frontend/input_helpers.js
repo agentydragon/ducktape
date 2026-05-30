@@ -14,9 +14,13 @@ export const SELL_BUCKET_BY_CODE = new Map(SELL_BUCKETS.map((bucket) => [bucket.
 export const SELL_BUCKET_BY_NAME = new Map(SELL_BUCKETS.map((bucket) => [bucket.name, bucket]));
 export const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code).join("");
 
+// Rollout count is NOT a product-input field: it is a top-level control shared across the
+// product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
+// run this many rollouts, so it lives in the app shell rather than in either tab's input.
+export const DEFAULT_ROLLOUT_COUNT = 500;
+
 export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
-  rolloutCount: 500,
   firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
@@ -106,14 +110,30 @@ export function productInputDefaults(bootstrap) {
   // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so
   // we always respect `max_*_samples` and only fall back to the first location when YAML
   // didn't pin a `rental_location_id`.
-  const defaultRolloutCount =
-    base.rolloutCount ?? bootstrap.defaultRolloutSamples ?? DEFAULT_PRODUCT_INPUT_BASE.rolloutCount;
   return {
     ...base,
     horizonMonths: clampInteger(base.horizonMonths, 1, bootstrap.maxHorizonMonths),
-    rolloutCount: clampInteger(defaultRolloutCount, 1, bootstrap.maxRolloutSamples),
     rentalLocationId: base.rentalLocationId ?? bootstrap.locations[0]?.id ?? null,
   };
+}
+
+// Tab-shared rollout count. The app shell owns the live value and persists it to `?n=`; the
+// product and calibration workspaces both read it. The default honors a deployment's
+// `product_input_defaults.rollout_count` override and is clamped to `max_rollout_samples`.
+export function rolloutCountDefault(bootstrap) {
+  const override = bootstrap.productInputDefaults?.rolloutCount;
+  return clampInteger(override ?? DEFAULT_ROLLOUT_COUNT, 1, bootstrap.maxRolloutSamples);
+}
+
+export function clampRolloutCount(value, bootstrap) {
+  return clampInteger(value, 1, bootstrap.maxRolloutSamples);
+}
+
+export function rolloutCountFromSearch(searchString, bootstrap) {
+  const raw = new URLSearchParams(searchString).get("n");
+  if (raw == null) return rolloutCountDefault(bootstrap);
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? clampRolloutCount(numeric, bootstrap) : rolloutCountDefault(bootstrap);
 }
 
 // URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
@@ -127,12 +147,12 @@ export function productInputDefaults(bootstrap) {
 // Bump SCHEMA_VERSION when a field's semantic encoding changes — old URLs then fall back to
 // defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
 // v2 stores rentalFractionRentedPct as a 0..100 percentage, v3 dropped `rentItOut` so the
-// rental fields are always present and `fractionRentedPct == 0` means "not rented").
-const INPUT_SCHEMA_VERSION = "3";
+// rental fields are always present and `fractionRentedPct == 0` means "not rented", v4 dropped
+// `rolloutCount` which became the tab-shared `?n=` control).
+const INPUT_SCHEMA_VERSION = "4";
 
 const INPUT_FIELDS = [
   { key: "horizonMonths", type: "number" },
-  { key: "rolloutCount", type: "number" },
   { key: "firstSeed", type: "number" },
   { key: "monthlySpendUsd", type: "number" },
   { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
@@ -435,16 +455,16 @@ export function productScenario(input, bootstrap) {
   };
 }
 
-export function productRolloutSeeds(input, bootstrap) {
-  const rolloutCount = clampInteger(input.rolloutCount, 1, bootstrap.maxRolloutSamples);
+export function productRolloutSeeds(input, bootstrap, rolloutCount) {
+  const count = clampRolloutCount(rolloutCount, bootstrap);
   const firstSeed = clampInteger(input.firstSeed, 0, 2 ** 31 - 1);
-  return Array.from({ length: rolloutCount }, (_, index) => firstSeed + index);
+  return Array.from({ length: count }, (_, index) => firstSeed + index);
 }
 
-export function productMetricFanRequest(input, bootstrap, metric) {
+export function productMetricFanRequest(input, bootstrap, metric, rolloutCount) {
   return {
     scenario: productScenario(input, bootstrap),
-    rolloutSeeds: productRolloutSeeds(input, bootstrap),
+    rolloutSeeds: productRolloutSeeds(input, bootstrap, rolloutCount),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,
   };

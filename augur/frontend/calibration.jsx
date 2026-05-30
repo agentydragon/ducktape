@@ -6,7 +6,7 @@ import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
-import { FAN_PERCENTILES } from "./input_helpers.js";
+import { FAN_PERCENTILES, clampRolloutCount } from "./input_helpers.js";
 import { markFanRows } from "./data_helpers.js";
 
 // The issuer mark fan is a per-unit USD price. `chartValue` ending in `Usd` makes the shared
@@ -14,9 +14,10 @@ import { markFanRows } from "./data_helpers.js";
 // mark (NOT a valuation — augur models no shares / market cap).
 const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
 
+// `rollouts` is intentionally absent: the rollout count is a tab-shared control owned by the app
+// shell (see `rolloutCountFromSearch`), passed in as a prop and woven into the run request below.
 const CALIBRATION_INPUT_DEFAULTS = {
   horizonMonths: 120,
-  rollouts: 2000,
   seed: 1701,
 };
 
@@ -43,7 +44,16 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange }) {
+function CalibrationForm({
+  input,
+  catalog,
+  presets,
+  defaultPresetId,
+  onChange,
+  rolloutCount,
+  onChangeRolloutCount,
+  maxRollouts,
+}) {
   const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
   return (
     <aside className="min-w-0">
@@ -83,10 +93,12 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange })
           />
           <NumberField
             label="Rollouts"
-            value={input.rollouts}
+            description="Shared with the product tab."
+            value={rolloutCount}
             min={1}
+            max={maxRollouts}
             step={500}
-            onChange={(rollouts) => onChange({ rollouts })}
+            onChange={onChangeRolloutCount}
           />
           <NumberField
             label="Seed"
@@ -285,7 +297,7 @@ function CalibrationResults({ response }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap }) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount, onChangeRolloutCount }) {
   const catalog = bootstrap.calibration ?? null;
   const presets = bootstrap.exogenousPresets ?? [];
   const defaultPresetId = bootstrap.defaultExogenousPresetId;
@@ -299,14 +311,15 @@ export function CalibrationWorkspace({ bootstrap }) {
 
   // The calibration run is fully determined by these four inputs; memoizing keeps the
   // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const request = useMemo(
     () => ({
       presetId: input.presetId,
       horizonMonths: input.horizonMonths,
-      rollouts: input.rollouts,
+      rollouts,
       seed: input.seed,
     }),
-    [input.presetId, input.horizonMonths, input.rollouts, input.seed]
+    [input.presetId, input.horizonMonths, rollouts, input.seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -353,6 +366,9 @@ export function CalibrationWorkspace({ bootstrap }) {
             presets={presets}
             defaultPresetId={defaultPresetId}
             onChange={updateInput}
+            rolloutCount={rolloutCount}
+            onChangeRolloutCount={onChangeRolloutCount}
+            maxRollouts={bootstrap.maxRolloutSamples}
           />
 
           <div className="min-w-0 space-y-5">
