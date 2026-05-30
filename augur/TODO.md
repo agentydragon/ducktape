@@ -68,6 +68,17 @@ this file as a backlog, not a second ordered roadmap.
       `macro_market_bundle_provider` shape directly; mine it only for
       data loading/config ideas after the native `SampledExogenousBundle`
       API is the target.
+- [ ] **Fit the PE valuation + share-dilution process, not just a static
+      scale.** M2 (`augur/plans/prediction_market_calibration.md`) adds a
+      company-valuation channel `V = mark × shares(t)` plus a dilution
+      process, but v1 uses point estimates (`shares₀`, `annual_dilution_rate`).
+      The trainer already ingests `valuation_observation`s but collapses them to
+      a single static `scale_prior.current_market_cap_usd`; make the scale
+      **dynamic and Bayesian** — fit a posterior over the dilution rate and the
+      valuation drift/vol jointly from the paired (price, valuation) series so
+      `shares(t)` / `V(t)` carry real uncertainty instead of hand-set points.
+      Distinguish primary-issuance dilution (funding rounds) from secondaries
+      (no new shares) and employee-equity (PPU/RSU) issuance.
 
 ## Liquidity Policy
 
