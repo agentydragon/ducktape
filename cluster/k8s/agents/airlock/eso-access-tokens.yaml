@@ -1,131 +1,78 @@
-# ExternalSecrets that distribute airlock OAuth access tokens to sandbox namespaces.
+# ClusterExternalSecrets distribute airlock OAuth access tokens to sandbox namespaces.
 # Airlock writes the source secrets into the `airlock` namespace; ESO mirrors them here.
-# refreshInterval: 1m keeps sandbox copies fresh within one refresh cycle.
 ---
 apiVersion: external-secrets.io/v1
-kind: ExternalSecret
+kind: ClusterExternalSecret
 metadata:
   name: oura-access-token
-  namespace: openclaw-sandbox
 spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: oura-access-token
-  dataFrom:
-    - extract:
-        key: oura-access-token
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: oura-access-token
+    dataFrom:
+      - extract:
+          key: oura-access-token
 ---
 apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: oura-access-token
-  namespace: claude-sandbox
-spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: oura-access-token
-  dataFrom:
-    - extract:
-        key: oura-access-token
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
+kind: ClusterExternalSecret
 metadata:
   name: google-access-token
-  namespace: openclaw-sandbox
 spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: google-access-token
-  dataFrom:
-    - extract:
-        key: google-access-token
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: google-access-token
+    dataFrom:
+      - extract:
+          key: google-access-token
 ---
 apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: google-access-token
-  namespace: claude-sandbox
-spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: google-access-token
-  dataFrom:
-    - extract:
-        key: google-access-token
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
+kind: ClusterExternalSecret
 metadata:
   name: plaid-chase-access-token
-  namespace: openclaw-sandbox
 spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: plaid-chase-access-token
-  dataFrom:
-    - extract:
-        key: plaid-chase-access-token
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: plaid-chase-access-token
+    dataFrom:
+      - extract:
+          key: plaid-chase-access-token
 ---
 apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: plaid-chase-access-token
-  namespace: claude-sandbox
-spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: plaid-chase-access-token
-  dataFrom:
-    - extract:
-        key: plaid-chase-access-token
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
+kind: ClusterExternalSecret
 metadata:
   name: plaid-bofa-access-token
-  namespace: openclaw-sandbox
 spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: plaid-bofa-access-token
-  dataFrom:
-    - extract:
-        key: plaid-bofa-access-token
----
-apiVersion: external-secrets.io/v1
-kind: ExternalSecret
-metadata:
-  name: plaid-bofa-access-token
-  namespace: claude-sandbox
-spec:
-  refreshInterval: 1m
-  secretStoreRef:
-    name: kubernetes-airlock-secret-store
-    kind: ClusterSecretStore
-  target:
-    name: plaid-bofa-access-token
-  dataFrom:
-    - extract:
-        key: plaid-bofa-access-token
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: plaid-bofa-access-token
+    dataFrom:
+      - extract:
+          key: plaid-bofa-access-token
