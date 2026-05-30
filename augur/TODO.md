@@ -123,8 +123,11 @@ are deleted and the CI prefix-guard is in place.
         Fit landed too: `augur/fit/dilution_prior.py` + `derive_dilution_prior` binary
         (implied-shares = valuation/price log-linear OLS → rate + honestly-wide σ_r).
         Independent of `V(t)` for now (conservatively over-states per-share spread; the hedge
-        is M2.2-B). No new bundle event kind. **Follow-up (box stays unchecked):** wire
-        `derive_dilution_prior` on the gaffer evidence → the issuer's `config.yaml`.
+        is M2.2-B). No new bundle event kind. **Follow-up — BLOCKED on M2.2-D:** wiring
+        `derive_dilution_prior` on the gaffer evidence into `config.yaml` was attempted
+        (gaffer `claude/magical-cannon-USFo4`, committed as a NOT-deployable record) and
+        FAILS the `sample_sanity` gate — the OLS fit's ~244%/yr valuation drift compounds to
+        an ~8000× median 10y mark. Deployment waits on M2.2-D (NUTS + decaying drift).
   - [ ] **M2.2-B — V↔dilution correlation.** Joint per-rollout `(V log-drift, r)` draw with
         fitted ρ (good-company worlds dilute more → per-share partly hedged; independence
         over-states per-share spread). Makes `V(t)`'s drift per-rollout — a change to the V
@@ -133,9 +136,20 @@ are deleted and the CI prefix-guard is in place.
         as a new V-coupled event kind, distinct from the existing (secondary) tender events;
         likelihood that attributes only primary rounds to share growth and treats secondaries
         (e.g. the 2025-10 employee tender) as pure re-pricing.
-  - [ ] **M2.2-D — full Bayesian posterior (deferred).** Replace MAP/SVI point-of-distribution
-        with NUTS + posterior-predictive propagation so the (fat by design) `σ_r` posterior
-        folds epistemic ignorance into the per-rollout spread.
+  - [ ] **M2.2-D — full Bayesian posterior + decaying valuation drift (designed; prototype
+        validated 2026-05-30, now the critical path to deploying the openai fit).** Two coupled
+        changes, both required (a NUTS prototype on the openai evidence established the numbers;
+        see the M2.2-D section of `plans/prediction_market_calibration.md`):
+        (1) **NUTS posterior** — small numpyro state-space model (latent log-V RW + log-share
+        path, per-obs `uncertainty_log_sigma` likelihood, INFORMATIVE drift/dilution priors) over
+        all 16 obs, mirroring `augur/model/vecm.py`. Regularizes the OLS over-extrapolation:
+        median `r` 0.476→0.29, drift 244%→134%/yr, and the m120 median mark 8035×→381×. Big
+        improvement but STILL fails `sample_sanity` alone — a constant-drift RW compounds the
+        near-term rate forever. (2) **decaying / mean-reverting drift** `mu_V(t) = mu_∞ +
+        (mu_0−mu_∞)e^(−t/τ)` (or OU), fit jointly with `r`. Confirmed sufficient: NUTS `r≈0.29`
+        + drift reverting to ~0.02/mo gives m120 p50 = 0.90 — passes. Productionize as
+        `augur/fit/bayes_dilution.py` + `derive_dilution_prior --bayesian`, persisting the
+        posterior summary (like vecm's `.npz`) since NUTS isn't bit-reproducible.
 
 ## Liquidity Policy
 

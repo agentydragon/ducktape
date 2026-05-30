@@ -180,9 +180,40 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
 - **M2.2-C — lumpiness + secondary rigor (deferred).** Discrete primary-round dilution as a new
   V-coupled event kind, distinct from the existing (secondary) tender events; likelihood that
   attributes only primary rounds to share growth and treats secondaries as pure re-pricing.
-- **M2.2-D — full Bayesian posterior (deferred).** Replace MAP/SVI point-of-distribution with
-  NUTS + posterior-predictive propagation, so the (fat by design) `σ_r` posterior folds
-  epistemic ignorance into the per-rollout spread.
+- **M2.2-D — full Bayesian posterior + decaying valuation drift (designed; prototype validated).**
+  Two coupled changes, both needed; a NUTS prototype on the openai evidence (2026-05-30,
+  16 obs) established the numbers below.
+
+  **Why the OLS fit (M2.2-A) cannot be deployed.** Running `derive_dilution_prior` on the
+  gaffer openai evidence yields `annual_dilution_rate ≈ 0.476`, `valuation_monthly_log_return_mu
+  ≈ 0.1075` (~244%/yr). Validated against `sample_sanity.yaml`'s `private_equity_mark_checks`
+  (512 rollouts × 120 mo): m12 p50 = 2.39 (band [0.7,1.8]) and **m120 p50 = 8035** (band
+  [0.3,4.0]) — fails by ~2000×. Root cause is twofold: (1) the OLS log-linear slope extrapolates
+  the 2023-25 boom as a *forward* rate; (2) `mark = current·V(t)/V0/(1+r)^(t/12)` couples drift
+  and dilution, which OLS fits jointly but the config then compounds independently, so dropping
+  just `mu_V` back to 0.02 makes the 48% dilution undershoot the floor (m120 p50 = 0.22).
+
+  **Part 1 — NUTS posterior (prototyped, big improvement, still insufficient alone).** A small
+  numpyro state-space model (latent log-V random walk + deterministic log-share path; per-obs
+  `uncertainty_log_sigma` as the likelihood scale; INFORMATIVE priors: `mu_V ~ N(0.02, 0.025)`,
+  `log(1+r) ~ N(log1.20, 0.30)`) over ALL 16 observations, fit with NUTS, mirrors the existing
+  `augur/model/vecm.py` numpyro pipeline (~90 lines; built + ran in one shot). Posterior medians:
+  `annual_dilution_rate ≈ 0.29` (p5–95 0.19–0.40), `annual_dilution_rate_log_sigma ≈ 0.05`,
+  `mu_V ≈ 0.071` (~134%/yr). The priors regularize the 4-point extrapolation: m120 p50 drops
+  8035 → **381** (21× better) — but **still fails the gate**, because a constant-drift random
+  walk compounds even the regularized near-term rate over 10 years. Bayesian inference fixes the
+  *uncertainty* and over-extrapolation, not the *structural* forever-drift.
+
+  **Part 2 — decaying / mean-reverting valuation drift (the missing structural piece).** Replace
+  the constant `mu_V` with a drift that decays from a near-term rate to a long-run mature rate
+  (e.g. `mu_V(t) = mu_∞ + (mu_0 − mu_∞)·e^(−t/τ)`, or an OU process on log-growth); fit
+  `(mu_0, mu_∞, τ)` jointly with `r` in the same NUTS model. Confirmed sufficient: holding the
+  NUTS-fitted dilution `r ≈ 0.29` and letting drift revert toward a mature ~0.02/mo gives
+  m12 p50 = 1.00 and **m120 p50 = 0.90 — passes both bands**. So the deployable fit is
+  NUTS-inferred dilution + decaying drift, deployed from the joint posterior (never transplanting
+  one parameter). Prototype lives in session notes; productionize as `augur/fit/bayes_dilution.py`
+  + a `derive_dilution_prior --bayesian` mode, persisting the posterior summary (mean/SD) like
+  vecm's `.npz`, since NUTS isn't run-to-run bit-reproducible.
 
 ### M3 — IPO lockup: probabilistic + refined
 
