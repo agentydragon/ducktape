@@ -139,8 +139,8 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
 // URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
 // separated string. A version letter prefix gates schema changes; trailing default values are
 // trimmed; enums use one-letter codes. Examples:
-//   ?s=2                                                  → all defaults
-//   ?s=2.120...5000.n..200000.100000...location_a_property..m.10
+//   ?s=4                                                  → all defaults
+//   ?s=4.120..5000.n..200000.100000.....location_a_property..m.10
 //
 // The ordering, encoding, and code maps live here in INPUT_FIELDS. Adding a new input means
 // appending to INPUT_FIELDS; old URLs continue to decode (missing positions = defaults).

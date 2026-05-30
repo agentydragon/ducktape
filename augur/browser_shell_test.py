@@ -24,7 +24,7 @@ pytest_plugins = ("util.playwright",)
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 
-_PROPERTY_LIFECYCLE_URL = "/product?s=3.240............location_a_property&lc=r24:50~c60:50000~s120:6"
+_PROPERTY_LIFECYCLE_URL = "/product?s=4.240...........location_a_property&lc=r24:50~c60:50000~s120:6"
 
 
 @pytest.fixture
