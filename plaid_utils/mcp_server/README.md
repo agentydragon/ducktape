@@ -52,15 +52,16 @@ re-link via airlock).
 
 ## Configuration
 
-Pydantic `BaseSettings`, env prefix `PLAID_MCP_`:
+Scalars via `PLAID_MCP_` env vars (Pydantic `BaseSettings`); the item registry via a YAML file:
 
 - `PLAID_MCP_PLAID_ENV` — `sandbox` or `production`.
 - `PLAID_MCP_CLIENT_ID` / `PLAID_MCP_CLIENT_SECRET` — Plaid app credentials.
-- `PLAID_MCP_ITEMS_META` — JSON `list[PlaidItem]`: `{key, institution, products, access_token_env}`.
+- `PLAID_MCP_ITEMS_CONFIG_PATH` — path to the item-registry YAML file (default
+  `/etc/plaid-mcp/items.yaml`): a list under `items:` of `{key, institution, products, access_token_env}`.
 - `PLAID_MCP_HOST` / `PLAID_MCP_PORT` — bind address (default `0.0.0.0:8080`).
 
 Each item's access token is read from the env var named by its `access_token_env` (e.g.
-`PLAID_CHASE_ACCESS_TOKEN`), so tokens stay in Secrets and metadata in a ConfigMap.
+`PLAID_CHASE_ACCESS_TOKEN`), so tokens stay in Secrets and the registry stays a plain YAML file.
 
 ## Run locally
 

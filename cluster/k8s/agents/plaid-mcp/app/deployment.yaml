@@ -38,11 +38,6 @@ spec:
                 configMapKeyRef:
                   name: plaid-mcp-config
                   key: PLAID_MCP_PLAID_ENV
-            - name: PLAID_MCP_ITEMS_META
-              valueFrom:
-                configMapKeyRef:
-                  name: plaid-mcp-config
-                  key: PLAID_MCP_ITEMS_META
             - name: PLAID_MCP_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -80,6 +75,10 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 20
+          volumeMounts:
+            - name: items
+              mountPath: /etc/plaid-mcp
+              readOnly: true
         - name: facade
           image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260529231610-304b2dd # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
@@ -120,3 +119,7 @@ spec:
               port: 8765
             initialDelaySeconds: 20
             periodSeconds: 20
+      volumes:
+        - name: items
+          configMap:
+            name: plaid-mcp-items

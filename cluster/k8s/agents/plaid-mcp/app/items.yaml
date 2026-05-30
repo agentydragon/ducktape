@@ -1,0 +1,12 @@
+# Plaid MCP item registry. Mounted at /etc/plaid-mcp/items.yaml (PLAID_MCP_ITEMS_CONFIG_PATH)
+# via a configMapGenerator. Each item's access token is read from the named env var (an
+# ESO-mirrored Secret); add items here as more accounts are linked in airlock.
+items:
+  - key: chase
+    institution: Chase
+    products: [transactions, liabilities]
+    access_token_env: PLAID_CHASE_ACCESS_TOKEN
+  - key: bofa
+    institution: Bank of America
+    products: [transactions]
+    access_token_env: PLAID_BOFA_ACCESS_TOKEN

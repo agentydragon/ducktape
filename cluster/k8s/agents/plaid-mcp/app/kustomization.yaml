@@ -12,3 +12,11 @@ resources:
   - service.yaml
   - httproute.yaml
   - networkpolicy.yaml
+# Item registry as a native YAML file (not an inline JSON blob); reloader rolls the
+# deployment when it changes, so the generated name stays stable.
+configMapGenerator:
+  - name: plaid-mcp-items
+    files:
+      - items.yaml
+    options:
+      disableNameSuffixHash: true

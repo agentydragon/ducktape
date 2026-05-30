@@ -9,6 +9,17 @@ py_library(
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_config",
+    srcs = ["test_config.py"],
+    deps = [
+        ":config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
