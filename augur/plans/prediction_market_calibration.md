@@ -108,10 +108,69 @@ channel (the channel-off sentinel: a positive market cap is never all-zeros). Th
 seed stream is NOT derived in the off branch, so the mark/event arrays stay byte-identical to
 pre-M2 for every existing config — guarded by a fixed-seed regression test.
 
-**Deferred to M2.2** (TODO.md "Fit the PE valuation + share-dilution process"): `shares0` and
-`annual_dilution_rate` are v1 point estimates; the primary-issuance vs secondary-trade
-dilution split and the hierarchical Bayesian fit of the dilution rate + valuation drift/vol
-from paired (price, valuation) series are not yet done.
+### M2.2 — stochastic dilution + evidence fit
+
+v1's `dilution_factor(t) = (1 + annual_dilution_rate)^(t/12)` is **deterministic**: an
+identical curve in every rollout, so dilution only shifts the per-unit-mark distribution
+down — it adds **zero** per-share spread. All current holding-value uncertainty comes from
+`V(t)`. M2.2 makes share count per-rollout-random and fits the parameters to evidence, in two
+themes — **structure** (what the random object is) and **fit** (how its parameters are
+chosen) — staged A→D so each lands on its own.
+
+**Structure.** Two physically-distinct sources of dilution uncertainty:
+
+1. _Rate uncertainty (epistemic)._ We don't know the long-run mint rate. Model as a
+   per-rollout fixed draw `r ~ LogNormal(μ_r, σ_r)`, applied geometrically
+   `shares(t) = shares0 · (1 + r)^(t/12)`. log-share variance grows **quadratically** in t →
+   a widening cone. This dominates the 10-year per-share spread (the holding-value question).
+2. _Timing/lumpiness (aleatoric)._ Even given a rate, primary rounds land at random months
+   with random sizes (~4–14%/round, ~annual). A within-path process; variance grows
+   **linearly** in t. Matters for path shape; averages out for terminal value. Maps to the
+   real split: continuous employee mint (PPU/RSU → the smooth drift `r`) + discrete primary
+   rounds (lumpy). Secondaries (e.g. the 2025-10 ~$500B employee tender) **re-price but do not
+   dilute**, so any lumpy term must fire on _primary_ rounds only — a new event kind distinct
+   from the model's existing (secondary) tender events.
+
+**Fit.** A latent-trajectory (state-space) fit in `augur/fit` (which already ingests
+`valuation_observation`s but collapses them to a static `scale_prior.current_market_cap_usd`):
+
+```
+log price(t)  = log V(t) − log shares(t)  (+ obs noise)   ← tender prices (tight) + FMV (loose, lagged)
+log V(t)      = latent GBM (drift μ_V, vol σ_V)           ← valuation_observations
+log shares(t) = log shares0 + (t/12)·log(1+r)
+```
+
+Likelihood constraints the data **forces** (naive fitting gets these wrong): (a) attribute
+share growth to _primary_ rounds only — a _secondary_ valuation obs constrains `V(t)` but not
+`shares`; observations are already round-type tagged. (b) The $687.69 FMV is a stale (~4mo)
+administrative mark → large/lagged obs noise, unlike tight tender prices; `V0/shares0` ≈
+$824/sh vs the $687.69 mark — that ~20% wedge **is** the staleness and the fit should _explain_
+it via the lag term, not force-reconcile it. (c) `shares0 ≈ 1.034B` is a soft recap-era prior,
+not an anchor. Identifiability is honest: `μ_r`, `μ_V`, `σ_V` are reasonably pinned (implied
+shares ≈ 418M @2023-04 → 749M @2024-10 → ~1.2B @2026 ≈ **30–40%/yr**, _above_ v1's hand-set
+20%); **`σ_r` is poorly pinned by ~5 paired points — by design**, since that sparsity _is_ the
+dilution uncertainty M2.2 expresses, so `σ_r` should come out wide and a fit should say so via
+a fat posterior (argues for propagating parameter uncertainty into the per-rollout draw).
+
+**Staging** (tracked in `augur/TODO.md`):
+
+- **M2.2-A — per-rollout stochastic dilution rate (ship first).** `r ~ LogNormal(μ_r, σ_r)`
+  drawn once per rollout off its own seed stream (mirroring `V(t)`'s `:pe_risk_valuation`),
+  into the existing mark formula. New config `annual_dilution_rate_log_sigma`; MAP/SVI-fit
+  `μ_r, σ_r` from the implied-share-growth series. Independent of `V(t)` (conservatively
+  _over_-states per-share spread by omitting the hedge in B). Touches only the dilution side —
+  no new bundle event machinery.
+- **M2.2-B — V↔dilution correlation.** Good-company worlds (V rises fast) raise more primary
+  capital → dilute more, so per-share is partly hedged; drawing `r` independent of `V` _over_-
+  states per-share spread. Make _both_ `V`'s log-drift and `r` per-rollout draws from a joint
+  fitted posterior with correlation ρ. Requires making `V(t)`'s drift per-rollout (a change to
+  the V sampler, not just dilution), so it is its own phase.
+- **M2.2-C — lumpiness + secondary rigor (deferred).** Discrete primary-round dilution as a new
+  V-coupled event kind, distinct from the existing (secondary) tender events; likelihood that
+  attributes only primary rounds to share growth and treats secondaries as pure re-pricing.
+- **M2.2-D — full Bayesian posterior (deferred).** Replace MAP/SVI point-of-distribution with
+  NUTS + posterior-predictive propagation, so the (fat by design) `σ_r` posterior folds
+  epistemic ignorance into the per-rollout spread.
 
 ### M3 — IPO lockup: probabilistic + refined
 

@@ -103,22 +103,36 @@ are deleted and the CI prefix-guard is in place.
       `macro_market_bundle_provider` shape directly; mine it only for
       data loading/config ideas after the native `SampledExogenousBundle`
       API is the target.
-- [ ] **Fit the PE valuation + share-dilution process, not just static
-      points (M2.2).** M2 (`augur/plans/prediction_market_calibration.md`) landed
-      the coupled, opt-in company-valuation channel:
-      `latent_mark = current_mark × (V(t)/V₀) / dilution_factor(t)` on
-      `current_valuation_usd`, with `V(t)` a Student-t random walk and
-      `dilution_factor(t) = (1 + annual_dilution_rate)^(t/12)`, flowing out on the
-      `PrivateEquityBundle.company_valuation_usd` channel and scoring
-      `valuation_by_date` markets. Still v1 point estimates: `shares_outstanding_initial`
-      and `annual_dilution_rate` are hand-set, and the valuation RW params are not
-      evidence-fit. The trainer also still collapses `valuation_observation`s to a
-      single static `scale_prior.current_market_cap_usd`. Remaining work: make the
-      scale **dynamic and Bayesian** — fit a posterior over the dilution rate and the
-      valuation drift/vol jointly from the paired (price, valuation) series so
-      `shares(t)` / `V(t)` carry real uncertainty instead of hand-set points — and
-      distinguish primary-issuance dilution (funding rounds) from secondaries
-      (no new shares) and employee-equity (PPU/RSU) issuance.
+- **Stochastic dilution + evidence fit (M2.2).** M2
+  (`augur/plans/prediction_market_calibration.md`) landed the coupled, opt-in
+  company-valuation channel —
+  `latent_mark = current_mark × (V(t)/V₀) / dilution_factor(t)` with `V(t)` a Student-t
+  random walk — but `dilution_factor(t) = (1 + annual_dilution_rate)^(t/12)` is
+  **deterministic** (identical in every rollout → zero per-share spread; all holding-value
+  uncertainty currently comes from `V(t)`), and `shares_outstanding_initial` /
+  `annual_dilution_rate` / the valuation RW params are hand-set, not evidence-fit. The
+  trainer still collapses `valuation_observation`s to a static
+  `scale_prior.current_market_cap_usd`. Design + rationale (structure vs fit, identifiability,
+  the primary/secondary + stale-FMV likelihood caveats) is the **M2.2 section** of
+  `augur/plans/prediction_market_calibration.md`. Staged:
+  - [ ] **M2.2-A — per-rollout stochastic dilution rate (do first).**
+        `r ~ LogNormal(μ_r, σ_r)` drawn once per rollout off its own seed stream (mirror
+        `V(t)`'s `:pe_risk_valuation`), `shares(t) = shares₀·(1+r)^(t/12)` into the mark
+        formula. Add config `annual_dilution_rate_log_sigma`; MAP/SVI-fit `μ_r, σ_r` from the
+        implied-share-growth series in `augur/fit`. Independent of `V(t)` for now
+        (conservatively over-states per-share spread; the hedge is M2.2-B). Touches only the
+        dilution side — no new bundle event kind.
+  - [ ] **M2.2-B — V↔dilution correlation.** Joint per-rollout `(V log-drift, r)` draw with
+        fitted ρ (good-company worlds dilute more → per-share partly hedged; independence
+        over-states per-share spread). Makes `V(t)`'s drift per-rollout — a change to the V
+        sampler, hence its own phase.
+  - [ ] **M2.2-C — lumpiness + secondary rigor (deferred).** Discrete primary-round dilution
+        as a new V-coupled event kind, distinct from the existing (secondary) tender events;
+        likelihood that attributes only primary rounds to share growth and treats secondaries
+        (e.g. the 2025-10 employee tender) as pure re-pricing.
+  - [ ] **M2.2-D — full Bayesian posterior (deferred).** Replace MAP/SVI point-of-distribution
+        with NUTS + posterior-predictive propagation so the (fat by design) `σ_r` posterior
+        folds epistemic ignorance into the per-rollout spread.
 
 ## Liquidity Policy
 

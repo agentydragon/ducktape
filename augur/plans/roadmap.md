@@ -262,9 +262,10 @@ the wrong structure.
   can run in parallel with anything.
 - **Prediction-market calibration + model adjustments** — the structured exogenous
   model is scored against Manifold via `augur/calibration` + `/api/calibration` + the
-  frontend calibration tab. The model-adjustment roadmap (empirical IPO prior shipped;
-  valuation/dilution, probabilistic IPO lockup, calibration loop next) lives in
-  [`augur/plans/prediction_market_calibration.md`](prediction_market_calibration.md).
+  frontend calibration tab. The model-adjustment roadmap (M1 empirical IPO prior and M2
+  valuation/dilution mark-coupling shipped; M2.2 stochastic dilution + evidence fit — staged
+  A→D, M2.2-A per-rollout rate next — then M3 probabilistic IPO lockup and M4 calibration loop)
+  lives in [`augur/plans/prediction_market_calibration.md`](prediction_market_calibration.md).
 - **Reintroduce partner/co-owner agreements** after sim has a tested agreement
   model. "Agent X pays agent Y this amount over this period for this share/claim"
   should come back as a tested agreement model in `augur/sim`, not as a
