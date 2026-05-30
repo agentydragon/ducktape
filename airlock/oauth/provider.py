@@ -28,7 +28,6 @@ def generate_pkce_pair() -> tuple[str, str]:
 
 class TokenSecretConfig(BaseModel):
     name: str
-    annotations: dict[str, str] = Field(default_factory=dict)
 
 
 class BaseProviderConfig(BaseModel):

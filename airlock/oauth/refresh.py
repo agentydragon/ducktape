@@ -45,13 +45,6 @@ async def token_refresh_loop(
     warned_scope_drifts: set[tuple[str, str]] = set()
     while True:
         for name, provider in providers.items():
-            # Reconcile managed-secret annotations (e.g. reflector target namespaces) on every
-            # pass, even when the token never changes, so config edits propagate without a re-link.
-            for secret_cfg in (provider.config.refresh_secret, provider.config.access_secret):
-                try:
-                    await k8s_store.reconcile_annotations(secret_cfg.name, target_namespace, secret_cfg.annotations)
-                except Exception:
-                    logger.exception(f"Failed to reconcile annotations for {secret_cfg.name}")
             try:
                 token = await k8s_store.read_token(provider.config.refresh_secret.name, target_namespace)
                 if token is None:
@@ -62,18 +55,9 @@ async def token_refresh_loop(
                     continue
                 logger.info(f"Refreshing token for {name} (expires {token.expires_at})")
                 new_token = await provider.refresh_tokens(token.refresh_token)
+                await k8s_store.write_token(provider.config.refresh_secret.name, target_namespace, new_token)
                 await k8s_store.write_token(
-                    provider.config.refresh_secret.name,
-                    target_namespace,
-                    new_token,
-                    annotations=provider.config.refresh_secret.annotations or None,
-                )
-                await k8s_store.write_token(
-                    provider.config.access_secret.name,
-                    target_namespace,
-                    new_token,
-                    annotations=provider.config.access_secret.annotations or None,
-                    fields=ACCESS_TOKEN_FIELDS,
+                    provider.config.access_secret.name, target_namespace, new_token, fields=ACCESS_TOKEN_FIELDS
                 )
                 logger.info(f"Refreshed token for {name} (new expiry {new_token.expires_at})")
             except Exception:

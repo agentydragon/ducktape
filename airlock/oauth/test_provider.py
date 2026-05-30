@@ -249,10 +249,7 @@ def test_oauth_config_from_dict() -> None:
                 "scopes": ["a"],
                 "redirect_uri": "http://localhost/callback/test",
                 "refresh_secret": {"name": "test-tokens"},
-                "access_secret": {
-                    "name": "test-access-token",
-                    "annotations": {"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
-                },
+                "access_secret": {"name": "test-access-token"},
             }
         ],
     }
@@ -262,9 +259,6 @@ def test_oauth_config_from_dict() -> None:
     assert config.providers[0].name == "test"
     assert config.providers[0].refresh_secret.name == "test-tokens"
     assert config.providers[0].access_secret.name == "test-access-token"
-    assert config.providers[0].access_secret.annotations == {
-        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true"
-    }
 
 
 def test_oauth_config_defaults() -> None:

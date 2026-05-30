@@ -99,18 +99,9 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
             raise HTTPException(400, "State/provider mismatch")
 
         token = await provider.exchange_code(code, code_verifier=pending.code_verifier)
+        await k8s_store.write_token(provider.config.refresh_secret.name, target_namespace, token)
         await k8s_store.write_token(
-            provider.config.refresh_secret.name,
-            target_namespace,
-            token,
-            annotations=provider.config.refresh_secret.annotations or None,
-        )
-        await k8s_store.write_token(
-            provider.config.access_secret.name,
-            target_namespace,
-            token,
-            annotations=provider.config.access_secret.annotations or None,
-            fields=ACCESS_TOKEN_FIELDS,
+            provider.config.access_secret.name, target_namespace, token, fields=ACCESS_TOKEN_FIELDS
         )
         logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
         return RedirectResponse("/#/oauth")
@@ -124,18 +115,9 @@ def create_oauth_router(providers: dict[str, Provider], k8s_store: K8sTokenStore
         if not isinstance(provider, PlaidProvider):
             raise HTTPException(405, f"{provider_name} does not support POST callback")
         token = await provider.exchange_public_token(body.public_token)
+        await k8s_store.write_token(provider.config.refresh_secret.name, target_namespace, token)
         await k8s_store.write_token(
-            provider.config.refresh_secret.name,
-            target_namespace,
-            token,
-            annotations=provider.config.refresh_secret.annotations or None,
-        )
-        await k8s_store.write_token(
-            provider.config.access_secret.name,
-            target_namespace,
-            token,
-            annotations=provider.config.access_secret.annotations or None,
-            fields=ACCESS_TOKEN_FIELDS,
+            provider.config.access_secret.name, target_namespace, token, fields=ACCESS_TOKEN_FIELDS
         )
         logger.info(f"Stored Plaid tokens for {provider_name}")
         return RedirectResponse("/#/oauth", status_code=303)

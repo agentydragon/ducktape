@@ -75,10 +75,8 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
         await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_store.read_token.assert_called_with("test-tokens", "test-ns")
-    mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token, annotations=None)
-    mock_store.write_token.assert_any_call(
-        "test-access-token", "test-ns", refreshed_token, annotations=None, fields=ACCESS_TOKEN_FIELDS
-    )
+    mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token)
+    mock_store.write_token.assert_any_call("test-access-token", "test-ns", refreshed_token, fields=ACCESS_TOKEN_FIELDS)
 
 
 async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -> None:
@@ -92,24 +90,6 @@ async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -
 
     mock_refresh.assert_not_called()
     mock_store.write_token.assert_not_called()
-
-
-async def test_refresh_loop_reconciles_annotations_without_refresh(provider: GenericOAuth2Provider) -> None:
-    # Annotations are reconciled every pass even when the token is fresh and never rewritten —
-    # this is what lets a config-level reflector-target change reach the live secret.
-    provider.config.access_secret.annotations = {"reflector/ns": "openclaw-sandbox,plaid-mcp"}
-    mock_store = AsyncMock()
-    mock_store.read_token.return_value = _make_token(hours_until_expiry=720)
-
-    with patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
-
-    mock_refresh.assert_not_called()
-    mock_store.write_token.assert_not_called()
-    mock_store.reconcile_annotations.assert_any_call(
-        "test-access-token", "test-ns", {"reflector/ns": "openclaw-sandbox,plaid-mcp"}
-    )
-    mock_store.reconcile_annotations.assert_any_call("test-tokens", "test-ns", {})
 
 
 async def test_refresh_loop_skips_unconnected_provider(provider: GenericOAuth2Provider) -> None:
