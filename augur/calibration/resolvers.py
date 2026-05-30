@@ -43,13 +43,12 @@ def months_after(anchor: date, when: date) -> int:
     return math.floor((when - anchor).days / _DAYS_PER_MONTH)
 
 
-_PUBLIC_MARKET_OPEN = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
 # An IPO is preempted by any absorbing pre-IPO exit: collapse, forced recovery
 # (collapse-flavored), or acquisition cashout.
 _FAILURE_EVENTS = (
-    int(PrivateEquityEventKindCode.COLLAPSE),
-    int(PrivateEquityEventKindCode.FORCED_RECOVERY),
-    int(PrivateEquityEventKindCode.ACQUISITION_CASHOUT),
+    PrivateEquityEventKindCode.COLLAPSE,
+    PrivateEquityEventKindCode.FORCED_RECOVERY,
+    PrivateEquityEventKindCode.ACQUISITION_CASHOUT,
 )
 
 
@@ -76,14 +75,14 @@ class RolloutTrajectory:
         """Largest month index falling on/before `when`. May exceed horizon or be negative."""
         return months_after(self.as_of, when)
 
-    def first_event_month(self, *codes: int) -> int | None:
+    def first_event_month(self, *codes: PrivateEquityEventKindCode) -> int | None:
         hits = np.flatnonzero(np.isin(self.event_kind_code, codes))
         return int(hits[0]) if hits.size else None
 
 
 def resolve_ipo_by_date(traj: RolloutTrajectory, *, by_month: int) -> Resolution:
     """YES iff a PUBLIC_MARKET_OPEN (going-public) event occurs at month <= by_month."""
-    t_ipo = traj.first_event_month(_PUBLIC_MARKET_OPEN)
+    t_ipo = traj.first_event_month(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
     if t_ipo is not None and t_ipo <= by_month:
         return Resolution.YES
     if by_month <= traj.horizon_months:
@@ -94,7 +93,7 @@ def resolve_ipo_by_date(traj: RolloutTrajectory, *, by_month: int) -> Resolution
 def resolve_pre_ipo_failure(traj: RolloutTrajectory) -> Resolution:
     """YES iff an absorbing COLLAPSED/ACQUIRED exit occurs before any PUBLIC_MARKET_OPEN."""
     t_fail = traj.first_event_month(*_FAILURE_EVENTS)
-    t_ipo = traj.first_event_month(_PUBLIC_MARKET_OPEN)
+    t_ipo = traj.first_event_month(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
     if t_fail is not None and (t_ipo is None or t_fail < t_ipo):
         return Resolution.YES
     if t_ipo is not None and (t_fail is None or t_ipo < t_fail):
