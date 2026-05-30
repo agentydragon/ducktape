@@ -12,7 +12,7 @@ strings anywhere — identity carried structurally (typed unions in config/API;
 per-kind frames carrying only a sub-id column; typed factor records in artifacts).
 
 This is the columnar/serialized analog of the existing `PrivateEquityBundle`,
-which already carries PE state as a bare `issuer_id` column + typed channel
+which already is its own frame carrying a bare `issuer_id` column + typed channel
 columns rather than magic-prefixed rows.
 
 ## Staging contract
@@ -38,57 +38,84 @@ is to eliminate prefix-encoding/parsing, not to ban identifier strings.
 **No backcompat.** Old configs/artifacts/frames must fail loudly. gaffer-private
 may be red between a ducktape phase landing and its gaffer follow-up — accepted.
 
-## Frame shape decision: Option 1 — `kind` + `qualifier` columns
+## Frame shape decision: per-kind frames (no `kind` column)
 
-The prefix encodes TWO things (kind discriminator + sub-id), and a single bare
-string cannot replace it — `"san_francisco_ca"` would collide between
-`home_value` and `rent` (sub-agent inventory confirmed this is the one real
-collision). Surface both as columns:
+Decided: each level-series kind is its **own frame**, so the frame's identity IS
+the kind — there is no `kind` column at all, and a row carries only its sub-id
+(symbol / location_id), or nothing for singletons. This mirrors how
+`PrivateEquityBundle` is already its own frame, and makes the sampled bundle line
+up field-for-field with config's `LevelSeriesGroups`. Invalid states (an
+`inflation` row with a `location_id`, or the `home_value`/`rent`
+`san_francisco_ca` collision the inventory flagged) become unrepresentable.
+
+Three schemas, grouped by SHAPE; five bundle fields (the field name carries the
+kind, so `home_value` and `rent` are distinct frames despite a shared schema):
 
 ```python
-# was: {rollout_index, month_index, series_id: Utf8, value: Float64}
-SERIES_LEVELS_SCHEMA = SERIES_VALUES_SCHEMA = pl.Schema({
-    "rollout_index": pl.Int64(), "month_index": pl.Int64(),
-    "kind": pl.Utf8(),        # LevelSeriesKind StrEnum: inflation|sp500|crypto|home_value|rent
-    "qualifier": pl.Utf8(),   # null for inflation/sp500; symbol for crypto; location_id for home_value/rent
-    "value": pl.Float64(),
-})
-# filter: .filter((pl.col("kind") == LevelSeriesKind.CRYPTO) & (pl.col("qualifier") == "btc"))
-# join keys become ["rollout_index","month_index","kind","qualifier"]
+SCALAR_LEVELS_SCHEMA   = pl.Schema({"rollout_index": Int64, "month_index": Int64, "value": Float64})                       # inflation, sp500
+SYMBOL_LEVELS_SCHEMA   = pl.Schema({"rollout_index": Int64, "month_index": Int64, "symbol": Utf8, "value": Float64})       # crypto
+LOCATION_LEVELS_SCHEMA = pl.Schema({"rollout_index": Int64, "month_index": Int64, "location_id": Utf8, "value": Float64})  # home_value, rent
+
+@dataclass(frozen=True)
+class SampledExogenousBundle:
+    inflation: pl.DataFrame        # SCALAR   — no id column
+    sp500: pl.DataFrame            # SCALAR
+    crypto: pl.DataFrame           # SYMBOL   — keyed by symbol
+    home_value: pl.DataFrame       # LOCATION — keyed by location_id
+    rent: pl.DataFrame             # LOCATION
+    private_equity: PrivateEquityBundle   # already its own frame today
+    metadata: Mapping[str, object] = field(default_factory=dict)
 ```
 
-`(kind, qualifier)` IS the typed key — reconstructed by a `match`, never by
-prefix-splitting. The `asset_id` column splits the same way into
-`asset_kind` + `asset_qualifier`.
+Lookups dispatch on the typed key to the right frame + sub-id column (no string
+filter for singletons):
 
-## Typed-key API: `(kind, qualifier)` replaces `wire_id` / `parse_*`
+```python
+match key:
+    case InflationKey() | SP500Key():    frame = getattr(bundle, key.kind)            # no filter
+    case CryptoKey(symbol=s):            frame = bundle.crypto.filter(pl.col("symbol") == str(s))
+    case HomeValueKey(location_id=loc) | RentKey(location_id=loc):
+        frame = getattr(bundle, key.kind).filter(pl.col("location_id") == str(loc))
+```
+
+The sim's `asset_id` (lots/events) splits the same way: a `crypto` lot frame
+keyed by `symbol`, a `private_equity` lot frame keyed by `issuer_id`. The sim's
+internal dense `external_values` cube is unchanged (flat numeric
+`(series, rollout, month)` + index map); only how that map is BUILT changes —
+from the typed per-kind frames, not parsed strings.
+
+## Typed-key API: `kind` discriminator + per-key sub-id (no `parse_*`)
 
 In `augur/model/series.py` and `augur/product/asset_key.py`:
 
-- `LevelSeriesKind` / `AssetKind`: `IntEnum` → **`StrEnum`** (verified pure
-  discriminators; the column stores the enum value, e.g. `"crypto"`).
-  `PrivateEquityRegimeCode` / `PrivateEquityEventKindCode` stay `IntEnum` (real
-  numeric codes in frames + `sample_sanity.yaml`).
-- Each key variant gains a `qualifier: str | None` property (None / symbol /
-  location_id / issuer_id).
-- Module factories `level_series_key_from_columns(kind, qualifier)` and
-  `asset_key_from_columns(kind, qualifier)` (`match` on kind) replace the
-  `parse_*` functions.
-- Keep a display-only `__str__` (renders `kind` or `kind:qualifier`) for
-  log/error messages — never parsed back.
+- `LevelSeriesKind` / `AssetKind`: `IntEnum` → **`StrEnum`**. Frames no longer
+  carry a `kind` column, but the StrEnum value is still the discriminator that
+  serializes in the spots that ARE Pydantic-serialized: config `sample_sanity`
+  `key:`, portfolio `value_series:`, and the API wire (`asset`, `spend_index`) —
+  human-readable `kind: crypto`. `PrivateEquityRegimeCode` /
+  `PrivateEquityEventKindCode` stay `IntEnum` (real numeric codes).
+- Each key already carries its sub-id as a typed field (`CryptoKey.symbol`,
+  `HomeValueKey.location_id`, …); add a `kind` convenience that equals the bundle
+  field name. No unified `qualifier` field is needed (per-kind frames). A
+  display-only `__str__` (`kind` or `kind:sub_id`) stays for logs — never parsed.
+- **Delete** `wire_id` and the `parse_*` functions. Per-kind frame readback
+  constructs the specific key directly from its sub-id column
+  (`CryptoKey(symbol=CryptoSymbol(s))`), never by splitting a prefix.
 
 `LevelSeriesGroups[ValueT]` — new `model/level_series_groups.py`, `FrozenModel`,
 `Generic[ValueT]`, fields `inflation/sp500: ValueT|None`, `crypto:
 dict[CryptoSymbol, ValueT]`, `home_value/rent: dict[LocationId, ValueT]`, plus
 `by_level_key() -> dict[LevelSeriesKey, ValueT]`. `extra="forbid"` ⇒ a stray
-`"crypto:btc"` key fails at load. Reused by config surfaces 1/4/6.
+`"crypto:btc"` key fails at load. Reused by config surfaces 1/4/6. Note this is
+the SAME five-field shape as `SampledExogenousBundle` above — config and the
+sampled bundle line up field-for-field.
 
 ---
 
 ## Phase 1 — Config (the original task)
 
 Typed discriminated unions in YAML; `series` collapsed under `independent`.
-Internally still emits frame wire strings (keeps `parse_*` alive for now).
+Internally still emits frame wire strings (keeps `parse_*` alive until Phase 2).
 Independently valuable + landable.
 
 | #   | File / class                                                                    | New shape                                                                                                                                                                                            |
@@ -112,14 +139,15 @@ End state: config carries zero prefixes; frames/artifacts/API still do.
 
 ## Phase 2 — In-memory polars frames
 
-Replace prefix columns with `kind`+`qualifier`. Sub-agent inventory (~11 files
-beyond the schema defs):
+Replace the one prefix-keyed frame with **per-kind frames** (no `kind` column —
+the frame is the kind; rows carry only their sub-id). Sub-agent inventory
+(~11 files beyond the schema defs):
 
-| #   | Schema / column                                                                    | Change                                                                                                                                                                                                                                                          |
-| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 8   | `model/exogenous.py` `SERIES_LEVELS_SCHEMA` / `SERIES_VALUES_SCHEMA` (`series_id`) | → `kind`,`qualifier`. Rewrite `series_levels_frame`, `series_values_from_bundle`, `level_matrix`, `validate_sample_satisfies_request`, `anchor_sampled_series_levels` (join keys), `parse_levels_frame_keys` → `level_keys_in_frame`, `_matrix_from_long_frame` |
-| 9   | `sim/external_series.py` `SERIES_EVENTS_SCHEMA` (`event_id`)                       | events are a "legacy holdover" (PE tender moved to a bundle channel) — **confirm dead and delete the frame**; else → `kind`,`qualifier`                                                                                                                         |
-| 10  | `sim/codec/assets.py` `asset_id` column                                            | → `asset_kind`,`asset_qualifier`; rewrite producers (`decode_asset_lots`, `decode_pe_*`)                                                                                                                                                                        |
+| #   | Schema / column                                                                                 | Change                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8   | `model/exogenous.py` `SERIES_LEVELS_SCHEMA` / `SERIES_VALUES_SCHEMA` (single `series_id` frame) | → `SCALAR`/`SYMBOL`/`LOCATION` schemas + 5-field `SampledExogenousBundle`. Rewrite `series_levels_frame` → per-kind builders, `series_values_from_bundle`, `level_matrix` (match→frame), `validate_sample_satisfies_request`, `anchor_sampled_series_levels` (per-frame), `parse_levels_frame_keys` → `level_keys_in_bundle`, drop `_matrix_from_long_frame`'s string filter |
+| 9   | `sim/external_series.py` `SERIES_EVENTS_SCHEMA` (`event_id`)                                    | events are a "legacy holdover" (PE tender moved to a bundle channel) — **confirm dead and delete the frame**; else split per-kind                                                                                                                                                                                                                                            |
+| 10  | `sim/codec/assets.py` `asset_id` column                                                         | per-kind lot/event frames keyed by `symbol` / `issuer_id`; rewrite producers (`decode_asset_lots`, `decode_pe_*`)                                                                                                                                                                                                                                                            |
 
 Sim-engine sweep (same phase): `sim/compiler/plan.py` (series/event index maps,
 `lot_asset_series_index`, `_reject_missing_property_sale_home_values`),
@@ -127,22 +155,23 @@ Sim-engine sweep (same phase): `sim/compiler/plan.py` (series/event index maps,
 `external_event_values_cube`), `sim/projections.py` (`TRANSACTION_SCHEMA`
 `asset_id` + the asset_lots↔series_values join ~382), `sim/state.py`
 (`ASSET_LOT_FRAME` `asset_id`), `sim/events.py` (event-frame `asset_id`
-columns), `product/decode.py` (group_by/filter/wire-build on `asset_id`),
+columns), `product/decode.py` (group_by/filter/wire-build on `asset_id`;
+`_is_private_equity` becomes an `AssetKind` compare, no parse),
 `model/composite_exogenous.py` (`_reject_duplicate_ids` on `series_id`).
 Update all frame test data.
 
 The sim string-interning table (`series_index_by_id`) keys on the wire string
-today; it becomes keyed on `(kind, qualifier)` tuples (or a small frozen
-`LevelSeriesKey`/`AssetKey`). No external artifact churn in this phase.
+today; it becomes keyed on the typed `LevelSeriesKey` / `AssetKey`, built by
+iterating each per-kind frame's sub-id column. No external artifact churn here.
 
 End state: no prefix strings in memory; artifacts + API still carry them.
 
 ## Phase 3 — On-disk trained artifacts (forces regeneration)
 
-| #   | Artifact                                              | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 11  | `model/state_space.py` `StateSpaceModelArtifact` JSON | `factor_names: tuple[str,...]` → `factors: tuple[FactorKey,...]` (typed union: level variants + PE-mark variant w/ `issuer_id`; serializes `{kind,qualifier}`). The wire-keyed `dict[str,float]` maps (`latest_level_by_factor`, `monthly_log_return_mu`, `filtered_log_state_mean`, PE-prior dicts) → **positional** `tuple[float,...]` aligned to `factors` (cov is already positional). `_classify_factor`/`_series_factor_map` consume typed factors |
-| 12  | `model/vecm.py` `.npz` blob                           | replace the `factor_names` object-array with parallel `factor_kinds`+`factor_qualifiers` arrays; bump blob schema version. `save()`/`load()` at `vecm.py` ~352/376                                                                                                                                                                                                                                                                                       |
+| #   | Artifact                                              | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 11  | `model/state_space.py` `StateSpaceModelArtifact` JSON | `factor_names: tuple[str,...]` → `factors: tuple[FactorKey,...]` (typed union: level variants + PE-mark variant w/ `issuer_id`; serializes `{kind, sub-id}`). The wire-keyed `dict[str,float]` maps (`latest_level_by_factor`, `monthly_log_return_mu`, `filtered_log_state_mean`, PE-prior dicts) → **positional** `tuple[float,...]` aligned to `factors` (cov is already positional). `_classify_factor`/`_series_factor_map` consume typed factors |
+| 12  | `model/vecm.py` `.npz` blob                           | replace the `factor_names` object-array with parallel `factor_kinds` + `factor_subids` arrays; bump blob schema version. `save()`/`load()` at `vecm.py` ~352/376                                                                                                                                                                                                                                                                                       |
 
 Regenerate checked-in blobs via the fit/`save()` paths: ducktape
 `augur/model/testdata/fixture_*.json`, `augur/fit/calibrated/trained_vecm.npz`
@@ -196,8 +225,9 @@ secrets/buildbuddy.yaml`; export `BUILDBUDDY_API_KEY` (also wired into
   frontend consumption before changing wire shape.
 - **Phase 3 artifact regen** must have a clean fit→`save()` path; the vecm `.npz`
   is baked into the augur OCI image (rebuild needed).
-- **Phase 2 two-column joins** in the sim hot path — watch for perf regression
-  vs the single-string join/intern.
+- **Phase 2 plumbing**: threading 5 per-kind frames (+ PE) instead of one frame
+  is more wiring, but each piece is simpler (no per-row kind dispatch); watch the
+  sim hot path for regressions vs the single-string intern/join.
 - **SERIES_EVENTS_SCHEMA** is likely fully dead — prefer deleting over retyping.
 - **gaffer `config_test.py`** imports symbols absent from both local and pinned
   ducktape — resolved in Phase 1's gaffer step.
