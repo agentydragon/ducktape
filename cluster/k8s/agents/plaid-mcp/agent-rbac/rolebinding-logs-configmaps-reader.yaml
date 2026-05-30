@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-logs-configmaps-reader
+  namespace: plaid-mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: logs-configmaps-reader
+# Only the kubectl-sandbox-users group (operator/agent kubectl + the kubectl-local MCP) —
+# deliberately not the openclaw-sandbox ServiceAccount: plaid-mcp isn't an openclaw backend,
+# and its logs can carry financial-account context, so log access stays operator-scoped.
+subjects:
+  - kind: Group
+    name: oidc-ksbx-groups:kubectl-sandbox-users
+    apiGroup: rbac.authorization.k8s.io

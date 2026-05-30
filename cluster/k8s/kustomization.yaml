@@ -86,6 +86,7 @@ resources:
   - agents/manifold-mcp/app/flux-kustomization.yaml
   - agents/plaid-mcp/namespace/flux-kustomization.yaml
   - agents/plaid-mcp/app/flux-kustomization.yaml
+  - agents/plaid-mcp/agent-rbac/flux-kustomization.yaml
   - agents/postscanmail-mcp/namespace/flux-kustomization.yaml
   - agents/postscanmail-mcp/app/flux-kustomization.yaml
   - agents/homeassistant-proxy/flux-kustomization.yaml
