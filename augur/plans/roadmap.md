@@ -260,6 +260,11 @@ the wrong structure.
 - **Persist model-governance artifacts** — durable evidence / calibration /
   validation-report storage for market providers. `augur/model/`. Self-contained,
   can run in parallel with anything.
+- **Prediction-market calibration + model adjustments** — the structured exogenous
+  model is scored against Manifold via `augur/calibration` + `/api/calibration` + the
+  frontend calibration tab. The model-adjustment roadmap (empirical IPO prior shipped;
+  valuation/dilution, probabilistic IPO lockup, calibration loop next) lives in
+  [`augur/plans/prediction_market_calibration.md`](prediction_market_calibration.md).
 - **Reintroduce partner/co-owner agreements** after sim has a tested agreement
   model. "Agent X pays agent Y this amount over this period for this share/claim"
   should come back as a tested agreement model in `augur/sim`, not as a
