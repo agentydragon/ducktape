@@ -17,6 +17,9 @@ runtime consumes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Self
+
 from pydantic import Field
 
 from augur.model.schemas import FrozenModel
@@ -68,3 +71,26 @@ class LevelSeriesGroups[ValueT](FrozenModel):
         for location_id, value in self.rent.items():
             result[RentKey(location_id=location_id)] = value
         return result
+
+    @classmethod
+    def from_level_keys(cls, values: Mapping[LevelSeriesKey, ValueT]) -> Self:
+        """Group a typed-key map back into per-kind fields — the inverse of `by_level_key`."""
+
+        inflation: ValueT | None = None
+        sp500: ValueT | None = None
+        crypto: dict[CryptoSymbol, ValueT] = {}
+        home_value: dict[LocationId, ValueT] = {}
+        rent: dict[LocationId, ValueT] = {}
+        for key, value in values.items():
+            match key:
+                case InflationKey():
+                    inflation = value
+                case SP500Key():
+                    sp500 = value
+                case CryptoKey(symbol=symbol):
+                    crypto[symbol] = value
+                case HomeValueKey(location_id=location_id):
+                    home_value[location_id] = value
+                case RentKey(location_id=location_id):
+                    rent[location_id] = value
+        return cls(inflation=inflation, sp500=sp500, crypto=crypto, home_value=home_value, rent=rent)

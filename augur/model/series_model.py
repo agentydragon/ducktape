@@ -4,11 +4,16 @@ The simulator consumes one sampled bundle containing every modeled external
 driver. Simple marginal models such as deterministic levels and GBM are
 components; the model API is joint so calibrated providers can sample
 correlated trajectories in one call.
+
+Series are grouped by typed kind (inflation/sp500 singletons; crypto/home_value/
+rent keyed by sub-id) via `LevelSeriesGroups` — there are no magic-prefix string
+keys; the level/PE split and per-kind grouping are structural.
 """
 
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from typing import Annotated, Literal
 
 import polars as pl
@@ -25,33 +30,38 @@ from augur.model.exogenous import (
     series_values_from_bundle,
 )
 from augur.model.gbm import GeometricBrownian
+from augur.model.level_series_groups import LevelSeriesGroups
 from augur.model.poisson_events import PoissonEvents
-from augur.model.series import LevelSeriesKey, parse_level_series_key
+from augur.model.series import LevelSeriesKey
 
 ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
 ScalarEventSpec = Annotated[PoissonEvents, Field(discriminator="kind")]
 
 
-class IndependentSeriesModels(BaseModel):
-    """Joint model composed from independent per-series scalar level models."""
+class IndependentSeriesModels(LevelSeriesGroups[ScalarSeriesSpec]):
+    """Joint model composed from independent per-series scalar level models.
+
+    Inherits the per-kind level-series fields from `LevelSeriesGroups` (each maps
+    to a Constant / Deterministic / GBM scalar spec). `kind` is the
+    `SeriesModelSpec` discriminator.
+    """
 
     kind: Literal["independent"] = "independent"
-    series: dict[str, ScalarSeriesSpec] = Field(default_factory=dict)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # YAML series keys are wire strings; parse them into typed keys at the
-        # boundary so `series_levels_frame` only ever sees `LevelSeriesKey`.
         level_blocks = [
             series_levels_frame(
-                parse_level_series_key(series_id),
+                key,
                 model.sample_levels(
-                    rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=series_id),
+                    # Seed substreams stay keyed on the stable wire id so a series'
+                    # path is identical regardless of field ordering.
+                    rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=key.wire_id),
                     horizon_months=request.horizon_months,
                 ),
                 rollout_count=request.rollout_count,
                 horizon_months=request.horizon_months,
             )
-            for series_id, model in self.series.items()
+            for key, model in self.by_level_key().items()
         ]
         return SampledExogenousBundle(levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA))
 
@@ -65,8 +75,8 @@ class SeriesModelBundle(BaseModel):
     model: SeriesModelSpec = Field(default_factory=IndependentSeriesModels)
 
     @classmethod
-    def independent(cls, series: dict[str, ScalarSeriesSpec]) -> SeriesModelBundle:
-        return cls(model=IndependentSeriesModels(series=series))
+    def independent(cls, level_series: Mapping[LevelSeriesKey, ScalarSeriesSpec]) -> SeriesModelBundle:
+        return cls(model=IndependentSeriesModels.from_level_keys(level_series))
 
     def sample(
         self,

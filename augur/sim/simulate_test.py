@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from augur.model.gbm import GeometricBrownian
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series import CryptoKey, CryptoSymbol, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.locations import Location
@@ -1523,7 +1523,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
     reproduces the same values across runs."""
     bundle = SeriesModelBundle.independent(
         {
-            "crypto:vti": GeometricBrownian(
+            CryptoKey(symbol=CryptoSymbol("vti")): GeometricBrownian(
                 initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05
             )
         }

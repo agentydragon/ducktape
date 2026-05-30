@@ -15,7 +15,7 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.model.gbm import GeometricBrownian
-from augur.model.series import HomeValueKey, InflationKey, LocationId, SP500Key
+from augur.model.series import CryptoSymbol, HomeValueKey, InflationKey, LocationId, SP500Key
 from augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
 from augur.model.testing import ConstantFrameExogenousModel
 
@@ -36,11 +36,11 @@ def test_sampling_request_requires_explicit_rollout_seeds() -> None:
 
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
-    # `crypto:vti` is a valid `CryptoKey` wire id; the typed-series boundary
-    # rejects bare `"vti"`. Internally `IndependentSeriesModels.series` still
-    # keys on the wire string (YAML-facing), but only known `LevelSeriesKey`
-    # wire ids are allowed.
-    model = IndependentSeriesModels(series={"crypto:vti": Deterministic(levels=[100.0, 110.0, 120.0])})
+    # Series are grouped by typed kind: a crypto series is keyed by its symbol
+    # sub-id under `crypto`, never a `"crypto:vti"` magic-prefix string. The
+    # frame still carries the wire id in its `series_id` column (frame-side
+    # typing is a later phase).
+    model = IndependentSeriesModels(crypto={CryptoSymbol("vti"): Deterministic(levels=[100.0, 110.0, 120.0])})
 
     frame = model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(101, 102))).levels.sort(
         ["rollout_index", "month_index"]
@@ -62,10 +62,10 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
         {
             "model": {
                 "kind": "independent",
-                "series": {
-                    "crypto:vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
-                    "crypto:bnd": {"kind": "constant", "value": 95.0},
-                    "crypto:qqq": {
+                "crypto": {
+                    "vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
+                    "bnd": {"kind": "constant", "value": 95.0},
+                    "qqq": {
                         "kind": "gbm",
                         "initial_value": 200.0,
                         "monthly_log_return_mu": 0.01,
@@ -91,7 +91,7 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
 
 
 def test_deterministic_model_rejects_wrong_horizon_length() -> None:
-    model = IndependentSeriesModels(series={"crypto:vti": Deterministic(levels=[100.0, 110.0])})
+    model = IndependentSeriesModels(crypto={CryptoSymbol("vti"): Deterministic(levels=[100.0, 110.0])})
 
     with pytest.raises(ValueError, match=r"need 3"):
         model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(1,)))

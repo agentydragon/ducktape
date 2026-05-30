@@ -13,6 +13,7 @@ import polars as pl
 import pytest_bazel
 
 from augur.model.deterministic import Deterministic
+from augur.model.series import CryptoKey, CryptoSymbol
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.scenario import InitialLot
@@ -62,7 +63,10 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    series = {**base.external_series.model.series, "crypto:efv": Deterministic(levels=[100.0] * 25)}
+    series = {
+        **base.external_series.model.by_level_key(),
+        CryptoKey(symbol=CryptoSymbol("efv")): Deterministic(levels=[100.0] * 25),
+    }
     extended = base.model_copy(
         update={
             "initial_lots": [*base.initial_lots, new_lot],

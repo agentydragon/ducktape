@@ -25,6 +25,7 @@ defaults above; tune via keyword args.
 from __future__ import annotations
 
 from augur.model.gbm import GeometricBrownian
+from augur.model.series import CryptoKey, CryptoSymbol
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.scenario import (
     Agent,
@@ -106,13 +107,13 @@ def build_bench_scenario(
         ],
         external_series=SeriesModelBundle.independent(
             {
-                "crypto:vti": GeometricBrownian(
+                CryptoKey(symbol=CryptoSymbol("vti")): GeometricBrownian(
                     initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04
                 ),
-                "crypto:qqq": GeometricBrownian(
+                CryptoKey(symbol=CryptoSymbol("qqq")): GeometricBrownian(
                     initial_value=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05
                 ),
-                "crypto:btc": GeometricBrownian(
+                CryptoKey(symbol=CryptoSymbol("btc")): GeometricBrownian(
                     initial_value=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15
                 ),
             }

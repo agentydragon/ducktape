@@ -19,7 +19,7 @@ are deleted and the CI prefix-guard is in place.
   - [x] `LevelSeriesKind` / `AssetKind` → `StrEnum`
   - [x] `LevelSeriesGroups[ValueT]` per-kind helper
   - [x] `IndependentExogenousProviderConfig` (provider) typed
-  - [ ] `series_model.py` `IndependentSeriesModels` (sim/bench twin)
+  - [x] `series_model.py` `IndependentSeriesModels` (sim/bench twin)
   - [ ] portfolio `value_series`
   - [ ] conditioning, location_series_sources, vecm latest_observations
   - [ ] sample_sanity checks
