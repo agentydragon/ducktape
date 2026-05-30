@@ -49,6 +49,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 from dataclasses import dataclass
+from itertools import pairwise
 
 from augur.fit.private_equity import PriceObservation, ValuationObservation
 
@@ -179,7 +180,7 @@ def _fit_valuation_drift_and_vol(valuations: list[ValuationObservation]) -> tupl
     monthly_log_returns = [
         math.log(later.valuation_usd / earlier.valuation_usd)
         / max(1.0, (later.date - earlier.date).days / _DAYS_PER_MONTH)
-        for earlier, later in zip(ordered, ordered[1:], strict=True)
+        for earlier, later in pairwise(ordered)
     ]
     mu = sum(monthly_log_returns) / len(monthly_log_returns)
     if len(monthly_log_returns) < 2:
