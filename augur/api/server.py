@@ -121,8 +121,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         loaded = config.calibration_catalog
         if loaded is None:
             return error(400, "no calibration_catalog configured for this deployment")
+        preset_id = request.preset_id or config.augur_config.default_exogenous_preset_id
         # KeyError on the preset lookup -> 400 via the registered handler.
-        model = config.exogenous_models[request.preset_id]
+        model = config.exogenous_models[preset_id]
         issuer = loaded.config.issuer
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
         # One rollout drives both the market scoring and the issuer mark fan.
@@ -145,18 +146,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             horizon_months=request.horizon_months,
             percentiles=CALIBRATION_FAN_PERCENTILES,
         )
-        return calibration_payload(CalibrationRunResponse(preset_id=request.preset_id, result=result, mark_fan=fan))
+        return calibration_payload(CalibrationRunResponse(preset_id=preset_id, result=result, mark_fan=fan))
 
-    # The error fallback and health check are not part of the typed wire contract, so keep them
-    # out of the OpenAPI document `export_schema` dumps (no Zod/TS codegen noise).
-    @app.api_route(
-        "/api/{full_path:path}",
-        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-        include_in_schema=False,
-    )
-    def unknown_api(full_path: str) -> JSONResponse:
-        return error(404, f"unknown API endpoint: /api/{full_path}")
-
+    # The health check is not part of the typed wire contract, so keep it out of the
+    # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes
+    # get FastAPI's default 404; nginx serves the SPA, so the app needs no static catch-all.
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> PlainTextResponse:
         return PlainTextResponse("ok\n", headers=no_store)

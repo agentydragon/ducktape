@@ -65,7 +65,7 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, o
           <NativeSelectField
             label="Model preset"
             aria-label="Model preset"
-            description={defaultPresetId ? `Catalog default: ${defaultPresetId}` : undefined}
+            description={defaultPresetId ? `Deployment default: ${defaultPresetId}` : undefined}
             value={input.presetId ?? ""}
             disabled={presets.length === 0}
             data={presets.length === 0 ? [{ value: "", label: "(no presets)" }] : presetOptions}
@@ -299,11 +299,8 @@ function CalibrationResults({ response }) {
 export function CalibrationWorkspace({ bootstrap }) {
   const catalog = bootstrap.calibration ?? null;
   const presets = bootstrap.exogenousPresets ?? [];
-  const defaultPresetId = catalog?.defaultPresetId ?? null;
-  const initialPresetId =
-    catalog?.defaultPresetId && presets.includes(catalog.defaultPresetId)
-      ? catalog.defaultPresetId
-      : bootstrap.defaultExogenousPresetId;
+  const defaultPresetId = bootstrap.defaultExogenousPresetId;
+  const initialPresetId = presets.includes(defaultPresetId) ? defaultPresetId : (presets[0] ?? null);
 
   const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, presetId: initialPresetId });
   const [response, setResponse] = useState(null);

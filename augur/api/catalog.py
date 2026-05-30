@@ -93,9 +93,7 @@ def _calibration_info(config: Config) -> CalibrationInfo | None:
     catalog = config.calibration_catalog
     if catalog is None:
         return None
-    return CalibrationInfo(
-        label=catalog.label or catalog.issuer, issuer=catalog.issuer, default_preset_id=catalog.default_preset_id
-    )
+    return CalibrationInfo(label=catalog.label or catalog.issuer, issuer=catalog.issuer)
 
 
 def build_bootstrap_payload(config: Config) -> BootstrapResponse:

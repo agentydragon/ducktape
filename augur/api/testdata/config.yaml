@@ -133,14 +133,16 @@ exogenous_presets:
           monthly_log_return_sigma: 0.0
           tender_interval_months_median: 6.0
           tender_interval_log_sigma: 0.0
-default_exogenous_preset_id: current_exogenous_model
+# Shared default must include the `openai` issuer the calibration catalog scores;
+# `openai_pe` carries both `openai` and `private_holding_a`, so the product sim path
+# still works.
+default_exogenous_preset_id: openai_pe
 calibration_catalog:
   # Worked example shipped with augur/calibration. `issuer: openai` must match a PE
   # issuer in the chosen exogenous preset's model (here: the `openai_pe` preset).
   catalog_path: ../../calibration/example_openai_catalog.yaml
   issuer: openai
   label: OpenAI (example Manifold catalog)
-  default_preset_id: openai_pe
 portfolio:
   accounts:
     - account_id: taxable_brokerage

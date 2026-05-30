@@ -39,7 +39,6 @@ def test_bootstrap_surfaces_calibration_catalog(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     calibration = response.json()["calibration"]
     assert calibration["issuer"] == "openai"
-    assert calibration["default_preset_id"] == "openai_pe"
     assert calibration["label"] == "OpenAI (example Manifold catalog)"
 
 
@@ -84,13 +83,22 @@ def test_run_calibration(client: TestClient) -> None:
     assert all(value == 100.0 for value in month0["values"].values())
 
 
+def test_run_calibration_defaults_to_shared_preset(client: TestClient) -> None:
+    # Omitting `preset_id` resolves to the deployment's `default_exogenous_preset_id`
+    # (the fixture pins `openai_pe`), and the response echoes the resolved preset.
+    response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
+    assert response.status_code == 200, response.text
+    assert response.json()["preset_id"] == "openai_pe"
+
+
 def test_run_unknown_preset_is_400(client: TestClient) -> None:
     response = client.post("/api/calibration/run", json={"preset_id": "nope"})
     assert response.status_code == 400, response.text
 
 
 def test_unknown_calibration_route_still_404(client: TestClient) -> None:
-    # The catch-all must remain reachable past the new routes.
+    # Unknown API routes now get FastAPI's default 404 (the custom `/api/{full_path}`
+    # catch-all is gone; nginx serves the SPA, so the app is API-only with no static fallback).
     response = client.get("/api/calibration/does-not-exist")
     assert response.status_code == 404, response.text
 

@@ -114,13 +114,6 @@ class CalibrationInfo(ApiModel):
 
     label: str = Field(description="Human label for the catalog (falls back to the issuer when unset in config).")
     issuer: str = Field(description="Private-equity issuer id the catalog scores (e.g. `openai`).")
-    default_preset_id: str | None = Field(
-        default=None,
-        description=(
-            "Suggested exogenous preset id to run the catalog against (a preset whose model "
-            "includes `issuer`). None when the config does not pin one."
-        ),
-    )
 
 
 class BootstrapResponse(ApiModel):

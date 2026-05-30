@@ -84,13 +84,11 @@ class CalibrationCatalogConfig(ApiModel):
 
     `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
     `property_source.properties_path`). `issuer` is the private-equity issuer id the
-    catalog scores; the chosen exogenous preset's model must include it. `default_preset_id`
-    suggests which preset to run against (a preset whose model includes `issuer`)."""
+    catalog scores; the chosen exogenous preset's model must include it."""
 
     catalog_path: Path
     issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str | None = None
-    default_preset_id: str | None = None
 
 
 class LocationConfig(ApiModel):
@@ -179,20 +177,6 @@ class Config(ApiModel):
         if self.default_exogenous_preset_id not in self.exogenous_presets:
             raise ValueError(
                 f"default_exogenous_preset_id {self.default_exogenous_preset_id!r} is not a key in "
-                f"exogenous_presets (have {sorted(self.exogenous_presets)})"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _validate_calibration_default_preset(self) -> Config:
-        catalog = self.calibration_catalog
-        if (
-            catalog is not None
-            and catalog.default_preset_id is not None
-            and catalog.default_preset_id not in self.exogenous_presets
-        ):
-            raise ValueError(
-                f"calibration_catalog.default_preset_id {catalog.default_preset_id!r} is not a key in "
                 f"exogenous_presets (have {sorted(self.exogenous_presets)})"
             )
         return self

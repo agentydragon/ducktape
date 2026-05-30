@@ -19,8 +19,12 @@ CALIBRATION_FAN_PERCENTILES: tuple[float, ...] = (5.0, 25.0, 50.0, 75.0, 95.0)
 
 
 class CalibrationRunRequest(ApiModel):
-    preset_id: str = Field(
-        description="Exogenous preset id (a key of `exogenous_presets`) whose model includes the catalog's issuer."
+    preset_id: str | None = Field(
+        default=None,
+        description=(
+            "Exogenous preset id (a key of `exogenous_presets`) whose model includes the catalog's "
+            "issuer; defaults to the deployment's `default_exogenous_preset_id`."
+        ),
     )
     horizon_months: PositiveInt = Field(default=120, le=MAX_HORIZON_MONTHS)
     rollouts: PositiveInt = Field(default=2000, description="Number of rollout paths (one seed each).")
