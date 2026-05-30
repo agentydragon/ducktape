@@ -29,19 +29,12 @@ class K8sTokenStore:
         return cls(client.CoreV1Api(), managed_by)
 
     async def write_token(
-        self,
-        secret_name: str,
-        namespace: str,
-        token: TokenData,
-        *,
-        fields: frozenset[str] = ALL_TOKEN_FIELDS,
+        self, secret_name: str, namespace: str, token: TokenData, *, fields: frozenset[str] = ALL_TOKEN_FIELDS
     ) -> None:
         data = {k: v for k, v in token.model_dump(mode="json").items() if k in fields}
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
-                name=secret_name,
-                namespace=namespace,
-                labels={"app.kubernetes.io/managed-by": self._managed_by},
+                name=secret_name, namespace=namespace, labels={"app.kubernetes.io/managed-by": self._managed_by}
             ),
             string_data=data,
             type="Opaque",

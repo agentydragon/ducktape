@@ -259,8 +259,7 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
         bootstrap_url=f"{app_asset_prefix}/bootstrap.js",
         ca_dir=state_dir / "mitm-ca",
         control_paths=ControlPaths(
-            live_index=f"{internal_prefix}/live-index.html",
-            service_worker=f"{internal_prefix}/sw.js",
+            live_index=f"{internal_prefix}/live-index.html", service_worker=f"{internal_prefix}/sw.js"
         ),
         injected_html=rewrite_html_for_live_proxy(
             source_html,
