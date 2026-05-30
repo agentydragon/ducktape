@@ -112,7 +112,7 @@ py_library(
     srcs = ["image_automation.py"],
     deps = [
         ":cluster",
-        "@pypi//pydantic",
+        ":k8s",
     ],
 )
 
@@ -302,6 +302,7 @@ py_test(
     deps = [
         ":cluster",
         ":image_automation",
+        ":k8s",
         ":kustomize",
         "@pypi//pytest_bazel",
     ],

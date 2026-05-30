@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.k8s import K8sResource
+from cluster.validation.k8s import HelmReleaseResource, K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -48,7 +48,7 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
 
     for result in build_results:
         for resource in result.resources:
-            if resource.kind == "HelmRelease" and resource.name == "external-secrets":
+            if isinstance(resource, HelmReleaseResource) and resource.name == "external-secrets":
                 key = f"{resource.namespace}/{resource.chart_version or 'unknown'}"
                 deployments[key].append(str(result.kustomization_path.parent))
 

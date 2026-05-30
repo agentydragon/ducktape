@@ -6,53 +6,16 @@ picked up on the 5-minute `ImageRepository` poll. Also checks that every `ImageP
 references a defined `ImageRepository`, and that the webhook doesn't reference one that no
 longer exists.
 
-Operates on the kustomize build output (`ParsedCluster.build_results`) — the rendered
-manifests the rest of the validator already produces — rather than re-walking source YAML.
-That keeps it consistent with the other checks, sees exactly what Flux applies, and avoids
-choking on the Authentik blueprints' custom `!Find`/`!Env` tags (which only appear as
-ConfigMap string data once rendered, never as document-level YAML tags).
+Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
+output the validator already produces — and isinstance-dispatches on the parsed variants, so
+it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
+Authentik blueprints' custom `!Find`/`!Env` tags).
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
-
 from cluster.validation.cluster import ParsedCluster
-
-
-class _Meta(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    name: str = ""
-
-
-class _Manifest(BaseModel):
-    """Just enough of a rendered manifest to route it by kind."""
-
-    model_config = ConfigDict(extra="ignore")
-    kind: str = ""
-    metadata: _Meta = Field(default_factory=_Meta)
-
-
-class _RepoRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    name: str = ""
-
-
-class _ImagePolicySpec(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
-    image_repository_ref: _RepoRef = Field(default_factory=_RepoRef)
-
-
-class _ResourceRef(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    kind: str = ""
-    name: str = ""
-
-
-class _ReceiverSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    resources: list[_ResourceRef] = []
+from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
 
 
 def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
@@ -61,16 +24,15 @@ def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     webhook_repos: set[str] = set()
 
     for result in cluster.build_results:
-        for doc in result.docs:
-            manifest = _Manifest.model_validate(doc)
-            spec = doc.get("spec") or {}
-            if manifest.kind == "ImageRepository":
-                image_repos.add(manifest.metadata.name)
-            elif manifest.kind == "ImagePolicy":
-                policy_refs[manifest.metadata.name] = _ImagePolicySpec.model_validate(spec).image_repository_ref.name
-            elif manifest.kind == "Receiver":
-                receiver = _ReceiverSpec.model_validate(spec)
-                webhook_repos.update(r.name for r in receiver.resources if r.kind == "ImageRepository" and r.name)
+        for resource in result.resources:
+            if isinstance(resource, ImageRepositoryResource):
+                image_repos.add(resource.name)
+            elif isinstance(resource, ImagePolicyResource):
+                policy_refs[resource.name] = resource.spec.image_repository_ref.name
+            elif isinstance(resource, ReceiverResource):
+                webhook_repos.update(
+                    ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
+                )
 
     return [
         *(

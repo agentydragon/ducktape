@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -80,11 +79,6 @@ class KustomizeBuildResult(BaseModel):
 
     kustomization_path: Path
     resources: list[K8sResource] = []
-    # Full rendered manifests as raw dicts. `resources` is the typed,
-    # HelmRelease-focused narrowing of these; checks that need other kinds' spec
-    # fields (e.g. image automation: ImagePolicy.spec.imageRepositoryRef,
-    # Receiver.spec.resources) read `docs` and validate the shapes they need.
-    docs: list[dict[str, Any]] = []
 
 
 def parse_kustomize_file(kust_file: Path) -> KustomizeFile:
@@ -127,7 +121,6 @@ async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
         raise KustomizeBuildError(kustomization_path, stderr.decode())
 
     output = stdout.decode()
-    docs = [doc for doc in yaml.safe_load_all(output) if isinstance(doc, dict)]
-    resources = parse_k8s_resources(docs)
+    resources = parse_k8s_resources(yaml.safe_load_all(output))
 
-    return KustomizeBuildResult(kustomization_path=kustomization_path, resources=resources, docs=docs)
+    return KustomizeBuildResult(kustomization_path=kustomization_path, resources=resources)

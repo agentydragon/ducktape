@@ -1,7 +1,7 @@
 """Tests for check_image_automation_webhook.
 
 Drives the check the way the validator does — through `ParsedCluster.build_results`
-(rendered kustomize docs) — rather than raw source files, so it exercises the same
+(typed resources parsed from the kustomize build output) — so it exercises the same
 path that runs in CI / pre-commit. The real-tree coverage lives in
 test_cluster_integration.py::test_image_automation_webhook_consistency.
 """
@@ -13,6 +13,7 @@ import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.image_automation import check_image_automation_webhook
+from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -49,7 +50,9 @@ def _receiver(repos: list[str]) -> dict[str, Any]:
 
 def _cluster(*docs: dict[str, Any]) -> ParsedCluster:
     """A ParsedCluster whose single build result renders the given manifests."""
-    result = KustomizeBuildResult(kustomization_path=Path("flux/kustomization.yaml"), docs=list(docs))
+    result = KustomizeBuildResult(
+        kustomization_path=Path("flux/kustomization.yaml"), resources=parse_k8s_resources(docs)
+    )
     return ParsedCluster(build_results=[result])
 
 
