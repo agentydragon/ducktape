@@ -116,17 +116,27 @@ sampled bundle line up field-for-field.
 
 Typed discriminated unions in YAML; `series` collapsed under `independent`.
 Internally still emits frame wire strings (keeps `parse_*` alive until Phase 2).
-Independently valuable + landable.
+Independently valuable + landable. **Landed:** 1, 2, 3, 7 (the clean
+config-with-prefix surfaces). **Deferred to Phase 3:** 4, 5, 6 — see note below.
 
-| #   | File / class                                                                    | New shape                                                                                                                                                                                            |
-| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `model/independent_exogenous.py` `IndependentExogenousProviderConfig`           | inherit `LevelSeriesGroups[ScalarSeriesSpec]` (per-kind fields, no `series:` wrapper) + `type` + `private_equity_marks: dict[IssuerId, ScalarSeriesSpec]`; drop `_classified_series` prefix re-parse |
-| 2   | `model/series_model.py` `IndependentSeriesModels` (sim/bench twin)              | same collapse                                                                                                                                                                                        |
-| 3   | `api/portfolio.py` `HoldingPositionConfig`                                      | `value_series: AssetKey` typed in YAML; drop `value_series_id` + `asset_key` re-parse; `_validate_references`/`level_anchors`/`to_initial_lots` consume the typed key                                |
-| 4   | `model/conditioning.py` `ExogenousConditioningContext`                          | `LevelSeriesGroups[tuple[ExogenousObservedPoint, ...]]` + `start_at`; `NormalizedObservation.key: LevelSeriesKey`                                                                                    |
-| 5   | `model/location_series_sources.py` `LocationSeriesSourcesConfig`                | `home_value/rent: dict[LocationId, LocationId]` (consumer rebuilds the key; `state_space.py:441` already does this)                                                                                  |
-| 6   | `model/vecm.py` `VecmExogenousProviderConfig` / `VecmModel.latest_observations` | level entries via `LevelSeriesGroups[float]`; blob-aux keys (`spy_adjusted_close_latest`, `*_by_factor`) modeled explicitly                                                                          |
-| 7   | `model/sample_sanity.py` checks                                                 | `key: LevelSeriesKey`, `required_level_series: tuple[LevelSeriesKey,...]`, `issuer_id: IssuerId`                                                                                                     |
+| #   | File / class                                                                    | New shape                                                                                                                                                                                            | status    |
+| --- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 1   | `model/independent_exogenous.py` `IndependentExogenousProviderConfig`           | inherit `LevelSeriesGroups[ScalarSeriesSpec]` (per-kind fields, no `series:` wrapper) + `type` + `private_equity_marks: dict[IssuerId, ScalarSeriesSpec]`; drop `_classified_series` prefix re-parse | ✅ done   |
+| 2   | `model/series_model.py` `IndependentSeriesModels` (sim/bench twin)              | same collapse via `LevelSeriesGroups.from_level_keys`                                                                                                                                                | ✅ done   |
+| 3   | `api/portfolio.py` `HoldingPositionConfig`                                      | `value_series: AssetKey` typed in YAML; drop `value_series_id` + `asset_key` re-parse; `_validate_references`/`level_anchors`/`to_initial_lots` consume the typed key                                | ✅ done   |
+| 7   | `model/sample_sanity.py` checks                                                 | `key: LevelSeriesKey`, `required_level_series: tuple[LevelSeriesKey,...]`, `issuer_id: IssuerId`                                                                                                     | ✅ done   |
+| 4   | `model/conditioning.py` `ExogenousConditioningContext`                          | observations keyed by trained-blob **factor** wire-ids (level series AND PE issuers, injected by `fit/state_space.py`); joins `state_space._series_factor_map`                                       | → Phase 3 |
+| 5   | `model/location_series_sources.py` `LocationSeriesSourcesConfig`                | `home_value/rent: dict[LocationId, str]` where the **value** is a trained-blob factor id (`_location_factor`→`_factor_level`→`path_by_factor[...]`)                                                  | → Phase 3 |
+| 6   | `model/vecm.py` `VecmExogenousProviderConfig` / `VecmModel.latest_observations` | `dict[str, Any]` heterogeneous data-provenance blob keyed by source names (`spy_adjusted_close_latest`, `housing_return_sources`, …); wire-ids only as inner `*_by_factor` keys                      | → Phase 3 |
+
+**Why 4/5/6 deferred:** investigation showed these are not "config with a clean
+level-series prefix" — their key/value identity is the **trained-artifact factor
+name**, and the vecm `latest_observations` is a provenance map keyed by bespoke
+source names, not level series. Typing them coherently requires typing factor
+identity in the artifacts first (Phase 3's `StateSpaceModelArtifact` / vecm `.npz`
+retype), so they ride along there rather than being forced now. The plan's
+original Risks section already flagged surface 6 as the messiest and noted the
+deployed gaffer config uses `state_space`, not `vecm`.
 
 Plus: ducktape test configs/fixtures (`sim/simulate_test.py` ~40,
 `sim/test_rental_lifecycle_e2e.py` ~20, `model/*_test.py`, `fit/*`,

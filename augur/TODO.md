@@ -15,19 +15,29 @@ sub-id column; typed artifact factors). Staged; each phase lands green on its
 own. **Not done** until `wire_id` / `parse_level_series_key` / `parse_asset_key`
 are deleted and the CI prefix-guard is in place.
 
-- [ ] Phase 1 — config typed. Foundations + first surface landed:
+- [ ] Phase 1 — config typed. Clean config surfaces landed:
   - [x] `LevelSeriesKind` / `AssetKind` → `StrEnum`
   - [x] `LevelSeriesGroups[ValueT]` per-kind helper
   - [x] `IndependentExogenousProviderConfig` (provider) typed
   - [x] `series_model.py` `IndependentSeriesModels` (sim/bench twin)
-  - [ ] portfolio `value_series`
-  - [ ] conditioning, location_series_sources, vecm latest_observations
-  - [ ] sample_sanity checks
+  - [x] portfolio `value_series` (`HoldingPositionConfig`)
+  - [x] `sample_sanity` checks (`key: LevelSeriesKey`, typed `required_*`)
   - [ ] gaffer migration (repin + YAML + config_test discrepancy)
+  - **Deferred to Phase 3** (not clean config — entangled with trained-artifact
+    factor names): conditioning `observations`, `location_series_sources`, vecm
+    `latest_observations`. Investigation found these are keyed by trained-blob
+    factor wire-ids (and the vecm blob is a heterogeneous data-provenance map
+    keyed by source names like `spy_adjusted_close_latest`, with wire-ids only as
+    inner `*_by_factor` keys), and `fit/state_space.py` injects PE-issuer
+    observation keys too. Retyping them coherently means typing the factor
+    identity in the artifacts first — so they move to Phase 3 alongside the
+    `StateSpaceModelArtifact` / vecm `.npz` factor retype.
 - [ ] Phase 2 — polars frames `series_id`/`asset_id`/`event_id` → per-kind frames
       (no kind column; sub-id only) + sim compiler/codec/projections/decode sweep
-- [ ] Phase 3 — state_space JSON + vecm `.npz` typed factors; regenerate blobs
-      (incl. augur OCI image layer)
+- [ ] Phase 3 — typed artifact factors: state_space JSON + vecm `.npz`; regenerate
+      blobs (incl. augur OCI image layer). Then conditioning `observations`,
+      `location_series_sources`, vecm `latest_observations` (deferred from Phase 1)
+      retype against the now-typed factor identity.
 - [ ] Phase 4 — API wire (`asset_id`, `spend_index`) typed; delete `wire_id`/`parse_*`;
       add CI prefix-guard
 
