@@ -19,7 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: homeassistant-proxy
     spec:
-      serviceAccountName: homeassistant-proxy
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 1000
       containers:

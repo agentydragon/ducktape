@@ -19,7 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: activitywatch
     spec:
-      serviceAccountName: activitywatch
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       securityContext:
         fsGroup: 999
       nodeSelector:

@@ -18,7 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: manifold-mcp
     spec:
-      serviceAccountName: manifold-mcp
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: manifold-mcp-server

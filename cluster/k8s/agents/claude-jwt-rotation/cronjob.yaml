@@ -21,7 +21,8 @@ spec:
       backoffLimit: 2
       template:
         spec:
-          serviceAccountName: claude-jwt-rotator
+          # No Kubernetes API access; don't mount a SA token.
+          automountServiceAccountToken: false
           restartPolicy: OnFailure
           volumes:
             - name: authentik-client

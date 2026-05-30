@@ -18,7 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: postscanmail-mcp
     spec:
-      serviceAccountName: postscanmail-mcp
+      # No Kubernetes API access; don't mount a SA token.
+      automountServiceAccountToken: false
       enableServiceLinks: false
       containers:
         - name: postscanmail-mcp-server

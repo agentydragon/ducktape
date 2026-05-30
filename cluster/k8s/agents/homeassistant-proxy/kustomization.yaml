@@ -4,7 +4,6 @@ resources:
   - namespace.yaml
   - ha-token.sops.yaml
   - proxy-tokens-eso.yaml
-  - serviceaccount.yaml
   - deployment.yaml
   - service.yaml
 generatorOptions:
