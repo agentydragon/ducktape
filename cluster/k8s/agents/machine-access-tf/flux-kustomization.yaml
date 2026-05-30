@@ -32,3 +32,5 @@ spec:
     - name: manifold-mcp-namespace
     # Same for postscanmail-mcp.
     - name: postscanmail-mcp-namespace
+    # Same for plaid-mcp.
+    - name: plaid-mcp-namespace

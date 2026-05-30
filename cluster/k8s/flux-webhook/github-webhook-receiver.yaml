@@ -70,6 +70,9 @@ spec:
       name: manifold-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: plaid-mcp-server
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: postscanmail-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

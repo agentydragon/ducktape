@@ -24,6 +24,8 @@ resources:
   - mcp-oauth-facade-image-policy.yaml
   - manifold-mcp-server-image-repository.yaml
   - manifold-mcp-server-image-policy.yaml
+  - plaid-mcp-server-image-repository.yaml
+  - plaid-mcp-server-image-policy.yaml
   - postscanmail-mcp-server-image-repository.yaml
   - postscanmail-mcp-server-image-policy.yaml
   - tana-token-broker-image-repository.yaml

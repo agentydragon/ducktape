@@ -519,6 +519,70 @@ resource "kubernetes_secret" "postscanmail_mcp_oidc" {
   }
 }
 
+# --- Plaid MCP facade (public OAuth facade, gates access to the owner's Plaid data) ---
+#
+# Same shape as the Manifold facade: confidential OAuth2 client wrapped by
+# OIDCProxy, restricted to agentydragon via a one-user group + policy binding.
+# The downstream Plaid API is reached with the owner's access tokens held by the
+# plaid-mcp-server container (reflected from the airlock namespace), not Authentik.
+
+resource "authentik_provider_oauth2" "plaid_mcp" {
+  name               = "plaid-mcp"
+  client_id          = "plaid-mcp"
+  client_type        = "confidential"
+  authorization_flow = data.authentik_flow.implicit_consent.id
+  invalidation_flow  = data.authentik_flow.invalidation.id
+  signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+  issuer_mode                = "per_provider"
+  include_claims_in_id_token = true
+
+  property_mappings = [
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
+    data.authentik_property_mapping_provider_scope.offline_access.id,
+  ]
+
+  allowed_redirect_uris = [
+    {
+      matching_mode = "strict"
+      url           = "https://plaid-mcp.allegedly.works/auth/callback"
+    },
+  ]
+}
+
+resource "authentik_application" "plaid_mcp" {
+  name              = "Plaid MCP Facade"
+  slug              = "plaid-mcp"
+  protocol_provider = authentik_provider_oauth2.plaid_mcp.id
+  meta_description  = "OAuth facade for the Plaid MCP server. Read-only Chase/BofA transactions, balances, and credit-card liabilities; restricted to agentydragon."
+  meta_launch_url   = "https://plaid-mcp.allegedly.works"
+}
+
+resource "authentik_group" "plaid_mcp_users" {
+  name  = "plaid-mcp-users"
+  users = [data.authentik_user.agentydragon.pk]
+}
+
+resource "authentik_policy_binding" "plaid_mcp_users" {
+  target = authentik_application.plaid_mcp.uuid
+  group  = authentik_group.plaid_mcp_users.id
+  order  = 0
+}
+
+resource "kubernetes_secret" "plaid_mcp_oidc" {
+  metadata {
+    name      = "plaid-mcp-oidc"
+    namespace = "plaid-mcp"
+  }
+
+  data = {
+    client_id     = authentik_provider_oauth2.plaid_mcp.client_id
+    client_secret = authentik_provider_oauth2.plaid_mcp.client_secret
+  }
+}
+
 # ============================================================================
 # Shared: kubectl-sandbox-users group
 # ============================================================================

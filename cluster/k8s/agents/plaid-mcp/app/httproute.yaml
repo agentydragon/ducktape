@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plaid-mcp
+  namespace: plaid-mcp
+  annotations:
+    description: "Authentik-gated Plaid MCP facade. Only agentydragon is allowed at the OAuth consent step (group binding in tf/gitops/agent-machine-access)."
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "plaid-mcp.allegedly.works"
+  rules:
+    - backendRefs:
+        - name: plaid-mcp
+          port: 8765
+      timeouts:
+        request: "60s"
+        backendRequest: "60s"

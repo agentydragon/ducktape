@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plaid-mcp
+  namespace: plaid-mcp
+  labels:
+    app.kubernetes.io/name: plaid-mcp
+  annotations:
+    description: "Authentik-gated, read-only Plaid MCP. Two containers in one network namespace: the auth-oblivious plaid-mcp-server (transactions/balances/liabilities for Chase + BofA) on localhost:8080, fronted by the shared mcp-oauth-facade with OIDCProxy on :8765. Only agentydragon passes the OAuth consent step. Plaid creds + per-item access tokens arrive as Secrets reflected from the airlock namespace."
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plaid-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: plaid-mcp
+    spec:
+      serviceAccountName: plaid-mcp
+      # Required: the Service is named `plaid-mcp`, so service-link env vars
+      # (PLAID_MCP_PORT=tcp://...) would otherwise collide with the server's
+      # PLAID_MCP_-prefixed pydantic settings.
+      enableServiceLinks: false
+      containers:
+        - name: plaid-mcp-server
+          image: ghcr.io/agentydragon/plaid-mcp-server:latest # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          imagePullPolicy: Always
+          ports:
+            - name: upstream
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: PLAID_MCP_PLAID_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: plaid-mcp-config
+                  key: PLAID_MCP_PLAID_ENV
+            - name: PLAID_MCP_ITEMS_META
+              valueFrom:
+                configMapKeyRef:
+                  name: plaid-mcp-config
+                  key: PLAID_MCP_ITEMS_META
+            - name: PLAID_MCP_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-client-credentials
+                  key: client_id
+            - name: PLAID_MCP_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-client-credentials
+                  key: client_secret
+            - name: PLAID_CHASE_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-chase-access-token
+                  key: access_token
+            - name: PLAID_BOFA_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-bofa-access-token
+                  key: access_token
+          resources:
+            requests:
+              memory: "96Mi"
+              cpu: "20m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+        - name: facade
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260529231610-304b2dd # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: plaid-mcp-config
+          env:
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-oidc
+                  key: client_id
+            - name: MCP_FACADE_AUTH__OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-oidc
+                  key: client_secret
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 20
+            periodSeconds: 20
