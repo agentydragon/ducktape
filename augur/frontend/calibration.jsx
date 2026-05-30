@@ -180,8 +180,9 @@ function SurfacedTable({ rows }) {
                   {row.question}
                 </a>
                 <div className="mt-0.5 text-[11px] font-normal augur-muted">
-                  <span className="font-semibold">{row.mappability}</span>
-                  {row.correlateOf ? ` · correlate of ${row.correlateOf}` : ""}
+                  <span className="font-semibold">
+                    {row.correlateOf ? `correlate of ${row.correlateOf}` : row.mappability}
+                  </span>
                 </div>
                 {row.reason && <div className="mt-0.5 text-xs font-normal augur-body">{row.reason}</div>}
               </th>

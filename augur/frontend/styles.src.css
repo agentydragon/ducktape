@@ -73,6 +73,11 @@
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
+  }
+
+  /* Uppercase only column headers. Row-header `<th>` cells (the leftmost cell of a body row,
+     e.g. a market question + its prose) must keep normal casing. */
+  thead th {
     text-transform: uppercase;
   }
 
