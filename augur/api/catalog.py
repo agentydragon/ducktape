@@ -12,7 +12,7 @@ import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
-from augur.api.bootstrap import ActorRole, BootstrapResponse, Location, Property
+from augur.api.bootstrap import ActorRole, BootstrapResponse, CalibrationInfo, Location, Property
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
 from augur.product.wire import MAX_HORIZON_MONTHS
 
@@ -89,6 +89,15 @@ def _load_properties(config: Config, *, location_by_id: dict[str, Location]) -> 
     return _apply_property_assets(config, properties)
 
 
+def _calibration_info(config: Config) -> CalibrationInfo | None:
+    catalog = config.calibration_catalog
+    if catalog is None:
+        return None
+    return CalibrationInfo(
+        label=catalog.label or catalog.issuer, issuer=catalog.issuer, default_preset_id=catalog.default_preset_id
+    )
+
+
 def build_bootstrap_payload(config: Config) -> BootstrapResponse:
     available_locations = _locations_for_config(config)
     location_by_id = {location.id: location for location in available_locations}
@@ -118,4 +127,5 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
         product_input_defaults=config.product_input_defaults,
         exogenous_presets=tuple(sorted(config.exogenous_presets)),
         default_exogenous_preset_id=config.default_exogenous_preset_id,
+        calibration=_calibration_info(config),
     )

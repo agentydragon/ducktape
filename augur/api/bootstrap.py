@@ -105,6 +105,24 @@ class ProductInputDefaults(ApiModel):
     avg_tenancy_months: PositiveInt | None = None
 
 
+class CalibrationInfo(ApiModel):
+    """The deployment's single prediction-market calibration catalog (for the calibration tab).
+
+    Present only when the deployment configures a `calibration_catalog`. The frontend's
+    calibration page uses it to label the run and to seed the model/preset picker; the catalog
+    itself is fixed (no picker), so this carries no catalog id."""
+
+    label: str = Field(description="Human label for the catalog (falls back to the issuer when unset in config).")
+    issuer: str = Field(description="Private-equity issuer id the catalog scores (e.g. `openai`).")
+    default_preset_id: str | None = Field(
+        default=None,
+        description=(
+            "Suggested exogenous preset id to run the catalog against (a preset whose model "
+            "includes `issuer`). None when the config does not pin one."
+        ),
+    )
+
+
 class BootstrapResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
@@ -114,3 +132,7 @@ class BootstrapResponse(ApiModel):
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
     exogenous_presets: tuple[str, ...]
     default_exogenous_preset_id: str
+    calibration: CalibrationInfo | None = Field(
+        default=None,
+        description="The deployment's calibration catalog info, or None when no `calibration_catalog` is configured.",
+    )

@@ -141,7 +141,6 @@ js_library(
         ":client",
         ":data_helpers",
         ":fan_chart",
-        ":header",
         ":hooks",
         ":input_helpers",
         ":skeleton",

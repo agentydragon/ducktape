@@ -20,6 +20,7 @@ from datetime import date
 
 import numpy as np
 from pydantic import BaseModel
+from statsmodels.stats.proportion import proportion_confint
 
 from augur.calibration.catalog import MarketCatalog, MarketSpec
 from augur.calibration.manifold import fetch_yes_probabilities
@@ -35,15 +36,12 @@ from augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquity
 from augur.model.series import IssuerId
 
 
-def wilson_interval(yes: int, n: int, *, z: float = 1.96) -> tuple[float, float]:
-    """Wilson score confidence interval for a binomial proportion (NaNs if n == 0)."""
+def wilson_interval(yes: int, n: int) -> tuple[float, float]:
+    """95% Wilson score confidence interval for a binomial proportion (NaNs if n == 0)."""
     if n == 0:
         return (math.nan, math.nan)
-    p = yes / n
-    denom = 1.0 + z * z / n
-    center = (p + z * z / (2 * n)) / denom
-    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
-    return (center - half, center + half)
+    low, high = proportion_confint(yes, n, alpha=0.05, method="wilson")
+    return (float(low), float(high))
 
 
 class AugurContext(BaseModel):

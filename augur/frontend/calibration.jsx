@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 
-import { fetchCalibrationCatalogs, fetchCalibrationRun } from "./client.js";
+import { fetchCalibrationRun } from "./client.js";
 import { NativeSelectField, NumberField } from "./lib/controls.jsx";
-import { fmtNumber, fmtPct, fmtUsd } from "./lib/format.js";
-import { AugurHeader } from "./header.jsx";
+import { fmtNumber, fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
@@ -46,8 +45,7 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({ input, catalogs, presets, defaultPresetId, onChange, onRun, running, disabled }) {
-  const catalogOptions = catalogs.map((catalog) => ({ value: catalog.id, label: catalog.label || catalog.id }));
+function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, onRun, running, disabled }) {
   const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
   return (
     <aside className="min-w-0">
@@ -55,21 +53,16 @@ function CalibrationForm({ input, catalogs, presets, defaultPresetId, onChange, 
         <div className="px-4 py-3">
           <div className="augur-eyebrow">Calibration run</div>
           <div className="mt-1 text-xs augur-muted">
-            Score a built-in exogenous model's rollouts against a curated prediction-market catalog
+            Score a built-in exogenous model's rollouts against this deployment's curated prediction-market catalog
             (exogenous-only — no portfolio, no product scenario).
           </div>
         </div>
         <div className="grid gap-3 px-4 py-3">
-          <NativeSelectField
-            label="Market catalog"
-            aria-label="Market catalog"
-            value={input.catalogId ?? ""}
-            disabled={catalogs.length === 0}
-            data={
-              catalogs.length === 0 ? [{ value: "", label: "(no catalogs registered)" }] : catalogOptions
-            }
-            onChange={(event) => onChange({ catalogId: event.target.value || null })}
-          />
+          <div data-calibration-catalog={catalog.issuer}>
+            <div className="augur-eyebrow">Market catalog</div>
+            <div className="mt-1 text-sm font-semibold augur-strong">{catalog.label}</div>
+            <div className="text-xs augur-muted">issuer: {catalog.issuer}</div>
+          </div>
           <NativeSelectField
             label="Model preset"
             aria-label="Model preset"
@@ -115,18 +108,12 @@ function CalibrationForm({ input, catalogs, presets, defaultPresetId, onChange, 
             onChange={(event) => onChange({ live: event.currentTarget.checked })}
           />
           <div className="mt-1 text-xs augur-muted">
-            Off uses the catalog's curation snapshot (offline). On fetches current YES prices from
-            Manifold (requires network).
+            Off uses the catalog's curation snapshot (offline). On fetches current YES prices from Manifold (requires
+            network).
           </div>
         </div>
         <div className="px-4 py-3">
-          <Button
-            fullWidth
-            data-calibration-run
-            loading={running}
-            disabled={disabled}
-            onClick={onRun}
-          >
+          <Button fullWidth data-calibration-run loading={running} disabled={disabled} onClick={onRun}>
             Run calibration
           </Button>
         </div>
@@ -140,9 +127,7 @@ function CleanTable({ rows }) {
     return <div className="px-4 py-6 text-sm augur-muted">No apples-to-apples (scored) markets in this catalog.</div>;
   }
   // Loudest disagreements first; rows the model couldn't resolve (no `absGap`) sink to the bottom.
-  const sorted = rows
-    .slice()
-    .sort((left, right) => (right.absGap ?? -Infinity) - (left.absGap ?? -Infinity));
+  const sorted = rows.slice().sort((left, right) => (right.absGap ?? -Infinity) - (left.absGap ?? -Infinity));
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
@@ -169,7 +154,9 @@ function CleanTable({ rows }) {
                   {row.slug}
                 </th>
                 <td className="px-3 py-2 text-left augur-muted">{row.mappingKind}</td>
-                <td className="px-3 py-2 text-right augur-tabular augur-muted">{fmtDeadline(row.resolutionDeadline)}</td>
+                <td className="px-3 py-2 text-right augur-tabular augur-muted">
+                  {fmtDeadline(row.resolutionDeadline)}
+                </td>
                 <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {row.pModel == null ? (
@@ -249,8 +236,8 @@ function MarkFanPanel({ markFan }) {
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="augur-eyebrow">Issuer per-unit mark</div>
         <div className="mt-1 text-xs augur-muted">
-          Percentile bands of {markFan.issuer}'s modelled per-unit mark over the horizon. This is a
-          per-UNIT price, NOT a company valuation (augur models no shares or market cap).
+          Percentile bands of {markFan.issuer}'s modelled per-unit mark over the horizon. This is a per-UNIT price, NOT
+          a company valuation (augur models no shares or market cap).
         </div>
       </div>
       {rows.length > 0 ? (
@@ -315,8 +302,8 @@ function CalibrationResults({ response }) {
         <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div className="augur-eyebrow">Surfaced markets (not scored / context only)</div>
           <div className="mt-1 text-xs augur-muted">
-            Markets augur has no event concept for. Shown with the market price plus, where one
-            exists, a related (NOT equal) augur signal.
+            Markets augur has no event concept for. Shown with the market price plus, where one exists, a related (NOT
+            equal) augur signal.
           </div>
         </div>
         <SurfacedList rows={result.surfaced ?? []} />
@@ -326,72 +313,28 @@ function CalibrationResults({ response }) {
 }
 
 export function CalibrationWorkspace({ bootstrap }) {
-  const [catalogs, setCatalogs] = useState(null);
-  const [catalogsError, setCatalogsError] = useState(null);
-  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, catalogId: null, presetId: null });
+  const catalog = bootstrap.calibration ?? null;
+  const presets = bootstrap.exogenousPresets ?? [];
+  const defaultPresetId = catalog?.defaultPresetId ?? null;
+  const initialPresetId =
+    catalog?.defaultPresetId && presets.includes(catalog.defaultPresetId)
+      ? catalog.defaultPresetId
+      : bootstrap.defaultExogenousPresetId;
+
+  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, presetId: initialPresetId });
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
   const [running, setRunning] = useState(false);
 
-  const presets = bootstrap.exogenousPresets ?? [];
-  const selectedCatalog = useMemo(
-    () => (catalogs ?? []).find((catalog) => catalog.id === input.catalogId) ?? null,
-    [catalogs, input.catalogId]
-  );
-  const defaultPresetId = selectedCatalog?.defaultPresetId ?? null;
+  const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchCalibrationCatalogs({ signal: controller.signal })
-      .then((payload) => {
-        setCatalogs(payload.catalogs);
-        setCatalogsError(null);
-      })
-      .catch((error) => {
-        if (error?.name === "AbortError") return;
-        setCatalogs([]);
-        setCatalogsError(error?.message || String(error));
-      });
-    return () => controller.abort();
-  }, []);
-
-  // Once catalogs load (or change), pin the catalog + its default preset when nothing is chosen yet.
-  useEffect(() => {
-    if (!catalogs || catalogs.length === 0) return;
-    setInput((previous) => {
-      if (previous.catalogId != null) return previous;
-      const first = catalogs[0];
-      const presetId =
-        first.defaultPresetId && presets.includes(first.defaultPresetId)
-          ? first.defaultPresetId
-          : bootstrap.defaultExogenousPresetId;
-      return { ...previous, catalogId: first.id, presetId };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogs]);
-
-  const updateInput = (patch) => {
-    setInput((previous) => {
-      const next = { ...previous, ...patch };
-      // Switching catalogs re-points the preset to the new catalog's default (unless the user is
-      // explicitly editing the preset in this same patch).
-      if (patch.catalogId != null && patch.presetId === undefined) {
-        const catalog = (catalogs ?? []).find((entry) => entry.id === patch.catalogId);
-        const wanted = catalog?.defaultPresetId;
-        next.presetId = wanted && presets.includes(wanted) ? wanted : bootstrap.defaultExogenousPresetId;
-      }
-      return next;
-    });
-  };
-
-  const runReady = Boolean(input.catalogId) && Boolean(input.presetId) && !running;
+  const runReady = Boolean(catalog) && Boolean(input.presetId) && !running;
 
   const runCalibration = () => {
-    if (!input.catalogId || !input.presetId) return;
+    if (!catalog || !input.presetId) return;
     setRunning(true);
     setRunError(null);
     fetchCalibrationRun({
-      catalogId: input.catalogId,
       presetId: input.presetId,
       horizonMonths: input.horizonMonths,
       rollouts: input.rollouts,
@@ -411,43 +354,39 @@ export function CalibrationWorkspace({ bootstrap }) {
 
   const currencyDisplayContext = useMemo(() => ({ display: "compact", setDisplay: () => {} }), []);
 
+  if (!catalog) {
+    return (
+      <div className="augur-note p-4" data-calibration-unconfigured="">
+        This deployment has no calibration catalog configured.
+      </div>
+    );
+  }
+
   return (
     <CurrencyDisplayProvider value={currencyDisplayContext}>
       <div className="min-w-0 space-y-5">
         <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          {catalogs == null ? (
-            <aside className="min-w-0">
-              <div className="augur-card px-4 py-6 text-sm augur-muted">Loading catalogs...</div>
-            </aside>
-          ) : (
-            <CalibrationForm
-              input={input}
-              catalogs={catalogs}
-              presets={presets}
-              defaultPresetId={defaultPresetId}
-              onChange={updateInput}
-              onRun={runCalibration}
-              running={running}
-              disabled={!runReady}
-            />
-          )}
+          <CalibrationForm
+            input={input}
+            catalog={catalog}
+            presets={presets}
+            defaultPresetId={defaultPresetId}
+            onChange={updateInput}
+            onRun={runCalibration}
+            running={running}
+            disabled={!runReady}
+          />
 
           <div className="min-w-0 space-y-5">
-            {catalogsError && (
-              <div className="augur-note-danger p-4 text-sm">Failed to load catalogs: {catalogsError}</div>
-            )}
             {runError && <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>}
             {running ? (
               <RolloutResultsSkeleton />
             ) : response ? (
               <CalibrationResults response={response} />
             ) : (
-              !catalogsError && (
-                <div className="augur-note p-4">
-                  Pick a catalog and model preset, then run a calibration to compare the model's
-                  rollouts against market prices.
-                </div>
-              )
+              <div className="augur-note p-4">
+                Pick a model preset, then run a calibration to compare the model's rollouts against market prices.
+              </div>
             )}
           </div>
         </section>

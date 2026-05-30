@@ -1,59 +1,24 @@
-"""Export the Augur API OpenAPI schema to stdout."""
+"""Emit the Augur API OpenAPI schema (to stdout) for frontend Zod/TS codegen.
+
+Builds the *real* FastAPI app from the light public fixture config and dumps its
+`.openapi()`. The fixture (`augur/api/testdata/config.yaml`) constructs the full app and
+registers every route — including `/api/calibration/*` — without touching the network, a
+live Manifold, real model artifacts, or JS assets, so the emitted document carries every
+component schema the frontend consumes. There is no separate schema-only app to drift.
+"""
 
 from __future__ import annotations
 
 import json
 
-from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
-
-from augur.api.bootstrap import BootstrapResponse
-from augur.api.calibration_wire import CalibrationCatalogsResponse, CalibrationRunRequest, CalibrationRunResponse
-from augur.api.deployment import DeploymentInfo
-from augur.product.portfolio import ProductPortfolioResponse
-from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
-
-
-def create_schema_app() -> FastAPI:
-    app = FastAPI(title="Augur scenario API")
-
-    @app.get("/api/bootstrap", response_model=BootstrapResponse)
-    def bootstrap() -> BootstrapResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.get("/api/deployment", response_model=DeploymentInfo)
-    def deployment() -> DeploymentInfo:
-        raise RuntimeError("schema-only route")
-
-    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
-    def product_portfolio() -> ProductPortfolioResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
-    def product_projection_metric_fan(request: MetricFanRequest) -> MetricFanResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
-    def product_projection_rollout(request: RolloutRequest) -> RolloutResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.get("/api/calibration/catalogs", response_model=CalibrationCatalogsResponse)
-    def calibration_catalogs() -> CalibrationCatalogsResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
-    def calibration_run(request: CalibrationRunRequest) -> CalibrationRunResponse:
-        raise RuntimeError("schema-only route")
-
-    @app.get("/healthz", response_class=PlainTextResponse)
-    def healthz() -> str:
-        return "ok\n"
-
-    return app
+from augur.api.config import load_augur_config
+from augur.api.server import create_app_from_augur_config
+from util.bazel.runfiles import get_required_path
 
 
 def main() -> None:
-    print(json.dumps(create_schema_app().openapi(), indent=2))
+    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    print(json.dumps(create_app_from_augur_config(config).openapi(), indent=2))
 
 
 if __name__ == "__main__":

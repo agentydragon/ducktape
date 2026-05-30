@@ -35,7 +35,7 @@ py_library(
     srcs = ["calibration_wire.py"],
     deps = [
         ":schemas",
-        "//augur/calibration:calibration",
+        "//augur/calibration",
         "//augur/product:wire",
         "@pypi//pydantic",
     ],
@@ -222,13 +222,14 @@ py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
+        ":bootstrap",
         ":calibration_wire",
         ":casing",
         ":catalog",
         ":config",
         ":deployment",
         ":schemas",
-        "//augur/calibration:calibration",
+        "//augur/calibration",
         "//augur/calibration:catalog",
         "//augur/model:exogenous",
         "//augur/product:portfolio",
@@ -324,13 +325,15 @@ oci_load(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
     deps = [
-        ":bootstrap",
-        ":calibration_wire",
-        ":deployment",
-        "//augur/product:portfolio",
-        "//augur/product:wire",
-        "@pypi//fastapi",
+        ":config",
+        ":server_lib",
+        "//util/bazel:runfiles",
     ],
 )
 

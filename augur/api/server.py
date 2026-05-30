@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,30 +13,25 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from augur.api.calibration_wire import (
-    CALIBRATION_FAN_PERCENTILES,
-    CalibrationCatalogInfo,
-    CalibrationCatalogsResponse,
-    CalibrationRunRequest,
-    CalibrationRunResponse,
-)
+from augur.api.bootstrap import BootstrapResponse
+from augur.api.calibration_wire import CALIBRATION_FAN_PERCENTILES, CalibrationRunRequest, CalibrationRunResponse
 from augur.api.casing import plain_json
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
-from augur.api.deployment import build_deployment_info
+from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.schemas import ApiModel
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle
 from augur.calibration.catalog import MarketCatalog
 from augur.model.exogenous import Sampler
-from augur.product.portfolio import product_portfolio_response
+from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
-from augur.product.wire import MetricFanRequest, RolloutRequest
+from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
 
 @dataclass(frozen=True)
 class LoadedCalibrationCatalog:
-    """A registered calibration catalog config paired with its parsed `MarketCatalog`."""
+    """The configured calibration catalog config paired with its parsed `MarketCatalog`."""
 
     config: CalibrationCatalogConfig
     catalog: MarketCatalog
@@ -46,9 +41,9 @@ class LoadedCalibrationCatalog:
 class ApiServerConfig:
     augur_config: Config
     exogenous_models: dict[str, Sampler]
-    # Calibration catalogs parsed at startup (id -> config + parsed catalog). Empty when the
-    # deployment registers no `calibration_catalogs`.
-    calibration_catalogs: dict[str, LoadedCalibrationCatalog] = field(default_factory=dict)
+    # The calibration catalog parsed at startup, or None when the deployment configures no
+    # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
+    calibration_catalog: LoadedCalibrationCatalog | None = None
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -80,15 +75,19 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
 
-    @app.get("/api/bootstrap")
+    # Routes return a `JSONResponse` directly (custom snake_case + drop-None wire), so FastAPI
+    # passes the Response through untouched. `response_model=` is purely for the OpenAPI document
+    # `augur.api.export_schema` dumps to drive the frontend's Zod/TS codegen.
+
+    @app.get("/api/bootstrap", response_model=BootstrapResponse)
     def bootstrap_house() -> JSONResponse:
         return payload(bootstrap)
 
-    @app.get("/api/deployment")
+    @app.get("/api/deployment", response_model=DeploymentInfo)
     def deployment() -> JSONResponse:
         return payload(deployment_info)
 
-    @app.get("/api/product/portfolio")
+    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
     def product_portfolio_snapshot() -> JSONResponse:
         return payload(product_portfolio_response(snapshot=augur_config.snapshot, portfolio=augur_config.portfolio))
 
@@ -98,11 +97,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             {"presets": sorted(augur_config.exogenous_presets), "default": augur_config.default_exogenous_preset_id}
         )
 
-    @app.post("/api/product/projections/metric_fan")
+    @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
         return payload(product_service.metric_fan(request))
 
-    @app.post("/api/product/projections/rollout")
+    @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
         return payload(product_service.rollout(request))
 
@@ -113,26 +112,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         # same snake_case + drop-None wire convention as `payload`.
         return JSONResponse(content=value.model_dump(mode="json", exclude_none=True), headers=no_store)
 
-    @app.get("/api/calibration/catalogs")
-    def calibration_catalogs() -> JSONResponse:
-        return calibration_payload(
-            CalibrationCatalogsResponse(
-                catalogs=tuple(
-                    CalibrationCatalogInfo(
-                        id=catalog_id,
-                        label=loaded.config.label or catalog_id,
-                        issuer=loaded.config.issuer,
-                        default_preset_id=loaded.config.default_preset_id,
-                    )
-                    for catalog_id, loaded in sorted(config.calibration_catalogs.items())
-                )
-            )
-        )
-
-    @app.post("/api/calibration/run")
+    @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
     def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
-        # KeyError on either lookup -> 400 via the registered handler.
-        loaded = config.calibration_catalogs[request.catalog_id]
+        loaded = config.calibration_catalog
+        if loaded is None:
+            return error(400, "no calibration_catalog configured for this deployment")
+        # KeyError on the preset lookup -> 400 via the registered handler.
         model = config.exogenous_models[request.preset_id]
         issuer = loaded.config.issuer
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
@@ -156,17 +141,19 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             horizon_months=request.horizon_months,
             percentiles=CALIBRATION_FAN_PERCENTILES,
         )
-        return calibration_payload(
-            CalibrationRunResponse(
-                catalog_id=request.catalog_id, preset_id=request.preset_id, result=result, mark_fan=fan
-            )
-        )
+        return calibration_payload(CalibrationRunResponse(preset_id=request.preset_id, result=result, mark_fan=fan))
 
-    @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+    # The error fallback and health check are not part of the typed wire contract, so keep them
+    # out of the OpenAPI document `export_schema` dumps (no Zod/TS codegen noise).
+    @app.api_route(
+        "/api/{full_path:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+        include_in_schema=False,
+    )
     def unknown_api(full_path: str) -> JSONResponse:
         return error(404, f"unknown API endpoint: /api/{full_path}")
 
-    @app.get("/healthz")
+    @app.get("/healthz", include_in_schema=False)
     def healthz() -> PlainTextResponse:
         return PlainTextResponse("ok\n", headers=no_store)
 
@@ -178,15 +165,15 @@ def create_app_from_augur_config(augur_config: Config) -> FastAPI:
         preset_id: cast(Sampler, provider.realize_model())
         for preset_id, provider in augur_config.exogenous_presets.items()
     }
-    calibration_catalogs = {
-        catalog_id: LoadedCalibrationCatalog(config=catalog, catalog=MarketCatalog.from_yaml(catalog.catalog_path))
-        for catalog_id, catalog in augur_config.calibration_catalogs.items()
-    }
+    catalog_config = augur_config.calibration_catalog
+    calibration_catalog = (
+        LoadedCalibrationCatalog(config=catalog_config, catalog=MarketCatalog.from_yaml(catalog_config.catalog_path))
+        if catalog_config is not None
+        else None
+    )
     return create_app(
         ApiServerConfig(
-            augur_config=augur_config,
-            exogenous_models=exogenous_models,
-            calibration_catalogs=calibration_catalogs,
+            augur_config=augur_config, exogenous_models=exogenous_models, calibration_catalog=calibration_catalog
         )
     )
 

@@ -80,7 +80,7 @@ class PropertySourceConfig(ApiModel):
 
 
 class CalibrationCatalogConfig(ApiModel):
-    """A prediction-market catalog the exogenous-only calibration endpoints can run.
+    """The prediction-market catalog the exogenous-only calibration endpoints score.
 
     `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
     `property_source.properties_path`). `issuer` is the private-equity issuer id the
@@ -145,12 +145,12 @@ class Config(ApiModel):
             "key in `exogenous_presets`."
         )
     )
-    calibration_catalogs: dict[str, CalibrationCatalogConfig] = Field(
-        default_factory=dict,
+    calibration_catalog: CalibrationCatalogConfig | None = Field(
+        default=None,
         description=(
-            "Named registry of prediction-market catalogs for the exogenous-only calibration "
-            "endpoints (`/api/calibration/*`). Each is loaded into a `MarketCatalog` at startup. "
-            "Empty by default; a deployment registers a catalog plus the issuer it scores."
+            "The single prediction-market catalog the exogenous-only calibration endpoints "
+            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
+            "default; a deployment sets it to a catalog plus the issuer it scores."
         ),
     )
 
@@ -184,13 +184,17 @@ class Config(ApiModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_calibration_default_presets(self) -> Config:
-        for catalog_id, catalog in self.calibration_catalogs.items():
-            if catalog.default_preset_id is not None and catalog.default_preset_id not in self.exogenous_presets:
-                raise ValueError(
-                    f"calibration_catalogs[{catalog_id!r}].default_preset_id {catalog.default_preset_id!r} is not a "
-                    f"key in exogenous_presets (have {sorted(self.exogenous_presets)})"
-                )
+    def _validate_calibration_default_preset(self) -> Config:
+        catalog = self.calibration_catalog
+        if (
+            catalog is not None
+            and catalog.default_preset_id is not None
+            and catalog.default_preset_id not in self.exogenous_presets
+        ):
+            raise ValueError(
+                f"calibration_catalog.default_preset_id {catalog.default_preset_id!r} is not a key in "
+                f"exogenous_presets (have {sorted(self.exogenous_presets)})"
+            )
         return self
 
 
@@ -203,7 +207,11 @@ def load_augur_config(path: Path) -> Config:
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
     config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
-    return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
+    catalog = config.calibration_catalog
+    if catalog is not None and not catalog.catalog_path.is_absolute():
+        anchored = catalog.model_copy(update={"catalog_path": (path.parent / catalog.catalog_path).resolve()})
+        config = config.model_copy(update={"calibration_catalog": anchored})
+    return config
 
 
 def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
@@ -231,20 +239,6 @@ def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Confi
     if anchored == dict(config.exogenous_presets):
         return config
     return config.model_copy(update={"exogenous_presets": anchored})
-
-
-def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
-    anchored = {
-        catalog_id: (
-            catalog
-            if catalog.catalog_path.is_absolute()
-            else catalog.model_copy(update={"catalog_path": (base_dir / catalog.catalog_path).resolve()})
-        )
-        for catalog_id, catalog in config.calibration_catalogs.items()
-    }
-    if anchored == dict(config.calibration_catalogs):
-        return config
-    return config.model_copy(update={"calibration_catalogs": anchored})
 
 
 def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:

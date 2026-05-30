@@ -1,7 +1,6 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
 import {
   zBootstrapResponse,
-  zCalibrationCatalogsResponse,
   zCalibrationRunRequest,
   zCalibrationRunResponse,
   zDeploymentInfo,
@@ -75,10 +74,6 @@ export async function fetchProductRollout(rolloutRequest, { signal } = {}) {
   return camelizeObjectKeys(
     zRolloutResponse.parse(await postJson("/api/product/projections/rollout", request, signal))
   );
-}
-
-export async function fetchCalibrationCatalogs({ signal } = {}) {
-  return camelizeObjectKeys(zCalibrationCatalogsResponse.parse(await getJson("/api/calibration/catalogs", signal)));
 }
 
 export async function fetchCalibrationRun(calibrationRunRequest, { signal } = {}) {

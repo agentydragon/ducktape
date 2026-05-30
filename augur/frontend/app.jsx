@@ -54,7 +54,7 @@ const TABS = [
 const TAB_VALUES = new Set(TABS.map((tab) => tab.value));
 const DEFAULT_TAB = "product";
 
-export function tabFromSearch(searchString) {
+function tabFromSearch(searchString) {
   const requested = new URLSearchParams(searchString).get("tab");
   return requested && TAB_VALUES.has(requested) ? requested : DEFAULT_TAB;
 }
@@ -451,10 +451,33 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab })
   );
 }
 
+function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab }) {
+  return (
+    <div
+      data-augur-surface="calibration"
+      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    >
+      <AugurHeader
+        nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
+        rightSlot={<DeploymentCommitSummary deployment={deployment} />}
+      />
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <CalibrationWorkspace bootstrap={bootstrap} />
+      </main>
+    </div>
+  );
+}
+
 function ProductProjectionAppShell() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
   const [deployment, setDeployment] = useState(null);
+  const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
+
+  const onSelectTab = (next) => {
+    setTab(next);
+    writeTabToSearch(next);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -484,7 +507,13 @@ function ProductProjectionAppShell() {
 
   if (!bootstrap) return <ProductProjectionLoading error={bootstrapError} />;
 
-  return <ProductProjectionWorkspace bootstrap={bootstrap} deployment={deployment} />;
+  if (tab === "calibration") {
+    return <CalibrationAppSurface bootstrap={bootstrap} deployment={deployment} tab={tab} onSelectTab={onSelectTab} />;
+  }
+
+  return (
+    <ProductProjectionWorkspace bootstrap={bootstrap} deployment={deployment} tab={tab} onSelectTab={onSelectTab} />
+  );
 }
 
 export default function AugurApp() {

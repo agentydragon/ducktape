@@ -1,8 +1,8 @@
-"""TestClient coverage for the exogenous-only calibration endpoints.
+"""TestClient coverage for the exogenous-only calibration surface.
 
-Builds the app from the public fixture config (which registers the example OpenAI
-catalog against the `openai_pe` preset) and exercises both routes with a small,
-offline (`live=false`) run. No network.
+Builds the app from the public fixture config (which configures the example OpenAI
+catalog scored against the `openai_pe` preset). `/api/bootstrap` surfaces the catalog
+info; `/api/calibration/run` does a small, offline (`live=false`) run. No network.
 """
 
 from __future__ import annotations
@@ -25,25 +25,21 @@ def client() -> Iterator[TestClient]:
         yield test_client
 
 
-def test_list_catalogs(client: TestClient) -> None:
-    response = client.get("/api/calibration/catalogs")
+def test_bootstrap_surfaces_calibration_catalog(client: TestClient) -> None:
+    response = client.get("/api/bootstrap")
     assert response.status_code == 200, response.text
-    catalogs = {catalog["id"]: catalog for catalog in response.json()["catalogs"]}
-    assert "openai" in catalogs
-    openai = catalogs["openai"]
-    assert openai["issuer"] == "openai"
-    assert openai["default_preset_id"] == "openai_pe"
-    assert openai["label"] == "OpenAI (example Manifold catalog)"
+    calibration = response.json()["calibration"]
+    assert calibration["issuer"] == "openai"
+    assert calibration["default_preset_id"] == "openai_pe"
+    assert calibration["label"] == "OpenAI (example Manifold catalog)"
 
 
 def test_run_calibration(client: TestClient) -> None:
     response = client.post(
-        "/api/calibration/run",
-        json={"catalog_id": "openai", "preset_id": "openai_pe", "horizon_months": 24, "rollouts": 16, "seed": 1701},
+        "/api/calibration/run", json={"preset_id": "openai_pe", "horizon_months": 24, "rollouts": 16, "seed": 1701}
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["catalog_id"] == "openai"
     assert body["preset_id"] == "openai_pe"
 
     result = body["result"]
@@ -52,8 +48,10 @@ def test_run_calibration(client: TestClient) -> None:
     assert result["rollout_count"] == 16
     assert result["price_source"] == "curation-snapshot"
     # The example catalog ships both exact (scored) and surfaced markets.
-    assert isinstance(result["clean"], list) and result["clean"]
-    assert isinstance(result["surfaced"], list) and result["surfaced"]
+    assert isinstance(result["clean"], list)
+    assert result["clean"]
+    assert isinstance(result["surfaced"], list)
+    assert result["surfaced"]
     clean_row = result["clean"][0]
     # Snake_case on the wire (the frontend camelizes). p_model/abs_gap/resolution_deadline
     # are optional (dropped when None — e.g. no rollout resolved within the horizon), so we
@@ -75,8 +73,8 @@ def test_run_calibration(client: TestClient) -> None:
     assert all(value == 100.0 for value in month0["values"].values())
 
 
-def test_run_unknown_catalog_is_400(client: TestClient) -> None:
-    response = client.post("/api/calibration/run", json={"catalog_id": "nope", "preset_id": "openai_pe"})
+def test_run_unknown_preset_is_400(client: TestClient) -> None:
+    response = client.post("/api/calibration/run", json={"preset_id": "nope"})
     assert response.status_code == 400, response.text
 
 

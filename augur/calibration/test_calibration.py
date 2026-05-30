@@ -197,7 +197,9 @@ def test_run_calibration_reuses_supplied_bundle(tmp_path: Path) -> None:
 def test_wilson_interval_edges() -> None:
     assert all(math.isnan(x) for x in wilson_interval(0, 0))
     lo, hi = wilson_interval(5, 10)
+    # p_hat = 0.5 -> the 95% Wilson interval is symmetric about 0.5 and strictly inside (0, 1).
     assert 0.0 < lo < 0.5 < hi < 1.0
+    assert math.isclose((lo + hi) / 2, 0.5, abs_tol=1e-9)
 
 
 if __name__ == "__main__":
