@@ -8,9 +8,6 @@ export function AugurHeader({ rightSlot = null, nav = null }) {
           <img src="/favicon.svg" alt="" className="h-9 w-9 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
             <h1 className="text-base font-semibold text-slate-950 dark:text-slate-50">Augur</h1>
-            <div className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              Financial futures explorer
-            </div>
           </div>
           {nav}
         </div>

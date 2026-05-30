@@ -130,12 +130,7 @@ function CleanTable({ rows }) {
             return (
               <tr key={row.slug} className={gapToneClass(row.absGap)} data-calibration-clean-row={row.slug}>
                 <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
-                  <a
-                    href={row.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="augur-accent-text hover:underline"
-                  >
+                  <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                     {row.question}
                   </a>
                 </th>
