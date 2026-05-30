@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import math
 from dataclasses import dataclass
 from typing import Literal
@@ -25,6 +26,20 @@ from augur.model.series_model import derive_stream_rollout_seeds
 BoolMatrix = npt.NDArray[np.bool_]
 CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
+
+
+class PublicMarketCdfAnchor(FrozenModel):
+    """One point on the empirical going-public CDF, as a month-index/probability pair.
+
+    `month` is a month index measured from sim start (month 0). The PE risk model is
+    calendar-agnostic; the deployment converts prediction-market resolution dates into
+    these month offsets. `cumulative_probability` is P(public market opened by `month`),
+    so it stays in [0, 1) — a stated certainty (1.0) is disallowed because the tail
+    hazard always leaves residual survival mass.
+    """
+
+    month: int = Field(ge=1)
+    cumulative_probability: float = Field(ge=0.0, lt=1.0)
 
 
 class PrivateEquityRiskIssuerConfig(FrozenModel):
@@ -58,7 +73,17 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     admin_mark_update_log_noise_mu: float = 0.0
     admin_mark_update_log_noise_sigma: float = Field(default=0.10, ge=0.0)
     eligible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Going-public (IPO) hazard. When `public_market_cdf_anchors` is empty this is a
+    # flat constant-per-year hazard for the whole horizon. When anchors are supplied
+    # they define a front-loaded, saturating empirical CDF (prediction-market derived)
+    # up to the last anchor month, and this annual rate becomes the TAIL hazard applied
+    # to every month past the last anchor. Existing anchor-free configs are unchanged.
     annual_public_market_probability: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Empirical going-public CDF anchors as (month-from-sim-start, P(public by month))
+    # pairs. Between consecutive anchors a constant monthly hazard reproduces the CDF
+    # exactly; past the last anchor the flat `annual_public_market_probability` tail
+    # takes over. Empty => the legacy flat-hazard behaviour.
+    public_market_cdf_anchors: tuple[PublicMarketCdfAnchor, ...] = ()
     public_market_lockup_months: int = Field(default=0, ge=0)
     public_market_price_log_discount_mu: float = 0.0
     public_market_price_log_discount_sigma: float = Field(default=0.20, ge=0.0)
@@ -91,6 +116,12 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
             raise ValueError("liquidity_suspension_months_max must be >= min")
         if self.forced_recovery_cashout_usd_max < self.forced_recovery_cashout_usd_min:
             raise ValueError("forced_recovery_cashout_usd_max must be >= min")
+        months = [anchor.month for anchor in self.public_market_cdf_anchors]
+        if any(later <= earlier for earlier, later in itertools.pairwise(months)):
+            raise ValueError("public_market_cdf_anchors must be strictly increasing in month")
+        cumulatives = [anchor.cumulative_probability for anchor in self.public_market_cdf_anchors]
+        if any(later < earlier for earlier, later in itertools.pairwise(cumulatives)):
+            raise ValueError("public_market_cdf_anchors must be non-decreasing in cumulative_probability")
         return self
 
 
@@ -251,7 +282,7 @@ def _sample_issuer(
     u_forced_sale = event_rng.random((rollout_count, horizon_months))
     u_tender_cancellation = event_rng.random((rollout_count, horizon_months))
 
-    monthly_public = _monthly_probability(issuer.annual_public_market_probability)
+    monthly_public_open = _public_market_open_hazard_by_month(issuer, horizon_months)
     monthly_suspension = _monthly_probability(issuer.annual_liquidity_suspension_probability)
     monthly_forced_sale = _monthly_probability(issuer.annual_forced_sale_probability)
     monthly_recovery = _monthly_probability(issuer.annual_forced_recovery_probability)
@@ -327,8 +358,9 @@ def _sample_issuer(
                 collapsed |= branch
                 eligible &= ~branch
 
-            # Branch 3: public_market_open.
-            branch = eligible & (u_public[:, u_idx] < monthly_public)
+            # Branch 3: public_market_open. The per-month hazard is the empirical
+            # IPO-prior CDF inside the anchored window and the flat tail past it.
+            branch = eligible & (u_public[:, u_idx] < monthly_public_open[t])
             if branch.any():
                 event_kind_code[branch, t] = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
                 # Forward-fill PUBLIC_MARKET regime from t onward.
@@ -581,3 +613,34 @@ def _monthly_probability(annual_probability: float) -> float:
     if annual_probability >= 1.0:
         return 1.0
     return float(1.0 - math.pow(1.0 - annual_probability, 1.0 / 12.0))
+
+
+def _public_market_open_hazard_by_month(
+    issuer: PrivateEquityRiskIssuerConfig, horizon_months: int
+) -> npt.NDArray[np.float64]:
+    """Per-month going-public hazard vector (length horizon_months+1), indexable by month t.
+
+    Index 0 is unused (the loop starts at month 1). Without anchors the whole vector is
+    the flat per-month rate from `annual_public_market_probability`. With anchors, each
+    bucket (m_i, F_i) -> (m_{i+1}, F_{i+1}) gets the constant monthly hazard that exactly
+    reproduces the survival drop S_{i+1}/S_i over its m_{i+1}-m_i months; the first bucket
+    runs from month 0 (S=1) to the first anchor. Months past the last anchor fall back to
+    the flat `annual_public_market_probability` tail hazard.
+    """
+
+    tail_hazard = _monthly_probability(issuer.annual_public_market_probability)
+    hazard = np.full(horizon_months + 1, tail_hazard, dtype=np.float64)
+
+    prev_month = 0
+    prev_survival = 1.0
+    for anchor in issuer.public_market_cdf_anchors:
+        anchor_month = min(anchor.month, horizon_months)
+        survival = 1.0 - anchor.cumulative_probability
+        bucket_hazard = 1.0 - (survival / prev_survival) ** (1.0 / (anchor.month - prev_month))
+        hazard[prev_month + 1 : anchor_month + 1] = bucket_hazard
+        prev_month = anchor.month
+        prev_survival = survival
+        if prev_month >= horizon_months:
+            break
+
+    return hazard

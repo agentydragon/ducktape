@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
@@ -14,7 +15,12 @@ from augur.model.private_equity_bundle import (
     PrivateEquityFloatChannel,
     PrivateEquityIntChannel,
 )
-from augur.model.private_equity_risk import PrivateEquityRiskIssuerConfig, PrivateEquityRiskProviderConfig
+from augur.model.private_equity_risk import (
+    PrivateEquityRiskIssuerConfig,
+    PrivateEquityRiskProviderConfig,
+    PublicMarketCdfAnchor,
+    _public_market_open_hazard_by_month,
+)
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
 
@@ -336,6 +342,105 @@ def test_private_equity_risk_unrequested_issuer_still_satisfies_request() -> Non
                 required_private_equity_issuers=frozenset({IssuerId("other_issuer")}),
             )
         )
+
+
+# Empirical going-public CDF prior — prediction-market-derived IPO anchors.
+_IPO_ANCHORS: tuple[PublicMarketCdfAnchor, ...] = (
+    PublicMarketCdfAnchor(month=7, cumulative_probability=0.75),
+    PublicMarketCdfAnchor(month=19, cumulative_probability=0.89),
+    PublicMarketCdfAnchor(month=31, cumulative_probability=0.93),
+)
+
+
+def test_public_market_open_hazard_reproduces_anchor_cdf() -> None:
+    """The hazard builder turns CDF anchors into per-bucket constant monthly hazards
+    whose compounded survival hits each anchor's cumulative probability exactly."""
+
+    issuer = _issuer(public_market_cdf_anchors=_IPO_ANCHORS, annual_public_market_probability=0.07)
+    hazard: npt.NDArray[np.float64] = _public_market_open_hazard_by_month(issuer, horizon_months=36)
+
+    # First three buckets are (0,7], (7,19], (19,31]; their constant monthly hazards
+    # are the front-loaded, saturating shape the prediction market implies.
+    assert hazard[1] == pytest.approx(0.18, abs=2e-3)
+    assert hazard[8] == pytest.approx(0.067, abs=2e-3)
+    assert hazard[20] == pytest.approx(0.037, abs=2e-3)
+
+    # Index 0 is unused by the sampler (the per-month loop runs t>=1), so the CDF the
+    # model realizes is the compounded survival over months 1..N. Reproduce that.
+    cumulative: npt.NDArray[np.float64] = np.zeros_like(hazard)
+    cumulative[1:] = 1.0 - np.cumprod(1.0 - hazard[1:])
+    assert cumulative[7] == pytest.approx(0.75, abs=1e-9)
+    assert cumulative[19] == pytest.approx(0.89, abs=1e-9)
+    assert cumulative[31] == pytest.approx(0.93, abs=1e-9)
+
+    # Past the last anchor the flat annual tail hazard takes over.
+    assert hazard[32] == pytest.approx(1.0 - (1.0 - 0.07) ** (1.0 / 12.0), abs=1e-12)
+
+
+def test_public_market_open_hazard_without_anchors_is_flat_tail() -> None:
+    """No anchors → the whole vector is the legacy flat monthly hazard."""
+
+    issuer = _issuer(annual_public_market_probability=0.07)
+    hazard = _public_market_open_hazard_by_month(issuer, horizon_months=12)
+
+    flat = 1.0 - (1.0 - 0.07) ** (1.0 / 12.0)
+    np.testing.assert_allclose(hazard, np.full(13, flat))
+
+
+def test_public_market_cdf_anchors_reject_non_increasing_month() -> None:
+    with pytest.raises(ValidationError, match="strictly increasing in month"):
+        _issuer(
+            public_market_cdf_anchors=(
+                PublicMarketCdfAnchor(month=7, cumulative_probability=0.5),
+                PublicMarketCdfAnchor(month=7, cumulative_probability=0.6),
+            )
+        )
+
+
+def test_public_market_cdf_anchors_reject_decreasing_cumulative_probability() -> None:
+    with pytest.raises(ValidationError, match="non-decreasing in cumulative_probability"):
+        _issuer(
+            public_market_cdf_anchors=(
+                PublicMarketCdfAnchor(month=7, cumulative_probability=0.6),
+                PublicMarketCdfAnchor(month=19, cumulative_probability=0.5),
+            )
+        )
+
+
+def test_public_market_open_realized_probability_tracks_anchor_cdf() -> None:
+    """Integration: with the empirical anchors and all competing adverse hazards ≈0,
+    the realized fraction of rollouts that have gone public by months 7/19/31 matches
+    the prediction-market CDF (0.75/0.89/0.93) within Monte-Carlo tolerance.
+    """
+
+    rollout_count = 6000
+    rollout_seeds = tuple(range(5000, 5000 + rollout_count))
+    issuer = _issuer(
+        monthly_log_return_mu=0.0,
+        monthly_log_return_sigma=0.0,
+        # Push the tender precursor far past the horizon so it never preempts a month.
+        tender_interval_months_median=600.0,
+        public_market_cdf_anchors=_IPO_ANCHORS,
+        annual_public_market_probability=0.07,
+    )
+    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=31,
+            rollout_seeds=rollout_seeds,
+            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+        )
+    )
+    regime = sampled.private_equity.issuer_int_matrix(
+        "acme", str(PrivateEquityIntChannel.REGIME_CODE), rollout_count=rollout_count, horizon_months=31
+    )
+    public = regime == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
+
+    # PUBLIC_MARKET is absorbing, so "public by month m" == public regime at month m.
+    realized = {m: float(public[:, m].mean()) for m in (7, 19, 31)}
+    assert realized[7] == pytest.approx(0.75, abs=0.02)
+    assert realized[19] == pytest.approx(0.89, abs=0.02)
+    assert realized[31] == pytest.approx(0.93, abs=0.02)
 
 
 if __name__ == "__main__":
