@@ -22,7 +22,7 @@ from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.schemas import ApiModel
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.manifold import ManifoldClient, PriceClient
+from augur.calibration.manifold import ManifoldClient
 from augur.model.exogenous import Sampler
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
@@ -46,8 +46,9 @@ class ApiServerConfig:
     # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
     calibration_catalog: LoadedCalibrationCatalog | None = None
     # Live prediction-market price source for `/api/calibration/run` (per-market YES probs).
-    # Defaults to a real Manifold client; tests inject a hermetic stub.
-    price_client: PriceClient = field(default_factory=ManifoldClient)
+    # Defaults to a real Manifold client; tests inject a hermetic one. Reused across requests,
+    # so its TTL cache already serves the calibration tab's rapid auto-refreshes.
+    price_client: ManifoldClient = field(default_factory=ManifoldClient)
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -158,11 +159,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     return app
 
 
-def create_app_from_augur_config(augur_config: Config, *, price_client: PriceClient | None = None) -> FastAPI:
+def create_app_from_augur_config(augur_config: Config, *, price_client: ManifoldClient | None = None) -> FastAPI:
     """Build the app from a `Config`.
 
     `price_client` is the live prediction-market price source for `/api/calibration/run`
-    (a real `ManifoldClient` by default; the endpoint test injects a hermetic stub)."""
+    (a real `ManifoldClient` by default; tests inject a hermetic one)."""
     exogenous_models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model())
         for preset_id, provider in augur_config.exogenous_presets.items()

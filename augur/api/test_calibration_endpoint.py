@@ -1,7 +1,7 @@
 """TestClient coverage for the exogenous-only calibration surface.
 
 Builds the app from the public fixture config (which configures the example OpenAI
-catalog scored against the `openai_pe` preset), injecting a stub price client so the
+catalog scored against the `openai_pe` preset), injecting a `mock_manifold_client` so the
 run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
 `/api/calibration/run` does a small run with the injected live prices.
 """
@@ -16,20 +16,19 @@ from fastapi.testclient import TestClient
 
 from augur.api.config import load_augur_config
 from augur.api.server import create_app_from_augur_config
+from augur.calibration.catalog import MarketCatalog
+from augur.calibration.testing import mock_manifold_client
 from util.bazel.runfiles import get_required_path
-
-
-class _StubPrices:
-    """A hermetic `PriceClient`: every market resolves to the same fixed YES probability."""
-
-    def fetch_yes_probability(self, market_id: str) -> float:
-        return 0.5
 
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-    app = create_app_from_augur_config(config, price_client=_StubPrices())
+    assert config.calibration_catalog is not None
+    catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
+    # Every market resolves to the same fixed YES probability so the run is hermetic.
+    prices = {market.manifold_id: 0.5 for market in catalog.markets}
+    app = create_app_from_augur_config(config, price_client=mock_manifold_client(prices))
     with TestClient(app) as test_client:
         yield test_client
 

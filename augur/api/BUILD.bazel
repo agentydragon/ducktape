@@ -210,6 +210,8 @@ py_test(
     deps = [
         ":config",
         ":server_lib",
+        "//augur/calibration:catalog",
+        "//augur/calibration:testing",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",

@@ -1,8 +1,8 @@
 """End-to-end `run_calibration` against a fixed-output fixture model (no network).
 
 Uses the shared `ConstantFrameExogenousModel` fixture (augur.model.testing) seeded
-with a per-rollout event array, and injects a stub `PriceClient` so prices are
-deterministic and hermetic.
+with a per-rollout event array, and a `mock_manifold_client` so prices are deterministic
+and hermetic.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ import pytest_bazel
 
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle, wilson_interval
 from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog
+from augur.calibration.manifold import ManifoldClient
+from augur.calibration.testing import mock_manifold_client
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -23,16 +25,6 @@ from augur.model.testing import ConstantFrameExogenousModel, PrivateEquityChanne
 
 _ISSUER = "issuer_x"
 _HORIZON = 120
-
-
-class _StubPrices:
-    """Fixed YES probabilities keyed by Manifold id (a hermetic `PriceClient`)."""
-
-    def __init__(self, prices: dict[str, float]) -> None:
-        self._prices = prices
-
-    def fetch_yes_probability(self, market_id: str) -> float:
-        return self._prices[market_id]
 
 
 def _event_kind_codes(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
@@ -89,7 +81,8 @@ def _catalog() -> MarketCatalog:
     )
 
 
-_PRICES = _StubPrices({"AAA": 0.40, "BBB": 0.10, "CCC": 0.66})
+def _prices() -> ManifoldClient:
+    return mock_manifold_client({"AAA": 0.40, "BBB": 0.10, "CCC": 0.66})
 
 
 def _run():
@@ -99,7 +92,7 @@ def _run():
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=tuple(range(4)),
-        price_client=_PRICES,
+        price_client=_prices(),
     )
 
 
@@ -155,11 +148,11 @@ def test_run_calibration_reuses_supplied_bundle() -> None:
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
-        price_client=_PRICES,
+        price_client=_prices(),
         bundle=bundle,
     )
     internal = run_calibration(
-        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_client=_PRICES
+        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_client=_prices()
     )
     assert from_bundle == internal
     # The same bundle also drives the mark_fan, so both views come from one rollout.

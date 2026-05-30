@@ -11,8 +11,9 @@ augur models EVENTS, not company valuation or revenue. Only event-based markets
 (``ipo_by_date``, ``pre_ipo_failure``) are scored; valuation/revenue/etc. markets
 are surfaced, never scored.
 
-``p_market`` ALWAYS comes from live Manifold via an injected :class:`PriceClient`
-(defaulting to a real :class:`ManifoldClient`); tests inject a hermetic stub.
+``p_market`` ALWAYS comes from live Manifold via an injected :class:`ManifoldClient`
+(its TTL cache absorbs the repeated per-market reads of rapid auto-refreshes); tests
+inject a hermetic ``MockTransport``-backed client.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 from statsmodels.stats.proportion import proportion_confint
 
 from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog, SurfacedMarket
-from augur.calibration.manifold import ManifoldClient, PriceClient
+from augur.calibration.manifold import ManifoldClient
 from augur.calibration.resolvers import (
     Resolution,
     RolloutTrajectory,
@@ -214,15 +215,15 @@ def run_calibration(
     issuer: str,
     horizon_months: int,
     rollout_seeds: tuple[int, ...],
-    price_client: PriceClient | None = None,
+    price_client: ManifoldClient | None = None,
     bundle: PrivateEquityBundle | None = None,
 ) -> CalibrationResult:
     """Score an exogenous model's rollouts against a curated prediction-market catalog.
 
     Samples `model` for `issuer` over `horizon_months`, resolves every `exact`
     market apples-to-apples, and surfaces the rest. Each market's `p_market` is fetched
-    LIVE per market via `price_client` (a real `ManifoldClient` by default; tests inject
-    a hermetic stub).
+    LIVE per market via `price_client` (a real `ManifoldClient` by default, whose TTL cache
+    absorbs the repeated reads of rapid auto-refreshes; tests inject a hermetic client).
 
     Pass a pre-sampled `bundle` (from `sample_private_equity_bundle` with the same
     issuer/horizon/seeds) to reuse one rollout for both scoring and a `mark_fan`; when

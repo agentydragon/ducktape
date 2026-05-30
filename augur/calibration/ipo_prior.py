@@ -25,7 +25,7 @@ from pathlib import Path
 import yaml
 
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.manifold import ManifoldClient, PriceClient
+from augur.calibration.manifold import ManifoldClient
 from augur.calibration.resolvers import months_after
 from augur.model.private_equity_risk import PublicMarketCdfAnchor
 
@@ -37,7 +37,7 @@ _MAX_CUMULATIVE_PROBABILITY = 0.999
 
 
 def derive_public_market_anchors(
-    catalog: MarketCatalog, *, price_client: PriceClient
+    catalog: MarketCatalog, *, price_client: ManifoldClient
 ) -> tuple[PublicMarketCdfAnchor, ...]:
     """Build a monotone going-public CDF from the catalog's live ``ipo_by_date`` markets.
 

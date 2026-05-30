@@ -1,6 +1,6 @@
 """Hermetic tests for deriving going-public CDF anchors from market prices.
 
-A stub `PriceClient` returns fixed YES probabilities keyed by Manifold id, so the
+A `mock_manifold_client` answers fixed YES probabilities keyed by Manifold id, so the
 derivation runs with no network. The catalog mixes monotone `ipo_by_date` markets with a
 later-deadline / lower-probability point (market noise) and a before-sim-start deadline, to
 exercise the drop logic, and the result is round-tripped through the M1 model validator.
@@ -14,17 +14,9 @@ import pytest_bazel
 
 from augur.calibration.catalog import ExactMarket, MarketCatalog
 from augur.calibration.ipo_prior import derive_public_market_anchors
+from augur.calibration.manifold import ManifoldClient
+from augur.calibration.testing import mock_manifold_client
 from augur.model.private_equity_risk import PrivateEquityRiskIssuerConfig
-
-
-class _StubPrices:
-    """Fixed YES probabilities keyed by Manifold id (a hermetic `PriceClient`)."""
-
-    def __init__(self, prices: dict[str, float]) -> None:
-        self._prices = prices
-
-    def fetch_yes_probability(self, market_id: str) -> float:
-        return self._prices[market_id]
 
 
 def _ipo_market(slug: str, manifold_id: str, by_date: str) -> ExactMarket:
@@ -53,11 +45,12 @@ def _catalog() -> MarketCatalog:
     )
 
 
-_PRICES = _StubPrices({"B27": 0.30, "B28": 0.55, "B29": 0.93, "B30": 0.80, "BPRE": 0.99})
+def _prices() -> ManifoldClient:
+    return mock_manifold_client({"B27": 0.30, "B28": 0.55, "B29": 0.93, "B30": 0.80, "BPRE": 0.99})
 
 
 def test_derives_monotone_anchors_dropping_market_noise() -> None:
-    anchors = derive_public_market_anchors(_catalog(), price_client=_PRICES)
+    anchors = derive_public_market_anchors(_catalog(), price_client=_prices())
 
     # The before-sim-start market (month -1) and the non-monotone 2030 point are dropped.
     assert [anchor.month for anchor in anchors] == [7, 19, 31]
@@ -73,7 +66,7 @@ def test_derives_monotone_anchors_dropping_market_noise() -> None:
 def test_derived_anchors_validate_against_m1_issuer_config() -> None:
     # The whole point of the derivation: the output must satisfy the M1 model validator
     # (strictly-increasing month, non-decreasing CDF), so the markets can feed the model.
-    anchors = derive_public_market_anchors(_catalog(), price_client=_PRICES)
+    anchors = derive_public_market_anchors(_catalog(), price_client=_prices())
     config = PrivateEquityRiskIssuerConfig(current_mark_usd=100.0, public_market_cdf_anchors=anchors)
     assert config.public_market_cdf_anchors == anchors
 
@@ -84,7 +77,7 @@ def test_probabilities_clamped_below_one() -> None:
         metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
         markets=[_ipo_market("ipo-certain", "CERT", "2029-01-01")],
     )
-    anchors = derive_public_market_anchors(catalog, price_client=_StubPrices({"CERT": 1.0}))
+    anchors = derive_public_market_anchors(catalog, price_client=mock_manifold_client({"CERT": 1.0}))
     assert anchors[0].cumulative_probability < 1.0
 
 
