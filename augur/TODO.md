@@ -6,6 +6,31 @@ deployment, and user-/company-specific modeling assumptions in their own
 trackers. Priority ordering lives in `augur/plans/roadmap.md` — keep
 this file as a backlog, not a second ordered roadmap.
 
+## Eliminate magic-prefix series/asset strings (staged)
+
+Roadmap + design: <augur/plans/typed_series_config.md>. Goal: no `crypto:` /
+`home_value:` / `rent:` / `private_equity:` prefix strings anywhere — kind
+carried structurally (typed config unions; per-kind frames carrying only a
+sub-id column; typed artifact factors). Staged; each phase lands green on its
+own. **Not done** until `wire_id` / `parse_level_series_key` / `parse_asset_key`
+are deleted and the CI prefix-guard is in place.
+
+- [ ] Phase 1 — config typed. Foundations + first surface landed:
+  - [x] `LevelSeriesKind` / `AssetKind` → `StrEnum`
+  - [x] `LevelSeriesGroups[ValueT]` per-kind helper
+  - [x] `IndependentExogenousProviderConfig` (provider) typed
+  - [ ] `series_model.py` `IndependentSeriesModels` (sim/bench twin)
+  - [ ] portfolio `value_series`
+  - [ ] conditioning, location_series_sources, vecm latest_observations
+  - [ ] sample_sanity checks
+  - [ ] gaffer migration (repin + YAML + config_test discrepancy)
+- [ ] Phase 2 — polars frames `series_id`/`asset_id`/`event_id` → per-kind frames
+      (no kind column; sub-id only) + sim compiler/codec/projections/decode sweep
+- [ ] Phase 3 — state_space JSON + vecm `.npz` typed factors; regenerate blobs
+      (incl. augur OCI image layer)
+- [ ] Phase 4 — API wire (`asset_id`, `spend_index`) typed; delete `wire_id`/`parse_*`;
+      add CI prefix-guard
+
 ## Exogenous Models & Evidence
 
 - [ ] **VECM NumPyro h=1 fit-quality vs statsmodels baseline.** After
