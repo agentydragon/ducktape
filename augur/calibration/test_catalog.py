@@ -8,13 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.calibration.catalog import (
-    CorrelateMarket,
-    ExactMarket,
-    Mappability,
-    MarketCatalog,
-    UnmappableMarket,
-)
+from augur.calibration.catalog import CorrelateMarket, ExactMarket, Mappability, MarketCatalog, UnmappableMarket
 from util.bazel.runfiles import get_required_path
 
 

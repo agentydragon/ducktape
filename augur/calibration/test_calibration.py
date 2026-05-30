@@ -14,12 +14,7 @@ import numpy as np
 import numpy.typing as npt
 import pytest_bazel
 
-from augur.calibration.calibration import (
-    mark_fan,
-    run_calibration,
-    sample_private_equity_bundle,
-    wilson_interval,
-)
+from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle, wilson_interval
 from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel

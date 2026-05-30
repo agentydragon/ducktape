@@ -76,7 +76,7 @@ markets:
     resolution_deadline: "2027-01-01"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2027-01-01"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2027-01-01" }
     sim_signal: "exists t<=month(2027-01): event_kind_code[r,t]==PUBLIC_MARKET_OPEN  (equiv. regime==PUBLIC_MARKET)"
     sim_fidelity: "exact event match. NB the model's IPO hazard is a flat ~7%/yr Bernoulli vs the market's ~0.75 -- the headline calibration gap, computed exactly."
     resolution_criterion_text: |
@@ -93,7 +93,7 @@ markets:
     resolution_deadline: "2028-01-01"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2028-01-01"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2028-01-01" }
     sim_signal: "exists t<=month(2028-01): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact; with the 2027/2029 siblings this samples the model's IPO survival curve against the market term structure."
     resolution_criterion_text: |
@@ -110,7 +110,7 @@ markets:
     resolution_deadline: "2029-01-01"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2029-01-01"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2029-01-01" }
     sim_signal: "exists t<=month(2029-01): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact; third point on the IPO survival curve."
     resolution_criterion_text: |
@@ -127,7 +127,7 @@ markets:
     resolution_deadline: "2030-01-01"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2030-01-01"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2030-01-01" }
     sim_signal: "exists t<=month(2030-01): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact (within 120-month horizon)."
     resolution_criterion_text: ""
@@ -141,7 +141,7 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2026-12-31"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2026-12-31" }
     sim_signal: "exists t<=month(2026-12): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact; criterion ('completes an IPO and begins trading') matches the PUBLIC_MARKET regime."
     resolution_criterion_text: |
@@ -162,7 +162,7 @@ markets:
     resolution_deadline: "2026-10-31"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2026-10-31"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2026-10-31" }
     sim_signal: "exists t<=month(2026-10): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact up to monthly rounding (deadline 2026-10-31 -> month index for Oct 2026)."
     resolution_criterion_text: ""
@@ -176,7 +176,7 @@ markets:
     resolution_deadline: "2027-04-01"
     mappability: exact
     mapping_kind: ipo_by_date
-    mapping_params: {event: PUBLIC_MARKET_OPEN, by_date: "2027-04-01"}
+    mapping_params: { event: PUBLIC_MARKET_OPEN, by_date: "2027-04-01" }
     sim_signal: "exists t<=month(2027-04): event_kind_code[r,t]==PUBLIC_MARKET_OPEN"
     sim_fidelity: "exact up to monthly rounding."
     resolution_criterion_text: ""
@@ -193,7 +193,8 @@ markets:
     resolution_deadline: null
     mappability: exact
     mapping_kind: pre_ipo_failure
-    mapping_params: {terminal_events: [COLLAPSE, FORCED_RECOVERY, ACQUISITION_CASHOUT], before_event: PUBLIC_MARKET_OPEN}
+    mapping_params:
+      { terminal_events: [COLLAPSE, FORCED_RECOVERY, ACQUISITION_CASHOUT], before_event: PUBLIC_MARKET_OPEN }
     sim_signal: "regime reaches COLLAPSED (COLLAPSE/FORCED_RECOVERY) or ACQUIRED (ACQUISITION_CASHOUT) before any PUBLIC_MARKET_OPEN"
     sim_fidelity: "near-exact: the sim races these absorbing regimes (collapse ~0.3%/yr + acquisition ~1%/yr vs IPO ~7%/yr). Only the 'files for IPO then withdrawn -> YES' edge is unmodeled (negligible). Many rollouts stay private within 120mo -> UNRESOLVED."
     resolution_criterion_text: |
