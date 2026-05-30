@@ -44,16 +44,7 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({
-  input,
-  catalog,
-  presets,
-  defaultPresetId,
-  onChange,
-  rolloutCount,
-  onChangeRolloutCount,
-  maxRollouts,
-}) {
+function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange }) {
   const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
   return (
     <aside className="min-w-0">
@@ -90,15 +81,6 @@ function CalibrationForm({
             step={12}
             suffix="mo"
             onChange={(horizonMonths) => onChange({ horizonMonths })}
-          />
-          <NumberField
-            label="Rollouts"
-            description="Shared with the product tab."
-            value={rolloutCount}
-            min={1}
-            max={maxRollouts}
-            step={500}
-            onChange={onChangeRolloutCount}
           />
           <NumberField
             label="Seed"
@@ -297,7 +279,7 @@ function CalibrationResults({ response }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap, rolloutCount, onChangeRolloutCount }) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount }) {
   const catalog = bootstrap.calibration ?? null;
   const presets = bootstrap.exogenousPresets ?? [];
   const defaultPresetId = bootstrap.defaultExogenousPresetId;
@@ -366,9 +348,6 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount, onChangeRolloutC
             presets={presets}
             defaultPresetId={defaultPresetId}
             onChange={updateInput}
-            rolloutCount={rolloutCount}
-            onChangeRolloutCount={onChangeRolloutCount}
-            maxRollouts={bootstrap.maxRolloutSamples}
           />
 
           <div className="min-w-0 space-y-5">

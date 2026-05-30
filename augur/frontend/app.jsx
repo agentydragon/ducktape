@@ -400,12 +400,10 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
       >
         <AugurHeader
           nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
-          rightSlot={
-            <>
-              <DeploymentCommitSummary deployment={deployment} />
-              <span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>
-            </>
-          }
+          rolloutCount={rolloutCount}
+          onChangeRolloutCount={onChangeRolloutCount}
+          maxRolloutCount={bootstrap.maxRolloutSamples}
+          rightSlot={<DeploymentCommitSummary deployment={deployment} />}
         />
 
         <main className="px-4 py-6 sm:px-6 lg:px-8">
@@ -417,8 +415,6 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab, r
               portfolioError={portfolioError}
               onChange={updateInput}
               onReset={() => setInput(productInputDefaults(bootstrap))}
-              rolloutCount={rolloutCount}
-              onChangeRolloutCount={onChangeRolloutCount}
             />
 
             <div className="min-w-0 space-y-5">
@@ -482,14 +478,13 @@ function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab, rollou
     >
       <AugurHeader
         nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
+        rolloutCount={rolloutCount}
+        onChangeRolloutCount={onChangeRolloutCount}
+        maxRolloutCount={bootstrap.maxRolloutSamples}
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <CalibrationWorkspace
-          bootstrap={bootstrap}
-          rolloutCount={rolloutCount}
-          onChangeRolloutCount={onChangeRolloutCount}
-        />
+        <CalibrationWorkspace bootstrap={bootstrap} rolloutCount={rolloutCount} />
       </main>
     </div>
   );

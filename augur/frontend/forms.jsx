@@ -714,16 +714,7 @@ function sumCurrentValueUsd(positions) {
   return positions.reduce((total, position) => total + (position.currentValueUsd ?? 0), 0);
 }
 
-export function ProductScenarioForm({
-  input,
-  bootstrap,
-  portfolio,
-  portfolioError,
-  onChange,
-  onReset,
-  rolloutCount,
-  onChangeRolloutCount,
-}) {
+export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
@@ -859,15 +850,6 @@ export function ProductScenarioForm({
             </span>
           </summary>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <NumberField
-              label="Rollouts"
-              description="Shared with the calibration tab."
-              value={rolloutCount}
-              min={1}
-              max={bootstrap.maxRolloutSamples}
-              step={1}
-              onChange={onChangeRolloutCount}
-            />
             <NumberField
               label="First seed"
               value={input.firstSeed}
