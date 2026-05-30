@@ -18,10 +18,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
-import time
-import urllib.error
-import urllib.request
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,9 +26,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
+import uvicorn
 
+from augur.api.config import load_augur_config
+from augur.calibration.catalog import MarketCatalog
+from augur.calibration.testing import mock_manifold_client
+from augur.dev_server import build_dev_app
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
+from util.net import pick_free_port, wait_for_port
 from util.testing.frontend_visual import (
     deterministic_browser_context,
     deterministic_style,
@@ -179,13 +181,17 @@ def _wait_for_property_panel(page: Page) -> None:
 
 
 def _wait_for_calibration_page(page: Page) -> None:
-    """Wait for the calibration tab's catalog form (no run triggered -- no network)."""
+    """Wait for the calibration tab's auto-run to land (results, not just the form).
+
+    The tab now auto-runs on load (no button), so the screenshot captures the scored-markets
+    table and the issuer mark fan. Hermetic prices are served by the in-process server, so the
+    auto-run resolves without touching the network."""
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='calibration']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.locator("[data-augur-tab='calibration'][data-active]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-calibration-catalog]").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-calibration-run]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-calibration-mark-fan]").wait_for(state="visible", timeout=30_000)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
@@ -214,55 +220,32 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
         browser.close()
 
 
+def _hermetic_prices() -> dict[str, float]:
+    """A fixed live price for every market in the example catalog.
+
+    The calibration tab auto-runs on load and scores every catalog market, so the in-process
+    server needs a probability for each `manifold_id` to resolve the run with no network. The
+    exact values only need to be plausible and deterministic; a gentle spread keeps the scored
+    table and surfaced list visually populated."""
+    catalog = MarketCatalog.from_yaml(get_required_path("_main/augur/calibration/example_openai_catalog.yaml"))
+    return {market.manifold_id: 0.3 + 0.4 * (index % 3) / 2 for index, market in enumerate(catalog.markets)}
+
+
 @pytest.fixture(scope="module")
-def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
-    tmp_path = tmp_path_factory.mktemp("augur-visual-server")
-    out = undeclared_outputs_dir()
-    server_log = (out / "augur-visual-server.log").open("w")
+def augur_server() -> Iterator[str]:
+    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    # Inject a hermetic Manifold client so the calibration tab's auto-run never hits the network.
+    app = build_dev_app(config, price_client=mock_manifold_client(_hermetic_prices()))
     port = pick_free_port("127.0.0.1")
-    server = subprocess.Popen(
-        [
-            str(get_required_path("_main/augur/dev")),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--config",
-            str(get_required_path("_main/augur/api/testdata/config.yaml")),
-        ],
-        env={
-            **os.environ,
-            "HOME": str(tmp_path / "home"),
-            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
-            "PYTHONUNBUFFERED": "1",
-            "XDG_CACHE_HOME": str(tmp_path / "cache"),
-        },
-        stdout=server_log,
-        stderr=server_log,
-    )
-    origin = f"http://127.0.0.1:{port}"
-    deadline = time.monotonic() + 30
+    server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, name="augur-visual-uvicorn", daemon=True)
+    thread.start()
     try:
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
-            try:
-                with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
-                    if response.status == 200 and response.read().decode() == "ok\n":
-                        break
-            except (OSError, urllib.error.URLError):
-                time.sleep(0.25)
-        else:
-            raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")
-        yield origin
+        wait_for_port("127.0.0.1", port, timeout_secs=30)
+        yield f"http://127.0.0.1:{port}"
     finally:
-        server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait(timeout=10)
-        server_log.close()
+        server.should_exit = True
+        thread.join(timeout=10)
 
 
 @pytest.fixture

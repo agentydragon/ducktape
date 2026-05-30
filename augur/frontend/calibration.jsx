@@ -1,5 +1,4 @@
-import React, { useMemo, useState } from "react";
-import { Button } from "@mantine/core";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
 import { NativeSelectField, NumberField } from "./lib/controls.jsx";
@@ -44,7 +43,7 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, onRun, running, disabled }) {
+function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange }) {
   const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
   return (
     <aside className="min-w-0">
@@ -53,7 +52,7 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, o
           <div className="augur-eyebrow">Calibration run</div>
           <div className="mt-1 text-xs augur-muted">
             Score a built-in exogenous model's rollouts against this deployment's curated prediction-market catalog
-            (exogenous-only — no portfolio, no product scenario).
+            (exogenous-only — no portfolio, no product scenario). Results update live as you tune the inputs.
           </div>
         </div>
         <div className="grid gap-3 px-4 py-3">
@@ -97,11 +96,6 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange, o
             step={1}
             onChange={(seed) => onChange({ seed })}
           />
-        </div>
-        <div className="px-4 py-3">
-          <Button fullWidth data-calibration-run loading={running} disabled={disabled} onClick={onRun}>
-            Run calibration
-          </Button>
         </div>
       </div>
     </aside>
@@ -305,32 +299,44 @@ export function CalibrationWorkspace({ bootstrap }) {
   const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, presetId: initialPresetId });
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
-  const [running, setRunning] = useState(false);
 
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
-  const runReady = Boolean(catalog) && Boolean(input.presetId) && !running;
-
-  const runCalibration = () => {
-    if (!catalog || !input.presetId) return;
-    setRunning(true);
-    setRunError(null);
-    fetchCalibrationRun({
+  // The calibration run is fully determined by these four inputs; memoizing keeps the
+  // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  const request = useMemo(
+    () => ({
       presetId: input.presetId,
       horizonMonths: input.horizonMonths,
       rollouts: input.rollouts,
       seed: input.seed,
-    })
-      .then((payload) => {
-        setResponse(payload);
-        setRunError(null);
-      })
-      .catch((error) => {
-        setResponse(null);
-        setRunError(error?.message || String(error));
-      })
-      .finally(() => setRunning(false));
-  };
+    }),
+    [input.presetId, input.horizonMonths, input.rollouts, input.seed]
+  );
+
+  // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
+  // on every settled request — mirrors the product page's metric-fan auto-refresh.
+  useEffect(() => {
+    if (!catalog || !request.presetId) return undefined;
+    const controller = new AbortController();
+    setResponse(null);
+    const handle = setTimeout(() => {
+      fetchCalibrationRun(request, { signal: controller.signal })
+        .then((payload) => {
+          setResponse(payload);
+          setRunError(null);
+        })
+        .catch((error) => {
+          if (error?.name === "AbortError") return;
+          setResponse(null);
+          setRunError(error?.message || String(error));
+        });
+    }, 120);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
+  }, [catalog, request]);
 
   const currencyDisplayContext = useMemo(() => ({ display: "compact", setDisplay: () => {} }), []);
 
@@ -352,21 +358,15 @@ export function CalibrationWorkspace({ bootstrap }) {
             presets={presets}
             defaultPresetId={defaultPresetId}
             onChange={updateInput}
-            onRun={runCalibration}
-            running={running}
-            disabled={!runReady}
           />
 
           <div className="min-w-0 space-y-5">
-            {runError && <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>}
-            {running ? (
-              <RolloutResultsSkeleton />
+            {runError ? (
+              <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
             ) : response ? (
               <CalibrationResults response={response} />
             ) : (
-              <div className="augur-note p-4">
-                Pick a model preset, then run a calibration to compare the model's rollouts against market prices.
-              </div>
+              <RolloutResultsSkeleton />
             )}
           </div>
         </section>

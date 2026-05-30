@@ -8,6 +8,7 @@ py_library(
     deps = [
         "//augur/api:config",
         "//augur/api:server_lib",
+        "//augur/calibration:manifold",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
     ],
@@ -68,10 +69,10 @@ py_test(
     size = "large",
     srcs = ["visual_test.py"],
     data = [
-        ":dev",
         "//augur/api:public_fixture_calibration_catalog",
         "//augur/api:public_fixture_config",
         "//augur/api:public_fixture_properties",
+        "//augur/frontend:bundle_base",
         "//augur/frontend:visual_golden_snapshots",
         "//util/testing/frontend_visual:fonts",
         "//util/testing/frontend_visual:fonts_conf",
@@ -84,6 +85,10 @@ py_test(
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
     deps = [
+        ":dev_server_lib",
+        "//augur/api:config",
+        "//augur/calibration:catalog",
+        "//augur/calibration:testing",
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
@@ -93,5 +98,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
     ],
 )

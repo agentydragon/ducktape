@@ -9,8 +9,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
-from augur.api.config import load_augur_config, resolve_augur_config_path
+from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.api.server import build_configured_server_arg_parser, create_app_from_augur_config, run_app
+from augur.calibration.manifold import ManifoldClient
 from util.bazel.runfiles import get_required_path
 
 _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
@@ -52,6 +53,20 @@ def _mount_static_bundle(app: FastAPI, static_path: StaticPathResolver) -> None:
         return FileResponse(path, headers=no_store)
 
 
+def build_dev_app(
+    augur_config: Config, *, api_only: bool = False, price_client: ManifoldClient | None = None
+) -> FastAPI:
+    """The combined dev app (API routes plus, unless `api_only`, the static SPA bundle).
+
+    `price_client` overrides the live Manifold source for `/api/calibration/run` (the visual
+    test injects a hermetic `mock_manifold_client` so the calibration tab's auto-run never
+    touches the network)."""
+    app = create_app_from_augur_config(augur_config, price_client=price_client)
+    if not api_only:
+        _mount_static_bundle(app, _fixture_bundle_static_path())
+    return app
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_configured_server_arg_parser(
         description="Serve the Augur public fixture dev app.",
@@ -59,9 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     ).parse_args(argv)
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
-    app = create_app_from_augur_config(augur_config)
-    if not args.api_only:
-        _mount_static_bundle(app, _fixture_bundle_static_path())
+    app = build_dev_app(augur_config, api_only=args.api_only)
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

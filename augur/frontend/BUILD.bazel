@@ -144,7 +144,6 @@ js_library(
         ":hooks",
         ":input_helpers",
         ":skeleton",
-        "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//augur/frontend/lib:controls",
         "//augur/frontend/lib:format",
