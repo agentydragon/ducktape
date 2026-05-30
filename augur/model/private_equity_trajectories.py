@@ -17,7 +17,10 @@ Artifact schema (one event per JSONL line):
 
 Only `event_type == "tender"` is consumed today. Other event types (`ipo`,
 `public_mark`, `acquisition`) are tolerated but ignored — they're produced by the
-upstream model for the full LiquidityRegime ladder, which we currently scope out.
+upstream model for the full regime ladder (public-market / acquired / collapsed),
+which this pre-sampled trajectories path scopes out (it consumes only `tender`
+events). The structured `private_equity_risk` provider, by contrast, emits those
+regime transitions on the bundle's `regime_code` channel.
 
 Trajectory selection per (rollout, issuer) is deterministic:
 `trajectory_index = rollout_seed % len(trajectories_for_issuer)`.

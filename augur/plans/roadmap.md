@@ -216,9 +216,12 @@ the wrong structure.
   controls are mixed Tailwind + Mantine. Standard controls (selects, number
   inputs, buttons, prefix/suffix adornments) should move to Mantine unless
   there's a documented reason not to.
-- Add browser controls for `PrivateEquity` `LiquidityRegime` variants
-  (`LiquidityEventOnly`, `PublicMarket`, `Acquisition`) instead of exposing only
-  the tender-event PE shape.
+- Add browser controls for the modeled PE regime/event path — public-market
+  lockup / IPO timing (`public_market_cdf_anchors`), acquisition cashout, legal
+  block, forced recovery, collapse — i.e. the `PrivateEquityRiskIssuerConfig`
+  knobs, instead of exposing only the single fixture tender-event PE shape.
+  (There is no product-level `LiquidityRegime` union; the regime is the model's
+  `regime_code` channel, flipped mid-rollout — see "Next Lanes".)
 - Normalize result labels around `liquid_net_worth`, `net_worth`, tender
   eligibility, and selected-rollout percentiles; avoid generic "liquidity"
   wording where it means PE sale opportunity or tender eligibility.
@@ -242,10 +245,20 @@ the wrong structure.
   sale model** — qualified dividends, capital losses + carryforward, passive
   loss limitation/release, NIIT, filing statuses beyond single, §121
   nonqualified-use / reuse limits, SALT AGI phase-out, and sales-tax election.
-- **`RegimeChange` mid-rollout events** — IPO converts `LiquidityEventOnly` →
-  `PublicMarket`. The discriminated-union shape already supports static
-  regimes; runtime needs to sample the event month and flip the variant instead
-  of requiring the position's regime to be fixed for the whole horizon.
+- **Mid-rollout PE regime change — done (M1).** The structured
+  `private_equity_risk` model samples the IPO month from
+  `public_market_cdf_anchors` and forward-fills `regime_code → PUBLIC_MARKET`
+  from that month (with a lockup window on `liquidity_blocked`); the sim's
+  `_apply_pe_tenders` reads `regime_code` / `liquidity_blocked` /
+  `sale_capacity_fraction` per month and opens on-market PE sales at the flip
+  with no tender event required (`augur/sim/engine/phases.py`;
+  `augur/sim/simulate_test.py::test_pe_public_market_regime_allows_floor_sale_without_tender_event`,
+  `augur/model/private_equity_risk_test.py::test_private_equity_risk_public_market_lockup_blocks_liquidity_then_opens`).
+  The PE position's regime is therefore NOT fixed for the horizon. There is no
+  product-level `LiquidityRegime` discriminated union; the mid-rollout
+  transition is a `PrivateEquityRegimeCode` channel transition on the bundle.
+  The only remaining gap is product-author UI to configure/inspect that regime
+  path — see the browser-controls item under "UI Cleanup".
 - **Mortgage-rate path sampling** — today the mortgage rate is a single PMMS
   survey number at scenario time; required-series introspection doesn't cover a
   `mortgage30:*` path. Adding it would let "what if rates fall to 5% in 18
