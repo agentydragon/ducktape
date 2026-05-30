@@ -13,11 +13,11 @@ import json
 
 from augur.api.config import load_augur_config
 from augur.api.server import create_app_from_augur_config
-from util.bazel.runfiles import get_required_path
+from util.bazel.runfiles import get_required_own_repo_path
 
 
 def main() -> None:
-    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    config = load_augur_config(get_required_own_repo_path("augur/api/testdata/config.yaml"))
     print(json.dumps(create_app_from_augur_config(config).openapi(), indent=2))
 
 
