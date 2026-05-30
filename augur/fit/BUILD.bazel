@@ -262,3 +262,36 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_library(
+    name = "dilution_prior",
+    srcs = ["dilution_prior.py"],
+    deps = [":evidence_config"],
+)
+
+py_library(
+    name = "derive_dilution_prior_lib",
+    srcs = ["derive_dilution_prior.py"],
+    deps = [
+        ":dilution_prior",
+        ":evidence_config",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_binary(
+    name = "derive_dilution_prior",
+    main_module = "augur.fit.derive_dilution_prior",
+    deps = [":derive_dilution_prior_lib"],
+)
+
+py_test(
+    name = "test_dilution_prior",
+    srcs = ["test_dilution_prior.py"],
+    deps = [
+        ":dilution_prior",
+        ":evidence_config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

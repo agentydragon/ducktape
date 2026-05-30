@@ -154,12 +154,24 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
 
 **Staging** (tracked in `augur/TODO.md`):
 
-- **M2.2-A — per-rollout stochastic dilution rate (ship first).** `r ~ LogNormal(μ_r, σ_r)`
-  drawn once per rollout off its own seed stream (mirroring `V(t)`'s `:pe_risk_valuation`),
-  into the existing mark formula. New config `annual_dilution_rate_log_sigma`; MAP/SVI-fit
-  `μ_r, σ_r` from the implied-share-growth series. Independent of `V(t)` (conservatively
-  _over_-states per-share spread by omitting the hedge in B). Touches only the dilution side —
-  no new bundle event machinery.
+- **M2.2-A — per-rollout stochastic dilution rate ✅ (sampler + generic fit landed).** Each
+  rollout draws `r = annual_dilution_rate · exp(annual_dilution_rate_log_sigma · z)`,
+  `z ~ N(0, 1)` — a **median-anchored** LogNormal (`median(r) == annual_dilution_rate`
+  exactly; NOT mean-anchored, which would inflate dilution by `exp(σ²/2)` as σ grows) — off
+  its OWN `<issuer>:pe_risk_dilution` seed stream (mirroring `V(t)`'s `:pe_risk_valuation`),
+  into the existing coupled-mark formula. The new config knob `annual_dilution_rate_log_sigma`
+  flows through ONE unified path: with σ=0 (default) `exp(0)=1` collapses the draw so every
+  rollout gets exactly `annual_dilution_rate`, byte-identical to the M2 deterministic factor
+  (no `if σ==0` special-case; proven by a byte-identity regression test). Because the draw is
+  on an independent stream, the mark/event/regime/valuation arrays are unperturbed when σ
+  turns on — only the per-share mark spread widens (a quadratic-in-t cone). The generic fit
+  lives in `augur/fit/dilution_prior.py` (+ a `derive_dilution_prior` binary mirroring
+  `derive_ipo_prior`): an implied-shares (`valuation/price`) log-linear OLS recovers
+  `annual_dilution_rate = exp(slope) − 1` and `annual_dilution_rate_log_sigma` from residual
+  scatter (honestly wide with ~5 points). Independent of `V(t)` (conservatively _over_-states
+  per-share spread by omitting the hedge in B). Touches only the dilution side — no new bundle
+  event machinery. **Follow-up:** gaffer config wiring (running `derive_dilution_prior` on the
+  private evidence → the issuer's `config.yaml` values) is not yet done.
 - **M2.2-B — V↔dilution correlation.** Good-company worlds (V rises fast) raise more primary
   capital → dilute more, so per-share is partly hedged; drawing `r` independent of `V` _over_-
   states per-share spread. Make _both_ `V`'s log-drift and `r` per-rollout draws from a joint
