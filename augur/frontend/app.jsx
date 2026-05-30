@@ -532,12 +532,16 @@ function CalibrationAppSurface({
   );
 }
 
-// Mounted once bootstrap has loaded so the shared rollout-count default (which depends on
-// `bootstrap.maxRolloutSamples`) is available at state-init time. Owns the cross-tab state —
-// the active tab and the shared rollout count — and hands both to whichever workspace is active.
+// Mounted once bootstrap has loaded so the shared defaults (which depend on bootstrap fields like
+// `maxRolloutSamples` and `exogenousPresets`) are available at state-init time. Owns the cross-tab
+// state — the active tab, the shared rollout count, and the shared exogenous model — and hands it
+// to whichever workspace is active.
 function LoadedAppShell({ bootstrap, deployment }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
   const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
+  const [exogenousModel, setExogenousModel] = useState(() =>
+    exogenousModelFromSearch(window.location.search, bootstrap)
+  );
 
   const onSelectTab = (next) => {
     setTab(next);
@@ -550,7 +554,21 @@ function LoadedAppShell({ bootstrap, deployment }) {
     writeRolloutCountToSearch(next, bootstrap);
   };
 
-  const sharedProps = { bootstrap, deployment, tab, onSelectTab, rolloutCount, onChangeRolloutCount };
+  const onChangeExogenousModel = (value) => {
+    setExogenousModel(value);
+    writeExogenousModelToSearch(value, bootstrap);
+  };
+
+  const sharedProps = {
+    bootstrap,
+    deployment,
+    tab,
+    onSelectTab,
+    rolloutCount,
+    onChangeRolloutCount,
+    exogenousModel,
+    onChangeExogenousModel,
+  };
   if (tab === "calibration") {
     return <CalibrationAppSurface {...sharedProps} />;
   }
