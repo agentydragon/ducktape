@@ -34,15 +34,14 @@ from enum import Enum
 import numpy as np
 import numpy.typing as npt
 
+from augur.dates import months_between
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
-
-_DAYS_PER_MONTH = 365.2425 / 12
 
 
 def months_after(anchor: date, when: date) -> int:
     """Month offset of `when` from `anchor` (floored). May be negative if `when` precedes `anchor`."""
-    return math.floor((when - anchor).days / _DAYS_PER_MONTH)
+    return math.floor(months_between(anchor, when))
 
 
 # An IPO is preempted by any absorbing pre-IPO exit: collapse, forced recovery

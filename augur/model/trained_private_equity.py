@@ -10,6 +10,7 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import Field
 
+from augur.dates import months_between
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.private_equity_protocol import (
     neutral_private_equity_issuer_bundle,
@@ -17,8 +18,6 @@ from augur.model.private_equity_protocol import (
 )
 from augur.model.schemas import FrozenModel
 from augur.model.series_model import derive_stream_rollout_seeds
-
-_DAYS_PER_MONTH = 365.2425 / 12
 
 
 class TrainedPrivateEquityScalePrior(FrozenModel):
@@ -147,7 +146,7 @@ def _sample_tender_events(
 ) -> np.ndarray:
     events = np.zeros((len(rollout_seeds), horizon_months + 1), dtype=np.bool_)
     elapsed_since_last_tender = (
-        max(_months_between(artifact.last_tender_observed_at, artifact.as_of_date), 0.0)
+        max(months_between(artifact.last_tender_observed_at, artifact.as_of_date), 0.0)
         if artifact.last_tender_observed_at is not None
         else 0.0
     )
@@ -189,10 +188,6 @@ def _apply_event_price_noise(
             size=event_months.size,
         )
         levels[rollout_idx, event_months] *= np.exp(discounts)
-
-
-def _months_between(start: date, end: date) -> float:
-    return (end - start).days / _DAYS_PER_MONTH
 
 
 def private_equity_soft_cap_penalty(

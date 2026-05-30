@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from augur.dates import months_between
 from augur.fit.evidence_data import ExogenousEvidence
 from augur.fit.private_equity import (
     PriceObservation,
@@ -31,7 +32,6 @@ from augur.model.state_space import (
 )
 from augur.product.asset_key import PrivateEquityAssetKey
 
-_DAYS_PER_MONTH = 365.2425 / 12
 # Weak prior for the monthly private-equity/SP500 return correlation. The value
 # is intentionally generic rather than company-specific: 0.35 is a middle of the
 # "positive but noisy market exposure" range implied by public software/high-growth
@@ -169,7 +169,7 @@ def _estimate_sp500_coupling(
 ) -> dict[str, float | int]:
     rows: list[tuple[float, float]] = []
     for start, end in pairwise(sorted(observations, key=lambda obs: obs.observed_at)):
-        duration = _months_between(start.observed_at, end.observed_at)
+        duration = months_between(start.observed_at, end.observed_at)
         if duration <= 0:
             continue
         sp500_return = _historical_cumulative_return(historical, "sp500", start.observed_at, end.observed_at)
@@ -277,10 +277,6 @@ def _parse_observed_date(value: Any) -> date:
     if len(value) == 7:
         return pd.Period(value, freq="M").to_timestamp().date()
     return date.fromisoformat(value)
-
-
-def _months_between(start: date, end: date) -> float:
-    return (end - start).days / _DAYS_PER_MONTH
 
 
 def _resolve_path(path: str | Path, base_dir: Path) -> Path:

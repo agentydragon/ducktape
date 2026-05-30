@@ -71,6 +71,7 @@ py_library(
     deps = [
         ":evidence_data",
         ":private_equity",
+        "//augur:dates",
         "//augur/model:conditioning",
         "//augur/model:series",
         "//augur/model:state_space",
@@ -139,6 +140,7 @@ py_library(
     name = "private_equity",
     srcs = ["private_equity.py"],
     deps = [
+        "//augur:dates",
         "//augur/model:schemas",
         "//augur/model:trained_private_equity",
         "@pypi//numpy",

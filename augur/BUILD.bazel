@@ -3,6 +3,21 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "dates",
+    srcs = ["dates.py"],
+    imports = [".."],
+)
+
+py_test(
+    name = "dates_test",
+    srcs = ["dates_test.py"],
+    deps = [
+        ":dates",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "dev_server_lib",
     srcs = ["dev_server.py"],
     deps = [

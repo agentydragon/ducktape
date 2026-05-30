@@ -22,6 +22,7 @@ import numpy as np
 from numpyro import distributions as dist
 from pydantic import Field, model_validator
 
+from augur.dates import months_between
 from augur.frames import concat_frames
 from augur.model.conditioning import ExogenousConditioningContext, ObservationTreatment, latest_observations_by_series
 from augur.model.exogenous import (
@@ -464,7 +465,7 @@ class StateSpaceModel:
             return events
         event_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:state_space_pe_event")
         elapsed_since_last_tender = (
-            max(_months_between(prior.last_tender_observed_at, self.conditioning.start_at), 0.0)
+            max(months_between(prior.last_tender_observed_at, self.conditioning.start_at), 0.0)
             if prior.last_tender_observed_at is not None
             else 0.0
         )
@@ -584,10 +585,6 @@ def _matrix_to_tuple(matrix: np.ndarray) -> tuple[tuple[float, ...], ...]:
 def _require_square_matrix(value: tuple[tuple[float, ...], ...], n: int, label: str) -> None:
     if len(value) != n or any(len(row) != n for row in value):
         raise ValueError(f"{label} must be {n}x{n}")
-
-
-def _months_between(start: date, end: date) -> float:
-    return (end - start).days / (365.2425 / 12)
 
 
 def write_state_space_artifact(path: Path, artifact: StateSpaceModelArtifact) -> None:

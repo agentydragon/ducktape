@@ -11,6 +11,7 @@ py_library(
     name = "resolvers",
     srcs = ["resolvers.py"],
     deps = [
+        "//augur:dates",
         "//augur/model:private_equity_bundle",
         "//augur/model:series",
         "@pypi//numpy",

@@ -14,10 +14,9 @@ import numpy as np
 import yaml
 from pydantic import Field
 
+from augur.dates import months_between
 from augur.model.schemas import StrictModel
 from augur.model.trained_private_equity import TrainedPrivateEquityModelArtifact, TrainedPrivateEquityScalePrior
-
-_DAYS_PER_MONTH = 365.2425 / 12
 
 # Stock-like forward priors for private companies whose observed marks are sparse
 # tenders rather than continuous public trades. These defaults are deliberately
@@ -154,9 +153,7 @@ def fit_private_equity_model(
             f"{current_mark.observed_at.isoformat()}"
         )
 
-    times = np.array(
-        [_months_between(price_observations[0].observed_at, obs.observed_at) for obs in price_observations]
-    )
+    times = np.array([months_between(price_observations[0].observed_at, obs.observed_at) for obs in price_observations])
     log_prices = np.log(np.array([obs.price_usd_per_share for obs in price_observations], dtype=np.float64))
     obs_sigmas = np.array([obs.uncertainty_log_sigma for obs in price_observations], dtype=np.float64)
     empirical_monthly_mu = _weighted_slope(times, log_prices, obs_sigmas)
@@ -237,10 +234,6 @@ def _resolve_path(path: str | Path, base_dir: Path) -> Path:
     return (base_dir / value).resolve()
 
 
-def _months_between(start: date, end: date) -> float:
-    return (end - start).days / _DAYS_PER_MONTH
-
-
 def _weighted_slope(times_months: np.ndarray, log_prices: np.ndarray, obs_sigmas: np.ndarray) -> float:
     if np.any(np.diff(times_months) <= 0):
         raise ValueError("price observations must have distinct increasing observed_at dates")
@@ -299,9 +292,9 @@ def _estimate_scale_prior(
     max_gap = priors.valuation_pairing_max_months
     for valuation in valuation_observations:
         nearest = min(
-            price_observations, key=lambda price: abs(_months_between(price.observed_at, valuation.observed_at))
+            price_observations, key=lambda price: abs(months_between(price.observed_at, valuation.observed_at))
         )
-        gap = abs(_months_between(nearest.observed_at, valuation.observed_at))
+        gap = abs(months_between(nearest.observed_at, valuation.observed_at))
         if gap > max_gap:
             continue
         log_share_count_estimates.append(math.log(valuation.valuation_usd) - math.log(nearest.price_usd_per_share))
@@ -335,7 +328,7 @@ def _tender_interval_months_median(observations: list[PriceObservation], *, prio
     if len(observations) < 2:
         return float(prior)
     dates = [observation.observed_at for observation in sorted(observations, key=lambda obs: obs.observed_at)]
-    intervals = np.array([_months_between(start, end) for start, end in pairwise(dates)])
+    intervals = np.array([months_between(start, end) for start, end in pairwise(dates)])
     intervals = intervals[intervals > 0]
     if intervals.size == 0:
         return float(prior)
