@@ -18,7 +18,8 @@ spec:
       labels:
         app.kubernetes.io/name: plaid-mcp
     spec:
-      serviceAccountName: plaid-mcp
+      # No Kubernetes API access — read Secrets via env, talk only to Plaid/Authentik/valkey.
+      automountServiceAccountToken: false
       # Required: the Service is named `plaid-mcp`, so service-link env vars
       # (PLAID_MCP_PORT=tcp://...) would otherwise collide with the server's
       # PLAID_MCP_-prefixed pydantic settings.

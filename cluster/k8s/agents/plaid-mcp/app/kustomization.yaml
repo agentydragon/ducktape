@@ -5,7 +5,6 @@ kind: Kustomization
 # reflector. plaid-mcp-oidc (facade Authentik creds) is created by the
 # agent-machine-access Terraform module.
 resources:
-  - serviceaccount.yaml
   - configmap.yaml
   - valkey-kimsufi-instance.yaml
   - deployment.yaml
