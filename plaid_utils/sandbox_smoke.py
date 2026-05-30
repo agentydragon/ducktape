@@ -1,15 +1,13 @@
 """End-to-end Plaid sandbox smoke test.
 
-Creates a fake public_token, exchanges it for an access_token, then pulls
-accounts and one page of transactions. Verifies creds work and the airlock
-PlaidProvider exchange path runs cleanly.
+Creates a fake public_token, exchanges it for an access_token, then pulls accounts
+and a page of transactions. Verifies the creds and the SDK call path run cleanly.
 
 Run:
-    set -a; source plaid/.creds.env; set +a
-    bb run //plaid:sandbox_smoke
+    set -a; source plaid_utils/.creds.env; set +a
+    bb run //plaid_utils:sandbox_smoke
 """
 
-import asyncio
 import logging
 
 from plaid_utils.client import PlaidExtras
@@ -18,7 +16,8 @@ from plaid_utils.dev_creds import load
 logger = logging.getLogger(__name__)
 
 
-async def async_main() -> None:
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     creds = load()
     if creds.env != "sandbox":
         raise SystemExit(f"sandbox_smoke requires PLAID_ENV=sandbox, got {creds.env!r}")
@@ -26,15 +25,15 @@ async def async_main() -> None:
     extras = PlaidExtras(creds)
 
     logger.info("creating sandbox public_token …")
-    public_token = await extras.sandbox_public_token_create()
+    public_token = extras.sandbox_public_token_create()
     logger.info("public_token=%s…", public_token[:24])
 
     logger.info("exchanging for access_token …")
-    access_token = await extras.exchange_public_token(public_token)
+    access_token = extras.exchange_public_token(public_token)
     logger.info("access_token=%s…", access_token[:24])
 
     logger.info("fetching /accounts/get …")
-    accounts = await extras.accounts_get(access_token)
+    accounts = extras.accounts_get(access_token)
     for acct in accounts.accounts:
         bal = acct.balances
         logger.info(
@@ -52,7 +51,7 @@ async def async_main() -> None:
     page = 0
     while True:
         page += 1
-        result = await extras.transactions_sync(access_token, cursor=cursor)
+        result = extras.transactions_sync(access_token, cursor=cursor)
         added = result.get("added", [])
         logger.info("  page=%d added=%d has_more=%s", page, len(added), result.get("has_more"))
         for txn in added[:5]:
@@ -69,11 +68,6 @@ async def async_main() -> None:
         if page >= 10:
             logger.info("  stopping after 10 pages")
             break
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
-    asyncio.run(async_main())
 
 
 if __name__ == "__main__":

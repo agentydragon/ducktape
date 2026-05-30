@@ -6,9 +6,10 @@ credit-card liabilities. Backs the [Plaid MCP server](mcp_server/README.md).
 Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
 official `plaid` SDK — same convention as `openai_utils`.
 
-`client.py` is a thin async wrapper over the official [`plaid-python`](https://github.com/plaid/plaid-python)
-SDK (synchronous; calls run in threads via `asyncio.to_thread`). It exposes the read
-endpoints the MCP server needs (`/accounts/get`, `/accounts/balance/get`,
+`client.py` is a thin wrapper over the official [`plaid-python`](https://github.com/plaid/plaid-python)
+SDK. The SDK is synchronous (urllib3, no asyncio API), so the client is synchronous too —
+FastMCP runs the MCP tool functions in a worker thread, so nothing blocks an event loop.
+It exposes the read endpoints the MCP server needs (`/accounts/get`, `/accounts/balance/get`,
 `/transactions/get`, `/liabilities/get`) plus the sandbox helpers the smoke test uses
 (`/sandbox/public_token/create`, `/item/public_token/exchange`, `/transactions/sync`).
 Responses are run through the SDK's `sanitize_for_serialization` and validated into the

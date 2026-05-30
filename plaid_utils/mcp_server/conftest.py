@@ -36,16 +36,14 @@ class FakePlaidExtras(PlaidExtras):
         self._transactions = transactions
         self._credit = credit
 
-    async def accounts_get(self, access_token: str) -> AccountsGetResponse:
+    def accounts_get(self, access_token: str) -> AccountsGetResponse:
         return AccountsGetResponse(accounts=self._accounts)
 
-    async def accounts_balance_get(
-        self, access_token: str, account_ids: list[str] | None = None
-    ) -> AccountsGetResponse:
+    def accounts_balance_get(self, access_token: str, account_ids: list[str] | None = None) -> AccountsGetResponse:
         accounts = self._accounts if account_ids is None else [a for a in self._accounts if a.account_id in account_ids]
         return AccountsGetResponse(accounts=accounts)
 
-    async def transactions_get(
+    def transactions_get(
         self,
         access_token: str,
         start_date: date,
@@ -61,7 +59,7 @@ class FakePlaidExtras(PlaidExtras):
             accounts=self._accounts, transactions=txns[offset : offset + count], total_transactions=len(txns)
         )
 
-    async def liabilities_get(self, access_token: str) -> LiabilitiesGetResponse:
+    def liabilities_get(self, access_token: str) -> LiabilitiesGetResponse:
         return LiabilitiesGetResponse(accounts=self._accounts, liabilities=Liabilities(credit=self._credit))
 
 

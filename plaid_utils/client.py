@@ -1,7 +1,8 @@
 """Plaid client for the Plaid MCP server and experiments.
 
-Thin async wrapper over the official `plaid-python` SDK. The SDK is synchronous, so
-each call runs in a thread via `asyncio.to_thread`. Covers the read endpoints the MCP
+Thin wrapper over the official `plaid-python` SDK. The SDK is synchronous (urllib3, no
+asyncio API), so this client is synchronous too — FastMCP runs the MCP tool functions in
+a worker thread, so there's no event loop to block. Covers the read endpoints the MCP
 server needs (`/accounts/get`, `/accounts/balance/get`, `/transactions/get`,
 `/liabilities/get`) plus the sandbox helpers the smoke test uses
 (`/sandbox/public_token/create`, `/item/public_token/exchange`, `/transactions/sync`).
@@ -15,7 +16,6 @@ are passed in as `PlaidCreds`; loading them from sops/env lives in `plaid_utils.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -87,29 +87,27 @@ class PlaidExtras:
         self._client = plaid.ApiClient(configuration)
         self._api = plaid_api.PlaidApi(self._client)
 
-    async def _call(self, fn: Callable[[Any], Any], request: Any) -> Any:
-        """Run a sync SDK call in a thread, map `ApiException` -> `PlaidAPIError`, JSON-sanitize the response."""
+    def _call(self, fn: Callable[[Any], Any], request: Any) -> Any:
+        """Invoke a sync SDK call, map `ApiException` -> `PlaidAPIError`, JSON-sanitize the response."""
         try:
-            response = await asyncio.to_thread(fn, request)
+            response = fn(request)
         except plaid.ApiException as exc:
             raise PlaidAPIError.from_api_exception(exc) from exc
         return self._client.sanitize_for_serialization(response)
 
-    async def accounts_get(self, access_token: str) -> AccountsGetResponse:
-        data = await self._call(self._api.accounts_get, AccountsGetRequest(access_token=access_token))
+    def accounts_get(self, access_token: str) -> AccountsGetResponse:
+        data = self._call(self._api.accounts_get, AccountsGetRequest(access_token=access_token))
         return AccountsGetResponse.model_validate(data)
 
-    async def accounts_balance_get(
-        self, access_token: str, account_ids: list[str] | None = None
-    ) -> AccountsGetResponse:
+    def accounts_balance_get(self, access_token: str, account_ids: list[str] | None = None) -> AccountsGetResponse:
         """Real-time balances (uncached; hits the institution). Heavily rate-limited per Item."""
         request = AccountsBalanceGetRequest(access_token=access_token)
         if account_ids is not None:
             request.options = AccountsBalanceGetRequestOptions(account_ids=account_ids)
-        data = await self._call(self._api.accounts_balance_get, request)
+        data = self._call(self._api.accounts_balance_get, request)
         return AccountsGetResponse.model_validate(data)
 
-    async def transactions_get(
+    def transactions_get(
         self,
         access_token: str,
         start_date: date,
@@ -125,31 +123,31 @@ class PlaidExtras:
         request = TransactionsGetRequest(
             access_token=access_token, start_date=start_date, end_date=end_date, options=options
         )
-        data = await self._call(self._api.transactions_get, request)
+        data = self._call(self._api.transactions_get, request)
         return TransactionsGetResponse.model_validate(data)
 
-    async def liabilities_get(self, access_token: str) -> LiabilitiesGetResponse:
-        data = await self._call(self._api.liabilities_get, LiabilitiesGetRequest(access_token=access_token))
+    def liabilities_get(self, access_token: str) -> LiabilitiesGetResponse:
+        data = self._call(self._api.liabilities_get, LiabilitiesGetRequest(access_token=access_token))
         return LiabilitiesGetResponse.model_validate(data)
 
-    async def sandbox_public_token_create(
+    def sandbox_public_token_create(
         self, institution_id: str = "ins_109508", initial_products: list[str] | None = None
     ) -> str:
         products = [Products(p) for p in (initial_products or ["transactions"])]
         request = SandboxPublicTokenCreateRequest(institution_id=institution_id, initial_products=products)
-        data = await self._call(self._api.sandbox_public_token_create, request)
+        data = self._call(self._api.sandbox_public_token_create, request)
         return str(data["public_token"])
 
-    async def exchange_public_token(self, public_token: str) -> str:
+    def exchange_public_token(self, public_token: str) -> str:
         """Exchange a public_token for a permanent access_token (`/item/public_token/exchange`)."""
         request = ItemPublicTokenExchangeRequest(public_token=public_token)
-        data = await self._call(self._api.item_public_token_exchange, request)
+        data = self._call(self._api.item_public_token_exchange, request)
         return str(data["access_token"])
 
-    async def transactions_sync(self, access_token: str, cursor: str = "", count: int = 500) -> dict[str, Any]:
+    def transactions_sync(self, access_token: str, cursor: str = "", count: int = 500) -> dict[str, Any]:
         """Incremental cursor sync. Used by the sandbox smoke test; not on the MCP surface."""
         request = TransactionsSyncRequest(access_token=access_token, count=count)
         if cursor:
             request.cursor = cursor
-        data: dict[str, Any] = await self._call(self._api.transactions_sync, request)
+        data: dict[str, Any] = self._call(self._api.transactions_sync, request)
         return data

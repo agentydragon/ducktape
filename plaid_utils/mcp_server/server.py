@@ -4,8 +4,8 @@ Auth-oblivious by design — a front proxy (`mcp-oauth-facade`) handles Authenti
 OAuth; this server only speaks MCP over HTTP on its configured port. One server
 holds every configured item's access token; tools take an `item` selector.
 
-Tools return the typed `plaid.models` shapes directly (the models already cover only
-the fields we expose) — there is no separate projection layer.
+Tools return the typed `plaid_utils.models` shapes directly (the models already cover
+only the fields we expose) — there is no separate projection layer.
 """
 
 import logging
@@ -16,13 +16,22 @@ from typing import Annotated
 import uvicorn
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from plaid_utils.client import PlaidCreds, PlaidExtras
-from plaid_utils.mcp_server.config import ItemSummary, ResolvedItem, ServerSettings
+from plaid_utils.mcp_server.config import ResolvedItem, ServerSettings
 from plaid_utils.models import Account, Liabilities, TransactionPage
 
 logger = logging.getLogger(__name__)
+
+
+class ItemSummary(BaseModel):
+    """list_items output: a configured item without its access token."""
+
+    key: str
+    institution: str
+    products: list[str]
+
 
 INSTRUCTIONS = (
     "Read-only access to the owner's Plaid-linked bank accounts: transactions, balances, and "
@@ -53,16 +62,16 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         return [ItemSummary(key=i.key, institution=i.institution, products=i.products) for i in items.values()]
 
     @mcp.tool
-    async def list_accounts(item: _ItemArg) -> list[Account]:
+    def list_accounts(item: _ItemArg) -> list[Account]:
         """Accounts for an item with CACHED balances.
 
         Balances reflect Plaid's last pull (refreshed 1-4x/day); use get_live_balance for a
         real-time figure. The returned account_id values feed the filters on the other tools.
         """
-        return (await extras.accounts_get(resolve(item).access_token)).accounts
+        return extras.accounts_get(resolve(item).access_token).accounts
 
     @mcp.tool
-    async def list_transactions(
+    def list_transactions(
         item: _ItemArg,
         start_date: Annotated[date, Field(description="Inclusive start date.")],
         end_date: Annotated[date, Field(description="Inclusive end date.")],
@@ -81,7 +90,7 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         Recently linked/refreshed items can briefly raise PRODUCT_NOT_READY.
         """
         account_ids = [account_id] if account_id is not None else None
-        resp = await extras.transactions_get(
+        resp = extras.transactions_get(
             resolve(item).access_token,
             start_date=start_date,
             end_date=end_date,
@@ -92,7 +101,7 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         return TransactionPage(total=resp.total_transactions, transactions=resp.transactions)
 
     @mcp.tool
-    async def get_liabilities(item: _ItemArg) -> Liabilities:
+    def get_liabilities(item: _ItemArg) -> Liabilities:
         """Liabilities for an item: `credit` cards, `mortgage`s, and `student` loans.
 
         Backed by /liabilities/get. Each array is null when the item has no accounts of that
@@ -107,10 +116,10 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
                 f"Item {resolved.key!r} has no 'liabilities' product (products: {resolved.products}). "
                 "Use list_items to see which items support liabilities."
             )
-        return (await extras.liabilities_get(resolved.access_token)).liabilities
+        return extras.liabilities_get(resolved.access_token).liabilities
 
     @mcp.tool
-    async def get_live_balance(
+    def get_live_balance(
         item: _ItemArg,
         account_id: Annotated[
             str | None,
@@ -123,7 +132,7 @@ def build_server(extras: PlaidExtras, items: dict[str, ResolvedItem]) -> FastMCP
         routine reads; pass account_id to fetch a single account and conserve the budget.
         """
         account_ids = [account_id] if account_id is not None else None
-        return (await extras.accounts_balance_get(resolve(item).access_token, account_ids=account_ids)).accounts
+        return extras.accounts_balance_get(resolve(item).access_token, account_ids=account_ids).accounts
 
     return mcp
 
