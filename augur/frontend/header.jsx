@@ -1,10 +1,16 @@
 import React from "react";
-import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
+import { NativeSelect, NumberInput, SegmentedControl, Text } from "@mantine/core";
 
 const SCALE_OPTIONS = [
   { value: "linear", label: "Linear" },
   { value: "log", label: "Log" },
 ];
+
+// Width for a NumberInput unit chip (e.g. "mo"), matching the sidebar `NumberField` sizing so the
+// header's unit suffix reads the same as the product tab's.
+function unitSectionWidth(section) {
+  return Math.max(34, String(section).length * 8 + 24);
+}
 
 // Tab-shared rollout count control. It lives in the header — the only region common to both the
 // product and calibration surfaces — so a single control drives the rollout count on every page.
@@ -44,8 +50,10 @@ function HorizonControl({ value, onChange, max }) {
         step={12}
         value={value ?? ""}
         hideControls
-        suffix=" mo"
-        classNames={{ input: "augur-tabular w-20 text-right" }}
+        rightSection={<Text className="augur-number-section">mo</Text>}
+        rightSectionPointerEvents="none"
+        rightSectionWidth={unitSectionWidth("mo")}
+        classNames={{ input: "augur-tabular w-24 text-right" }}
         onChange={(next) => {
           const number = typeof next === "number" ? next : Number(next);
           onChange(Number.isFinite(number) ? number : null);
