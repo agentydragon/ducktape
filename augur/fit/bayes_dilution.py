@@ -16,30 +16,30 @@ the deploy bands:
     posterior gives an honest `annual_dilution_rate_log_sigma` (the posterior SD of `log(1+r)`)
     rather than the delta-method approximation the OLS admits is "weakly identified".
 
-2.  **Decaying valuation drift.** The latent `V(t)` drift decays from a near-term `mu_0` toward
-    a long-run mature `mu_inf` with a fitted half-life, so an explosive near-term growth rate
-    informs the near term without compounding over the whole horizon. These map directly onto
-    `PrivateEquityRiskIssuerConfig.valuation_monthly_log_return_mu` (= `mu_inf`),
-    `valuation_monthly_log_return_mu_initial` (= `mu_0`), and
-    `valuation_drift_decay_halflife_months`.
+2.  **Scale-dependent mean-reverting valuation drift.** The latent `V(t)` drift declines from a
+    hot `mu_young` (when the company is small) toward a mature `mu_mature` as the realized log
+    enterprise value grows past an onset -- so the boom is tamed by the company's observed SIZE,
+    not a calendar prior. These map onto a `ValuationDriftScaleReversion` submodel on the issuer
+    config (`mu_mature = valuation_monthly_log_return_mu`; `mu_young` / `log_value_onset_usd` /
+    `log_value_scale`). The fit integrates V(t) as an SDE, mirroring the deployment sampler.
 
-Generative model (monthly time axis `t`, months since the first observation):
+Generative model (dense monthly grid `m = 0..n_months`):
 
-    log_V0      ~ Normal(log V0_prior, log_v0_prior_sigma)
-    mu_inf      ~ Normal(mu_inf_prior_mu, mu_inf_prior_sigma)        # long-run monthly log-drift
-    excess0     ~ HalfNormal(excess0_prior_sigma)                    # mu_0 - mu_inf >= 0
-    log_halflife~ Normal(log halflife_prior, halflife_prior_sigma)   # decay half-life (months)
-    sigma_V     ~ HalfNormal(sigma_v_prior_sigma)                    # company-value monthly vol
-    log_shares0 ~ Normal(log shares0_prior, log_shares0_prior_sigma)
-    log1p_r     ~ Normal(log(1 + r_prior), log1p_r_prior_sigma)      # annual dilution log(1+r)
+    log_V0          ~ Normal(log V0_prior, log_v0_prior_sigma)
+    mu_mature       ~ Normal(mu_mature_prior_mu, mu_mature_prior_sigma)   # mature monthly log-drift
+    mu_young_excess ~ HalfNormal(mu_young_excess_prior_sigma)             # mu_young - mu_mature >= 0
+    log_value_onset ~ Normal(log_value_onset_prior, ...)                  # size at which reversion begins
+    log_value_scale ~ LogNormal(log scale_prior, ...)                     # e-folding in log-value
+    sigma_V         ~ HalfNormal(sigma_v_prior_sigma)                     # company-value monthly vol
+    log_shares0     ~ Normal(log shares0_prior, log_shares0_prior_sigma)
+    log1p_r         ~ Normal(log(1 + r_prior), log1p_r_prior_sigma)       # annual dilution log(1+r)
 
-    mu(t)         = mu_inf + excess0 * 0.5 ** (t / halflife)         # decaying drift
-    cum_drift(t)  = sum_{s<t} mu(s)                                   # discrete cumulative drift
-    log_V(t)      = log_V0 + cum_drift(t) + sigma_V * sqrt(t) * z_t   (z_t ~ Normal(0,1))
-    log_shares(t) = log_shares0 + (t / 12) * log1p_r
-    log_price(t)  = log_V(t) - log_shares(t)
-    valuation_obs ~ Normal(log_V(t_v),     uncertainty_log_sigma_v)
-    price_obs     ~ Normal(log_price(t_p), uncertainty_log_sigma_p)
+    mu(s)          = mu_mature + mu_young_excess * exp(-max(0, s - log_value_onset)/log_value_scale)
+    log_V(m+1)     = log_V(m) + mu(log_V(m)) + sigma_V * z_m              (SDE; z_m ~ Normal(0,1))
+    log_shares(t)  = log_shares0 + (t / 12) * log1p_r
+    log_price(t)   = log_V(t) - log_shares(t)
+    valuation_obs  ~ Normal(log_V(t_v),     uncertainty_log_sigma_v)
+    price_obs      ~ Normal(log_price(t_p), uncertainty_log_sigma_p)
 
 Generic: takes the project's `PriceObservation` / `ValuationObservation` (the same types
 `train_private_equity` ingests), returns a `BayesianDilutionPrior`. NUTS is not run-to-run
@@ -69,19 +69,24 @@ _MONTHS_PER_YEAR = 12.0
 
 @dataclass(frozen=True)
 class BayesianDilutionPriors:
-    """Hyperparameters of the informative priors. Defaults are calibrated for a high-growth
-    private company (frontier-AI-scale): a long-run drift well below the observed boom, a
-    dilution centered on a modest baseline mint, and a half-life of a couple of years over which
-    the near-term boom decays. Tune per issuer if its reference class differs.
+    """Hyperparameters of the informative priors. Defaults are research-grounded conservative
+    values for a high-growth private company maturing toward a mega-cap (see
+    augur/plans/prediction_market_calibration.md M2.2-D): a MATURE long-run drift near the S&P
+    100-yr nominal CAGR (~10%/yr ⇒ ~0.008/mo), a hot YOUNG drift the data can lift, a maturity
+    onset around the low tens of $B, and a dilution centered on a modest baseline mint. Tune per
+    issuer reference class (ultimately replaced by a population/hierarchical fit).
     """
 
     log_v0_usd: float = float(np.log(2.8e10))
     log_v0_sigma: float = 1.0
-    mu_inf_mu: float = 0.02  # ~27%/yr long-run, monthly log
-    mu_inf_sigma: float = 0.02
-    excess0_sigma: float = 0.08  # near-term excess drift over mu_inf, HalfNormal scale
-    halflife_months_mu: float = 24.0
-    log_halflife_sigma: float = 0.5
+    # Scale-dependent drift mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s-onset)/scale).
+    mu_mature_mu: float = 0.008  # ~10%/yr nominal, S&P 100-yr CAGR; conservative mega-cap asymptote
+    mu_mature_sigma: float = 0.004
+    mu_young_excess_sigma: float = 0.06  # HalfNormal scale of (mu_young - mu_mature) >= 0
+    log_value_onset_mu: float = float(np.log(2.0e10))  # maturity onset ~ $20B
+    log_value_onset_sigma: float = 0.7
+    log_value_scale_mu: float = 2.0  # e-folding in log-value (~one order of magnitude ≈ 2.3)
+    log_value_scale_sigma: float = 0.5
     sigma_v_sigma: float = 0.10
     log_shares0: float = float(np.log(4.0e8))
     log_shares0_sigma: float = 0.5
@@ -91,19 +96,21 @@ class BayesianDilutionPriors:
 
 @dataclass(frozen=True)
 class BayesianDilutionPrior:
-    """Posterior summary of the M2.2-D fit, mapping directly onto the issuer config knobs.
+    """Posterior summary of the M2.2-D fit, mapping onto the issuer config knobs.
 
-    Each `*_mu` is the posterior mean (the value to deploy) and the paired `*_sd` is the
-    posterior SD (the honest uncertainty). `annual_dilution_rate_log_sigma` is the posterior SD
-    of `log(1 + r)` -- the per-rollout dispersion the sampler consumes -- NOT a posterior-of-a-
-    parameter; it is the epistemic+sampling spread the M2.2-A sampler folds into each rollout.
+    The drift fields populate a `ValuationDriftScaleReversion` submodel:
+    `valuation_monthly_log_return_mu` is the mature asymptote `mu_mature`;
+    `mu_young` / `log_value_onset_usd` / `log_value_scale` are the reversion shape.
+    `annual_dilution_rate_log_sigma` is the posterior SD of `log(1 + r)` -- the per-rollout
+    dispersion the M2.2-A sampler folds into each rollout -- not a posterior-of-a-parameter.
     """
 
     annual_dilution_rate: float
     annual_dilution_rate_log_sigma: float
-    valuation_monthly_log_return_mu: float  # mu_inf (long-run)
-    valuation_monthly_log_return_mu_initial: float  # mu_0 (near-term) = mu_inf + excess0
-    valuation_drift_decay_halflife_months: float
+    valuation_monthly_log_return_mu: float  # mu_mature (asymptote)
+    valuation_drift_mu_young: float
+    valuation_drift_log_value_onset_usd: float
+    valuation_drift_log_value_scale: float
     valuation_monthly_log_return_sigma: float
     shares0: float
     n_price_observations: int
@@ -113,26 +120,32 @@ class BayesianDilutionPrior:
 
 def _generative(
     *,
+    price_month_idx: jnp.ndarray,
     price_t: jnp.ndarray,
     price_y: jnp.ndarray,
     price_s: jnp.ndarray,
-    val_t: jnp.ndarray,
+    val_month_idx: jnp.ndarray,
     val_y: jnp.ndarray,
     val_s: jnp.ndarray,
-    grid_t: jnp.ndarray,
+    n_months: int,
     priors: BayesianDilutionPriors,
 ) -> None:
-    """numpyro model: latent decaying-drift log-value RW + deterministic log-share path.
+    """numpyro model: latent SCALE-reverting log-value SDE + deterministic log-share path.
 
-    `grid_t` is the sorted unique observation months; the latent `log_V` lives on that grid and
-    observations index into it. `price_t` / `val_t` are each observation's month offset.
+    The latent `log_V` is integrated on a DENSE monthly grid `0..n_months` (an SDE because the
+    drift `mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - onset)/scale)` depends on
+    the realized level `s = log_V`). Observations index into the grid via `*_month_idx`
+    (rounded month offsets). Mirrors the deployment sampler's scale-reverting V(t) integration.
     """
 
     log_v0 = numpyro.sample("log_v0", dist.Normal(priors.log_v0_usd, priors.log_v0_sigma))
-    mu_inf = numpyro.sample("mu_inf", dist.Normal(priors.mu_inf_mu, priors.mu_inf_sigma))
-    excess0 = numpyro.sample("excess0", dist.HalfNormal(priors.excess0_sigma))
-    halflife = numpyro.sample(
-        "halflife_months", dist.LogNormal(jnp.log(priors.halflife_months_mu), priors.log_halflife_sigma)
+    mu_mature = numpyro.sample("mu_mature", dist.Normal(priors.mu_mature_mu, priors.mu_mature_sigma))
+    mu_young_excess = numpyro.sample("mu_young_excess", dist.HalfNormal(priors.mu_young_excess_sigma))
+    log_value_onset = numpyro.sample(
+        "log_value_onset", dist.Normal(priors.log_value_onset_mu, priors.log_value_onset_sigma)
+    )
+    log_value_scale = numpyro.sample(
+        "log_value_scale", dist.LogNormal(jnp.log(priors.log_value_scale_mu), priors.log_value_scale_sigma)
     )
     sigma_v = numpyro.sample("sigma_v", dist.HalfNormal(priors.sigma_v_sigma))
     log_shares0 = numpyro.sample("log_shares0", dist.Normal(priors.log_shares0, priors.log_shares0_sigma))
@@ -140,25 +153,24 @@ def _generative(
         "log1p_r", dist.Normal(jnp.log(1.0 + priors.annual_dilution_rate_mu), priors.log1p_r_sigma)
     )
     numpyro.deterministic("annual_dilution_rate", jnp.exp(log1p_r) - 1.0)
-    numpyro.deterministic("mu_0", mu_inf + excess0)
+    numpyro.deterministic("mu_young", mu_mature + mu_young_excess)
 
-    # Cumulative decaying drift to each grid month: cum_drift(t) = integral_0^t mu(s) ds, with
-    # mu(s) = mu_inf + excess0 * 0.5 ** (s / halflife). Closed form of the integral keeps it
-    # smooth in `halflife` (no discrete-sum gradient noise):
-    #   integral_0^t excess0 * 0.5**(s/H) ds = excess0 * H / ln2 * (1 - 0.5**(t/H)).
-    ln2 = jnp.log(2.0)
-    decayed = excess0 * (halflife / ln2) * (1.0 - jnp.power(0.5, grid_t / halflife))
-    cum_drift = mu_inf * grid_t + decayed
+    # Per-month shocks (non-centered). Integrate the scale-reverting SDE on the dense grid via
+    # scan: each step's drift is evaluated at the realized log-value at the step's start.
+    z = numpyro.sample("z", dist.Normal(jnp.zeros(n_months), 1.0).to_event(1))
+    shocks = sigma_v * z
 
-    n_grid = grid_t.shape[0]
-    z = numpyro.sample("z", dist.Normal(jnp.zeros(n_grid), 1.0).to_event(1))
-    log_v = log_v0 + cum_drift + sigma_v * jnp.sqrt(jnp.maximum(grid_t, 1e-6)) * z
+    def _step(log_v_prev: jnp.ndarray, shock: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        over_onset = jnp.maximum(0.0, log_v_prev - log_value_onset)
+        drift = mu_mature + mu_young_excess * jnp.exp(-over_onset / log_value_scale)
+        log_v_next = log_v_prev + drift + shock
+        return log_v_next, log_v_next
 
-    def _grid_index(ts: jnp.ndarray) -> jnp.ndarray:
-        return jnp.argmin(jnp.abs(grid_t[None, :] - ts[:, None]), axis=1)
+    _, log_v_path = jax.lax.scan(_step, log_v0, shocks)  # log_v_path[m] = log_V at month m+1
+    log_v_grid = jnp.concatenate([log_v0[None], log_v_path])  # index 0 = month 0
 
-    log_v_at_val = log_v[_grid_index(val_t)]
-    log_v_at_price = log_v[_grid_index(price_t)]
+    log_v_at_val = log_v_grid[val_month_idx]
+    log_v_at_price = log_v_grid[price_month_idx]
     log_shares_at_price = log_shares0 + (price_t / _MONTHS_PER_YEAR) * log1p_r
     log_price_model = log_v_at_price - log_shares_at_price
 
@@ -201,10 +213,12 @@ def fit_bayesian_dilution_prior(
     val_t = np.array([_months_since(obs.observed_at, origin) for obs in valuations], dtype=np.float64)
     val_y = np.array([np.log(obs.valuation_usd) for obs in valuations], dtype=np.float64)
     val_s = np.array([obs.uncertainty_log_sigma for obs in valuations], dtype=np.float64)
-    grid_t = np.unique(np.concatenate([price_t, val_t]))
+    # Dense monthly grid 0..n_months; each observation snaps to its nearest whole month. The SDE
+    # is integrated on this grid (drift depends on the realized level), matching the sampler.
+    n_months = round(float(max(price_t.max(), val_t.max())))
+    price_month_idx = np.clip(np.round(price_t).astype(np.int64), 0, n_months)
+    val_month_idx = np.clip(np.round(val_t).astype(np.int64), 0, n_months)
 
-    # A non-centered RW with a `sigma_v * sqrt(t) * z` scale has mild funnel geometry; a higher
-    # target acceptance probability shrinks the step size and curbs the occasional divergence.
     mcmc = MCMC(
         NUTS(_generative, target_accept_prob=0.95),
         num_warmup=num_warmup,
@@ -214,24 +228,20 @@ def fit_bayesian_dilution_prior(
     )
     mcmc.run(
         jax.random.PRNGKey(seed),
+        price_month_idx=jnp.asarray(price_month_idx),
         price_t=jnp.asarray(price_t),
         price_y=jnp.asarray(price_y),
         price_s=jnp.asarray(price_s),
-        val_t=jnp.asarray(val_t),
+        val_month_idx=jnp.asarray(val_month_idx),
         val_y=jnp.asarray(val_y),
         val_s=jnp.asarray(val_s),
-        grid_t=jnp.asarray(grid_t),
+        n_months=n_months,
         priors=priors,
         extra_fields=("diverging",),
     )
     samples = mcmc.get_samples()
     rate = np.asarray(samples["annual_dilution_rate"])
-    mu_inf = np.asarray(samples["mu_inf"])
-    mu_0 = np.asarray(samples["mu_0"])
-    halflife = np.asarray(samples["halflife_months"])
-    sigma_v = np.asarray(samples["sigma_v"])
-    log_shares0 = np.asarray(samples["log_shares0"])
-    extra = mcmc.get_extra_fields() if hasattr(mcmc, "get_extra_fields") else {}
+    extra = mcmc.get_extra_fields()
     num_divergences = int(np.sum(np.asarray(extra["diverging"]))) if "diverging" in extra else 0
 
     return BayesianDilutionPrior(
@@ -239,11 +249,12 @@ def fit_bayesian_dilution_prior(
         # Per-rollout dispersion = posterior SD of log(1+r): folds the epistemic uncertainty over
         # the dilution rate into the sampler's median-anchored LogNormal spread.
         annual_dilution_rate_log_sigma=float(np.std(np.log1p(rate))),
-        valuation_monthly_log_return_mu=float(np.mean(mu_inf)),
-        valuation_monthly_log_return_mu_initial=float(np.mean(mu_0)),
-        valuation_drift_decay_halflife_months=float(np.mean(halflife)),
-        valuation_monthly_log_return_sigma=float(np.mean(sigma_v)),
-        shares0=float(np.exp(np.mean(log_shares0))),
+        valuation_monthly_log_return_mu=float(np.mean(np.asarray(samples["mu_mature"]))),
+        valuation_drift_mu_young=float(np.mean(np.asarray(samples["mu_young"]))),
+        valuation_drift_log_value_onset_usd=float(np.mean(np.asarray(samples["log_value_onset"]))),
+        valuation_drift_log_value_scale=float(np.mean(np.asarray(samples["log_value_scale"]))),
+        valuation_monthly_log_return_sigma=float(np.mean(np.asarray(samples["sigma_v"]))),
+        shares0=float(np.exp(np.mean(np.asarray(samples["log_shares0"])))),
         n_price_observations=len(prices),
         n_valuation_observations=len(valuations),
         num_divergences=num_divergences,

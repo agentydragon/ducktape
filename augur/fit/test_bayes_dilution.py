@@ -75,18 +75,19 @@ def test_recovers_known_dilution_rate() -> None:
     assert prior.num_divergences < 0.05 * 800
 
 
-def test_decaying_drift_regularizes_a_hot_boom() -> None:
-    """A boom hotter than the long-run prior is absorbed as NEAR-TERM excess (mu_0 > mu_inf),
-    with mu_inf held near the informative prior -- the whole point of M2.2-D vs the OLS fit."""
+def test_scale_reversion_regularizes_a_hot_boom() -> None:
+    """A boom hotter than the mature prior is absorbed as YOUNG-company excess (mu_young >
+    mu_mature), with the mature asymptote held near the informative prior -- the whole point of
+    M2.2-D vs the OLS fit (which would extrapolate the boom forever)."""
 
-    # ~8%/mo (~150%/yr) observed growth -- well above the mu_inf prior center of 0.02.
+    # ~8%/mo (~150%/yr) observed growth -- well above the mu_mature prior center of 0.008.
     prices, valuations = _synthetic(r_true=0.20, monthly_drift=0.08, n=8)
     prior = fit_bayesian_dilution_prior(prices, valuations, num_warmup=800, num_samples=1000, num_chains=1)
-    # Long-run drift stays anchored near the prior (does NOT chase the boom).
-    assert prior.valuation_monthly_log_return_mu < 0.06
-    # Near-term drift is higher than long-run (the boom shows up as decaying excess).
-    assert prior.valuation_monthly_log_return_mu_initial > prior.valuation_monthly_log_return_mu
-    assert prior.valuation_drift_decay_halflife_months > 0.0
+    # Mature (long-run) drift stays anchored near the prior (does NOT chase the boom).
+    assert prior.valuation_monthly_log_return_mu < 0.04
+    # Young drift is higher than mature (the boom shows up as size-decaying excess).
+    assert prior.valuation_drift_mu_young > prior.valuation_monthly_log_return_mu
+    assert prior.valuation_drift_log_value_scale > 0.0
 
 
 def test_priors_are_overridable() -> None:
