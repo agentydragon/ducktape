@@ -8,7 +8,26 @@
 #
 # On failure, writes diagnostics to stderr. Scripts export vars directly
 # into the current shell — source them, don't eval their stdout.
+#
+# These scripts are *sourced* into the caller's shell, so they must not leak their
+# strict-mode options. A leaked `set -u` in particular breaks later interactive
+# commands that legitimately reference unset variables — e.g. Claude Code's
+# shell-snapshot `grep`/`find` wrappers probe `[[ -n $ZSH_VERSION ]]`, which aborts
+# with "ZSH_VERSION: unbound variable" once nounset is on. So we snapshot the
+# caller's option state here and the entrypoint scripts restore it via
+# `_secrets_restore_shell_opts` as their last line.
+_secrets_saved_shell_opts="$(set +o)"
 set -euo pipefail
+
+# Restore the caller's shell options captured above (errexit/nounset/pipefail), so
+# strict mode covers our own execution without persisting into the sourcing shell.
+# Idempotent and self-cleaning; called at the end of each entrypoint (cli/web/ci_env).
+_secrets_restore_shell_opts() {
+  [ -n "${_secrets_saved_shell_opts:-}" ] || return 0
+  eval "$_secrets_saved_shell_opts"
+  unset _secrets_saved_shell_opts
+  unset -f _secrets_restore_shell_opts
+}
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
