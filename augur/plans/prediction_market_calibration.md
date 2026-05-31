@@ -204,16 +204,76 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   walk compounds even the regularized near-term rate over 10 years. Bayesian inference fixes the
   *uncertainty* and over-extrapolation, not the *structural* forever-drift.
 
-  **Part 2 — decaying / mean-reverting valuation drift (the missing structural piece).** Replace
-  the constant `mu_V` with a drift that decays from a near-term rate to a long-run mature rate
-  (e.g. `mu_V(t) = mu_∞ + (mu_0 − mu_∞)·e^(−t/τ)`, or an OU process on log-growth); fit
-  `(mu_0, mu_∞, τ)` jointly with `r` in the same NUTS model. Confirmed sufficient: holding the
-  NUTS-fitted dilution `r ≈ 0.29` and letting drift revert toward a mature ~0.02/mo gives
-  m12 p50 = 1.00 and **m120 p50 = 0.90 — passes both bands**. So the deployable fit is
-  NUTS-inferred dilution + decaying drift, deployed from the joint posterior (never transplanting
-  one parameter). Prototype lives in session notes; productionize as `augur/fit/bayes_dilution.py`
-  + a `derive_dilution_prior --bayesian` mode, persisting the posterior summary (mean/SD) like
-  vecm's `.npz`, since NUTS isn't run-to-run bit-reproducible.
+  **Part 2 — drift structure: scale-dependent mean reversion (the load-bearing fix).** The first
+  cut tried a CALENDAR-time decay `mu_V(t) = mu_∞ + (mu_0 − mu_∞)·0.5^(t/τ)` (shipped in the
+  sampler + `bayes_dilution.py`). On the openai evidence it improves a lot but still overshoots:
+  even with a tight long-run prior the NUTS fit keeps `mu_∞ ≈ 0.033/mo (~49%/yr)` and `m120 p50
+  ≈ 100×`, because (a) every observation is still rising steeply through the latest one, so the
+  data gives no reason to believe the boom ended, and (b) calendar decay replays the historical
+  boom from t=0=now. **Calendar time is the wrong axis.** The right structure makes drift a
+  function of company SIZE, not elapsed time:
+
+  ```
+  mu_V(s) = mu_mature + (mu_young − mu_mature) · exp( −max(0, s − s_young) / s_scale )
+  ```
+
+  where `s = log V(t)` is the realized log enterprise value. A small company (`s ≤ s_young`)
+  gets the hot `mu_young`; a large one reverts toward `mu_mature`, and KEEPS maturing as it
+  grows. This is data-driven, not a hidden prior: the model tames the boom *because OpenAI is now
+  $852B* (an observed fact), and it self-corrects per rollout — a rollout that stays small keeps
+  its upside, one that booms matures early. Empirical backing: firm growth-rate dispersion scales
+  as `σ ~ S^(−0.2)` and mean growth declines with size (Stanley/Amaral scaling laws; decacorns
+  "grow slower"). Implementation note: state-dependent drift makes `V(t)` a genuine SDE, so
+  `_sample_company_valuation_vectorized` becomes a per-month loop (vectorized across rollouts) —
+  a contained sampler change, trivial cost at 120 × few-thousand.
+
+  **Research-grounded starting values (conservative; population-fittable later).** Until a
+  startup-panel fit (below) replaces them, use educated guesses:
+  - `mu_mature` ≈ **0.008/mo (~10%/yr nominal)** — the S&P 500's ~100-yr nominal CAGR. A mega-cap
+    at maturity is not assumed to beat the index. Deliberately conservative.
+  - `mu_young` ≈ 0.035–0.05/mo (~50–80%/yr) — decacorn-era growth; the fit lifts it from data.
+  - `s_young` / `s_scale` — maturity onset around $10–50B, reverting over the back half of the
+    size range. Tune so the openai forward path lands in the `sample_sanity` bands.
+
+  **Catastrophic loss is a SEPARATE channel — do not fold it into drift.** Asymptoting the
+  central drift toward ~market return does NOT undersell "lose everything," because total loss is
+  a discrete-event / no-realization phenomenon that lives in the hazard channels (collapse,
+  legal-impairment, forced-recovery) and the no-liquidity tail, not in the going-concern drift.
+  Population base rates make this vivid and confirm augur currently *under*-states it: of 2010–15
+  Series C companies only **38% exited within a decade (62% never delivered liquidity)**; post-
+  2021, **>80% of unicorns sit below their peak and ~30% fell under $1B**; WeWork went $47B →
+  bankruptcy (−99.9%). So the realization-risk tail is empirically *fat*, and the pre-IPO-failure
+  calibration gap we already measured (model 0.014 vs market 0.092) is the same under-statement.
+  **Linked work item:** bump the collapse / no-liquidity hazards toward these population base
+  rates (tracked in TODO.md; it is the loss-tail counterpart to this drift work).
+
+  **North star — hierarchical population prior (the real reason to be Bayesian).** One company's
+  16 points can never answer "does the boom persist?"; only a *reference class* can. Fit the
+  scale-reversion hyperparameters `(mu_young, mu_mature, s_young, s_scale)` + dilution + the
+  loss-hazard base rates across a POPULATION of startup trajectories, then treat each issuer
+  (openai) as one draw shrunk toward the population (partial pooling). That converts every
+  educated guess above into a pooled estimate with provenance, and simultaneously calibrates the
+  loss tail. **Survivorship bias is the central trap:** public/cheap startup datasets over-
+  represent survivors, which would bias drift up and the loss tail down — exactly backwards for a
+  realization-risk model. The dataset must include down rounds, shutdowns, and never-exited
+  "walking dead." Reserve schema room for terminal/failure outcomes, not just valuation marks.
+  This is the eventual home of the dilution evidence schema's primary/secondary round labels and
+  round sizes too (M2.2-C), since a population fit wants the lumpy-vs-continuous split.
+
+  **Deploy mechanism (orthogonal, later).** All of the above is the GENERATIVE structure; how the
+  posterior is propagated forward at deploy time is a separate axis. Today: freeze the posterior
+  SUMMARY (means/SD) into scalar config knobs, resampled cheaply by the existing numpy sampler
+  (like vecm's `.npz`). A later upgrade is full posterior-PREDICTIVE deploy — the openai PE
+  channel sampling forward from the conditioned posterior (carrying the full joint + latent-state
+  uncertainty, not just marginals). That is more honest fan-out but needs a private trained-
+  artifact pipeline in gaffer (the evidence is private), mirroring `state_space_macro_artifact.json`.
+  It does NOT fix the median overshoot — that is the generative structure's job — so it follows
+  the scale-reversion work, not precedes it.
+
+  **Status.** Shipped: NUTS fit (`augur/fit/bayes_dilution.py`) + calendar-decay drift in the
+  sampler (`valuation_monthly_log_return_mu_initial` / `valuation_drift_decay_halflife_months`).
+  Next: replace calendar decay with the scale-reversion structure above, re-fit, land the openai
+  config inside the gaffer `sample_sanity` bands.
 
 ### M3 — IPO lockup: probabilistic + refined
 

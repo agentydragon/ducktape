@@ -136,20 +136,44 @@ are deleted and the CI prefix-guard is in place.
         as a new V-coupled event kind, distinct from the existing (secondary) tender events;
         likelihood that attributes only primary rounds to share growth and treats secondaries
         (e.g. the 2025-10 employee tender) as pure re-pricing.
-  - [ ] **M2.2-D — full Bayesian posterior + decaying valuation drift (designed; prototype
-        validated 2026-05-30, now the critical path to deploying the openai fit).** Two coupled
-        changes, both required (a NUTS prototype on the openai evidence established the numbers;
-        see the M2.2-D section of `plans/prediction_market_calibration.md`):
-        (1) **NUTS posterior** — small numpyro state-space model (latent log-V RW + log-share
-        path, per-obs `uncertainty_log_sigma` likelihood, INFORMATIVE drift/dilution priors) over
-        all 16 obs, mirroring `augur/model/vecm.py`. Regularizes the OLS over-extrapolation:
-        median `r` 0.476→0.29, drift 244%→134%/yr, and the m120 median mark 8035×→381×. Big
-        improvement but STILL fails `sample_sanity` alone — a constant-drift RW compounds the
-        near-term rate forever. (2) **decaying / mean-reverting drift** `mu_V(t) = mu_∞ +
-        (mu_0−mu_∞)e^(−t/τ)` (or OU), fit jointly with `r`. Confirmed sufficient: NUTS `r≈0.29`
-        + drift reverting to ~0.02/mo gives m120 p50 = 0.90 — passes. Productionize as
-        `augur/fit/bayes_dilution.py` + `derive_dilution_prior --bayesian`, persisting the
-        posterior summary (like vecm's `.npz`) since NUTS isn't bit-reproducible.
+  - [ ] **M2.2-D — Bayesian fit + scale-dependent mean-reverting drift (critical path to
+        deploying the openai fit; full design in the M2.2-D section of
+        `plans/prediction_market_calibration.md`).**
+        - [x] **NUTS fit** `augur/fit/bayes_dilution.py` — numpyro state-space model (latent log-V
+          RW + log-share path, per-obs `uncertainty_log_sigma` likelihood, informative priors)
+          over all obs, mirroring `augur/model/vecm.py`. Sane dilution (r≈0.31, σ≈0.05) + honest
+          posterior σ. Regularizes the OLS over-extrapolation (8035× → 381× median 10y mark).
+        - [x] **calendar-decay drift** in the sampler (`valuation_monthly_log_return_mu_initial` /
+          `valuation_drift_decay_halflife_months`). Backward-compatible (off ⇒ byte-identical).
+        - [ ] **scale-dependent mean-reverting drift (load-bearing).** Calendar decay still
+          overshoots (`mu_∞` stays hot ~49%/yr; rising data never says "boom over"; decay replays
+          from t=0). Replace with `mu_V(s) = mu_mature + (mu_young−mu_mature)·exp(−max(0,s−s_young)/s_scale)`,
+          `s=log V` — drift high when small, reverts toward mature as the company grows (data-
+          driven, self-correcting per rollout). Makes `V(t)` an SDE ⇒ `_sample_company_valuation_vectorized`
+          becomes a per-month loop (vectorized across rollouts). Conservative grounded values:
+          `mu_mature ≈ 0.008/mo` (~10%/yr, S&P 100-yr nominal CAGR), `mu_young ≈ 0.035–0.05/mo`,
+          maturity onset ~$10–50B. Then re-fit + land the openai config in the gaffer bands.
+        - [ ] **deploy mechanism (orthogonal, later).** Scalar-summary config knobs now; full
+          posterior-predictive deploy (private gaffer trained artifact, like
+          `state_space_macro_artifact.json`) as a later uncertainty-propagation upgrade. Does not
+          fix the median — follows the scale-reversion work.
+  - [ ] **Realization-loss tail toward population base rates (loss-tail counterpart to M2.2-D
+        drift; same model-fix philosophy).** Going-concern drift asymptoting to ~market return
+        does NOT model "lose everything" — that lives in the collapse / legal-impairment /
+        forced-recovery hazards + no-liquidity tail. Population base rates show augur currently
+        UNDER-states it: 2010–15 Series C → only 38% exited in a decade (62% no liquidity); post-
+        2021 >80% of unicorns below peak; WeWork −99.9%. Same gap as the measured pre-IPO-failure
+        calibration miss (model 0.014 vs market 0.092). Bump the collapse/no-liquidity hazards
+        toward these rates; ultimately fit them in the same hierarchical population prior.
+  - [ ] **Hierarchical population prior (north star — the real reason for the Bayesian
+        machinery).** Fit the scale-reversion hyperparameters + dilution + loss-hazard base rates
+        across a POPULATION of startup trajectories, treating each issuer as a partially-pooled
+        draw — converts every educated guess above into a pooled estimate and calibrates the loss
+        tail at once. **Survivorship bias is the central trap** (cheap datasets over-represent
+        survivors ⇒ drift biased up, loss tail down — backwards for realization risk); the panel
+        MUST include down rounds, shutdowns, never-exited "walking dead." Reserve evidence-schema
+        room for terminal/failure outcomes. Also the eventual home of M2.2-C primary/secondary
+        round labels + sizes.
 
 ## Liquidity Policy
 
