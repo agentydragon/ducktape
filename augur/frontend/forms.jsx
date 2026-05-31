@@ -725,9 +725,6 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
               Reset form
             </Button>
           </div>
-          <div className="mt-2 text-xs augur-muted">
-            Horizon is set in the header — shared with the calibration tab.
-          </div>
         </div>
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
           <NumberField
