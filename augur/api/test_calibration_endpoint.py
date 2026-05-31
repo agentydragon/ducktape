@@ -9,27 +9,43 @@ run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 from fastapi.testclient import TestClient
 
-from augur.api.config import load_augur_config
+from augur.api.config import Config, load_augur_config
 from augur.api.server import create_app_from_augur_config
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.testing import mock_manifold_client
+from augur.model.sample_sanity import (
+    LevelSeriesSanityCheck,
+    PrivateEquityMarkSanityCheck,
+    SampleSanitySpec,
+)
+from augur.model.series import IssuerId, SP500Key
 from util.bazel.runfiles import get_required_path
 
 
-@pytest.fixture
-def client() -> Iterator[TestClient]:
+def _fixture_config() -> Config:
     config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    assert config.calibration_catalog is not None
+    return config
+
+
+def _client_for(config: Config) -> TestClient:
     assert config.calibration_catalog is not None
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
     # Every market resolves to the same fixed YES probability so the run is hermetic.
     prices = {market.manifold_id: 0.5 for market in catalog.markets}
-    app = create_app_from_augur_config(config, price_client=mock_manifold_client(prices))
-    with TestClient(app) as test_client:
+    return TestClient(create_app_from_augur_config(config, price_client=mock_manifold_client(prices)))
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    with _client_for(_fixture_config()) as test_client:
         yield test_client
 
 
@@ -101,6 +117,65 @@ def test_unknown_calibration_route_still_404(client: TestClient) -> None:
     # catch-all is gone; nginx serves the SPA, so the app is API-only with no static fallback).
     response = client.get("/api/calibration/does-not-exist")
     assert response.status_code == 404, response.text
+
+
+def test_run_calibration_without_sample_sanity_returns_empty_bands(client: TestClient) -> None:
+    # The public fixture configures a `calibration_catalog` but no `sample_sanity_path`, so the
+    # reasonableness-band feature is absent: the endpoint succeeds and returns an empty list.
+    response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
+    assert response.status_code == 200, response.text
+    assert response.json()["sanity_bands"] == []
+
+
+def _config_with_sample_sanity(tmp_path: Path) -> Config:
+    """Fixture config whose `calibration_catalog.sample_sanity_path` points at a temp spec YAML.
+
+    The spec reuses the live `openai_pe` model (its own `provider_config_path` is a placeholder
+    the server never resolves): one level-series band on `sp500` (the macro block anchors it at
+    1.0) and one PE-mark band on the catalog issuer `openai` (anchored at its current mark 100.0).
+    """
+    spec = SampleSanitySpec(
+        provider_config_path=Path("unused.yaml"),
+        horizon_months=24,
+        rollout_count=16,
+        required_level_series=(SP500Key(),),
+        required_private_equity_issuers=(IssuerId("openai"),),
+        level_checks=(LevelSeriesSanityCheck(key=SP500Key(), initial_value=1.0),),
+        private_equity_mark_checks=(
+            PrivateEquityMarkSanityCheck(issuer_id=IssuerId("openai"), initial_value=100.0),
+        ),
+    )
+    spec_path = tmp_path / "sample_sanity.yaml"
+    spec_path.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
+
+    config = _fixture_config()
+    assert config.calibration_catalog is not None
+    catalog = config.calibration_catalog.model_copy(update={"sample_sanity_path": spec_path})
+    return config.model_copy(update={"calibration_catalog": catalog})
+
+
+def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path) -> None:
+    with _client_for(_config_with_sample_sanity(tmp_path)) as client:
+        response = client.post(
+            "/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701}
+        )
+    assert response.status_code == 200, response.text
+    bands = response.json()["sanity_bands"]
+    assert bands
+
+    # Both the level-series band (sp500) and the PE-mark band (openai) are evaluated.
+    series_ids = {band["series_id"] for band in bands}
+    assert "sp500" in series_ids
+    assert any("openai" in series_id and "mark" in series_id for series_id in series_ids)
+
+    # The deterministic anchor bands (sp500 -> 1.0, openai mark -> 100.0) pass; nothing fails.
+    anchors = {band["series_id"]: band for band in bands if band["kind"] == "anchor"}
+    assert anchors["sp500"]["status"] == "pass"
+    assert anchors["sp500"]["month"] == 0
+    openai_anchor = next(band for series_id, band in anchors.items() if "openai" in series_id)
+    assert openai_anchor["status"] == "pass"
+    assert openai_anchor["expected_lower"] == 100.0
+    assert all(band["status"] != "fail" for band in bands)
 
 
 if __name__ == "__main__":

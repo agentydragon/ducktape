@@ -36,6 +36,7 @@ py_library(
     deps = [
         ":schemas",
         "//augur/calibration",
+        "//augur/model:sample_sanity",
         "//augur/product:wire",
         "@pypi//pydantic",
     ],
@@ -212,11 +213,14 @@ py_test(
         ":server_lib",
         "//augur/calibration:catalog",
         "//augur/calibration:testing",
+        "//augur/model:sample_sanity",
+        "//augur/model:series",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -235,12 +239,15 @@ py_library(
         "//augur/calibration:catalog",
         "//augur/calibration:manifold",
         "//augur/model:exogenous",
+        "//augur/model:sample_sanity",
+        "//augur/model:series",
         "//augur/product:portfolio",
         "//augur/product:scenarios",
         "//augur/product:service",
         "//augur/product:wire",
         "@pypi//fastapi",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
         "@pypi//uvicorn",
     ],
 )

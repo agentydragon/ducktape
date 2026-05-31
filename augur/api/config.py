@@ -89,6 +89,16 @@ class CalibrationCatalogConfig(ApiModel):
     catalog_path: Path
     issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str | None = None
+    sample_sanity_path: Path | None = Field(
+        default=None,
+        description=(
+            "Optional `SampleSanitySpec` YAML (resolved relative to the config file, like "
+            "`catalog_path`). When set, `/api/calibration/run` evaluates the spec's reasonableness "
+            "bands against the live rollouts and returns them as `sanity_bands`. The spec is consumed "
+            "only for its `*_checks` + `required_level_series`/`required_private_equity_issuers`; its "
+            "`provider_config_path` is ignored (the page reuses the live calibration model)."
+        ),
+    )
 
 
 class LocationConfig(ApiModel):
@@ -190,11 +200,22 @@ def load_augur_config(path: Path) -> Config:
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
     config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
-    catalog = config.calibration_catalog
-    if catalog is not None and not catalog.catalog_path.is_absolute():
-        anchored = catalog.model_copy(update={"catalog_path": (path.parent / catalog.catalog_path).resolve()})
-        config = config.model_copy(update={"calibration_catalog": anchored})
+    config = _anchor_calibration_catalog_paths(config, base_dir=path.parent)
     return config
+
+
+def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
+    catalog = config.calibration_catalog
+    if catalog is None:
+        return config
+    updates: dict[str, Path] = {}
+    if not catalog.catalog_path.is_absolute():
+        updates["catalog_path"] = (base_dir / catalog.catalog_path).resolve()
+    if catalog.sample_sanity_path is not None and not catalog.sample_sanity_path.is_absolute():
+        updates["sample_sanity_path"] = (base_dir / catalog.sample_sanity_path).resolve()
+    if not updates:
+        return config
+    return config.model_copy(update={"calibration_catalog": catalog.model_copy(update=updates)})
 
 
 def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:

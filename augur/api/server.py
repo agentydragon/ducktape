@@ -8,22 +8,30 @@ from pathlib import Path
 from typing import Any, cast
 
 import uvicorn
+import yaml
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
 from augur.api.bootstrap import BootstrapResponse
-from augur.api.calibration_wire import CALIBRATION_FAN_PERCENTILES, CalibrationRunRequest, CalibrationRunResponse
+from augur.api.calibration_wire import (
+    CALIBRATION_FAN_PERCENTILES,
+    CalibrationRunRequest,
+    CalibrationRunResponse,
+    sanity_band_to_wire,
+)
 from augur.api.casing import plain_json
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.schemas import ApiModel
-from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle
+from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.manifold import ManifoldClient
-from augur.model.exogenous import Sampler
+from augur.model.exogenous import ExogenousSamplingRequest, Sampler
+from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks
+from augur.model.series import IssuerId
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -32,10 +40,17 @@ from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutReque
 
 @dataclass(frozen=True)
 class LoadedCalibrationCatalog:
-    """The configured calibration catalog config paired with its parsed `MarketCatalog`."""
+    """The configured calibration catalog config paired with its parsed `MarketCatalog`.
+
+    `sample_sanity_spec` is the parsed `SampleSanitySpec` when the deployment configures a
+    `sample_sanity_path`, else None (the feature is simply absent). Only its `*_checks` +
+    `required_*` are consumed; its `provider_config_path` is never realized — the calibration
+    endpoint reuses the live preset model.
+    """
 
     config: CalibrationCatalogConfig
     catalog: MarketCatalog
+    sample_sanity_spec: SampleSanitySpec | None = None
 
 
 @dataclass(frozen=True)
@@ -126,11 +141,20 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         # KeyError on the preset lookup -> 400 via the registered handler.
         model = config.exogenous_models[preset_id]
         issuer = loaded.config.issuer
+        spec = loaded.sample_sanity_spec
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
-        # One rollout drives both the market scoring and the issuer mark fan.
-        bundle = sample_private_equity_bundle(
-            model, issuer=issuer, horizon_months=request.horizon_months, rollout_seeds=rollout_seeds
+        # Sample one full bundle that drives the market scoring, the issuer mark fan, AND the
+        # sample-sanity bands — still a single rollout. The PE bundle goes to `run_calibration`/
+        # `mark_fan` (preserving today's behavior); the level series the sanity spec needs are
+        # requested here too. A spec asking for a series the preset can't produce raises -> 400.
+        sampling_request = ExogenousSamplingRequest(
+            horizon_months=request.horizon_months,
+            rollout_seeds=rollout_seeds,
+            required_private_equity_issuers=frozenset({IssuerId(issuer)}),
+            required_level_series=frozenset(spec.required_level_series) if spec is not None else frozenset(),
         )
+        sampled = model.sample(sampling_request)
+        bundle = sampled.private_equity
         result = run_calibration(
             model,
             loaded.catalog,
@@ -147,7 +171,19 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             horizon_months=request.horizon_months,
             percentiles=CALIBRATION_FAN_PERCENTILES,
         )
-        return calibration_payload(CalibrationRunResponse(preset_id=preset_id, result=result, mark_fan=fan))
+        sanity_bands = (
+            [
+                sanity_band_to_wire(band)
+                for band in evaluate_sample_checks(
+                    spec, sampled, rollout_count=request.rollouts, horizon_months=request.horizon_months
+                )
+            ]
+            if spec is not None
+            else []
+        )
+        return calibration_payload(
+            CalibrationRunResponse(preset_id=preset_id, result=result, mark_fan=fan, sanity_bands=sanity_bands)
+        )
 
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes
@@ -157,6 +193,16 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         return PlainTextResponse("ok\n", headers=no_store)
 
     return app
+
+
+def _load_sample_sanity_spec(path: Path | None) -> SampleSanitySpec | None:
+    """Parse the deployment's `SampleSanitySpec` YAML, or None when unconfigured.
+
+    Consumed only for its `*_checks` + `required_*`; `provider_config_path` is left unresolved
+    (the calibration endpoint reuses the live preset model rather than realizing the spec's)."""
+    if path is None:
+        return None
+    return SampleSanitySpec.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
 def create_app_from_augur_config(augur_config: Config, *, price_client: ManifoldClient | None = None) -> FastAPI:
@@ -170,7 +216,11 @@ def create_app_from_augur_config(augur_config: Config, *, price_client: Manifold
     }
     catalog_config = augur_config.calibration_catalog
     calibration_catalog = (
-        LoadedCalibrationCatalog(config=catalog_config, catalog=MarketCatalog.from_yaml(catalog_config.catalog_path))
+        LoadedCalibrationCatalog(
+            config=catalog_config,
+            catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
+            sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
+        )
         if catalog_config is not None
         else None
     )
