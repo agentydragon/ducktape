@@ -90,7 +90,7 @@ test("fmtExpectedBand: two-sided, one-sided, and absent bounds", () => {
   assert.equal(fmtExpectedBand("percentile_range", band({ expectedLower: 0.2, expectedUpper: 20 })), "[0.2, 20]");
   assert.equal(fmtExpectedBand("percentile_bound", band({ expectedLower: 0.2 })), "≥ 0.2");
   assert.equal(fmtExpectedBand("percentile_bound", band({ expectedUpper: 20 })), "≤ 20");
-  assert.equal(fmtExpectedBand("finite", band({})), "—");
+  assert.equal(fmtExpectedBand("codes_allowed", band({})), "—");
 });
 
 test("fmtExpectedBand: probability bound formats endpoints as percent", () => {

@@ -193,7 +193,7 @@ class SanityBandResult:
 
     label: str  # human-readable, e.g. "sp500 ratio m12/m0 p1..p99"
     series_id: str  # the level-series wire id or "PE issuer 'openai' mark"
-    kind: str  # "finite"|"positive"|"anchor"|"percentile_bound"|"percentile_range"|"threshold_probability"|"count_range"|"event_kind_probability"|"codes_allowed"
+    kind: str  # "anchor"|"percentile_bound"|"percentile_range"|"threshold_probability"|"count_range"|"event_kind_probability"|"codes_allowed"
     month: int | None  # month index where applicable, else None
     expected_lower: float | None
     expected_upper: float | None
@@ -285,9 +285,13 @@ def _evaluate_level_check(
 ) -> list[SanityBandResult]:
     series_id = level_check.key.wire_id
     levels = sampled.level_matrix(level_check.key, rollout_count=rollout_count, horizon_months=horizon_months)
-    results = [_check_finite(levels, series_id=series_id)]
+    # Finiteness / positivity are correctness invariants, not reasonableness bands: a NaN/inf or
+    # non-positive level/mark is a model bug, not a tunable expectation. Enforce them as hard
+    # runtime assertions (raise) rather than surfacing soft pass/fail rows on the calibration page.
+    _assert_finite(levels, series_id=series_id)
     if level_check.require_positive:
-        results.append(_check_positive(levels, series_id=series_id))
+        _assert_positive(levels, series_id=series_id)
+    results: list[SanityBandResult] = []
     if level_check.initial_value is not None:
         results.append(
             _check_anchor(
@@ -344,9 +348,11 @@ def _evaluate_mark_check(
     marks = sampled.private_equity.issuer_float_matrix(
         mark_check.issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
     )
-    results = [_check_finite(marks, series_id=series_id)]
+    # See `_evaluate_level_check`: finiteness/positivity are hard invariants, asserted not banded.
+    _assert_finite(marks, series_id=series_id)
     if mark_check.require_positive:
-        results.append(_check_positive(marks, series_id=series_id))
+        _assert_positive(marks, series_id=series_id)
+    results: list[SanityBandResult] = []
     if mark_check.initial_value is not None:
         results.append(
             _check_anchor(
@@ -499,36 +505,18 @@ def _resolve_path(path: Path, *, base_dir: Path) -> Path:
     return path if path.is_absolute() else (base_dir / path).resolve()
 
 
-def _check_finite(values: np.ndarray, *, series_id: str) -> SanityBandResult:
-    finite = bool(np.all(np.isfinite(values)))
-    return SanityBandResult(
-        label=f"{series_id} finite",
-        series_id=series_id,
-        kind="finite",
-        month=None,
-        expected_lower=None,
-        expected_upper=None,
-        observed=(),
-        observed_labels=(),
-        status="pass" if finite else "fail",
-        detail="" if finite else f"{series_id} produced non-finite value(s)",
-    )
+def _assert_finite(values: np.ndarray, *, series_id: str) -> None:
+    """Hard invariant: every sampled value must be finite. A NaN/inf is a model bug, not a
+    reasonableness question, so raise rather than emit a soft band."""
+    if not bool(np.all(np.isfinite(values))):
+        raise AssertionError(f"{series_id} produced non-finite value(s) — this is a model bug, not a band miss")
 
 
-def _check_positive(values: np.ndarray, *, series_id: str) -> SanityBandResult:
-    positive = not bool(np.any(values <= 0.0))
-    return SanityBandResult(
-        label=f"{series_id} positive",
-        series_id=series_id,
-        kind="positive",
-        month=None,
-        expected_lower=None,
-        expected_upper=None,
-        observed=(),
-        observed_labels=(),
-        status="pass" if positive else "fail",
-        detail="" if positive else f"{series_id} produced non-positive value(s)",
-    )
+def _assert_positive(values: np.ndarray, *, series_id: str) -> None:
+    """Hard invariant: every sampled level/mark must be strictly positive (these are USD prices /
+    index levels). A non-positive value is a model bug, so raise rather than emit a soft band."""
+    if bool(np.any(values <= 0.0)):
+        raise AssertionError(f"{series_id} produced non-positive value(s) — this is a model bug, not a band miss")
 
 
 def _check_anchor(

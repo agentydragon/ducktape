@@ -41,7 +41,7 @@ export function fmtBandValue(kind, value) {
 }
 
 // The expected band: "[lo, hi]" when both sides are set, "≥ lo" / "≤ hi" for a one-sided bound,
-// "—" when neither (e.g. a finite/positive/codes check carries no numeric range).
+// "—" when neither (e.g. an anchor or codes-allowed check carries no numeric range).
 export function fmtExpectedBand(kind, band) {
   const hasLower = band.expectedLower != null && Number.isFinite(Number(band.expectedLower));
   const hasUpper = band.expectedUpper != null && Number.isFinite(Number(band.expectedUpper));
