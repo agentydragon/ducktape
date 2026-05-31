@@ -61,10 +61,10 @@ def test_run_calibration(client: TestClient) -> None:
     clean_row = result["clean"][0]
     # Every market's p_market is the injected live stub price.
     assert clean_row["p_market"] == 0.5
-    # Snake_case on the wire (the frontend camelizes). p_model/kl_bits/resolution_deadline
-    # are optional (dropped when None — e.g. no rollout resolved within the horizon), so we
-    # only require the always-present fields here.
-    assert {"slug", "mapping_kind", "p_market", "ci95", "n_resolved", "unresolved"} <= set(clean_row)
+    # Snake_case on the wire (the frontend camelizes). p_model/kl_bits are optional (dropped when
+    # None — e.g. no rollout resolved within the horizon), so we only require the always-present
+    # fields here.
+    assert {"slug", "question", "url", "p_market", "ci95", "n_resolved", "unresolved"} <= set(clean_row)
     surfaced_row = result["surfaced"][0]
     assert {"slug", "question", "url", "mappability", "p_market"} <= set(surfaced_row)
     assert surfaced_row["p_market"] == 0.5

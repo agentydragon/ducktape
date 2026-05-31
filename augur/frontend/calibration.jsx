@@ -31,7 +31,8 @@ function fmtBits(value) {
 }
 
 // Bigger model-vs-market divergences get a louder tint so the eye lands on the disagreements
-// first. Thresholds are in bits of D_KL (≈0.03 bits ≈ a 0.4-vs-0.25 forecast gap).
+// first. Thresholds are in bits of D_KL: amber ≥0.05 bits (≈ a market at 0.50 vs model 0.37),
+// rose ≥0.15 bits (≈ 0.50 vs 0.29).
 function klToneClass(klBits) {
   if (klBits == null || !Number.isFinite(Number(klBits))) return "";
   if (klBits >= 0.15) return "bg-rose-50 dark:bg-rose-950/30";

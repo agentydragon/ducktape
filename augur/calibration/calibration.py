@@ -89,11 +89,6 @@ class CleanRow(BaseModel):
     # Canonical Manifold market page, fetched live alongside the price (the catalog stores
     # only a slug). The frontend links the question title to this URL.
     url: str
-    mapping_kind: str
-    # The nullable fields default to None so the generated Zod schema treats them as
-    # optional. The endpoint drops None-valued keys (`exclude_none=True`); without a
-    # default the codegen emits required `.nullable()` and rejects the omitted key.
-    resolution_deadline: date | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
     ci95: tuple[float, float]
@@ -157,8 +152,6 @@ def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], manif
         slug=market.slug,
         question=market.question,
         url=manifold.url,
-        mapping_kind=market.mapping_kind,
-        resolution_deadline=market.resolution_deadline,
         p_market=p_market,
         p_model=p_model,
         ci95=wilson_interval(yes, n),
