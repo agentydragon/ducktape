@@ -70,7 +70,6 @@ def kl_bits_market_vs_model(p_market: float, p_model: float) -> float:
     return max(0.0, total)
 
 
-
 class AugurContext(BaseModel):
     """A related (NOT equal) augur signal surfaced next to a market that isn't scored."""
 
