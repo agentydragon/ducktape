@@ -270,10 +270,26 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   It does NOT fix the median overshoot — that is the generative structure's job — so it follows
   the scale-reversion work, not precedes it.
 
-  **Status.** Shipped: NUTS fit (`augur/fit/bayes_dilution.py`) + calendar-decay drift in the
-  sampler (`valuation_monthly_log_return_mu_initial` / `valuation_drift_decay_halflife_months`).
-  Next: replace calendar decay with the scale-reversion structure above, re-fit, land the openai
-  config inside the gaffer `sample_sanity` bands.
+  **Status.** Shipped (sampler + fit, synthetic-green): the scale-reversion drift is in the
+  sampler (`ValuationDriftScaleReversion` submodel, integrated as an SDE) and in the NUTS fit
+  (`augur/fit/bayes_dilution.py`, also SDE via `jax.lax.scan`). The Bayesian dilution rate is
+  sane and the structure recovers a known shape from synthetic data.
+
+  **KEY FINDING — openai alone cannot identify the reversion shape (proves the population prior
+  is necessary, not just nicer).** Running the full scale-reversion fit end-to-end on the real
+  openai evidence blows up: `mu_mature → 411%/yr` (32σ off its prior), `shares0 → $6e3`, dilution
+  negative. Cause: **every openai valuation observation ($28B+, 2023 on) is already in the
+  "large" regime** — there is NO observed small-company phase to anchor `mu_young` vs `mu_mature`
+  or the onset — and the 2019–21 price-only stretch (no paired valuation) adds a `shares0`↔`V`
+  level degeneracy. A single company "already huge and booming" cannot, even in principle, tell
+  you how growth decays with size. So:
+  - **openai deployment:** fix the reversion SHAPE (`mu_mature`, `mu_young`, onset, scale) from
+    population / educated-guess values (the conservative defaults above), and fit only the
+    weakly-shrunk dilution rate + σ from the openai evidence. Validate against `sample_sanity`,
+    tune the fixed shape if needed. (This is the immediate path to a deployable openai config.)
+  - **the proper fix is the hierarchical population prior** (below): it is the ONLY thing that can
+    identify the shape, because it borrows the small-company phase from *other* companies. The
+    end-to-end blow-up is the empirical justification for prioritizing it.
 
 ### M3 — IPO lockup: probabilistic + refined
 
