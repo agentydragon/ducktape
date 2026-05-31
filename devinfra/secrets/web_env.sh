@@ -32,3 +32,6 @@ try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-toke
 
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
+
+# Restore the caller's shell options (do not leak our `set -euo pipefail`; see _common.sh).
+_secrets_restore_shell_opts

@@ -21,12 +21,13 @@ set -euo pipefail
 
 # Restore the caller's shell options captured above (errexit/nounset/pipefail), so
 # strict mode covers our own execution without persisting into the sourcing shell.
-# Idempotent and self-cleaning; called at the end of each entrypoint (cli/web/ci_env).
+# Called at the end of each entrypoint (cli/web/ci_env). Idempotent: once the saved
+# state is consumed the guard makes any further call a no-op. (The function itself is
+# left defined — bash can't unset a function from within its own running body.)
 _secrets_restore_shell_opts() {
   [ -n "${_secrets_saved_shell_opts:-}" ] || return 0
   eval "$_secrets_saved_shell_opts"
   unset _secrets_saved_shell_opts
-  unset -f _secrets_restore_shell_opts
 }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
