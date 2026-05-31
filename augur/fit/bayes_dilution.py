@@ -88,7 +88,13 @@ class BayesianDilutionPriors:
     log_value_onset_sigma: float = 0.7
     log_value_scale_mu: float = 2.0  # e-folding in log-value (~one order of magnitude ≈ 2.3)
     log_value_scale_sigma: float = 0.5
-    sigma_v_sigma: float = 0.10
+    # FORWARD company-value volatility, informative LogNormal. Centered at ~0.10/mo (~38%/yr) --
+    # the de-smoothed late-stage-VC figure (Anson), comparable to a single large-cap tech name
+    # (~36%/yr) and well above the index (~19%/yr). Deliberately NOT the raw in-sample scatter of
+    # the boom years (which fits to ~73%/yr and blows out the 10y mark tail); like the drift, the
+    # FORWARD vol of a maturing mega-cap is the right prior. `log_sigma` lets data nudge it ~±35%.
+    sigma_v_mu: float = 0.10
+    sigma_v_log_sigma: float = 0.15
     log_shares0: float = float(np.log(4.0e8))
     log_shares0_sigma: float = 0.5
     annual_dilution_rate_mu: float = 0.20
@@ -166,7 +172,7 @@ def _generative(
         )
         log_value_onset = numpyro.deterministic("log_value_onset", jnp.asarray(priors.log_value_onset_mu))
         log_value_scale = numpyro.deterministic("log_value_scale", jnp.asarray(priors.log_value_scale_mu))
-    sigma_v = numpyro.sample("sigma_v", dist.HalfNormal(priors.sigma_v_sigma))
+    sigma_v = numpyro.sample("sigma_v", dist.LogNormal(jnp.log(priors.sigma_v_mu), priors.sigma_v_log_sigma))
     log_shares0 = numpyro.sample("log_shares0", dist.Normal(priors.log_shares0, priors.log_shares0_sigma))
     log1p_r = numpyro.sample(
         "log1p_r", dist.Normal(jnp.log(1.0 + priors.annual_dilution_rate_mu), priors.log1p_r_sigma)
