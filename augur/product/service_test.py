@@ -24,7 +24,7 @@ from augur.model.series import (
     SP500Key,
 )
 from augur.model.testing import (
-    ConstantFrameExogenousModel,
+    ConstantFrameModel,
     PrivateEquityChannels,
     event_matrix_with_month_override,
     event_matrix_with_step,
@@ -70,7 +70,7 @@ from util.bazel.runfiles import get_required_path
 
 
 @dataclass
-class CountingExogenousModel:
+class CountingModel:
     inner: Sampler
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
@@ -93,13 +93,13 @@ def _augur_config() -> Config:
 
 
 @pytest.fixture
-def counting_exogenous_model() -> CountingExogenousModel:
+def counting_model() -> CountingModel:
     config = _augur_config()
-    return CountingExogenousModel(inner=config.exogenous_presets[config.default_exogenous_preset_id].realize_model())
+    return CountingModel(inner=config.exogenous_presets[config.default_exogenous_preset_id].realize_model())
 
 
 @pytest.fixture
-def forced_private_equity_event_model() -> ConstantFrameExogenousModel:
+def forced_private_equity_event_model() -> ConstantFrameModel:
     return forced_private_equity_event_fixture()
 
 
@@ -113,16 +113,14 @@ def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductSe
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        exogenous_models={"current_exogenous_model": model},
+        exogenous_models={"current_model": model},
         max_rollout_samples=config.max_rollout_samples,
         max_cache_rollouts=10,
     )
 
 
 def _scenario_key() -> ScenarioKey:
-    return ScenarioKey(
-        exogenous_model_id="current_exogenous_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none"
-    )
+    return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none")
 
 
 def test_product_fails_when_sample_is_missing_required_exogenous_series() -> None:
@@ -183,24 +181,20 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
 
 
-def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = _scenario_key()
 
     fan = product.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(0, 50, 100))
     )
 
-    assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
-    assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert counting_model.sample_requests[0].required_level_series == frozenset(
         {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
     )
-    assert counting_exogenous_model.sample_requests[0].required_private_equity_issuers == frozenset(
-        {"private_holding_a"}
-    )
-    assert fan.exogenous_model_id == "composite_exogenous_model"
+    assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
+    assert fan.model_id == "composite_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
     assert [summary.seed for summary in fan.rollout_summaries] == [7, 8]
@@ -228,8 +222,8 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
-    assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
-    assert detail.exogenous_model_id == "composite_exogenous_model"
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert detail.model_id == "composite_exogenous_model"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0
@@ -253,14 +247,14 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
     )
 
-    assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8), (9,)]
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (9,)]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(
-    counting_exogenous_model: CountingExogenousModel, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    product = _service(counting_exogenous_model)
+    product = _service(counting_model)
     scenario = _scenario_key()
     original = decode.monthly_metric_arrays
     calls = 0
@@ -280,9 +274,9 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
 
 
 def test_metric_fan_does_not_materialize_rollout_events(
-    counting_exogenous_model: CountingExogenousModel, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    product = _service(counting_exogenous_model)
+    product = _service(counting_model)
     scenario = _scenario_key()
 
     def fail_rollout_events(*_args, **_kwargs):
@@ -293,10 +287,10 @@ def test_metric_fan_does_not_materialize_rollout_events(
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,)))
 
 
-def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=300_000.0,
         spend_index="none",
@@ -334,13 +328,9 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
     assert failure.shortfall_usd == 300_000.0
 
 
-def test_default_funding_policy_sells_holdings_for_required_spend(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
-    scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model", horizon_months=1, monthly_spend_usd=300_000.0, spend_index="none"
-    )
+def test_default_funding_policy_sells_holdings_for_required_spend(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
+    scenario = ScenarioKey(model_id="current_model", horizon_months=1, monthly_spend_usd=300_000.0, spend_index="none")
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
@@ -370,14 +360,14 @@ def test_default_funding_policy_sells_holdings_for_required_spend(
 
 
 def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
-    forced_private_equity_event_model: ConstantFrameExogenousModel,
+    forced_private_equity_event_model: ConstantFrameModel,
 ) -> None:
     product = _service(forced_private_equity_event_model)
 
     detail = product.rollout(
         RolloutRequest(
             scenario=ScenarioKey(
-                exogenous_model_id="current_exogenous_model",
+                model_id="current_model",
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
@@ -410,7 +400,7 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
 def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
     issuer_id = IssuerId("private_holding_a")
     product = _service(
-        ConstantFrameExogenousModel(
+        ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={
                 issuer_id: PrivateEquityChannels(
@@ -428,14 +418,14 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
                     liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
-            metadata={"exogenous_model_id": "collapsed_pe_fixture"},
+            metadata={"model_id": "collapsed_pe_fixture"},
         )
     )
 
     detail = product.rollout(
         RolloutRequest(
             scenario=ScenarioKey(
-                exogenous_model_id="current_exogenous_model",
+                model_id="current_model",
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
@@ -464,7 +454,7 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
 def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
     issuer_id = IssuerId("private_holding_a")
     product = _service(
-        ConstantFrameExogenousModel(
+        ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={
                 issuer_id: PrivateEquityChannels(
@@ -477,14 +467,14 @@ def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
                     ),
                 )
             },
-            metadata={"exogenous_model_id": "tender_opportunity_fixture"},
+            metadata={"model_id": "tender_opportunity_fixture"},
         )
     )
 
     detail = product.rollout(
         RolloutRequest(
             scenario=ScenarioKey(
-                exogenous_model_id="current_exogenous_model",
+                model_id="current_model",
                 horizon_months=2,
                 monthly_spend_usd=1_000.0,
                 spend_index="none",
@@ -505,12 +495,10 @@ def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
     assert opportunity.proceeds_usd == pytest.approx(0.0)
 
 
-def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=1,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -531,12 +519,10 @@ def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
     assert expense.amount_paid_usd == 1_000.0
 
 
-def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -553,11 +539,11 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
 
 
 def test_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
-    counting_exogenous_model: CountingExogenousModel,
+    counting_model: CountingModel,
 ) -> None:
-    product = _service(counting_exogenous_model)
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -589,10 +575,10 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
     assert tax_payment.shortfall_usd == 0.0
 
 
-def test_outside_rent_emits_yearly_re_pegged_obligation(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_outside_rent_emits_yearly_re_pegged_obligation(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=14,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -617,10 +603,7 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(counting_exogenous_model
     # Within year 1 the amount stays flat.
     assert len({event.amount_paid_usd for event in year_one}) == 1
     # Required-level-series for the request should include the location-keyed rent series.
-    assert (
-        RentKey(location_id=LocationId("location_a"))
-        in counting_exogenous_model.sample_requests[0].required_level_series
-    )
+    assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
     # Year-0 cash drops by spend + rent = 4000 each month deterministically.
     cash = detail.rollout.monthly_metrics["cash_usd"]
@@ -632,21 +615,19 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(counting_exogenous_model
     assert all(event.amount_paid_usd == 1_000.0 for event in expense_events)
 
 
-def test_outside_rent_zero_omits_rent_series_requirement(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_outside_rent_zero_omits_rent_series_requirement(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = _scenario_key()  # no rent
 
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,)))
 
-    assert not any(
-        isinstance(key, RentKey) for key in counting_exogenous_model.sample_requests[0].required_level_series
-    )
+    assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
 
-def test_outside_rent_rejects_unknown_location(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_outside_rent_rejects_unknown_location(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -661,7 +642,7 @@ def test_outside_rent_rejects_unknown_location(counting_exogenous_model: Countin
 def test_scenario_key_rejects_rent_without_location() -> None:
     with pytest.raises(ValueError, match=r"rental_location_id is required"):
         ScenarioKey(
-            exogenous_model_id="current_exogenous_model",
+            model_id="current_model",
             horizon_months=3,
             monthly_spend_usd=1_000.0,
             spend_index="none",
@@ -672,7 +653,7 @@ def test_scenario_key_rejects_rent_without_location() -> None:
 def test_scenario_key_rejects_location_without_rent() -> None:
     with pytest.raises(ValueError, match=r"rental_location_id must be unset"):
         ScenarioKey(
-            exogenous_model_id="current_exogenous_model",
+            model_id="current_model",
             horizon_months=3,
             monthly_spend_usd=1_000.0,
             spend_index="none",
@@ -682,7 +663,7 @@ def test_scenario_key_rejects_location_without_rent() -> None:
 
 def _mortgage_purchase_scenario() -> ScenarioKey:
     return ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -695,10 +676,8 @@ def _mortgage_purchase_scenario() -> ScenarioKey:
     )
 
 
-def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -739,7 +718,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
     bootstrap = build_bootstrap_payload(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=36,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -777,7 +756,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     bootstrap = build_bootstrap_payload(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -832,7 +811,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
     bootstrap = build_bootstrap_payload(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=12,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -909,7 +888,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     bootstrap = build_bootstrap_payload(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=6,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -941,16 +920,14 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     assert rent_transfer.amount_usd.series_id == "rent:location_a"
 
 
-def test_future_rental_lifecycle_requires_rent_series_at_product_api(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
+def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=6,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -966,20 +943,17 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is False
-    assert (
-        RentKey(location_id=LocationId("location_a"))
-        in counting_exogenous_model.sample_requests[0].required_level_series
-    )
+    assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
 
-def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:
+def test_primary_residence_event_emits_rollout_marker(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1002,10 +976,8 @@ def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: 
     assert event.is_primary_residence is False
 
 
-def test_property_purchase_metrics_track_value_balance_and_equity(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_metrics_track_value_balance_and_equity(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -1028,20 +1000,17 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
     assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
     assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd + private_equity_value_usd)
     # Required-level-series should include the location's home-value series.
-    assert (
-        HomeValueKey(location_id=LocationId("location_a"))
-        in counting_exogenous_model.sample_requests[0].required_level_series
-    )
+    assert HomeValueKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
 
-def test_cash_property_purchase_omits_mortgage_payments(counting_exogenous_model: CountingExogenousModel) -> None:
+def test_cash_property_purchase_omits_mortgage_payments(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1064,13 +1033,11 @@ def test_cash_property_purchase_omits_mortgage_payments(counting_exogenous_model
     assert detail.rollout.monthly_metrics["mortgage_balance_usd"][0] == 0.0
 
 
-def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     # location_b_property has hoa_monthly_usd=150 in the public fixture.
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1093,16 +1060,14 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         assert event.amount_due_usd == pytest.approx(150.0, rel=0.1)
         assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
         assert event.shortfall_usd == 0.0
-    assert InflationKey() in counting_exogenous_model.sample_requests[0].required_level_series
+    assert InflationKey() in counting_model.sample_requests[0].required_level_series
 
 
-def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     # location_a_property has hoa_monthly_usd=0 in the public fixture.
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1119,13 +1084,11 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
-def test_property_purchase_emits_homeowners_insurance_at_default_pct(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_emits_homeowners_insurance_at_default_pct(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1149,12 +1112,10 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_insurance_pct_omits_insurance(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_with_zero_insurance_pct_omits_insurance(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1170,11 +1131,11 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(
     assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
 
 
-def test_property_purchase_emits_maintenance_at_default_pct(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_emits_maintenance_at_default_pct(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     # location_a_property is $900k. Default annual_maintenance_pct=1.0 → $750/mo at month 0.
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=3,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1198,12 +1159,10 @@ def test_property_purchase_emits_maintenance_at_default_pct(counting_exogenous_m
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1219,10 +1178,10 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
     assert [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"] == []
 
 
-def test_property_purchase_rejects_unknown_property(counting_exogenous_model: CountingExogenousModel) -> None:
-    product = _service(counting_exogenous_model)
+def test_property_purchase_rejects_unknown_property(counting_model: CountingModel) -> None:
+    product = _service(counting_model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1235,18 +1194,16 @@ def test_property_purchase_rejects_unknown_property(counting_exogenous_model: Co
         product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
 
-def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
+def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(counting_model: CountingModel) -> None:
     """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
     Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction_usd."""
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1268,17 +1225,15 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
     assert federal_accrual.itemized_deduction_usd > federal_accrual.standard_deduction_usd
 
 
-def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
+def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
     """`is_primary_residence=False` should produce zero MID even with a mortgage."""
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",
@@ -1302,17 +1257,15 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
     assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
 
 
-def test_cash_property_purchase_omits_mortgage_interest_deduction(
-    counting_exogenous_model: CountingExogenousModel,
-) -> None:
+def test_cash_property_purchase_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
     """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
     )
-    product = _service(counting_exogenous_model, augur_config=augur_config)
+    product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model",
+        model_id="current_model",
         horizon_months=13,
         monthly_spend_usd=1_000.0,
         spend_index="none",

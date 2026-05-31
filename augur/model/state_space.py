@@ -184,7 +184,7 @@ class StateSpaceModel:
     conditioning: ExogenousConditioningContext
     location_series_sources: LocationSeriesSources
     label: str = "state_space"
-    exogenous_model_version_id: str = ""
+    model_version_id: str = ""
     evidence_set_id: str = ""
     calibration_artifact_id: str = ""
 
@@ -347,9 +347,8 @@ class StateSpaceModel:
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             private_equity=private_equity,
             metadata={
-                "model_version_id": self.exogenous_model_version_id,
-                "exogenous_model_id": self.label,
-                "exogenous_model_version_id": self.exogenous_model_version_id,
+                "model_version_id": self.model_version_id,
+                "model_id": self.label,
                 "scenario_generator_id": "state_space_numpy",
                 "scenario_generator_version_id": "state_space_numpy:v1",
                 "evidence_set_id": self.evidence_set_id,
@@ -505,18 +504,14 @@ class StateSpaceModel:
         return tuple(indexes)
 
     def _compute_provenance(self, evidence_source_id: str) -> None:
-        self.exogenous_model_version_id = "model_version:" + stable_identity_digest(
+        self.model_version_id = "model_version:" + stable_identity_digest(
             {"label": self.label, "class": type(self).__qualname__, "schema_version": self.artifact.schema_version}
         )
         self.evidence_set_id = "evidence_set:" + stable_identity_digest(
             {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {
-                "exogenous_model_id": self.label,
-                "exogenous_model_version_id": self.exogenous_model_version_id,
-                "evidence_set_id": self.evidence_set_id,
-            }
+            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 

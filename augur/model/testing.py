@@ -47,7 +47,7 @@ class PrivateEquityChannels:
 
 
 @dataclass
-class ConstantFrameExogenousModel:
+class ConstantFrameModel:
     """Constant-frame fixture sampler.
 
     `levels` and `private_equity` are the constants the sampler returns
@@ -57,7 +57,7 @@ class ConstantFrameExogenousModel:
 
     levels: Mapping[LevelSeriesKey, LevelOverride] = field(default_factory=dict)
     private_equity: Mapping[IssuerId, PrivateEquityChannels] = field(default_factory=dict)
-    metadata: Mapping[str, object] = field(default_factory=lambda: {"exogenous_model_id": "constant_frame_fixture"})
+    metadata: Mapping[str, object] = field(default_factory=lambda: {"model_id": "constant_frame_fixture"})
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:

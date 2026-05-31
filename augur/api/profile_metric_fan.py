@@ -49,7 +49,7 @@ def main() -> int:
     )
     request = MetricFanRequest(
         scenario=ScenarioKey(
-            exogenous_model_id=config.default_exogenous_preset_id,
+            model_id=config.default_exogenous_preset_id,
             horizon_months=args.horizon_months,
             monthly_spend_usd=args.monthly_spend_usd,
             spend_index=args.spend_index,

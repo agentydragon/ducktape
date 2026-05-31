@@ -49,7 +49,7 @@ class CompositeExogenousModel:
             levels=concat_frames([macro_bundle.levels, pe_bundle.levels], SERIES_LEVELS_SCHEMA),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
             metadata={
-                "exogenous_model_id": self.label,
+                "model_id": self.label,
                 "private_equity_prices_usd": _private_equity_prices_usd(pe_bundle.metadata),
                 "macro_metadata": dict(macro_bundle.metadata),
                 "private_equity_metadata": dict(pe_bundle.metadata),

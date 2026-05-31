@@ -228,7 +228,7 @@ class VecmModel:
        set by `VecmExogenousProviderConfig.realize_model` from YAML. Define how
        factor paths map onto augur series ids and how multipliers scale to
        absolute levels.
-    3. Provenance ids (exogenous_model_version_id, evidence_set_id,
+    3. Provenance ids (model_version_id, evidence_set_id,
        calibration_artifact_id): set after fit or load via
        `_compute_provenance`. Surface as bundle metadata.
     """
@@ -247,7 +247,7 @@ class VecmModel:
     location_series_sources: LocationSeriesSources | None = None
 
     # Provenance.
-    exogenous_model_version_id: str = ""
+    model_version_id: str = ""
     evidence_set_id: str = ""
     calibration_artifact_id: str = ""
 
@@ -334,9 +334,8 @@ class VecmModel:
         return SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             metadata={
-                "model_version_id": self.exogenous_model_version_id,
-                "exogenous_model_id": self.label,
-                "exogenous_model_version_id": self.exogenous_model_version_id,
+                "model_version_id": self.model_version_id,
+                "model_id": self.label,
                 "scenario_generator_id": "vecm_numpyro",
                 "scenario_generator_version_id": "vecm_numpyro:v1",
                 "evidence_set_id": self.evidence_set_id,
@@ -518,7 +517,7 @@ class VecmModel:
         raise ValueError(f"VECM config latest_observations has no {expected}")
 
     def _compute_provenance(self, evidence_source_id: str) -> None:
-        self.exogenous_model_version_id = "model_version:" + stable_identity_digest(
+        self.model_version_id = "model_version:" + stable_identity_digest(
             {"label": self.label, "class": type(self).__qualname__}
         )
         self.evidence_set_id = "evidence_set:" + stable_identity_digest(
@@ -529,11 +528,7 @@ class VecmModel:
             }
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {
-                "exogenous_model_id": self.label,
-                "exogenous_model_version_id": self.exogenous_model_version_id,
-                "evidence_set_id": self.evidence_set_id,
-            }
+            {"model_id": self.label, "model_version_id": self.model_version_id, "evidence_set_id": self.evidence_set_id}
         )
 
 

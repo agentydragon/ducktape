@@ -235,7 +235,7 @@ class PrivateEquityRiskModel:
             levels=SERIES_LEVELS_SCHEMA.to_frame(),
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             metadata={
-                "exogenous_model_id": self.label,
+                "model_id": self.label,
                 "private_equity_issuers": tuple(sorted(self.issuers)),
                 "private_equity_prices_usd": prices,
             },

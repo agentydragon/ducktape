@@ -100,7 +100,7 @@ class IndependentExogenousModel(FrozenModel):
         ]
         return SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
-            metadata={"exogenous_model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
+            metadata={"model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
         )
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:

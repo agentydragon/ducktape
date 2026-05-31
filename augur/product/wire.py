@@ -199,7 +199,7 @@ DEFAULT_ANNUAL_MAINTENANCE_PCT = 1.0
 
 
 class ScenarioKey(ApiModel):
-    exogenous_model_id: str
+    model_id: str
     horizon_months: PositiveInt = Field(le=MAX_HORIZON_MONTHS)
     monthly_spend_usd: PositiveFloat
     spend_index: SpendIndex
@@ -475,7 +475,7 @@ class RolloutSummary(ApiModel):
 
 
 class MetricFanResponse(ApiModel):
-    exogenous_model_id: str
+    model_id: str
     metric: MetricName
     monthly_metric_fan: Frame
     terminal_metric_percentiles: Frame
@@ -485,6 +485,6 @@ class MetricFanResponse(ApiModel):
 
 
 class RolloutResponse(ApiModel):
-    exogenous_model_id: str
+    model_id: str
     rollout: RolloutOutput
     diagnostics: tuple[str, ...] = ()

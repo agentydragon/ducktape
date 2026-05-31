@@ -45,7 +45,7 @@ location_selection:
   - location_a
   - location_b
 exogenous_presets:
-  current_exogenous_model:
+  current_model:
     # Public fixture uses a composite provider: macro/liquid/real-estate series in
     # one independent block, private-equity price/event series in another. That
     # mirrors production's split without requiring trained fixture artifacts.

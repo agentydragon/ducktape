@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from augur.frames import concat_frames
-from augur.model.composite_exogenous import CompositeExogenousModel
+from augur.model.composite import CompositeExogenousModel
 from augur.model.exogenous import (
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,

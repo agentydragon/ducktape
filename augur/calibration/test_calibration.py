@@ -1,6 +1,6 @@
 """End-to-end `run_calibration` against a fixed-output fixture model (no network).
 
-Uses the shared `ConstantFrameExogenousModel` fixture (augur.model.testing) seeded
+Uses the shared `ConstantFrameModel` fixture (augur.model.testing) seeded
 with a per-rollout event array, and a `mock_manifold_client` so prices are deterministic
 and hermetic.
 """
@@ -21,7 +21,7 @@ from augur.calibration.testing import mock_manifold_client
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
-from augur.model.testing import ConstantFrameExogenousModel, PrivateEquityChannels
+from augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 
 _ISSUER = "issuer_x"
 _HORIZON = 120
@@ -37,8 +37,8 @@ def _event_kind_codes(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64
     return events
 
 
-def _model() -> ConstantFrameExogenousModel:
-    return ConstantFrameExogenousModel(
+def _model() -> ConstantFrameModel:
+    return ConstantFrameModel(
         private_equity={
             IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
         }
