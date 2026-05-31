@@ -10,7 +10,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 from augur.model.series import (
     CryptoKey,
     CryptoSymbol,

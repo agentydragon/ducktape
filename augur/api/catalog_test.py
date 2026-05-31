@@ -14,7 +14,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 
 
 def _write_properties(path: Path) -> None:

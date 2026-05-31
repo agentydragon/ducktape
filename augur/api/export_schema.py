@@ -20,7 +20,7 @@ from augur.api.config import AgentDefinition, Config, LocationConfig, PropertySo
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.server import create_app_from_augur_config
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 
 _SCHEMA_LOCATION_ID = "schema_location"
 

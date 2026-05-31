@@ -6,7 +6,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 from augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 
 

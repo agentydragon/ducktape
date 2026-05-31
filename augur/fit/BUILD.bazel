@@ -34,8 +34,8 @@ py_library(
 )
 
 py_library(
-    name = "exogenous_model",
-    srcs = ["exogenous_model.py"],
+    name = "model",
+    srcs = ["model.py"],
     deps = [
         "//augur/model:exogenous",
         "//augur/model/path_models:scenarios",
@@ -57,7 +57,7 @@ py_library(
     name = "metrics",
     srcs = ["metrics.py"],
     deps = [
-        ":exogenous_model",
+        ":model",
         ":scoring",
         "//augur/model/path_models:scenarios",
         "@pypi//numpy",
@@ -105,11 +105,11 @@ py_binary(
     ],
     deps = [
         ":data",
-        ":exogenous_model",
         ":metrics",
+        ":model",
         "//augur/api:config",
         "//augur/model:exogenous_provider_config",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
         "//augur/model:vecm",
         "//util/bazel:runfiles",
     ],
@@ -194,8 +194,8 @@ py_test(
     name = "metrics_test",
     srcs = ["metrics_test.py"],
     deps = [
-        ":exogenous_model",
         ":metrics",
+        ":model",
         "//augur/model:exogenous",
         "//augur/model/path_models:scenarios",
         "@pypi//jax",
@@ -238,7 +238,7 @@ py_test(
         ":train_lib",
         "//augur/model:exogenous",
         "//augur/model:exogenous_provider_config",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
         "//augur/model:series",
         "//augur/model:state_space",
         "@pypi//pydantic",

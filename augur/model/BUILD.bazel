@@ -150,8 +150,8 @@ py_library(
 )
 
 py_library(
-    name = "independent_exogenous",
-    srcs = ["independent_exogenous.py"],
+    name = "independent",
+    srcs = ["independent.py"],
     deps = [
         ":deterministic",
         ":exogenous",
@@ -255,7 +255,7 @@ py_library(
     srcs = ["exogenous_provider_config.py"],
     deps = [
         ":composite_exogenous",
-        ":independent_exogenous",
+        ":independent",
         ":private_equity_risk",
         ":schemas",
         ":state_space",
@@ -329,12 +329,12 @@ py_test(
 )
 
 py_test(
-    name = "independent_exogenous_test",
-    srcs = ["independent_exogenous_test.py"],
+    name = "independent_test",
+    srcs = ["independent_test.py"],
     deps = [
         ":exogenous",
         ":exogenous_provider_config",
-        ":independent_exogenous",
+        ":independent",
         ":series",
         "//:conftest",
         "//augur/product:asset_key",

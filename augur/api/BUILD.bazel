@@ -93,7 +93,7 @@ py_test(
         ":local_regulation",
         ":portfolio",
         "//augur/model:exogenous_provider_config",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
         "//augur/model:private_equity_risk",
         "//augur/model:trained_private_equity",
         "@pypi//pydantic",
@@ -167,7 +167,7 @@ py_test(
         ":config",
         ":finance",
         ":local_regulation",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -334,7 +334,7 @@ py_library(
         ":finance",
         ":local_regulation",
         ":server_lib",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
     ],
 )
 

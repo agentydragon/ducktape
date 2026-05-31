@@ -23,7 +23,7 @@ from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig

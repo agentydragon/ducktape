@@ -29,7 +29,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from augur.fit.exogenous_model import FittableScorable, Scorable
+from augur.fit.model import FittableScorable, Scorable
 from augur.fit.scoring import gaussian_crps, joint_log_density, marginal_log_densities
 from augur.model.path_models.scenarios import HistoricalSeries
 

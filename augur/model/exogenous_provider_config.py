@@ -74,7 +74,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from augur.model.composite_exogenous import CompositeExogenousModel
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentExogenousProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.schemas import FrozenModel
 from augur.model.state_space import StateSpaceExogenousProviderConfig

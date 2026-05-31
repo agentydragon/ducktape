@@ -115,7 +115,7 @@ py_test(
         "//augur/api:config",
         "//augur/model:exogenous",
         "//augur/model:exogenous_provider_config",
-        "//augur/model:independent_exogenous",
+        "//augur/model:independent",
         "//augur/model:series",
         "//augur/model:testing",
         "//augur/sim:external_series",
