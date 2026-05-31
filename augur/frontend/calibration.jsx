@@ -70,9 +70,6 @@ function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
               {exogenousModel ?? "(no presets)"}
             </div>
           </div>
-          <div className="text-xs augur-muted">
-            Horizon and rollouts are set in the header (shared with the product tab).
-          </div>
         </div>
         <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
           <summary className="augur-eyebrow cursor-pointer list-none">
