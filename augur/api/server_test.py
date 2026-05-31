@@ -28,7 +28,7 @@ def forced_private_equity_event_client() -> Iterator[TestClient]:
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_models={"current_exogenous_model": forced_private_equity_event_fixture()},
+            exogenous_models={"current_model": forced_private_equity_event_fixture()},
         )
     )
     with TestClient(app) as client:
@@ -114,7 +114,7 @@ def capacity_limited_private_equity_client() -> Iterator[TestClient]:
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_models={"current_exogenous_model": capacity_limited_private_equity_fixture()},
+            exogenous_models={"current_model": capacity_limited_private_equity_fixture()},
         )
     )
     with TestClient(app) as client:
@@ -122,19 +122,14 @@ def capacity_limited_private_equity_client() -> Iterator[TestClient]:
 
 
 def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:
-    scenario = {
-        "exogenous_model_id": "current_exogenous_model",
-        "horizon_months": 3,
-        "monthly_spend_usd": 1000.0,
-        "spend_index": "none",
-    }
+    scenario = {"model_id": "current_model", "horizon_months": 3, "monthly_spend_usd": 1000.0, "spend_index": "none"}
     fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
         {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "cash_usd", "percentiles": [0, 50, 100]},
     )
 
-    assert fan["exogenous_model_id"] == "composite_exogenous_model"
+    assert fan["model_id"] == "composite_exogenous_model"
     assert "horizon_months" not in fan
     assert fan["metric"] == "cash_usd"
     assert fan["failed_count"] == 0
@@ -181,7 +176,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
-    assert detail["exogenous_model_id"] == "composite_exogenous_model"
+    assert detail["model_id"] == "composite_exogenous_model"
     assert "horizon_months" not in detail
     assert detail["rollout"]["seed"] == 7
     assert detail["rollout"]["failed"] is False
@@ -296,7 +291,7 @@ def test_backend_server_exposes_deployment_image_commits(server_url: str) -> Non
 
 def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 3,
         "monthly_spend_usd": 300_000.0,
         "spend_index": "none",
@@ -349,12 +344,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
 
 
 def test_backend_server_product_default_funding_sells_holding_for_required_spend(server_url: str) -> None:
-    scenario = {
-        "exogenous_model_id": "current_exogenous_model",
-        "horizon_months": 1,
-        "monthly_spend_usd": 300_000.0,
-        "spend_index": "none",
-    }
+    scenario = {"model_id": "current_model", "horizon_months": 1, "monthly_spend_usd": 300_000.0, "spend_index": "none"}
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -397,7 +387,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
         "/api/product/projections/rollout",
         json={
             "scenario": {
-                "exogenous_model_id": "current_exogenous_model",
+                "model_id": "current_model",
                 "horizon_months": 2,
                 "monthly_spend_usd": 1_000.0,
                 "spend_index": "none",
@@ -409,7 +399,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
 
     assert response.status_code == 200
     detail = response.json()
-    assert detail["exogenous_model_id"] == "forced_pe_fixture"
+    assert detail["model_id"] == "forced_pe_fixture"
 
     [pe_event] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_event"]
     assert pe_event["month_index"] == 1
@@ -433,7 +423,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
     capacity_limited_private_equity_client: TestClient,
 ) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 2,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
@@ -448,7 +438,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     assert fan_response.status_code == 200
     fan = fan_response.json()
-    assert fan["exogenous_model_id"] == "capacity_limited_pe_fixture"
+    assert fan["model_id"] == "capacity_limited_pe_fixture"
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [254_250.0]}
     [summary] = fan["rollout_summaries"]
     assert summary["terminal_metrics"]["cash_usd"] == pytest.approx(254_250.0)
@@ -472,7 +462,7 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
 def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(server_url: str) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 1,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
@@ -501,7 +491,7 @@ def test_backend_server_product_rollout_includes_zero_tax_accrual_events_without
     server_url: str,
 ) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 12,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
@@ -521,7 +511,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
     server_url: str,
 ) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 13,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
@@ -559,7 +549,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
 
 def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 13,
         "monthly_spend_usd": 1000.0,
         "spend_index": "none",
@@ -580,7 +570,7 @@ def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> 
 
 def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -> None:
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 3,
         "monthly_spend_usd": 1000.0,
         "spend_index": "none",
@@ -603,7 +593,7 @@ def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -
 def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url: str) -> None:
     """PE tender sales should surface as `holding_sale` events in rollout detail."""
     scenario = {
-        "exogenous_model_id": "current_exogenous_model",
+        "model_id": "current_model",
         "horizon_months": 48,
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",

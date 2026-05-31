@@ -83,7 +83,7 @@ def test_independent_model_samples_levels_and_events() -> None:
     }
     # IndependentExogenousModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
-    assert sampled.metadata["exogenous_model_id"] == "independent_exogenous_model"
+    assert sampled.metadata["model_id"] == "independent_exogenous_model"
     # The PE mark's month-0 initial_value is surfaced via metadata, keyed by issuer.
     assert sampled.metadata["private_equity_prices_usd"] == {"private_equity_x": 50.0}
 

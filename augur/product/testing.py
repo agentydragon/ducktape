@@ -23,7 +23,7 @@ from augur.model.series import (
     SP500Key,
 )
 from augur.model.testing import (
-    ConstantFrameExogenousModel,
+    ConstantFrameModel,
     PrivateEquityChannels,
     event_matrix_with_month_override,
     int_matrix_with_month_override,
@@ -43,10 +43,10 @@ TEST_CONFIG_LEVEL_PLACEHOLDERS: Mapping[LevelSeriesKey, float] = {
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
 
 
-def forced_private_equity_event_fixture() -> ConstantFrameExogenousModel:
+def forced_private_equity_event_fixture() -> ConstantFrameModel:
     """Single acquisition-cashout PE event at month 1; non-PE levels at 1.0."""
 
-    return ConstantFrameExogenousModel(
+    return ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={
             _PRIVATE_HOLDING_A: PrivateEquityChannels(
@@ -64,14 +64,14 @@ def forced_private_equity_event_fixture() -> ConstantFrameExogenousModel:
                 forced_sale_fraction=level_matrix_with_month_override(default=0.0, override=0.25, month=1),
             )
         },
-        metadata={"exogenous_model_id": "forced_pe_fixture"},
+        metadata={"model_id": "forced_pe_fixture"},
     )
 
 
-def capacity_limited_private_equity_fixture() -> ConstantFrameExogenousModel:
+def capacity_limited_private_equity_fixture() -> ConstantFrameModel:
     """Tender opportunity at month 1 with sale_capacity_fraction=0.25."""
 
-    return ConstantFrameExogenousModel(
+    return ConstantFrameModel(
         levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
         private_equity={
             _PRIVATE_HOLDING_A: PrivateEquityChannels(
@@ -85,5 +85,5 @@ def capacity_limited_private_equity_fixture() -> ConstantFrameExogenousModel:
                 ),
             )
         },
-        metadata={"exogenous_model_id": "capacity_limited_pe_fixture"},
+        metadata={"model_id": "capacity_limited_pe_fixture"},
     )

@@ -105,7 +105,7 @@ class TrainedPrivateEquityModel(FrozenModel):
                 horizon_months=horizon_months,
             ),
             metadata={
-                "exogenous_model_id": self.label,
+                "model_id": self.label,
                 "private_equity_model_schema_version": self.artifact.schema_version,
                 "private_equity_issuers": (issuer,),
                 "private_equity_prices_usd": {issuer: self.artifact.current_mark_usd},

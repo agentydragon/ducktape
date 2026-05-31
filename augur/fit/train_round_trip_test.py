@@ -56,7 +56,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
         ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
     )
 
-    assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
+    assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
     assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} == {
         key.wire_id for key in required_level_series
     }
@@ -97,7 +97,7 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
         ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
     )
 
-    assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
+    assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
     assert sampled.metadata["source_manifest"]
     assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} >= {
         key.wire_id for key in required_level_series

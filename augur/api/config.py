@@ -132,15 +132,14 @@ class Config(ApiModel):
         min_length=1,
         description=(
             "Named registry of exogenous-bundle providers. Frontend exposes the preset id via "
-            "`ScenarioKey.exogenous_model_id` so the user can A/B providers (e.g. a hand-tuned "
+            "`ScenarioKey.model_id` so the user can A/B providers (e.g. a hand-tuned "
             "structured model vs a fitted-artifact-based one). The server materializes each preset "
             "into its own runtime `Sampler` at startup."
         ),
     )
     default_exogenous_preset_id: str = Field(
         description=(
-            "Preset id used when the request omits or defaults `exogenous_model_id`. Must name a "
-            "key in `exogenous_presets`."
+            "Preset id used when the request omits or defaults `model_id`. Must name a key in `exogenous_presets`."
         )
     )
     calibration_catalog: CalibrationCatalogConfig | None = Field(
@@ -156,7 +155,7 @@ class Config(ApiModel):
     @classmethod
     def _expand_legacy_exogenous_provider(cls, data: object) -> object:
         """Wrap a top-level `exogenous_provider:` into the new presets registry under the
-        historical id `current_exogenous_model`, so existing deployment configs and tests
+        historical id `current_model`, so existing deployment configs and tests
         keep loading without edits while presets is the canonical schema going forward.
         """
 
@@ -168,8 +167,8 @@ class Config(ApiModel):
             )
         data = dict(data)
         provider = data.pop("exogenous_provider")
-        data["exogenous_presets"] = {"current_exogenous_model": provider}
-        data.setdefault("default_exogenous_preset_id", "current_exogenous_model")
+        data["exogenous_presets"] = {"current_model": provider}
+        data.setdefault("default_exogenous_preset_id", "current_model")
         return data
 
     @model_validator(mode="after")

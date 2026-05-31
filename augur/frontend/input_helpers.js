@@ -187,8 +187,8 @@ export function metricScaleFromSearch(searchString) {
 // defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
 // v2 stores rentalFractionRentedPct as a 0..100 percentage, v3 dropped `rentItOut` so the
 // rental fields are always present and `fractionRentedPct == 0` means "not rented", v4 dropped
-// `rolloutCount` (now the tab-shared `?n=` control) and the trailing `exogenousModelId` (now the
-// tab-shared `?x=` control). Dropping the trailing `exogenousModelId` slot shifts no other
+// `rolloutCount` (now the tab-shared `?n=` control) and the trailing `modelId` (now the
+// tab-shared `?x=` control). Dropping the trailing `modelId` slot shifts no other
 // position, so v4 `?s=` strings that never set it decode identically.
 // v5 dropped the leading `horizonMonths` (now the tab-shared `?h=` control); dropping a
 // non-trailing slot shifts the rest, so the bump makes older URLs fall back to defaults rather
@@ -227,7 +227,7 @@ const INPUT_FIELDS = [
   // Appended after existing positions so older `?s=` URLs continue to decode without shifting
   // their downstream slots. New optional fields go at the tail.
   { key: "cashBufferIndexToInflation", type: "bool" },
-  { key: "exogenousModelId", type: "string" },
+  { key: "modelId", type: "string" },
 ];
 
 export function encodeInputValue(value, field) {
@@ -470,13 +470,13 @@ export function sellOrderBuckets(sellOrderCodes) {
   return buckets;
 }
 
-export function productScenario(input, bootstrap, exogenousModelId, horizonMonths) {
+export function productScenario(input, bootstrap, modelId, horizonMonths) {
   const sellOrder = sellOrderBuckets(input.sellOrder);
   const autoSellEnabled = sellOrder.length > 0;
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
-    exogenousModelId: exogenousModelId || exogenousModelDefault(bootstrap),
+    modelId: modelId || exogenousModelDefault(bootstrap),
     horizonMonths: clampHorizonMonths(horizonMonths, bootstrap),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",

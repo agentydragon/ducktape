@@ -60,7 +60,7 @@ DEFAULT_MAX_CACHE_ROLLOUTS = 25_000
 @dataclass(frozen=True)
 class _CachedRollout:
     dense: DenseSimulationResult  # R=1
-    exogenous_model_id: str
+    model_id: str
 
 
 @dataclass(frozen=True)
@@ -117,10 +117,10 @@ class ProductService:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
         decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-        exogenous_model_id = decoded[0].cached.exogenous_model_id if decoded else request.scenario.exogenous_model_id
+        model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
         percentiles = tuple(float(pct) for pct in request.percentiles)
         return MetricFanResponse(
-            exogenous_model_id=exogenous_model_id,
+            model_id=model_id,
             metric=request.metric,
             monthly_metric_fan=_monthly_metric_fan(decoded, metric=request.metric, percentiles=percentiles),
             terminal_metric_percentiles=_terminal_metric_percentiles(
@@ -141,7 +141,7 @@ class ProductService:
         # instead of round-tripping through polars.
         monthly_metrics_frame = {name: arr.tolist() for name, arr in decoded.monthly_metric_arrays.items()}
         return RolloutResponse(
-            exogenous_model_id=decoded.cached.exogenous_model_id,
+            model_id=decoded.cached.model_id,
             rollout=RolloutOutput(
                 seed=decoded.seed,
                 failed=decoded.failed,
@@ -152,10 +152,9 @@ class ProductService:
         )
 
     def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
-        if scenario_key.exogenous_model_id not in self._exogenous_models:
+        if scenario_key.model_id not in self._exogenous_models:
             raise ValueError(
-                f"unknown exogenous_model_id: {scenario_key.exogenous_model_id!r} "
-                f"(known presets: {sorted(self._exogenous_models)})"
+                f"unknown model_id: {scenario_key.model_id!r} (known presets: {sorted(self._exogenous_models)})"
             )
         if (
             scenario_key.rental_location_id is not None
@@ -208,7 +207,7 @@ class ProductService:
             ),
             required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),
         )
-        sampled = self._exogenous_models[scenario_key.exogenous_model_id].sample(sampling_request)
+        sampled = self._exogenous_models[scenario_key.model_id].sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)
         anchors = self._portfolio.level_anchors
         sampled = anchor_sampled_series_levels(
@@ -222,11 +221,9 @@ class ProductService:
             external_series=materialize_sampled_exogenous(sampled),
             locations=self._locations,
         )
-        exogenous_model_id = str(sampled.metadata.get("exogenous_model_id") or scenario_key.exogenous_model_id)
+        model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
         return {
-            seed: _CachedRollout(
-                dense=slice_dense_result(dense, rollout_index=batch_index), exogenous_model_id=exogenous_model_id
-            )
+            seed: _CachedRollout(dense=slice_dense_result(dense, rollout_index=batch_index), model_id=model_id)
             for batch_index, seed in enumerate(seeds)
         }
 
