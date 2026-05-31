@@ -248,6 +248,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
         "@pypi//uvicorn",
     ],
 )
@@ -285,6 +286,8 @@ aspect_py_binary(
         ":server_lib",
         "@pypi//fastapi",
         "@pypi//more_itertools",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
         "@pypi//uvicorn",
     ],
 )
