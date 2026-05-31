@@ -1,6 +1,6 @@
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary", "js_test")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -54,6 +54,12 @@ js_library(
         ":data_helpers",
         "//:node_modules/react",
     ],
+)
+
+js_library(
+    name = "sanity_bands",
+    srcs = ["sanity_bands.js"],
+    deps = ["//augur/frontend/lib:format"],
 )
 
 # -- React components -----------------------------------------------------------
@@ -143,6 +149,7 @@ js_library(
         ":fan_chart",
         ":hooks",
         ":input_helpers",
+        ":sanity_bands",
         ":skeleton",
         "//:node_modules/react",
         "//augur/frontend/lib:controls",
@@ -218,6 +225,7 @@ filegroup(
         "input_helpers.js",
         "main.jsx",
         "metric_table.jsx",
+        "sanity_bands.js",
         "skeleton.jsx",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
@@ -325,6 +333,17 @@ build_test(
         ":image",
         ":image.digest",
     ],
+)
+
+# -- JS unit tests --------------------------------------------------------------
+
+js_test(
+    name = "sanity_bands_test",
+    data = [
+        ":sanity_bands",
+        "//augur/frontend/lib:format",
+    ],
+    entry_point = "sanity_bands.test.mjs",
 )
 
 filegroup(
