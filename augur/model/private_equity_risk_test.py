@@ -23,6 +23,7 @@ from augur.model.private_equity_risk import (
     _sample_company_valuation_vectorized,
     _sample_issuer,
     _seed_from_rollout_seeds,
+    _valuation_monthly_drift,
 )
 from augur.model.provider_config import ProviderConfig
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -455,21 +456,21 @@ def _valuation_issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
     the mark is the coupled V(t)/dilution machinery — keeps the assertions clean.
     """
 
-    return _issuer(
-        current_valuation_usd=1.0e11,
-        shares_outstanding_initial=1.0e9,
-        valuation_monthly_log_return_mu=0.02,
-        valuation_monthly_log_return_sigma=0.10,
-        valuation_student_t_nu=5.0,
+    defaults: dict[str, object] = {
+        "current_valuation_usd": 1.0e11,
+        "shares_outstanding_initial": 1.0e9,
+        "valuation_monthly_log_return_mu": 0.02,
+        "valuation_monthly_log_return_sigma": 0.10,
+        "valuation_student_t_nu": 5.0,
         # No legacy latent-mark drift/vol: when the channel is ON these are unused,
         # but keeping them inert makes the channel-OFF baseline below unambiguous.
-        monthly_log_return_mu=0.0,
-        monthly_log_return_sigma=0.0,
+        "monthly_log_return_mu": 0.0,
+        "monthly_log_return_sigma": 0.0,
         # Push tender/admin precursors past the horizon so mark[:,0] and the coupled
         # path aren't perturbed by event-price noise in the first columns.
-        tender_interval_months_median=600.0,
-        **updates,
-    )
+        "tender_interval_months_median": 600.0,
+    }
+    return _issuer(**{**defaults, **updates})
 
 
 def test_valuation_channel_off_by_default() -> None:
@@ -512,6 +513,76 @@ def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
         a = first.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
         b = second.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
         np.testing.assert_array_equal(a, b)
+
+
+# ---- M2.2-D: decaying valuation drift -----------------------------------------------------
+
+
+def test_valuation_monthly_drift_constant_by_default() -> None:
+    """With the decay knobs unset, the per-step drift is the constant `mu` at every month."""
+
+    issuer = _valuation_issuer(valuation_monthly_log_return_mu=0.02)
+    drift = _valuation_monthly_drift(issuer, 12)
+    np.testing.assert_array_equal(drift, np.full(12, 0.02))
+
+
+def test_valuation_monthly_drift_decays_from_mu0_toward_mu_inf() -> None:
+    """`mu(t) = mu_inf + (mu_0 - mu_inf) * 0.5 ** (t / halflife)`, stepping into months 1..H."""
+
+    issuer = _valuation_issuer(
+        valuation_monthly_log_return_mu=0.02,  # mu_inf
+        valuation_monthly_log_return_mu_initial=0.10,  # mu_0
+        valuation_drift_decay_halflife_months=6.0,
+    )
+    drift = _valuation_monthly_drift(issuer, 24)
+    # Month 1 (step start t=0) is the full near-term mu_0.
+    assert drift[0] == pytest.approx(0.10)
+    # At one half-life (t=6) the excess (0.10-0.02=0.08) is halved -> 0.02 + 0.04 = 0.06.
+    assert drift[6] == pytest.approx(0.02 + 0.04)
+    # At two half-lives (t=12) -> 0.02 + 0.02 = 0.04. Monotone decreasing toward mu_inf.
+    assert drift[12] == pytest.approx(0.02 + 0.02)
+    assert np.all(np.diff(drift) < 0.0)
+    assert drift[-1] > 0.02  # never reaches mu_inf exactly over a finite horizon
+
+
+def test_decaying_drift_off_is_byte_identical_to_constant_drift() -> None:
+    """Setting mu_0 == mu_inf (with any half-life) reproduces the constant-drift path exactly,
+    proving the decay path composes onto the same RW with no incidental change."""
+
+    seeds = (101, 102, 103, 104)
+    constant = _valuation_issuer(valuation_monthly_log_return_mu=0.03)
+    decayed_flat = _valuation_issuer(
+        valuation_monthly_log_return_mu=0.03,
+        valuation_monthly_log_return_mu_initial=0.03,  # mu_0 == mu_inf => no excess
+        valuation_drift_decay_halflife_months=6.0,
+    )
+    a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
+    b = _sample_company_valuation_vectorized(decayed_flat, valuation_seeds=seeds, horizon_months=36)
+    np.testing.assert_array_equal(a, b)
+
+
+def test_decaying_drift_curbs_long_horizon_growth_vs_constant_hot_drift() -> None:
+    """A hot constant near-term drift compounds to an absurd 10y median; decaying it toward a
+    mature rate keeps the near-term path but tames the long horizon. This is the M2.2-D fix."""
+
+    seeds = tuple(range(1, 401))
+    horizon = 120
+    hot_constant = _valuation_issuer(valuation_monthly_log_return_mu=0.10, valuation_monthly_log_return_sigma=0.04)
+    decaying = _valuation_issuer(
+        valuation_monthly_log_return_mu=0.02,  # mu_inf (mature)
+        valuation_monthly_log_return_mu_initial=0.10,  # mu_0 (hot near-term, == the constant case)
+        valuation_drift_decay_halflife_months=18.0,
+        valuation_monthly_log_return_sigma=0.04,
+    )
+    v_hot = _sample_company_valuation_vectorized(hot_constant, valuation_seeds=seeds, horizon_months=horizon)
+    v_dec = _sample_company_valuation_vectorized(decaying, valuation_seeds=seeds, horizon_months=horizon)
+    v0 = 1.0e11
+    # Near term (month 6) the two are close: decay has barely kicked in.
+    near_hot = np.median(v_hot[:, 6]) / v0
+    near_dec = np.median(v_dec[:, 6]) / v0
+    assert near_dec == pytest.approx(near_hot, rel=0.15)
+    # Long horizon (month 120): constant-hot explodes; decaying is far smaller.
+    assert np.median(v_dec[:, 120]) < 0.01 * np.median(v_hot[:, 120])
 
 
 def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.ndarray:

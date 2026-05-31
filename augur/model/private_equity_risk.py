@@ -128,7 +128,29 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     `shares_outstanding_initial`.
     """
     valuation_monthly_log_return_mu: float = 0.0
-    """Monthly log-space drift of V(t). Only meaningful when the channel is on."""
+    """Monthly log-space drift of V(t). Only meaningful when the channel is on.
+
+    When the optional decaying-drift fields below are unset this is the CONSTANT monthly
+    drift (legacy behavior). When `valuation_monthly_log_return_mu_initial` /
+    `valuation_drift_decay_halflife_months` are set, this becomes the LONG-RUN (mature) drift
+    `mu_inf` that the per-month drift decays toward.
+    """
+    valuation_monthly_log_return_mu_initial: float | None = None
+    """Optional near-term (t=0) monthly log-drift `mu_0` (M2.2-D decaying drift).
+
+    When set (together with `valuation_drift_decay_halflife_months`), the monthly drift is
+    `mu(t) = mu_inf + (mu_0 - mu_inf) * 0.5 ** (t / halflife)` — it starts at `mu_0` and
+    half-lives toward the long-run `mu_inf` (= `valuation_monthly_log_return_mu`). This lets an
+    evidence fit honor an explosive NEAR-TERM growth rate without compounding it over the whole
+    horizon (a constant-drift random walk does, producing absurd 10y marks). `None` => constant
+    drift, byte-identical to the legacy single-drift path.
+    """
+    valuation_drift_decay_halflife_months: float | None = Field(default=None, gt=0)
+    """Half-life (months) of the excess near-term drift `mu_0 - mu_inf` (M2.2-D decaying drift).
+
+    Required iff `valuation_monthly_log_return_mu_initial` is set. After `halflife` months the
+    excess drift is halved; by `~3-4` half-lives the drift is effectively `mu_inf`.
+    """
     valuation_monthly_log_return_sigma: float = Field(default=0.0, ge=0.0)
     """Monthly log-space volatility of V(t). Only meaningful when the channel is on."""
     valuation_student_t_nu: float = Field(default=5.0, gt=2.0)
@@ -183,6 +205,15 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
         # deliberately unguarded.
         if (self.current_valuation_usd is None) != (self.shares_outstanding_initial is None):
             raise ValueError("current_valuation_usd and shares_outstanding_initial must be set together or both unset")
+        # Decaying-drift (M2.2-D) is opt-in and its two knobs are paired: the near-term drift
+        # `mu_0` only has meaning alongside the half-life over which it decays to `mu_inf`.
+        if (self.valuation_monthly_log_return_mu_initial is None) != (
+            self.valuation_drift_decay_halflife_months is None
+        ):
+            raise ValueError(
+                "valuation_monthly_log_return_mu_initial and valuation_drift_decay_halflife_months "
+                "must be set together or both unset"
+            )
         return self
 
     @property
@@ -675,6 +706,24 @@ def _sample_latent_marks_vectorized(
     return paths
 
 
+def _valuation_monthly_drift(issuer: PrivateEquityRiskIssuerConfig, horizon_months: int) -> FloatMatrix:
+    """Per-step monthly log-drift for V(t), length `horizon_months` (drift into months 1..H).
+
+    Constant `valuation_monthly_log_return_mu` unless the decaying-drift knobs are set, in which
+    case it decays from the near-term `mu_0` toward the long-run `mu_inf` with the given
+    half-life: `mu(t) = mu_inf + (mu_0 - mu_inf) * 0.5 ** (t / halflife)`. The step into month
+    `m` uses drift at its starting edge `t = m - 1`, so month 1 gets the full `mu_0`.
+    """
+
+    mu_inf = issuer.valuation_monthly_log_return_mu
+    mu_0 = issuer.valuation_monthly_log_return_mu_initial
+    halflife = issuer.valuation_drift_decay_halflife_months
+    if mu_0 is None or halflife is None:
+        return np.full(horizon_months, mu_inf, dtype=np.float64)
+    step_start = np.arange(horizon_months, dtype=np.float64)
+    return mu_inf + (mu_0 - mu_inf) * np.power(0.5, step_start / halflife)
+
+
 def _sample_company_valuation_vectorized(
     issuer: PrivateEquityRiskIssuerConfig, *, valuation_seeds: tuple[int, ...], horizon_months: int
 ) -> FloatMatrix:
@@ -698,7 +747,12 @@ def _sample_company_valuation_vectorized(
     rng = np.random.default_rng(_seed_from_rollout_seeds(valuation_seeds))
     shocks = rng.standard_t(df=issuer.valuation_student_t_nu, size=(rollout_count, horizon_months))
     shocks *= issuer.valuation_monthly_log_return_sigma
-    log_path = math.log(current_valuation_usd) + np.cumsum(issuer.valuation_monthly_log_return_mu + shocks, axis=1)
+    # Per-month drift: constant `mu` by default, or a decay from a near-term `mu_0` toward the
+    # long-run `mu_inf` (= valuation_monthly_log_return_mu) when the decaying-drift knobs are on.
+    # The drift applied to the step into month m (m = 1..H) is evaluated at the START of the
+    # step (t = m - 1), so month 1 uses the full near-term mu_0.
+    monthly_drift = _valuation_monthly_drift(issuer, horizon_months)
+    log_path = math.log(current_valuation_usd) + np.cumsum(monthly_drift[None, :] + shocks, axis=1)
     try:
         with np.errstate(over="raise", invalid="raise"):
             paths[:, 1:] = np.exp(log_path)
