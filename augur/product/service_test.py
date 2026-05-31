@@ -9,8 +9,8 @@ from more_itertools import one
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
-from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
-from augur.model.independent import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentProviderConfig
+from augur.model.provider_config import CompositeProviderConfig
 from augur.model.series import (
     CryptoKey,
     CryptoSymbol,
@@ -136,8 +136,8 @@ def test_product_fails_when_sample_is_missing_required_exogenous_series() -> Non
 def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
     config = _augur_config()
     provider = config.exogenous_presets[config.default_exogenous_preset_id]
-    assert isinstance(provider, CompositeExogenousProviderConfig)
-    assert isinstance(provider.macro, IndependentExogenousProviderConfig)
+    assert isinstance(provider, CompositeProviderConfig)
+    assert isinstance(provider.macro, IndependentProviderConfig)
     model = provider.model_copy(
         update={
             "macro": provider.macro.model_copy(

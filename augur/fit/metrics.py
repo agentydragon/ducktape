@@ -16,7 +16,7 @@ fields.
 
 Fitting is the caller's responsibility — scorers don't refit (except
 rolling-origin, which refits at each origin via the supplied factory).
-This lets a YAML-configured Scorable model (like `IndependentExogenousModel`)
+This lets a YAML-configured Scorable model (like `IndependentModel`)
 plug into the same battery as a fittable model.
 """
 
@@ -103,7 +103,7 @@ def held_out_predictive_score(
 
     The caller is responsible for any required fitting before calling this:
     a `Fittable` model should be fit on `historical.levels[:train_end+1]`;
-    a YAML-configured `Scorable` (e.g. `IndependentExogenousModel`) needs
+    a YAML-configured `Scorable` (e.g. `IndependentModel`) needs
     no fitting and is passed as-is. The split index `train_end` is
     computed from `train_fraction` and surfaced on the result for
     auditability.

@@ -73,41 +73,39 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from augur.model.composite import CompositeExogenousModel
-from augur.model.independent import IndependentExogenousProviderConfig
+from augur.model.composite import CompositeModel
+from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.schemas import FrozenModel
-from augur.model.state_space import StateSpaceExogenousProviderConfig
+from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
-from augur.model.vecm import VecmExogenousProviderConfig
+from augur.model.vecm import VecmProviderConfig
 
-BasicExogenousProviderConfig = Annotated[
-    IndependentExogenousProviderConfig
-    | VecmExogenousProviderConfig
-    | StateSpaceExogenousProviderConfig
+BasicProviderConfig = Annotated[
+    IndependentProviderConfig
+    | VecmProviderConfig
+    | StateSpaceProviderConfig
     | TrainedPrivateEquityProviderConfig
     | PrivateEquityRiskProviderConfig,
     Field(discriminator="type"),
 ]
 
 
-class CompositeExogenousProviderConfig(FrozenModel):
+class CompositeProviderConfig(FrozenModel):
     type: Literal["composite"] = "composite"
-    macro: BasicExogenousProviderConfig
-    private_equity: BasicExogenousProviderConfig
+    macro: BasicProviderConfig
+    private_equity: BasicProviderConfig
 
-    def realize_model(self) -> CompositeExogenousModel:
-        return CompositeExogenousModel(
-            macro=self.macro.realize_model(), private_equity=self.private_equity.realize_model()
-        )
+    def realize_model(self) -> CompositeModel:
+        return CompositeModel(macro=self.macro.realize_model(), private_equity=self.private_equity.realize_model())
 
 
-ExogenousProviderConfig = Annotated[
-    IndependentExogenousProviderConfig
-    | VecmExogenousProviderConfig
-    | StateSpaceExogenousProviderConfig
+ProviderConfig = Annotated[
+    IndependentProviderConfig
+    | VecmProviderConfig
+    | StateSpaceProviderConfig
     | TrainedPrivateEquityProviderConfig
     | PrivateEquityRiskProviderConfig
-    | CompositeExogenousProviderConfig,
+    | CompositeProviderConfig,
     Field(discriminator="type"),
 ]

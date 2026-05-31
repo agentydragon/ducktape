@@ -31,9 +31,9 @@ from augur.api.config import load_augur_config
 from augur.fit.data import load_historical
 from augur.fit.metrics import held_out_predictive_score, multi_step_predictive_score, rolling_origin_predictive_score
 from augur.fit.model import FittableScorable, Scorable
-from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
-from augur.model.independent import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentProviderConfig
 from augur.model.path_models.scenarios import HistoricalSeries
+from augur.model.provider_config import CompositeProviderConfig
 from augur.model.vecm import VecmConfig, VecmModel
 from util.bazel.runfiles import get_required_path
 
@@ -49,11 +49,11 @@ class ModelMetricSpec:
 def _build_independent_from_testdata() -> Scorable:
     augur_config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
     provider = augur_config.exogenous_presets[augur_config.default_exogenous_preset_id]
-    if isinstance(provider, CompositeExogenousProviderConfig):
+    if isinstance(provider, CompositeProviderConfig):
         config = provider.macro
-        if not isinstance(config, IndependentExogenousProviderConfig):
+        if not isinstance(config, IndependentProviderConfig):
             raise TypeError("public fixture composite macro provider must be independent for metric scoring")
-    elif isinstance(provider, IndependentExogenousProviderConfig):
+    elif isinstance(provider, IndependentProviderConfig):
         config = provider
     else:
         raise TypeError("public fixture default preset must be a composite or independent provider for metric scoring")

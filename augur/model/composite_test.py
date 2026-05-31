@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 
 from augur.frames import concat_frames
-from augur.model.composite import CompositeExogenousModel
+from augur.model.composite import CompositeModel
 from augur.model.exogenous import (
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -57,7 +57,7 @@ class _StaticSampler:
 def test_composite_merges_macro_and_private_equity_series() -> None:
     macro = _StaticSampler(levels={InflationKey(): 1.0})
     private_equity = _StaticSampler(pe_issuer_marks={"private_company_a": 687.69})
-    model = CompositeExogenousModel(macro=macro, private_equity=private_equity)
+    model = CompositeModel(macro=macro, private_equity=private_equity)
     request = ExogenousSamplingRequest(
         horizon_months=3,
         rollout_seeds=(7,),
@@ -78,7 +78,7 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
 
 
 def test_composite_rejects_missing_required_private_equity_issuer() -> None:
-    model = CompositeExogenousModel(
+    model = CompositeModel(
         macro=_StaticSampler(levels={InflationKey(): 1.0}),
         private_equity=_StaticSampler(pe_issuer_marks={"private_company_a": 687.69}),
     )

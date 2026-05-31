@@ -11,7 +11,7 @@ A model can satisfy any subset:
 
   - `Sampler` only: test fixtures, future bootstrap-style models that
     refuse to expose density.
-  - `Sampler & Scorable`: hand-configured providers like `IndependentExogenousModel`
+  - `Sampler & Scorable`: hand-configured providers like `IndependentModel`
     whose params are YAML-set; no fit step, but the predictive is a
     closed-form product of Gaussian marginals.
   - `Sampler & Fittable & Scorable`: the VECM NumPyro model — fit from a

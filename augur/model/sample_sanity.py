@@ -10,18 +10,18 @@ import yaml
 from pydantic import Field, TypeAdapter, model_validator
 
 from augur.model.exogenous import ExogenousSamplingRequest, validate_sample_satisfies_request
-from augur.model.exogenous_provider_config import (
-    CompositeExogenousProviderConfig,
-    ExogenousProviderConfig,
-    StateSpaceExogenousProviderConfig,
+from augur.model.provider_config import (
+    CompositeProviderConfig,
+    ProviderConfig,
+    StateSpaceProviderConfig,
     TrainedPrivateEquityProviderConfig,
-    VecmExogenousProviderConfig,
+    VecmProviderConfig,
 )
 from augur.model.schemas import FrozenModel
 from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from util.bazel.runfiles import get_required_path
 
-_ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
+_ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
 class PercentileBound(FrozenModel):
@@ -325,24 +325,24 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
             )
 
 
-def _load_provider_config(path: Path) -> ExogenousProviderConfig:
+def _load_provider_config(path: Path) -> ProviderConfig:
     provider = _ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
     return _anchor_provider_paths(provider, base_dir=path.parent)
 
 
-def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:
+def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:
     if isinstance(provider, TrainedPrivateEquityProviderConfig):
         trained_model_path = _resolve_path(provider.trained_model_path, base_dir=base_dir)
         return provider.model_copy(update={"trained_model_path": trained_model_path})
-    if isinstance(provider, StateSpaceExogenousProviderConfig):
+    if isinstance(provider, StateSpaceProviderConfig):
         trained_artifact_path = _resolve_path(provider.trained_artifact_path, base_dir=base_dir)
         return provider.model_copy(update={"trained_artifact_path": trained_artifact_path})
-    if isinstance(provider, VecmExogenousProviderConfig):
+    if isinstance(provider, VecmProviderConfig):
         trained_blob = (
             None if provider.trained_blob is None else _resolve_path(provider.trained_blob, base_dir=base_dir)
         )
         return provider.model_copy(update={"trained_blob": trained_blob})
-    if isinstance(provider, CompositeExogenousProviderConfig):
+    if isinstance(provider, CompositeProviderConfig):
         return provider.model_copy(
             update={
                 "macro": _anchor_provider_paths(provider.macro, base_dir=base_dir),

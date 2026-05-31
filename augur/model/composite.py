@@ -19,7 +19,7 @@ from augur.model.private_equity_bundle import PrivateEquityBundle
 
 
 @dataclass(frozen=True)
-class CompositeExogenousModel:
+class CompositeModel:
     """Route non-PE series to a macro provider and PE series/events to a PE provider."""
 
     macro: Sampler

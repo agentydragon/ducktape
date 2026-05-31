@@ -1,5 +1,5 @@
 """Round-trip test: train the active VECM model offline, write the provider config +
-blob, re-load via Pydantic + `<Model>ExogenousProviderConfig.realize_model(...)`,
+blob, re-load via Pydantic + `<Model>ProviderConfig.realize_model(...)`,
 and sample.
 
 This is the public contract the augur server consumes at startup: read
@@ -17,12 +17,12 @@ from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
+from augur.model.provider_config import ProviderConfig
 from augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
-from augur.model.state_space import StateSpaceExogenousProviderConfig
-from augur.model.vecm import VecmExogenousProviderConfig
+from augur.model.state_space import StateSpaceProviderConfig
+from augur.model.vecm import VecmProviderConfig
 
-_ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
+_ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])
@@ -38,7 +38,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     # Trainer only emits the active trained provider config; narrow away the
     # other discriminated-union variants so the trained-provider fields are
     # accessible below.
-    assert isinstance(parsed, VecmExogenousProviderConfig)
+    assert isinstance(parsed, VecmProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
@@ -79,7 +79,7 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert out_blob.exists()
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
-    assert isinstance(parsed, StateSpaceExogenousProviderConfig)
+    assert isinstance(parsed, StateSpaceProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_artifact_path == out_blob
     assert parsed.conditioning.observations

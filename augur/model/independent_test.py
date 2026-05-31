@@ -5,16 +5,16 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.independent import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentProviderConfig
+from augur.model.provider_config import ProviderConfig
 from augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 
 
-def _example_config() -> IndependentExogenousProviderConfig:
+def _example_config() -> IndependentProviderConfig:
     # Typed per-kind config: no magic-prefix keys. Singletons are scalar;
     # home_value/rent are keyed by location sub-id; PE marks live in their own
     # issuer-keyed map (they are not level series).
-    return IndependentExogenousProviderConfig.model_validate(
+    return IndependentProviderConfig.model_validate(
         {
             "type": "independent",
             "inflation": {
@@ -81,7 +81,7 @@ def test_independent_model_samples_levels_and_events() -> None:
         HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id,
         RentKey(location_id=LocationId("san_francisco_ca")).wire_id,
     }
-    # IndependentExogenousModel doesn't sample PE channels — the typed PE bundle stays empty.
+    # IndependentModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
     assert sampled.metadata["model_id"] == "independent_exogenous_model"
     # The PE mark's month-0 initial_value is surfaced via metadata, keyed by issuer.
@@ -89,9 +89,9 @@ def test_independent_model_samples_levels_and_events() -> None:
 
 
 def test_independent_provider_config_roundtrips_through_discriminated_union() -> None:
-    adapter: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
+    adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
     config = adapter.validate_python(_example_config().model_dump())
-    assert isinstance(config, IndependentExogenousProviderConfig)
+    assert isinstance(config, IndependentProviderConfig)
     assert config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,))).metadata[
         "private_equity_prices_usd"
     ] == {"private_equity_x": 50.0}
@@ -101,7 +101,7 @@ def test_legacy_prefix_keys_are_rejected() -> None:
     # The whole point of the typed shape: an old-style wire-id key at the top
     # level must fail loudly (extra="forbid"), not be silently prefix-parsed.
     with pytest.raises(ValidationError):
-        IndependentExogenousProviderConfig.model_validate(
+        IndependentProviderConfig.model_validate(
             {"type": "independent", "crypto:btc": {"kind": "constant", "value": 75000.0}}
         )
 

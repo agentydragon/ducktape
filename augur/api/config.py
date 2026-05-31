@@ -27,10 +27,10 @@ from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import ApiModel
-from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig, ExogenousProviderConfig
-from augur.model.state_space import StateSpaceExogenousProviderConfig
+from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
+from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
-from augur.model.vecm import VecmExogenousProviderConfig
+from augur.model.vecm import VecmProviderConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -128,7 +128,7 @@ class Config(ApiModel):
     # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
     # (e.g. `gaffer-private`) can bias the UI without code changes.
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
-    exogenous_presets: dict[str, ExogenousProviderConfig] = Field(
+    exogenous_presets: dict[str, ProviderConfig] = Field(
         min_length=1,
         description=(
             "Named registry of exogenous-bundle providers. Frontend exposes the preset id via "
@@ -224,23 +224,23 @@ def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Confi
     return config.model_copy(update={"exogenous_presets": anchored})
 
 
-def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:
+def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:
     if isinstance(provider, TrainedPrivateEquityProviderConfig):
         trained_model_path = provider.trained_model_path
         if trained_model_path.is_absolute():
             return provider
         return provider.model_copy(update={"trained_model_path": (base_dir / trained_model_path).resolve()})
-    if isinstance(provider, VecmExogenousProviderConfig):
+    if isinstance(provider, VecmProviderConfig):
         trained_blob = provider.trained_blob
         if trained_blob is None or trained_blob.is_absolute():
             return provider
         return provider.model_copy(update={"trained_blob": (base_dir / trained_blob).resolve()})
-    if isinstance(provider, StateSpaceExogenousProviderConfig):
+    if isinstance(provider, StateSpaceProviderConfig):
         trained_artifact_path = provider.trained_artifact_path
         if trained_artifact_path.is_absolute():
             return provider
         return provider.model_copy(update={"trained_artifact_path": (base_dir / trained_artifact_path).resolve()})
-    if isinstance(provider, CompositeExogenousProviderConfig):
+    if isinstance(provider, CompositeProviderConfig):
         macro = _anchor_provider_paths(provider.macro, base_dir=base_dir)
         private_equity = _anchor_provider_paths(provider.private_equity, base_dir=base_dir)
         if macro == provider.macro and private_equity == provider.private_equity:

@@ -71,7 +71,7 @@ from util.bazel.runfiles import get_required_path
 
 # Runfile location of the checked-in trained VECM blob. Used as a fallback
 # when the deployment config leaves `trained_blob` unset — see
-# `VecmExogenousProviderConfig.realize_model`.
+# `VecmProviderConfig.realize_model`.
 _BUNDLED_VECM_BLOB_RUNFILE = "_main/augur/fit/calibrated/trained_vecm.npz"
 
 # Sample count for h>1 MC predictive density.
@@ -225,7 +225,7 @@ class VecmModel:
        populated by `fit(historical)` or `from_blob(...)`. Define the
        statistical model.
     2. Deployment-layer config (latest_observations, location_series_sources):
-       set by `VecmExogenousProviderConfig.realize_model` from YAML. Define how
+       set by `VecmProviderConfig.realize_model` from YAML. Define how
        factor paths map onto augur series ids and how multipliers scale to
        absolute levels.
     3. Provenance ids (model_version_id, evidence_set_id,
@@ -540,7 +540,7 @@ def _observation_value(observation: Any, key: str) -> float:
     raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
 
 
-class VecmExogenousProviderConfig(FrozenModel):
+class VecmProviderConfig(FrozenModel):
     """Pre-trained VECM provider config — points at the trained-state blob
     written by `bb run //augur/fit:train`. The model is loaded at server
     startup; no fitting happens on the request path."""

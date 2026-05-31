@@ -22,9 +22,9 @@ from augur.model.series import (
     SP500Key,
 )
 from augur.model.state_space import (
-    StateSpaceExogenousProviderConfig,
     StateSpaceModelArtifact,
     StateSpacePrivateEquityEventPrior,
+    StateSpaceProviderConfig,
     write_state_space_artifact,
 )
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior
@@ -120,7 +120,7 @@ def _provider(
     sp500_anchor: float,
     pe_tender_interval_months_median: float = 2.0,
     pe_tender_interval_log_sigma: float = 0.1,
-) -> StateSpaceExogenousProviderConfig:
+) -> StateSpaceProviderConfig:
     path.mkdir(parents=True, exist_ok=True)
     artifact_path = path / "state_space.json"
     write_state_space_artifact(
@@ -143,7 +143,7 @@ def _provider(
             )
         },
     )
-    return StateSpaceExogenousProviderConfig(
+    return StateSpaceProviderConfig(
         trained_artifact_path=artifact_path,
         conditioning=conditioning,
         current_mortgage30_rate_pct=6.25,

@@ -20,7 +20,7 @@ from augur.api.config import AgentDefinition, Config, LocationConfig, PropertySo
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.server import create_app_from_augur_config
-from augur.model.independent import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentProviderConfig
 
 _SCHEMA_LOCATION_ID = "schema_location"
 
@@ -68,7 +68,7 @@ def _schema_export_config(properties_path: Path) -> Config:
                 local_regulation=regulation,
             ),
         ),
-        exogenous_presets={"schema": IndependentExogenousProviderConfig()},
+        exogenous_presets={"schema": IndependentProviderConfig()},
         default_exogenous_preset_id="schema",
     )
 

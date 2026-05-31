@@ -9,7 +9,6 @@ import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
 from augur.model.private_equity_bundle import (
     PrivateEquityBoolChannel,
     PrivateEquityFloatChannel,
@@ -25,6 +24,7 @@ from augur.model.private_equity_risk import (
     _sample_issuer,
     _seed_from_rollout_seeds,
 )
+from augur.model.provider_config import ProviderConfig
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.model.series_model import derive_stream_rollout_seeds
 
@@ -63,7 +63,7 @@ def _bool(sampled: SampledExogenousBundle, channel: PrivateEquityBoolChannel, ho
 
 
 def test_private_equity_risk_provider_config_roundtrips_through_union() -> None:
-    adapter: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
+    adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
     config = adapter.validate_python({"type": "private_equity_risk", "issuers": {"acme": {"current_mark_usd": 100.0}}})
 
     assert isinstance(config, PrivateEquityRiskProviderConfig)

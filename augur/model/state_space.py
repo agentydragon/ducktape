@@ -162,7 +162,7 @@ class StateSpaceAdditionalFactor:
     private_equity_scale_prior: TrainedPrivateEquityScalePrior | None = None
 
 
-class StateSpaceExogenousProviderConfig(FrozenModel):
+class StateSpaceProviderConfig(FrozenModel):
     type: Literal["state_space"] = "state_space"
     trained_artifact_path: Path
     conditioning: ExogenousConditioningContext

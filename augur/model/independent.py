@@ -38,7 +38,7 @@ from augur.model.series import IssuerId, LevelSeriesKey
 from augur.model.series_model import ScalarSeriesSpec, derive_stream_rollout_seeds
 
 
-class IndependentExogenousProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
+class IndependentProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
     """YAML provider that enumerates every level series and PE mark explicitly.
 
     Level series are the per-kind fields inherited from `LevelSeriesGroups`
@@ -51,12 +51,12 @@ class IndependentExogenousProviderConfig(LevelSeriesGroups[ScalarSeriesSpec]):
     type: Literal["independent"] = "independent"
     private_equity_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
-    def realize_model(self) -> IndependentExogenousModel:
-        return IndependentExogenousModel(level_series=self.by_level_key(), pe_marks=dict(self.private_equity_marks))
+    def realize_model(self) -> IndependentModel:
+        return IndependentModel(level_series=self.by_level_key(), pe_marks=dict(self.private_equity_marks))
 
 
-class IndependentExogenousModel(FrozenModel):
-    """Runtime exogenous model built from an `IndependentExogenousProviderConfig`.
+class IndependentModel(FrozenModel):
+    """Runtime exogenous model built from an `IndependentProviderConfig`.
 
     Implements `Sampler` (the runtime sampling contract) and `Scorable` (the
     metric battery contract). No `Fittable` — params are YAML-set, not fit.

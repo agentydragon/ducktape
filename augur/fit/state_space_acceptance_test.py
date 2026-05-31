@@ -11,11 +11,11 @@ from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
+from augur.model.provider_config import ProviderConfig
 from augur.model.series import InflationKey, IssuerId
-from augur.model.state_space import StateSpaceExogenousProviderConfig
+from augur.model.state_space import StateSpaceProviderConfig
 
-_ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
+_ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
 def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path) -> None:
@@ -61,9 +61,7 @@ def test_state_space_private_equity_artifact_models_price_and_sale_event(tmp_pat
     assert "private_equity:private_company_a" in private_sources
 
 
-def _train_state_space(
-    tmp_path: Path, *, private_equity_config: Path | None = None
-) -> StateSpaceExogenousProviderConfig:
+def _train_state_space(tmp_path: Path, *, private_equity_config: Path | None = None) -> StateSpaceProviderConfig:
     out_manifest = tmp_path / "state_space_provider.yaml"
     out_blob = tmp_path / "state_space_artifact.json"
     args = ["--model", "state_space", "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)]
@@ -71,7 +69,7 @@ def _train_state_space(
         args.extend(["--private-equity-config", str(private_equity_config)])
     train_main(args)
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
-    assert isinstance(parsed, StateSpaceExogenousProviderConfig)
+    assert isinstance(parsed, StateSpaceProviderConfig)
     return parsed
 
 

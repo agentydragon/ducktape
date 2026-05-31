@@ -1,7 +1,7 @@
 """Offline exogenous-model training entry point.
 
 Reads an `EvidenceConfig` + source CSVs, fits a chosen `Fittable` model, and
-writes two files: a `ExogenousProviderConfig` YAML (the discriminated
+writes two files: a `ProviderConfig` YAML (the discriminated
 deployment config that the augur server reads at startup as part of
 `Config.exogenous_provider`) and a per-model trained-state blob (e.g. an
 `.npz` archive). The manifest YAML's `trained_blob` is an absolute path so
@@ -27,7 +27,7 @@ import yaml
 from augur.fit.data import DEFAULT_CONFIG_PATH, load_evidence
 from augur.fit.evidence_config import load_evidence_config
 from augur.fit.state_space import fit_state_space_artifact
-from augur.model.exogenous_provider_config import StateSpaceExogenousProviderConfig, VecmExogenousProviderConfig
+from augur.model.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from augur.model.state_space import write_state_space_artifact
 from augur.model.vecm import VecmConfig, VecmModel
 
@@ -49,7 +49,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--out-provider-config",
         required=True,
         type=Path,
-        help="Absolute path the ExogenousProviderConfig YAML will be written to.",
+        help="Absolute path the ProviderConfig YAML will be written to.",
     )
     parser.add_argument(
         "--out-blob",
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_evidence_config(evidence_config_path)
     historical, evidence = load_evidence(config, evidence_config_path.parent)
-    provider_config: VecmExogenousProviderConfig | StateSpaceExogenousProviderConfig
+    provider_config: VecmProviderConfig | StateSpaceProviderConfig
 
     if args.model == "vecm":
         if args.private_equity_config:
@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         model = VecmModel(config=VecmConfig())
         model.fit(historical)
         model.save(out_blob)
-        provider_config = VecmExogenousProviderConfig(
+        provider_config = VecmProviderConfig(
             trained_blob=out_blob,
             latest_observations=dict(evidence.latest_observations),
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
@@ -99,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             private_equity_config_paths=tuple(path.resolve() for path in args.private_equity_config),
         )
         write_state_space_artifact(out_blob, artifact)
-        provider_config = StateSpaceExogenousProviderConfig(
+        provider_config = StateSpaceProviderConfig(
             trained_artifact_path=out_blob,
             conditioning=conditioning,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
