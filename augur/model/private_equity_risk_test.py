@@ -18,12 +18,13 @@ from augur.model.private_equity_risk import (
     PrivateEquityRiskIssuerConfig,
     PrivateEquityRiskProviderConfig,
     PublicMarketCdfAnchor,
+    ValuationDriftScaleReversion,
     _dilution_factor,
     _public_market_open_hazard_by_month,
     _sample_company_valuation_vectorized,
     _sample_issuer,
+    _scale_reverting_drift,
     _seed_from_rollout_seeds,
-    _valuation_monthly_drift,
 )
 from augur.model.provider_config import ProviderConfig
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -515,74 +516,107 @@ def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
         np.testing.assert_array_equal(a, b)
 
 
-# ---- M2.2-D: decaying valuation drift -----------------------------------------------------
+# ---- M2.2-D: scale-dependent mean-reverting valuation drift -------------------------------
 
 
-def test_valuation_monthly_drift_constant_by_default() -> None:
-    """With the decay knobs unset, the per-step drift is the constant `mu` at every month."""
+def test_scale_reverting_drift_young_when_small_mature_when_large() -> None:
+    """`mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)`."""
 
-    issuer = _valuation_issuer(valuation_monthly_log_return_mu=0.02)
-    drift = _valuation_monthly_drift(issuer, 12)
-    np.testing.assert_array_equal(drift, np.full(12, 0.02))
-
-
-def test_valuation_monthly_drift_decays_from_mu0_toward_mu_inf() -> None:
-    """`mu(t) = mu_inf + (mu_0 - mu_inf) * 0.5 ** (t / halflife)`, stepping into months 1..H."""
-
-    issuer = _valuation_issuer(
-        valuation_monthly_log_return_mu=0.02,  # mu_inf
-        valuation_monthly_log_return_mu_initial=0.10,  # mu_0
-        valuation_drift_decay_halflife_months=6.0,
+    reversion = ValuationDriftScaleReversion(
+        monthly_log_return_mu_young=0.05,
+        log_value_onset_usd=math.log(1.0e10),  # reversion begins at $10B
+        log_value_scale=2.0,
     )
-    drift = _valuation_monthly_drift(issuer, 24)
-    # Month 1 (step start t=0) is the full near-term mu_0.
-    assert drift[0] == pytest.approx(0.10)
-    # At one half-life (t=6) the excess (0.10-0.02=0.08) is halved -> 0.02 + 0.04 = 0.06.
-    assert drift[6] == pytest.approx(0.02 + 0.04)
-    # At two half-lives (t=12) -> 0.02 + 0.02 = 0.04. Monotone decreasing toward mu_inf.
-    assert drift[12] == pytest.approx(0.02 + 0.02)
-    assert np.all(np.diff(drift) < 0.0)
-    assert drift[-1] > 0.02  # never reaches mu_inf exactly over a finite horizon
+    # Below onset: full young drift.
+    small = np.array([math.log(1.0e9), math.log(5.0e9)])
+    np.testing.assert_allclose(_scale_reverting_drift(small, mu_mature=0.008, reversion=reversion), [0.05, 0.05])
+    # At onset exactly: still the full young rate (excess factor exp(0) == 1).
+    at_onset = np.array([math.log(1.0e10)])
+    np.testing.assert_allclose(_scale_reverting_drift(at_onset, mu_mature=0.008, reversion=reversion), [0.05])
+    # One e-folding above onset (s = onset + s_scale): excess (0.05-0.008) decays by 1/e.
+    one_efold = np.array([math.log(1.0e10) + 2.0])
+    expected = 0.008 + (0.05 - 0.008) / math.e
+    np.testing.assert_allclose(_scale_reverting_drift(one_efold, mu_mature=0.008, reversion=reversion), [expected])
+    # Many e-foldings above onset ($1e16 is ~7 e-foldings past $1e10 at s_scale=2): essentially
+    # fully reverted to mu_mature.
+    huge = np.array([math.log(1.0e16)])
+    assert _scale_reverting_drift(huge, mu_mature=0.008, reversion=reversion)[0] == pytest.approx(0.008, abs=1e-4)
 
 
-def test_decaying_drift_off_is_byte_identical_to_constant_drift() -> None:
-    """Setting mu_0 == mu_inf (with any half-life) reproduces the constant-drift path exactly,
-    proving the decay path composes onto the same RW with no incidental change."""
+def test_scale_reversion_off_is_byte_identical_to_constant_drift() -> None:
+    """No reversion submodel ⇒ the fast constant-drift cumsum path, unchanged."""
 
     seeds = (101, 102, 103, 104)
     constant = _valuation_issuer(valuation_monthly_log_return_mu=0.03)
-    decayed_flat = _valuation_issuer(
-        valuation_monthly_log_return_mu=0.03,
-        valuation_monthly_log_return_mu_initial=0.03,  # mu_0 == mu_inf => no excess
-        valuation_drift_decay_halflife_months=6.0,
-    )
     a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
-    b = _sample_company_valuation_vectorized(decayed_flat, valuation_seeds=seeds, horizon_months=36)
+    # A second issuer with the same params re-samples identically (determinism guard).
+    b = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
     np.testing.assert_array_equal(a, b)
 
 
-def test_decaying_drift_curbs_long_horizon_growth_vs_constant_hot_drift() -> None:
-    """A hot constant near-term drift compounds to an absurd 10y median; decaying it toward a
-    mature rate keeps the near-term path but tames the long horizon. This is the M2.2-D fix."""
+def test_scale_reversion_degenerate_matches_constant_drift() -> None:
+    """`mu_young == mu_mature` makes the excess zero, so the SDE-integrated path equals the
+    constant-drift cumsum path exactly (same shocks, same drift every step)."""
+
+    seeds = (1, 2, 3, 4, 5)
+    constant = _valuation_issuer(valuation_monthly_log_return_mu=0.02)
+    degenerate = _valuation_issuer(
+        valuation_monthly_log_return_mu=0.02,
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.02,  # == mu_mature ⇒ no excess at any size
+            log_value_onset_usd=math.log(1.0e10),
+            log_value_scale=2.0,
+        ),
+    )
+    a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=48)
+    b = _sample_company_valuation_vectorized(degenerate, valuation_seeds=seeds, horizon_months=48)
+    np.testing.assert_allclose(a, b, rtol=1e-12)
+
+
+def test_scale_reversion_curbs_long_horizon_growth_vs_constant_hot_drift() -> None:
+    """A hot CONSTANT drift compounds to an absurd 10y median; scale-reversion keeps the
+    near-term path (small company still hot) but tames the long horizon as V grows. The M2.2-D fix."""
 
     seeds = tuple(range(1, 401))
     horizon = 120
-    hot_constant = _valuation_issuer(valuation_monthly_log_return_mu=0.10, valuation_monthly_log_return_sigma=0.04)
-    decaying = _valuation_issuer(
-        valuation_monthly_log_return_mu=0.02,  # mu_inf (mature)
-        valuation_monthly_log_return_mu_initial=0.10,  # mu_0 (hot near-term, == the constant case)
-        valuation_drift_decay_halflife_months=18.0,
+    # Anchor both small ($1e9) so the young rate is active early.
+    hot_constant = _valuation_issuer(
+        current_valuation_usd=1.0e9, valuation_monthly_log_return_mu=0.05, valuation_monthly_log_return_sigma=0.04
+    )
+    reverting = _valuation_issuer(
+        current_valuation_usd=1.0e9,
+        valuation_monthly_log_return_mu=0.008,  # mature ~10%/yr
         valuation_monthly_log_return_sigma=0.04,
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.05,  # same hot rate while small
+            log_value_onset_usd=math.log(1.0e10),
+            log_value_scale=2.0,
+        ),
     )
     v_hot = _sample_company_valuation_vectorized(hot_constant, valuation_seeds=seeds, horizon_months=horizon)
-    v_dec = _sample_company_valuation_vectorized(decaying, valuation_seeds=seeds, horizon_months=horizon)
-    v0 = 1.0e11
-    # Near term (month 6) the two are close: decay has barely kicked in.
-    near_hot = np.median(v_hot[:, 6]) / v0
-    near_dec = np.median(v_dec[:, 6]) / v0
-    assert near_dec == pytest.approx(near_hot, rel=0.15)
-    # Long horizon (month 120): constant-hot explodes; decaying is far smaller.
-    assert np.median(v_dec[:, 120]) < 0.01 * np.median(v_hot[:, 120])
+    v_rev = _sample_company_valuation_vectorized(reverting, valuation_seeds=seeds, horizon_months=horizon)
+    v0 = 1.0e9
+    # Near term (month 3, still well below the $10B onset): the two track closely.
+    assert np.median(v_rev[:, 3]) / v0 == pytest.approx(np.median(v_hot[:, 3]) / v0, rel=0.20)
+    # Long horizon: the reverting path is materially smaller (it matured toward ~10%/yr as it
+    # grew, while the constant-hot path keeps compounding ~80%/yr). The gap widens with horizon.
+    assert np.median(v_rev[:, 120]) < 0.5 * np.median(v_hot[:, 120])
+    # And the constant-hot path is itself absurdly large at 10y (the failure mode reversion fixes).
+    assert np.median(v_hot[:, 120]) / v0 > 100.0
+
+
+def test_scale_reversion_validator_rejects_young_below_mature() -> None:
+    """Reversion is downward: a young drift below the mature asymptote is rejected."""
+
+    with pytest.raises(ValidationError, match="mu_young must be >= the mature"):
+        _valuation_issuer(
+            valuation_monthly_log_return_mu=0.05,
+            valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+                monthly_log_return_mu_young=0.01,  # below mature ⇒ invalid
+                log_value_onset_usd=math.log(1.0e10),
+                log_value_scale=2.0,
+            ),
+        )
 
 
 def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.ndarray:
