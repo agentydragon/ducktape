@@ -50,6 +50,7 @@ re-running inference at deploy time -- mirroring how `augur/model/vecm.py` persi
 from __future__ import annotations
 
 import datetime as dt
+import math
 from dataclasses import dataclass
 
 import jax
@@ -129,6 +130,7 @@ def _generative(
     val_s: jnp.ndarray,
     n_months: int,
     priors: BayesianDilutionPriors,
+    fit_shape: bool,
 ) -> None:
     """numpyro model: latent SCALE-reverting log-value SDE + deterministic log-share path.
 
@@ -136,17 +138,34 @@ def _generative(
     drift `mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - onset)/scale)` depends on
     the realized level `s = log_V`). Observations index into the grid via `*_month_idx`
     (rounded month offsets). Mirrors the deployment sampler's scale-reverting V(t) integration.
+
+    `fit_shape`: when True the four reversion-shape params (mu_mature, mu_young_excess,
+    log_value_onset, log_value_scale) are sampled. When False they are FIXED at their prior
+    centers and only the identifiable params (log_v0, sigma_v, log_shares0, dilution) are
+    sampled -- the required mode for a single issuer whose data is all in the "large" regime and
+    so cannot identify the shape (see module docstring / plans M2.2-D).
     """
 
     log_v0 = numpyro.sample("log_v0", dist.Normal(priors.log_v0_usd, priors.log_v0_sigma))
-    mu_mature = numpyro.sample("mu_mature", dist.Normal(priors.mu_mature_mu, priors.mu_mature_sigma))
-    mu_young_excess = numpyro.sample("mu_young_excess", dist.HalfNormal(priors.mu_young_excess_sigma))
-    log_value_onset = numpyro.sample(
-        "log_value_onset", dist.Normal(priors.log_value_onset_mu, priors.log_value_onset_sigma)
-    )
-    log_value_scale = numpyro.sample(
-        "log_value_scale", dist.LogNormal(jnp.log(priors.log_value_scale_mu), priors.log_value_scale_sigma)
-    )
+    if fit_shape:
+        mu_mature = numpyro.sample("mu_mature", dist.Normal(priors.mu_mature_mu, priors.mu_mature_sigma))
+        mu_young_excess = numpyro.sample("mu_young_excess", dist.HalfNormal(priors.mu_young_excess_sigma))
+        log_value_onset = numpyro.sample(
+            "log_value_onset", dist.Normal(priors.log_value_onset_mu, priors.log_value_onset_sigma)
+        )
+        log_value_scale = numpyro.sample(
+            "log_value_scale", dist.LogNormal(jnp.log(priors.log_value_scale_mu), priors.log_value_scale_sigma)
+        )
+    else:
+        # Fixed shape: deterministic at the prior centers (the young excess is the HalfNormal
+        # mode-adjacent prior mean E[HalfNormal(s)] = s*sqrt(2/pi)). Recorded as deterministic so
+        # the same posterior-summary extraction works in both modes.
+        mu_mature = numpyro.deterministic("mu_mature", jnp.asarray(priors.mu_mature_mu))
+        mu_young_excess = numpyro.deterministic(
+            "mu_young_excess", jnp.asarray(priors.mu_young_excess_sigma * math.sqrt(2.0 / math.pi))
+        )
+        log_value_onset = numpyro.deterministic("log_value_onset", jnp.asarray(priors.log_value_onset_mu))
+        log_value_scale = numpyro.deterministic("log_value_scale", jnp.asarray(priors.log_value_scale_mu))
     sigma_v = numpyro.sample("sigma_v", dist.HalfNormal(priors.sigma_v_sigma))
     log_shares0 = numpyro.sample("log_shares0", dist.Normal(priors.log_shares0, priors.log_shares0_sigma))
     log1p_r = numpyro.sample(
@@ -187,12 +206,21 @@ def fit_bayesian_dilution_prior(
     valuations: list[ValuationObservation],
     *,
     priors: BayesianDilutionPriors | None = None,
+    fit_scale_reversion_shape: bool = False,
     num_warmup: int = 1500,
     num_samples: int = 3000,
     num_chains: int = 2,
     seed: int = 0,
 ) -> BayesianDilutionPrior:
-    """Fit the M2.2-D Bayesian dilution + decaying-drift prior via NUTS.
+    """Fit the M2.2-D Bayesian dilution + scale-reversion prior via NUTS.
+
+    `fit_scale_reversion_shape` defaults to False: the reversion SHAPE (mu_mature, mu_young,
+    onset, scale) is FIXED at the prior centers and only the identifiable params (level,
+    volatility, share count, dilution rate) are sampled. This is the required mode for a single
+    issuer whose observations are all in the "large" regime -- it cannot identify the shape, and
+    fitting it anyway diverges (see plans M2.2-D). Set True only when the data spans a wide size
+    range (or for a future population fit). Either way the returned prior carries the full shape
+    (fixed or fitted) so the deployment config is complete.
 
     Raises `ValueError` when there are too few observations to identify the latent path
     (need at least 2 valuations to pin the value level over time and 2 prices for the
@@ -237,6 +265,7 @@ def fit_bayesian_dilution_prior(
         val_s=jnp.asarray(val_s),
         n_months=n_months,
         priors=priors,
+        fit_shape=fit_scale_reversion_shape,
         extra_fields=("diverging",),
     )
     samples = mcmc.get_samples()

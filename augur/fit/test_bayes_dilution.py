@@ -75,14 +75,35 @@ def test_recovers_known_dilution_rate() -> None:
     assert prior.num_divergences < 0.05 * 800
 
 
-def test_scale_reversion_regularizes_a_hot_boom() -> None:
-    """A boom hotter than the mature prior is absorbed as YOUNG-company excess (mu_young >
-    mu_mature), with the mature asymptote held near the informative prior -- the whole point of
-    M2.2-D vs the OLS fit (which would extrapolate the boom forever)."""
+def test_fixed_shape_default_pins_reversion_at_prior_centers() -> None:
+    """The default (fit_scale_reversion_shape=False) FIXES the reversion shape at the prior
+    centers and fits only the identifiable params -- the required mode for a single issuer whose
+    data can't identify the shape. The returned shape is exactly the prior, regardless of data."""
+
+    priors = BayesianDilutionPriors()
+    prices, valuations = _synthetic(r_true=0.25, monthly_drift=0.08, n=8)  # hot boom in the data
+    prior = fit_bayesian_dilution_prior(
+        prices, valuations, priors=priors, num_warmup=400, num_samples=500, num_chains=1
+    )
+    # Shape is the fixed prior, NOT chased to the boom.
+    assert prior.valuation_monthly_log_return_mu == pytest.approx(priors.mu_mature_mu)
+    expected_excess = priors.mu_young_excess_sigma * math.sqrt(2.0 / math.pi)
+    assert prior.valuation_drift_mu_young == pytest.approx(priors.mu_mature_mu + expected_excess)
+    assert prior.valuation_drift_log_value_scale == pytest.approx(priors.log_value_scale_mu)
+    # The dilution rate is still fit from data (here ~0.25), so the fixed-shape mode is useful.
+    assert prior.annual_dilution_rate == pytest.approx(0.25, abs=0.10)
+
+
+def test_fitting_shape_regularizes_a_hot_boom() -> None:
+    """With fit_scale_reversion_shape=True on size-spanning synthetic data, a boom hotter than
+    the mature prior is absorbed as YOUNG-company excess (mu_young > mu_mature) with the mature
+    asymptote anchored near its prior -- the whole point of M2.2-D vs the OLS fit."""
 
     # ~8%/mo (~150%/yr) observed growth -- well above the mu_mature prior center of 0.008.
     prices, valuations = _synthetic(r_true=0.20, monthly_drift=0.08, n=8)
-    prior = fit_bayesian_dilution_prior(prices, valuations, num_warmup=800, num_samples=1000, num_chains=1)
+    prior = fit_bayesian_dilution_prior(
+        prices, valuations, fit_scale_reversion_shape=True, num_warmup=800, num_samples=1000, num_chains=1
+    )
     # Mature (long-run) drift stays anchored near the prior (does NOT chase the boom).
     assert prior.valuation_monthly_log_return_mu < 0.04
     # Young drift is higher than mature (the boom shows up as size-decaying excess).
