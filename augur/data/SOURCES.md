@@ -151,8 +151,8 @@ When refreshing one or more series:
 
 1. Re-download from the source.
 2. Apply the trim (Yahoo, Zillow) if applicable.
-3. Replace the file in place. Don't rename — paths are referenced from
-   `augur/fit/config/exogenous_evidence.example.json` and equivalents.
+3. Replace the file in place. Don't rename — the filenames are referenced as
+   path constants in `augur/fit/evidence_data.py`.
 4. Re-fit downstream models that depend on the changed series:
    the active trained VECM provider, plus any downstream trained blobs stored
    outside this package.

@@ -1,9 +1,9 @@
 """Offline exogenous-model training entry point.
 
-Reads an `EvidenceConfig` + source CSVs, fits a chosen `Fittable` model, and
-writes two files: a `ProviderConfig` YAML (the discriminated
-deployment config that the augur server reads at startup as part of
-`Config.exogenous_provider`) and a per-model trained-state blob (e.g. an
+Reads the public source CSVs (paths are constants in `evidence_data`), fits a
+chosen `Fittable` model, and writes two files: a `ProviderConfig` YAML
+(the discriminated deployment config that the augur server reads at startup as
+part of `Config.exogenous_provider`) and a per-model trained-state blob (e.g. an
 `.npz` archive). The manifest YAML's `trained_blob` is an absolute path so
 the deployment authoring it knows exactly where the blob will live at
 runtime.
@@ -11,7 +11,6 @@ runtime.
 Usage:
 
     bb run //augur/fit:train -- \\
-        --evidence-config augur/fit/config/exogenous_evidence.example.json \\
         --model vecm \\
         --out-provider-config /path/to/exogenous_provider.yaml \\
         --out-blob /path/to/trained_vecm.npz
@@ -24,8 +23,8 @@ from pathlib import Path
 
 import yaml
 
-from augur.fit.data import DEFAULT_CONFIG_PATH, load_evidence
-from augur.fit.evidence_config import load_evidence_config
+from augur.fit.data import load_evidence
+from augur.fit.evidence_data import LOCATION_SERIES_SOURCES
 from augur.fit.state_space import fit_state_space_artifact
 from augur.model.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from augur.model.state_space import write_state_space_artifact
@@ -38,12 +37,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train an Augur exogenous model offline.")
     parser.add_argument(
         "--model", required=True, choices=_SUPPORTED_MODEL_LABELS, help="Which exogenous model to train."
-    )
-    parser.add_argument(
-        "--evidence-config",
-        default=DEFAULT_CONFIG_PATH,
-        type=Path,
-        help="Path to the exogenous evidence config used for training.",
     )
     parser.add_argument(
         "--out-provider-config",
@@ -72,12 +65,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
-    evidence_config_path = args.evidence_config.resolve()
     out_provider_config = args.out_provider_config.resolve()
     out_blob = args.out_blob.resolve()
 
-    config = load_evidence_config(evidence_config_path)
-    historical, evidence = load_evidence(config, evidence_config_path.parent)
+    historical, evidence = load_evidence()
     provider_config: VecmProviderConfig | StateSpaceProviderConfig
 
     if args.model == "vecm":
@@ -90,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             trained_blob=out_blob,
             latest_observations=dict(evidence.latest_observations),
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_series_sources=config.location_series_sources,
+            location_series_sources=LOCATION_SERIES_SOURCES,
         )
     elif args.model == "state_space":
         artifact, conditioning = fit_state_space_artifact(
@@ -103,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             trained_artifact_path=out_blob,
             conditioning=conditioning,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_series_sources=config.location_series_sources,
+            location_series_sources=LOCATION_SERIES_SOURCES,
         )
     else:
         raise AssertionError(f"unsupported model {args.model!r}")

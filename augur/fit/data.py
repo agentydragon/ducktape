@@ -1,9 +1,9 @@
 """Load aligned monthly log-returns for the exogenous factors.
 
 `load_evidence(...)` returns a typed `(HistoricalSeries, ExogenousEvidence)`
-tuple from parsed `EvidenceConfig` plus configured Yahoo-SPY, Zillow, and
-FRED source data. Config/source-data errors propagate by default. Callers
-that intentionally want lower-fidelity FRED-only synthesised evidence
+tuple from the public Yahoo-SPY, Zillow, and FRED source data (paths are
+constants in `evidence_data`). Source-data errors propagate by default.
+Callers that intentionally want lower-fidelity FRED-only synthesised evidence
 must opt in with `fred_only=True` or `load_fred_only_evidence(...)`.
 
 `load_historical(...)` is a thin wrapper for the metric harness, which
@@ -18,50 +18,44 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from augur.fit.evidence_config import EvidenceConfig, load_evidence_config
 from augur.fit.evidence_data import (
+    FRED_CPI_US_CSV,
+    FRED_MORTGAGE30_CSV,
+    FRED_SF_RENT_CPI_CSV,
+    FRED_SFXRSA_CSV,
+    FRED_SP500_CSV,
+    LOCATION_SERIES_SOURCES,
     ExogenousEvidence,
     PeriodReturns,
+    _source_path,
     calibrate_series_path_priors,
     load_exogenous_evidence,
-    resolve_path,
 )
 from augur.model.location_series_sources import LocationSeriesSources
 from augur.model.path_models.scenarios import HistoricalSeries
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "exogenous_evidence.example.json"
 
-
-def load_evidence(
-    config: EvidenceConfig, base_dir: Path, *, fred_only: bool = False
-) -> tuple[HistoricalSeries, ExogenousEvidence]:
+def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, ExogenousEvidence]:
     """Load the full `ExogenousEvidence` and a derived `HistoricalSeries`.
 
-    The default path loads the configured Yahoo+Zillow+FRED exogenous
-    evidence and lets malformed config or unreadable source data raise.
-    `fred_only=True` is an explicit lower-fidelity fixture/degraded mode;
-    its evidence metadata is labelled as synthesized.
+    The default path loads the public Yahoo+Zillow+FRED exogenous evidence and
+    lets unreadable source data raise. `fred_only=True` is an explicit
+    lower-fidelity fixture/degraded mode; its evidence metadata is labelled as
+    synthesized.
     """
     if fred_only:
-        return _evidence_fred_only(config, base_dir)
-    evidence = load_exogenous_evidence(config.source_data, base_dir)
+        return _evidence_fred_only()
+    evidence = load_exogenous_evidence()
     return _historical_from_evidence(evidence), evidence
 
 
-def load_evidence_from_path(
-    config_path: Path | None = None, *, fred_only: bool = False
-) -> tuple[HistoricalSeries, ExogenousEvidence]:
-    path = (config_path or DEFAULT_CONFIG_PATH).resolve()
-    return load_evidence(load_evidence_config(path), path.parent, fred_only=fred_only)
-
-
-def load_fred_only_evidence(config: EvidenceConfig, base_dir: Path) -> tuple[HistoricalSeries, ExogenousEvidence]:
+def load_fred_only_evidence() -> tuple[HistoricalSeries, ExogenousEvidence]:
     """Load explicitly selected FRED-only synthesized exogenous evidence."""
-    return load_evidence(config, base_dir, fred_only=True)
+    return load_evidence(fred_only=True)
 
 
-def load_historical(config_path: Path | None = None, *, fred_only: bool = False) -> HistoricalSeries:
-    return load_evidence_from_path(config_path, fred_only=fred_only)[0]
+def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
+    return load_evidence(fred_only=fred_only)[0]
 
 
 # ---------------------------------------------------------------------------
@@ -94,20 +88,19 @@ def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
     )
 
 
-def _evidence_fred_only(config: EvidenceConfig, base_dir: Path) -> tuple[HistoricalSeries, ExogenousEvidence]:
+def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     """Read only FRED CSVs (no Yahoo, no Zillow) and synthesise a
     `ExogenousEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
-    source = config.source_data
-    series_sources = LocationSeriesSources.from_config(config.location_series_sources)
+    series_sources = LocationSeriesSources.from_config(LOCATION_SERIES_SOURCES)
     home_factor_names = tuple(dict.fromkeys(series_sources.home_value.values()))
     factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
-    sp500_path = resolve_path(source.fred_sp500_csv, base_dir)
-    home_path = resolve_path(source.fred_sfxrsa_csv, base_dir)
-    rent_path = resolve_path(source.fred_sf_rent_cpi_csv, base_dir)
-    cpi_path = resolve_path(source.fred_cpi_us_csv, base_dir)
-    mortgage_path = resolve_path(source.fred_mortgage30_csv, base_dir)
+    sp500_path = _source_path(FRED_SP500_CSV)
+    home_path = _source_path(FRED_SFXRSA_CSV)
+    rent_path = _source_path(FRED_SF_RENT_CPI_CSV)
+    cpi_path = _source_path(FRED_CPI_US_CSV)
+    mortgage_path = _source_path(FRED_MORTGAGE30_CSV)
 
     sp500 = _monthly_last(_read_fred_csv(sp500_path, "SP500"))
     home = _monthly_last(_read_fred_csv(home_path, "SFXRSA"))

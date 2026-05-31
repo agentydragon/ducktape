@@ -2,42 +2,33 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
 import pytest_bazel
 
+from augur.fit import evidence_data
 from augur.fit.data import load_evidence, load_fred_only_evidence
-from augur.fit.evidence_config import load_evidence_config
-
-CONFIG_PATH = Path(__file__).resolve().parent / "config" / "exogenous_evidence.example.json"
 
 
-def _config_with_absolute_source_paths() -> dict[str, Any]:
-    config = cast(dict[str, Any], json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
-    source = dict(config["source_data"])
-    for key, value in source.items():
-        if isinstance(value, str):
-            source[key] = str((CONFIG_PATH.parent / value).resolve())
-    config["source_data"] = source
-    return config
-
-
-def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path) -> None:
-    config = _config_with_absolute_source_paths()
+def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     malformed_yahoo = tmp_path / "malformed_yahoo_spy_chart_adjusted.json"
     malformed_yahoo.write_text("{not json", encoding="utf-8")
-    config["source_data"]["yahoo_spy_adjusted_json"] = str(malformed_yahoo)
+    real_resolver = evidence_data._source_path
 
-    config_path = tmp_path / "exogenous_evidence.json"
-    config_path.write_text(json.dumps(config), encoding="utf-8")
+    # Redirect only the SPY adjusted-close source to the malformed file (other
+    # sources resolve normally); the loader must surface the JSON parse error
+    # rather than swallow it.
+    def fake_resolver(repo_relative: str) -> Path:
+        return malformed_yahoo if repo_relative == evidence_data.YAHOO_SPY_ADJUSTED_JSON else real_resolver(repo_relative)
+
+    monkeypatch.setattr(evidence_data, "_source_path", fake_resolver, raising=True)
 
     with pytest.raises(json.JSONDecodeError):
-        load_evidence(load_evidence_config(config_path), config_path.parent)
+        load_evidence()
 
 
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled() -> None:
-    historical, evidence = load_fred_only_evidence(load_evidence_config(CONFIG_PATH), CONFIG_PATH.parent)
+    historical, evidence = load_fred_only_evidence()
 
     assert historical.factor_names == evidence.factor_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)

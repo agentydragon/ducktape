@@ -3,33 +3,19 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "evidence_config_files",
-    srcs = [
-        "//augur/data:evidence_source_files",
-        "//augur/fit/config:exogenous_evidence_config",
-    ],
-)
-
-py_library(
-    name = "evidence_config",
-    srcs = ["evidence_config.py"],
-    deps = [
-        "//augur/model:location_series_sources",
-        "//augur/model:schemas",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
+    name = "evidence_source_files",
+    srcs = ["//augur/data:evidence_source_files"],
 )
 
 py_library(
     name = "evidence_data",
     srcs = ["evidence_data.py"],
+    data = [":evidence_source_files"],
     deps = [
-        ":evidence_config",
+        "//augur/model:location_series_sources",
+        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pandas",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -85,12 +71,11 @@ py_library(
 py_library(
     name = "data",
     srcs = ["data.py"],
-    data = [":evidence_config_files"],
     deps = [
-        ":evidence_config",
         ":evidence_data",
         "//augur/model:location_series_sources",
         "//augur/model/path_models:scenarios",
+        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pandas",
     ],
@@ -99,10 +84,7 @@ py_library(
 py_binary(
     name = "metrics_report",
     srcs = ["metrics_report.py"],
-    data = [
-        ":evidence_config_files",
-        "//augur/api:public_fixture_config",
-    ],
+    data = ["//augur/api:public_fixture_config"],
     deps = [
         ":data",
         ":metrics",
@@ -118,10 +100,9 @@ py_binary(
 py_library(
     name = "train_lib",
     srcs = ["main.py"],
-    data = [":evidence_config_files"],
     deps = [
         ":data",
-        ":evidence_config",
+        ":evidence_data",
         ":state_space",
         "//augur/model:provider_config",
         "//augur/model:state_space",
@@ -167,24 +148,11 @@ py_binary(
 )
 
 py_test(
-    name = "evidence_config_test",
-    srcs = ["evidence_config_test.py"],
-    data = [":evidence_config_files"],
-    deps = [
-        ":evidence_config",
-        "//augur/model:schemas",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "data_test",
     srcs = ["data_test.py"],
-    data = [":evidence_config_files"],
     deps = [
         ":data",
-        ":evidence_config",
+        ":evidence_data",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

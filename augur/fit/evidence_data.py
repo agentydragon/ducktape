@@ -10,34 +10,57 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from python.runfiles import runfiles
 
-from augur.fit.evidence_config import SourceDataConfig
+from augur.model.location_series_sources import LocationSeriesSourcesConfig
+from util.bazel.runfiles import get_required_path
 
-_RUNFILES_PREFIX = "runfiles:"
+# Public exogenous source data files, as repo-root-relative paths. Each string
+# doubles as the stable provenance label recorded in
+# `ExogenousEvidence.latest_observations[*]["source"]`; `_source_path` resolves
+# it to an absolute runfiles path for reading. Refresh recipes live in
+# augur/data/SOURCES.md (don't rename the files).
+FRED_SP500_CSV = "augur/data/fred_sp500.csv"
+YAHOO_SPY_ADJUSTED_JSON = "augur/data/yahoo_spy_chart_adjusted.json"
+YAHOO_BTC_ADJUSTED_JSON = "augur/data/yahoo_btc_chart_adjusted.json"
+YAHOO_ETH_ADJUSTED_JSON = "augur/data/yahoo_eth_chart_adjusted.json"
+FRED_CPI_US_CSV = "augur/data/fred_cpi_us.csv"
+FRED_SF_RENT_CPI_CSV = "augur/data/fred_sf_rent_cpi.csv"
+FRED_SFXRSA_CSV = "augur/data/fred_sfxrsa.csv"
+FRED_FHFA_SF_OAKLAND_BERKELEY_CSV = "augur/data/fred_fhfa_sf_oakland_berkeley.csv"
+FRED_MORTGAGE30_CSV = "augur/data/fred_mortgage30.csv"
+ZILLOW_CITY_ZHVI_CSV = "augur/data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
+
+# Home-value factor name -> (Zillow RegionName, State) for the city rows to read.
+ZILLOW_HOME_VALUE_REGIONS: dict[str, tuple[str, str]] = {
+    "home_value:san_francisco_ca": ("San Francisco", "CA"),
+    "home_value:vallejo_ca": ("Vallejo", "CA"),
+}
+
+# Per-location source factor for each modeled location series. Consumed directly
+# by the trainer and echoed into the emitted ProviderConfig, so it stays
+# a typed LocationSeriesSourcesConfig rather than a bare dict.
+LOCATION_SERIES_SOURCES = LocationSeriesSourcesConfig(
+    home_value={"san_francisco_ca": "home_value:san_francisco_ca", "vallejo_ca": "home_value:vallejo_ca"},
+    rent={
+        "san_francisco_ca": "rent:san_francisco_ca",
+        "vallejo_ca": "rent:san_francisco_ca",
+        "mare_island_vallejo_ca": "rent:san_francisco_ca",
+    },
+)
+
+# Minimum overlapping months required across the aligned exogenous factors.
+MINIMUM_ALIGNED_MONTHS = 36
 
 
-def resolve_path(path: str | Path, base_dir: str | Path) -> Path:
-    """Resolve `path` against `base_dir` if relative, return as-is if absolute.
+def _source_path(repo_relative: str) -> Path:
+    """Resolve a repo-root-relative source-data path to its absolute runfiles path.
 
-    The `runfiles:<rlocation>` prefix routes through the Bazel runfiles library
-    instead — used so config files can reference ducktape-side data CSVs from a
-    deployment-repo config without duplicating the CSVs alongside the config."""
-    path_str = str(path)
-    if path_str.startswith(_RUNFILES_PREFIX):
-        rlocation = path_str[len(_RUNFILES_PREFIX) :]
-        r = runfiles.Create()
-        resolved = r.Rlocation(rlocation) if r is not None else None
-        if not resolved:
-            raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
-        return Path(resolved)
-    p = Path(path)
-    if p.is_absolute():
-        return p
-    return (Path(base_dir) / p).resolve()
+    augur is the Bazel main repo here, so its runfiles live under the `_main/`
+    workspace dir (matches the `get_required_path("_main/augur/...")` convention
+    used across augur)."""
+    return get_required_path(f"_main/{repo_relative}")
 
 
-BASE_HOME_VALUE_FACTOR = "home_value:san_francisco_ca"
 MONTHS_PER_YEAR = 12
 DATA_DERIVED_SERIES_PATH_PRIOR_SUFFIXES = ("_monthly_log_mu", "_monthly_log_mu_sigma", "_monthly_log_vol_sigma")
 MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
@@ -184,16 +207,6 @@ def _zillow_city_series(path: Path, *, region_name: str, state: str) -> pd.Serie
     raise ValueError(f"{path} does not contain a city row for {region_name}, {state}")
 
 
-def _home_value_region_config(source_config: SourceDataConfig) -> dict[str, tuple[str, str]]:
-    regions = {
-        factor_name: (region.region_name, region.state)
-        for factor_name, region in source_config.zillow_home_value_regions.items()
-    }
-    if BASE_HOME_VALUE_FACTOR not in regions:
-        raise ValueError(f"source_data.zillow_home_value_regions must include {BASE_HOME_VALUE_FACTOR!r}")
-    return regions
-
-
 def _read_yahoo_adjusted_close(path: Path, *, minimum_samples: int = 36) -> pd.Series:
     """Read a Yahoo-Finance v8 chart JSON down to `(timestamp -> adjusted_close)`.
 
@@ -254,25 +267,24 @@ def _return_frame_summary(frame: pd.DataFrame, *, source: str, used_as_marginal_
     }
 
 
-def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Path) -> ExogenousEvidence:
-    sp500_price = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sp500_csv, base_dir), "SP500"))
+def load_exogenous_evidence() -> ExogenousEvidence:
+    sp500_price = _monthly_last(_read_fred_series(_source_path(FRED_SP500_CSV), "SP500"))
     sp500_total_return = _monthly_last(
-        _read_yahoo_spy_adjusted_close(resolve_path(source_config.yahoo_spy_adjusted_json, base_dir))
+        _read_yahoo_spy_adjusted_close(_source_path(YAHOO_SPY_ADJUSTED_JSON))
     )
-    btc_price = _monthly_last(_read_yahoo_adjusted_close(resolve_path(source_config.yahoo_btc_adjusted_json, base_dir)))
-    eth_price = _monthly_last(_read_yahoo_adjusted_close(resolve_path(source_config.yahoo_eth_adjusted_json, base_dir)))
-    cpi = _monthly_last(_read_fred_series(resolve_path(source_config.fred_cpi_us_csv, base_dir), "CPIAUCSL"))
-    rent = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sf_rent_cpi_csv, base_dir), "CUURA422SEHA"))
-    case_shiller = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sfxrsa_csv, base_dir), "SFXRSA"))
+    btc_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON)))
+    eth_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON)))
+    cpi = _monthly_last(_read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL"))
+    rent = _monthly_last(_read_fred_series(_source_path(FRED_SF_RENT_CPI_CSV), "CUURA422SEHA"))
+    case_shiller = _monthly_last(_read_fred_series(_source_path(FRED_SFXRSA_CSV), "SFXRSA"))
     fhfa = _monthly_last(
-        _read_fred_series(resolve_path(source_config.fred_fhfa_sf_oakland_berkeley_csv, base_dir), "ATNHPIUS41884Q")
+        _read_fred_series(_source_path(FRED_FHFA_SF_OAKLAND_BERKELEY_CSV), "ATNHPIUS41884Q")
     )
-    mortgage30 = _read_fred_series(resolve_path(source_config.fred_mortgage30_csv, base_dir), "MORTGAGE30US")
-    zillow_path = resolve_path(source_config.zillow_city_zhvi_csv, base_dir)
-    home_value_region_config = _home_value_region_config(source_config)
+    mortgage30 = _read_fred_series(_source_path(FRED_MORTGAGE30_CSV), "MORTGAGE30US")
+    zillow_path = _source_path(ZILLOW_CITY_ZHVI_CSV)
     home_values = {
         factor_name: _zillow_city_series(zillow_path, region_name=region_name, state=state)
-        for factor_name, (region_name, state) in home_value_region_config.items()
+        for factor_name, (region_name, state) in ZILLOW_HOME_VALUE_REGIONS.items()
     }
     home_factor_names = tuple(home_values)
     factor_names = ("sp500", "crypto:btc", "crypto:eth", *home_factor_names, "rent:san_francisco_ca", "inflation")
@@ -288,7 +300,7 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
         axis=1,
         join="inner",
     ).dropna()
-    if len(aligned) < source_config.minimum_aligned_months:
+    if len(aligned) < MINIMUM_ALIGNED_MONTHS:
         raise ValueError(f"only {len(aligned)} aligned exogenous months were available")
 
     sp500_returns = _period_return_frame(sp500_total_return)
@@ -313,70 +325,64 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
         "sp500_price_latest": {
             "date": str(sp500_price.index[-1]),
             "value": float(sp500_price.iloc[-1]),
-            "source": source_config.fred_sp500_csv,
+            "source": FRED_SP500_CSV,
         },
         "spy_adjusted_close_latest": {
             "date": str(sp500_total_return.index[-1]),
             "value": float(sp500_total_return.iloc[-1]),
-            "source": source_config.yahoo_spy_adjusted_json,
+            "source": YAHOO_SPY_ADJUSTED_JSON,
         },
         "btc_close_latest": {
             "date": str(btc_price.index[-1]),
             "value": float(btc_price.iloc[-1]),
-            "source": source_config.yahoo_btc_adjusted_json,
+            "source": YAHOO_BTC_ADJUSTED_JSON,
         },
         "eth_close_latest": {
             "date": str(eth_price.index[-1]),
             "value": float(eth_price.iloc[-1]),
-            "source": source_config.yahoo_eth_adjusted_json,
+            "source": YAHOO_ETH_ADJUSTED_JSON,
         },
         "zillow_home_value_latest_by_factor": {
             factor_name: {
                 "date": str(series.index[-1]),
                 "value": float(series.iloc[-1]),
-                "source": source_config.zillow_city_zhvi_csv,
-                "region_name": home_value_region_config[factor_name][0],
-                "state": home_value_region_config[factor_name][1],
+                "source": ZILLOW_CITY_ZHVI_CSV,
+                "region_name": ZILLOW_HOME_VALUE_REGIONS[factor_name][0],
+                "state": ZILLOW_HOME_VALUE_REGIONS[factor_name][1],
             }
             for factor_name, series in home_values.items()
         },
         "case_shiller_sf_latest": {
             "date": str(case_shiller.index[-1]),
             "value": float(case_shiller.iloc[-1]),
-            "source": source_config.fred_sfxrsa_csv,
+            "source": FRED_SFXRSA_CSV,
         },
         "sf_rent_cpi_latest": {
             "date": str(rent.index[-1]),
             "value": float(rent.iloc[-1]),
-            "source": source_config.fred_sf_rent_cpi_csv,
+            "source": FRED_SF_RENT_CPI_CSV,
         },
-        "cpi_latest": {
-            "date": str(cpi.index[-1]),
-            "value": float(cpi.iloc[-1]),
-            "source": source_config.fred_cpi_us_csv,
-        },
+        "cpi_latest": {"date": str(cpi.index[-1]), "value": float(cpi.iloc[-1]), "source": FRED_CPI_US_CSV},
         "mortgage30_latest": {
             "date": mortgage30.index[-1].date().isoformat(),
             "value": float(mortgage30.iloc[-1]),
-            "source": source_config.fred_mortgage30_csv,
+            "source": FRED_MORTGAGE30_CSV,
         },
         "spy_adjusted_close_monthly_return_count": len(marginal["sp500"].log_returns),
         "housing_return_sources": {
             "zillow_city_zhvi_by_factor": {
                 factor_name: {
-                    **_return_frame_summary(
-                        returns, source=source_config.zillow_city_zhvi_csv, used_as_marginal_evidence=True
-                    ),
-                    "region_name": home_value_region_config[factor_name][0],
-                    "state": home_value_region_config[factor_name][1],
+                    **_return_frame_summary(returns, source=ZILLOW_CITY_ZHVI_CSV, used_as_marginal_evidence=True),
+                    "region_name": ZILLOW_HOME_VALUE_REGIONS[factor_name][0],
+                    "state": ZILLOW_HOME_VALUE_REGIONS[factor_name][1],
                 }
                 for factor_name, returns in home_value_returns.items()
             },
             "case_shiller_sf_metro": _return_frame_summary(
-                case_shiller_returns, source=source_config.fred_sfxrsa_csv, used_as_marginal_evidence=False
+                case_shiller_returns, source=FRED_SFXRSA_CSV, used_as_marginal_evidence=False
             ),
             "fhfa_sf_oakland_berkeley": _return_frame_summary(
-                fhfa_returns, source=source_config.fred_fhfa_sf_oakland_berkeley_csv, used_as_marginal_evidence=False
+                fhfa_returns, source=FRED_FHFA_SF_OAKLAND_BERKELEY_CSV, used_as_marginal_evidence=False
             ),
         },
         "series_path_prior_calibration": {

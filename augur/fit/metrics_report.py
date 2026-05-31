@@ -76,13 +76,9 @@ _ACTIVE_MODEL_METRIC_SPECS: tuple[ModelMetricSpec, ...] = (
 
 
 def evaluate_all(
-    *,
-    train_fraction: float = 0.8,
-    rolling_min_train: int = 60,
-    multi_step_horizons: tuple[int, ...] = (1, 6, 12),
-    config_path: Path | None = None,
+    *, train_fraction: float = 0.8, rolling_min_train: int = 60, multi_step_horizons: tuple[int, ...] = (1, 6, 12)
 ) -> dict[str, Any]:
-    historical = load_historical(config_path)
+    historical = load_historical()
     held_out_rows: list[dict[str, Any]] = []
     rolling_rows: list[dict[str, Any]] = []
     multi_step_rows: list[dict[str, Any]] = []
@@ -133,17 +129,12 @@ def evaluate_all(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Augur: score the active exogenous models on the metric battery.")
-    parser.add_argument(
-        "--config", type=Path, default=None, help="path to exogenous_evidence.example.json (default: bundled)"
-    )
     parser.add_argument("--train-fraction", type=float, default=0.8)
     parser.add_argument("--rolling-min-train", type=int, default=60)
     parser.add_argument("--out", type=Path, default=None, help="optional path to write summary.json")
     args = parser.parse_args(argv)
 
-    summary = evaluate_all(
-        train_fraction=args.train_fraction, rolling_min_train=args.rolling_min_train, config_path=args.config
-    )
+    summary = evaluate_all(train_fraction=args.train_fraction, rolling_min_train=args.rolling_min_train)
     print(json.dumps(summary, indent=2, sort_keys=True))
     if args.out is not None:
         args.out.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
