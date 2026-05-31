@@ -290,9 +290,13 @@ py_test(
         "testdata/fixture_sample_sanity.yaml",
     ],
     deps = [
+        ":exogenous",
         ":sample_sanity",
+        ":series",
+        ":testing",
         "//:conftest",
         "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
