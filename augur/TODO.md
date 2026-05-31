@@ -138,25 +138,27 @@ are deleted and the CI prefix-guard is in place.
         (e.g. the 2025-10 employee tender) as pure re-pricing.
   - [ ] **M2.2-D — Bayesian fit + scale-dependent mean-reverting drift (critical path to
         deploying the openai fit; full design in the M2.2-D section of
-        `plans/prediction_market_calibration.md`).**
-        - [x] **NUTS fit** `augur/fit/bayes_dilution.py` — numpyro state-space model (latent log-V
-          RW + log-share path, per-obs `uncertainty_log_sigma` likelihood, informative priors)
-          over all obs, mirroring `augur/model/vecm.py`. Sane dilution (r≈0.31, σ≈0.05) + honest
-          posterior σ. Regularizes the OLS over-extrapolation (8035× → 381× median 10y mark).
-        - [x] **calendar-decay drift** in the sampler (`valuation_monthly_log_return_mu_initial` /
-          `valuation_drift_decay_halflife_months`). Backward-compatible (off ⇒ byte-identical).
-        - [ ] **scale-dependent mean-reverting drift (load-bearing).** Calendar decay still
-          overshoots (`mu_∞` stays hot ~49%/yr; rising data never says "boom over"; decay replays
-          from t=0). Replace with `mu_V(s) = mu_mature + (mu_young−mu_mature)·exp(−max(0,s−s_young)/s_scale)`,
-          `s=log V` — drift high when small, reverts toward mature as the company grows (data-
-          driven, self-correcting per rollout). Makes `V(t)` an SDE ⇒ `_sample_company_valuation_vectorized`
-          becomes a per-month loop (vectorized across rollouts). Conservative grounded values:
-          `mu_mature ≈ 0.008/mo` (~10%/yr, S&P 100-yr nominal CAGR), `mu_young ≈ 0.035–0.05/mo`,
-          maturity onset ~$10–50B. Then re-fit + land the openai config in the gaffer bands.
-        - [ ] **deploy mechanism (orthogonal, later).** Scalar-summary config knobs now; full
-          posterior-predictive deploy (private gaffer trained artifact, like
-          `state_space_macro_artifact.json`) as a later uncertainty-propagation upgrade. Does not
-          fix the median — follows the scale-reversion work.
+        `plans/prediction_market_calibration.md`).** - [x] **NUTS fit** `augur/fit/bayes_dilution.py` — numpyro state-space model (latent log-V
+        RW + log-share path, per-obs `uncertainty_log_sigma` likelihood, informative priors)
+        over all obs, mirroring `augur/model/vecm.py`. Sane dilution (r≈0.31, σ≈0.05) + honest
+        posterior σ. Regularizes the OLS over-extrapolation (8035× → 381× median 10y mark). - [x] **calendar-decay drift** in the sampler (`valuation_monthly_log_return_mu_initial` /
+        `valuation_drift_decay_halflife_months`). Backward-compatible (off ⇒ byte-identical). - [x] **scale-dependent mean-reverting drift (load-bearing).** Replaced calendar decay with
+        `mu_V(s) = mu_mature + (mu_young−mu_mature)·exp(−max(0,s−s_young)/s_scale)`, `s=log V` —
+        drift high when small, reverts toward mature as the company grows (self-correcting per
+        rollout). `V(t)` is now an SDE integrated per-month (vectorized across rollouts) in both
+        the sampler and the `bayes_dilution` fit. **Finding:** a single issuer whose data is all
+        in one size regime CANNOT identify the shape (the full fit diverges — see the M2.2-D
+        KEY FINDING in `plans/prediction_market_calibration.md`), so `fit_bayesian_dilution_prior`
+        gained `fit_scale_reversion_shape` (default False): fix the shape at the
+        `BayesianDilutionPriors` centers (each justified in that dataclass's per-field docs) and
+        fit only the identifiable params (level, σ_v, shares, dilution). The forward `σ_v` prior
+        is anchored at the de-smoothed late-stage-VC figure (~38%/yr), NOT the boom-era in-sample
+        scatter (~73%/yr), for the same forward-vs-in-sample reason as the drift. Validated
+        end-to-end on the openai evidence: stable, and inside all four `sample_sanity` mark bands.
+        Fitting the shape itself is deferred to the population prior (below). - [ ] **deploy mechanism (orthogonal, later).** Scalar-summary config knobs now; full
+        posterior-predictive deploy (private gaffer trained artifact, like
+        `state_space_macro_artifact.json`) as a later uncertainty-propagation upgrade. Does not
+        fix the median — follows the scale-reversion work.
   - [ ] **Realization-loss tail toward population base rates (loss-tail counterpart to M2.2-D
         drift; same model-fix philosophy).** Going-concern drift asymptoting to ~market return
         does NOT model "lose everything" — that lives in the collapse / legal-impairment /

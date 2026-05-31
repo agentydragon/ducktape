@@ -30,7 +30,7 @@ Generative model (dense monthly grid `m = 0..n_months`):
     mu_young_excess ~ HalfNormal(mu_young_excess_prior_sigma)             # mu_young - mu_mature >= 0
     log_value_onset ~ Normal(log_value_onset_prior, ...)                  # size at which reversion begins
     log_value_scale ~ LogNormal(log scale_prior, ...)                     # e-folding in log-value
-    sigma_V         ~ HalfNormal(sigma_v_prior_sigma)                     # company-value monthly vol
+    sigma_V         ~ LogNormal(log sigma_v_prior_mu, sigma_v_prior_log_sigma)  # company-value monthly vol
     log_shares0     ~ Normal(log shares0_prior, log_shares0_prior_sigma)
     log1p_r         ~ Normal(log(1 + r_prior), log1p_r_prior_sigma)       # annual dilution log(1+r)
 
@@ -70,33 +70,89 @@ _MONTHS_PER_YEAR = 12.0
 
 @dataclass(frozen=True)
 class BayesianDilutionPriors:
-    """Hyperparameters of the informative priors. Defaults are research-grounded conservative
-    values for a high-growth private company maturing toward a mega-cap (see
-    augur/plans/prediction_market_calibration.md M2.2-D): a MATURE long-run drift near the S&P
-    100-yr nominal CAGR (~10%/yr ⇒ ~0.008/mo), a hot YOUNG drift the data can lift, a maturity
-    onset around the low tens of $B, and a dilution centered on a modest baseline mint. Tune per
-    issuer reference class (ultimately replaced by a population/hierarchical fit).
+    """Hyperparameters of the informative priors (M2.2-D; see
+    augur/plans/prediction_market_calibration.md).
+
+    Governing philosophy -- every default below is a FORWARD belief about a high-growth private
+    company maturing toward a mega-cap, NOT an in-sample fit to the observed boom. The handful of
+    (price, valuation) points a single issuer gives us all sit in one explosive growth episode;
+    fit naively (the OLS prior) they extrapolate ~240%/yr drift and ~0.48 dilution forever and
+    blow out the 10-year mark by ~1000x. The priors here are the regularizers that pull the
+    forward path back to something a maturing company plausibly does, and they come in two
+    flavors:
+
+      * IDENTIFIABLE-from-this-issuer (the posterior moves these): level `log_v0`, volatility
+        `sigma_v`, share count `log_shares0`, dilution `log1p_r`. Their priors are deliberately
+        WIDE -- weak anchors that let the data speak.
+      * SHAPE-of-the-reversion (mu_mature, mu_young, onset, scale): a single issuer whose data is
+        all in one size regime CANNOT identify these (fitting them diverges), so in the default
+        `fit_scale_reversion_shape=False` mode they are FIXED at the centers below. Their values
+        are therefore load-bearing educated guesses, justified per-field, to be replaced by a
+        population/hierarchical fit (augur/TODO.md).
+
+    Numbers are monthly log-units unless noted; annualized figures use `exp(12*mu)-1` for drift
+    and `sigma*sqrt(12)` for vol. Override per issuer reference class.
     """
 
+    # --- Level at the observation-window origin (IDENTIFIABLE; weak anchor) -------------------
+    # Generic ~$28B starting value; `sigma=1.0` is ~1 order of magnitude (e^1 ~ 2.7x) either way,
+    # so the valuation observations -- not this prior -- pin the level. Override per issuer (the
+    # openai deploy anchors near its current round, ~$850B).
     log_v0_usd: float = float(np.log(2.8e10))
     log_v0_sigma: float = 1.0
-    # Scale-dependent drift mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s-onset)/scale).
-    mu_mature_mu: float = 0.008  # ~10%/yr nominal, S&P 100-yr CAGR; conservative mega-cap asymptote
+
+    # --- Scale-dependent drift SHAPE (FIXED in default mode) ----------------------------------
+    # mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - onset) / scale), s = log value.
+    # mu_mature: the long-run asymptotic drift once the company is large. 0.008/mo = 10.0%/yr,
+    # the S&P 100-year nominal CAGR -- the conservative "mature mega-cap grows with the market"
+    # anchor. THIS is the key regularizer: it caps where the boom can extrapolate to. sigma=0.004
+    # (~+-5%/yr at 1 sigma, range ~5-15%/yr) when the shape IS fit; ignored when fixed.
+    mu_mature_mu: float = 0.008
     mu_mature_sigma: float = 0.004
-    mu_young_excess_sigma: float = 0.06  # HalfNormal scale of (mu_young - mu_mature) >= 0
-    log_value_onset_mu: float = float(np.log(2.0e10))  # maturity onset ~ $20B
+    # mu_young_excess = mu_young - mu_mature >= 0: how much hotter a SMALL company runs. HalfNormal
+    # scale 0.06 has mean ~0.048/mo (~78%/yr excess) and reaches ~0.12/mo (~290%/yr young drift)
+    # in the tail -- wide enough to cover observed hypergrowth (~100-150%/yr) when the shape is
+    # fit, without dragging the mature asymptote up with it. Fixed-mode value = the prior mean.
+    mu_young_excess_sigma: float = 0.06
+    # onset: enterprise value at which reversion young->mature begins. ~$20B = "low tens of $B",
+    # roughly where hypergrowth startups hit large-cap dynamics. sigma=0.7 (~2x either way,
+    # ~$10-40B). A company already far above onset (openai at ~$850B) is fully in the mature
+    # regime, so its forward drift is essentially mu_mature regardless of the young excess.
+    log_value_onset_mu: float = float(np.log(2.0e10))
     log_value_onset_sigma: float = 0.7
-    log_value_scale_mu: float = 2.0  # e-folding in log-value (~one order of magnitude ≈ 2.3)
+    # scale: e-folding length of the excess in log-value. 2.0 means the young excess decays by 1/e
+    # per e^2 ~ 7.4x of value growth (~1.15 e-foldings per order of magnitude). sigma=0.5 LogNormal
+    # (~1.65x either way) when fit.
+    log_value_scale_mu: float = 2.0
     log_value_scale_sigma: float = 0.5
-    # FORWARD company-value volatility, informative LogNormal. Centered at ~0.10/mo (~38%/yr) --
-    # the de-smoothed late-stage-VC figure (Anson), comparable to a single large-cap tech name
-    # (~36%/yr) and well above the index (~19%/yr). Deliberately NOT the raw in-sample scatter of
-    # the boom years (which fits to ~73%/yr and blows out the 10y mark tail); like the drift, the
-    # FORWARD vol of a maturing mega-cap is the right prior. `log_sigma` lets data nudge it ~±35%.
+
+    # --- Company-value volatility (IDENTIFIABLE, but FORWARD-anchored) -------------------------
+    # Informative LogNormal centered at 0.10/mo (~35%/yr). This is the de-smoothed late-stage-VC
+    # figure (Anson ~38%/yr), comparable to a single large-cap tech name (NVDA ~36%/yr) and well
+    # above a diversified index (~19%/yr). It is deliberately NOT the raw in-sample scatter of the
+    # boom years: fit unconstrained, sigma_v runs to ~73%/yr and the 10-year mark p99 blows past
+    # the sample_sanity 100x ceiling (~260x). Same forward-vs-in-sample logic as the drift, applied
+    # to the second moment. log_sigma=0.10 keeps the prior tight (1 sigma ~ x[0.90,1.11] = ~31-38%/yr)
+    # so the boom-era likelihood can only nudge the posterior to ~43%/yr -- which lands the openai
+    # deploy inside ALL FOUR sample_sanity mark bands (m12 p50~1.0, m120 p50~0.45, both p1..p99 in
+    # band). Loosen it (toward the in-sample ~50-70%/yr) only for an issuer you truly believe stays
+    # that volatile forward.
     sigma_v_mu: float = 0.10
-    sigma_v_log_sigma: float = 0.15
+    sigma_v_log_sigma: float = 0.10
+
+    # --- Share/unit count at window origin (IDENTIFIABLE; weak anchor) ------------------------
+    # ~400M fully-diluted units, order-of-magnitude guess. sigma=0.5 (~1.65x). The price channel
+    # (price = V / shares) pins this against the valuation channel, so the posterior moves freely
+    # (openai lands ~190M).
     log_shares0: float = float(np.log(4.0e8))
     log_shares0_sigma: float = 0.5
+
+    # --- Annual dilution rate (IDENTIFIABLE; the primary quantity of interest) ----------------
+    # Prior on log(1+r) ~ Normal(log(1+0.20), 0.30). Center r=0.20 = a 20%/yr baseline unit mint
+    # (new rounds + employee equity) for a high-growth private company. sigma=0.30 in log-space is
+    # WIDE: 1 sigma spans r in ~[-11%, +62%], so the data dominates -- on the openai evidence the
+    # posterior sharpens to r~0.27 with a small log-SD (~0.05). Wide on purpose: dilution is the
+    # whole point of the fit, so we let the observations, not the prior, determine it.
     annual_dilution_rate_mu: float = 0.20
     log1p_r_sigma: float = 0.30
 

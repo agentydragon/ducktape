@@ -186,10 +186,10 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
 
   **Why the OLS fit (M2.2-A) cannot be deployed.** Running `derive_dilution_prior` on the
   gaffer openai evidence yields `annual_dilution_rate ≈ 0.476`, `valuation_monthly_log_return_mu
-  ≈ 0.1075` (~244%/yr). Validated against `sample_sanity.yaml`'s `private_equity_mark_checks`
+≈ 0.1075` (~244%/yr). Validated against `sample_sanity.yaml`'s `private_equity_mark_checks`
   (512 rollouts × 120 mo): m12 p50 = 2.39 (band [0.7,1.8]) and **m120 p50 = 8035** (band
   [0.3,4.0]) — fails by ~2000×. Root cause is twofold: (1) the OLS log-linear slope extrapolates
-  the 2023-25 boom as a *forward* rate; (2) `mark = current·V(t)/V0/(1+r)^(t/12)` couples drift
+  the 2023-25 boom as a _forward_ rate; (2) `mark = current·V(t)/V0/(1+r)^(t/12)` couples drift
   and dilution, which OLS fits jointly but the config then compounds independently, so dropping
   just `mu_V` back to 0.02 makes the 48% dilution undershoot the floor (m120 p50 = 0.22).
 
@@ -202,13 +202,13 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   `mu_V ≈ 0.071` (~134%/yr). The priors regularize the 4-point extrapolation: m120 p50 drops
   8035 → **381** (21× better) — but **still fails the gate**, because a constant-drift random
   walk compounds even the regularized near-term rate over 10 years. Bayesian inference fixes the
-  *uncertainty* and over-extrapolation, not the *structural* forever-drift.
+  _uncertainty_ and over-extrapolation, not the _structural_ forever-drift.
 
   **Part 2 — drift structure: scale-dependent mean reversion (the load-bearing fix).** The first
   cut tried a CALENDAR-time decay `mu_V(t) = mu_∞ + (mu_0 − mu_∞)·0.5^(t/τ)` (shipped in the
   sampler + `bayes_dilution.py`). On the openai evidence it improves a lot but still overshoots:
   even with a tight long-run prior the NUTS fit keeps `mu_∞ ≈ 0.033/mo (~49%/yr)` and `m120 p50
-  ≈ 100×`, because (a) every observation is still rising steeply through the latest one, so the
+≈ 100×`, because (a) every observation is still rising steeply through the latest one, so the
   data gives no reason to believe the boom ended, and (b) calendar decay replays the historical
   boom from t=0=now. **Calendar time is the wrong axis.** The right structure makes drift a
   function of company SIZE, not elapsed time:
@@ -219,8 +219,8 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
 
   where `s = log V(t)` is the realized log enterprise value. A small company (`s ≤ s_young`)
   gets the hot `mu_young`; a large one reverts toward `mu_mature`, and KEEPS maturing as it
-  grows. This is data-driven, not a hidden prior: the model tames the boom *because OpenAI is now
-  $852B* (an observed fact), and it self-corrects per rollout — a rollout that stays small keeps
+  grows. This is data-driven, not a hidden prior: the model tames the boom _because OpenAI is now
+  $852B_ (an observed fact), and it self-corrects per rollout — a rollout that stays small keeps
   its upside, one that booms matures early. Empirical backing: firm growth-rate dispersion scales
   as `σ ~ S^(−0.2)` and mean growth declines with size (Stanley/Amaral scaling laws; decacorns
   "grow slower"). Implementation note: state-dependent drift makes `V(t)` a genuine SDE, so
@@ -239,16 +239,16 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   central drift toward ~market return does NOT undersell "lose everything," because total loss is
   a discrete-event / no-realization phenomenon that lives in the hazard channels (collapse,
   legal-impairment, forced-recovery) and the no-liquidity tail, not in the going-concern drift.
-  Population base rates make this vivid and confirm augur currently *under*-states it: of 2010–15
+  Population base rates make this vivid and confirm augur currently _under_-states it: of 2010–15
   Series C companies only **38% exited within a decade (62% never delivered liquidity)**; post-
   2021, **>80% of unicorns sit below their peak and ~30% fell under $1B**; WeWork went $47B →
-  bankruptcy (−99.9%). So the realization-risk tail is empirically *fat*, and the pre-IPO-failure
+  bankruptcy (−99.9%). So the realization-risk tail is empirically _fat_, and the pre-IPO-failure
   calibration gap we already measured (model 0.014 vs market 0.092) is the same under-statement.
   **Linked work item:** bump the collapse / no-liquidity hazards toward these population base
   rates (tracked in TODO.md; it is the loss-tail counterpart to this drift work).
 
   **North star — hierarchical population prior (the real reason to be Bayesian).** One company's
-  16 points can never answer "does the boom persist?"; only a *reference class* can. Fit the
+  16 points can never answer "does the boom persist?"; only a _reference class_ can. Fit the
   scale-reversion hyperparameters `(mu_young, mu_mature, s_young, s_scale)` + dilution + the
   loss-hazard base rates across a POPULATION of startup trajectories, then treat each issuer
   (openai) as one draw shrunk toward the population (partial pooling). That converts every
@@ -283,13 +283,20 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   or the onset — and the 2019–21 price-only stretch (no paired valuation) adds a `shares0`↔`V`
   level degeneracy. A single company "already huge and booming" cannot, even in principle, tell
   you how growth decays with size. So:
-  - **openai deployment:** fix the reversion SHAPE (`mu_mature`, `mu_young`, onset, scale) from
-    population / educated-guess values (the conservative defaults above), and fit only the
-    weakly-shrunk dilution rate + σ from the openai evidence. Validate against `sample_sanity`,
-    tune the fixed shape if needed. (This is the immediate path to a deployable openai config.)
-  - **the proper fix is the hierarchical population prior** (below): it is the ONLY thing that can
-    identify the shape, because it borrows the small-company phase from *other* companies. The
-    end-to-end blow-up is the empirical justification for prioritizing it.
+  - **openai deployment (DONE — `fit_scale_reversion_shape=False`, the default).**
+    `fit_bayesian_dilution_prior` now fixes the reversion SHAPE (`mu_mature`, `mu_young`, onset,
+    scale) at the `BayesianDilutionPriors` centers (each justified in that dataclass's per-field
+    docs) and samples only the identifiable params (level, σ_v, share count, dilution). On the
+    real openai evidence this is stable (0 divergences) and lands `r≈0.27`, `mu_mature=10%/yr`,
+    forward `σ_v≈43%/yr` — **inside all four `sample_sanity` mark bands** (m12 p50≈1.0, m120
+    p50≈0.45, both p1..p99 in band). The forward `σ_v` prior is deliberately tighter than the
+    boom-era in-sample scatter (~73%/yr), for the same forward-vs-in-sample reason as the drift.
+  - **TODO — fit the shape via the hierarchical population prior** (below): the ONLY thing that
+    can _identify_ the reversion shape, because it borrows the small-company phase from _other_
+    companies; the single-issuer blow-up above is the empirical justification for prioritizing it.
+    Until then the fixed shape is a load-bearing educated guess, not a fitted result. When the
+    population fit lands, it replaces the fixed `BayesianDilutionPriors` shape centers and the
+    `fit_scale_reversion_shape=True` path becomes the per-issuer fit shrunk toward that population.
 
 ### M3 — IPO lockup: probabilistic + refined
 
