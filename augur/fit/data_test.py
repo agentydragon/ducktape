@@ -19,7 +19,9 @@ def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path, monk
     # sources resolve normally); the loader must surface the JSON parse error
     # rather than swallow it.
     def fake_resolver(repo_relative: str) -> Path:
-        return malformed_yahoo if repo_relative == evidence_data.YAHOO_SPY_ADJUSTED_JSON else real_resolver(repo_relative)
+        return (
+            malformed_yahoo if repo_relative == evidence_data.YAHOO_SPY_ADJUSTED_JSON else real_resolver(repo_relative)
+        )
 
     monkeypatch.setattr(evidence_data, "_source_path", fake_resolver, raising=True)
 

@@ -269,17 +269,13 @@ def _return_frame_summary(frame: pd.DataFrame, *, source: str, used_as_marginal_
 
 def load_exogenous_evidence() -> ExogenousEvidence:
     sp500_price = _monthly_last(_read_fred_series(_source_path(FRED_SP500_CSV), "SP500"))
-    sp500_total_return = _monthly_last(
-        _read_yahoo_spy_adjusted_close(_source_path(YAHOO_SPY_ADJUSTED_JSON))
-    )
+    sp500_total_return = _monthly_last(_read_yahoo_spy_adjusted_close(_source_path(YAHOO_SPY_ADJUSTED_JSON)))
     btc_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON)))
     eth_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON)))
     cpi = _monthly_last(_read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL"))
     rent = _monthly_last(_read_fred_series(_source_path(FRED_SF_RENT_CPI_CSV), "CUURA422SEHA"))
     case_shiller = _monthly_last(_read_fred_series(_source_path(FRED_SFXRSA_CSV), "SFXRSA"))
-    fhfa = _monthly_last(
-        _read_fred_series(_source_path(FRED_FHFA_SF_OAKLAND_BERKELEY_CSV), "ATNHPIUS41884Q")
-    )
+    fhfa = _monthly_last(_read_fred_series(_source_path(FRED_FHFA_SF_OAKLAND_BERKELEY_CSV), "ATNHPIUS41884Q"))
     mortgage30 = _read_fred_series(_source_path(FRED_MORTGAGE30_CSV), "MORTGAGE30US")
     zillow_path = _source_path(ZILLOW_CITY_ZHVI_CSV)
     home_values = {
