@@ -241,14 +241,18 @@ def _generative(
     z = numpyro.sample("z", dist.Normal(jnp.zeros(n_months), 1.0).to_event(1))
     shocks = sigma_v * z
 
-    def _step(log_v_prev: jnp.ndarray, shock: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def _step(log_v_prev: jax.Array, shock: jax.Array) -> tuple[jax.Array, jax.Array]:
         over_onset = jnp.maximum(0.0, log_v_prev - log_value_onset)
         drift = mu_mature + mu_young_excess * jnp.exp(-over_onset / log_value_scale)
         log_v_next = log_v_prev + drift + shock
         return log_v_next, log_v_next
 
-    _, log_v_path = jax.lax.scan(_step, log_v0, shocks)  # log_v_path[m] = log_V at month m+1
-    log_v_grid = jnp.concatenate([log_v0[None], log_v_path])  # index 0 = month 0
+    # `numpyro.sample` is typed as returning the wide `ArrayLike` union; pin the scan carry to a
+    # concrete `jax.Array` so the `Callable[[Carry, X], ...]` carry type matches `_step` and the
+    # `[None]` newaxis index below is valid (matches the lax.scan pattern in augur/model/vecm.py).
+    log_v0_arr = jnp.asarray(log_v0)
+    _, log_v_path = jax.lax.scan(_step, log_v0_arr, shocks)  # log_v_path[m] = log_V at month m+1
+    log_v_grid = jnp.concatenate([log_v0_arr[None], log_v_path])  # index 0 = month 0
 
     log_v_at_val = log_v_grid[val_month_idx]
     log_v_at_price = log_v_grid[price_month_idx]
@@ -296,7 +300,9 @@ def fit_bayesian_dilution_prior(
             f"got {len(prices)} prices, {len(valuations)} valuations"
         )
 
-    origin = min(obs.observed_at for obs in [*prices, *valuations])
+    # prices/valuations are distinct StrictModel subclasses; their join widens to the common base
+    # (no `observed_at`), so min over each typed list separately keeps the attribute access typed.
+    origin = min(min(obs.observed_at for obs in prices), min(obs.observed_at for obs in valuations))
     price_t = np.array([_months_since(obs.observed_at, origin) for obs in prices], dtype=np.float64)
     price_y = np.array([np.log(obs.price_usd_per_share) for obs in prices], dtype=np.float64)
     price_s = np.array([obs.uncertainty_log_sigma for obs in prices], dtype=np.float64)
