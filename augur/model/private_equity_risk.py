@@ -42,6 +42,24 @@ class PublicMarketCdfAnchor(FrozenModel):
     cumulative_probability: float = Field(ge=0.0, lt=1.0)
 
 
+class ValuationDriftScaleReversion(FrozenModel):
+    """Scale-dependent mean-reverting drift for V(t) (M2.2-D).
+
+    The monthly log-drift declines from `mu_young` (when small) toward the issuer's
+    `valuation_monthly_log_return_mu` (= `mu_mature`, the asymptote) as the realized log
+    enterprise value `s = log V(t)` grows past `log_value_onset_usd`, over a `log_value_scale`
+    e-folding in log-value. All four come as a unit (this whole submodel is opt-in), so there is
+    no half-set invalid state. `mu_young >= mu_mature` is enforced by the issuer validator (the
+    young rate is the hot end; reversion is downward).
+    """
+
+    monthly_log_return_mu_young: float = Field(description="Hot drift when the company is small (s <= onset).")
+    log_value_onset_usd: float = Field(
+        gt=0, description="Log enterprise value at which reversion BEGINS; below it, drift ~ mu_young."
+    )
+    log_value_scale: float = Field(gt=0, description="e-folding of the excess drift in log-value units past the onset.")
+
+
 class PrivateEquityRiskIssuerConfig(FrozenModel):
     """Issuer-level prior parameters for the generic PE realization-risk sampler.
 
@@ -128,7 +146,29 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     `shares_outstanding_initial`.
     """
     valuation_monthly_log_return_mu: float = 0.0
-    """Monthly log-space drift of V(t). Only meaningful when the channel is on."""
+    """Monthly log-space drift of V(t). Only meaningful when the channel is on.
+
+    With `valuation_drift_scale_reversion` unset this is the CONSTANT monthly drift (legacy
+    behavior). With it set, this is the LONG-RUN MATURE drift `mu_mature` that the
+    scale-dependent drift reverts toward as the company grows large.
+    """
+    valuation_drift_scale_reversion: ValuationDriftScaleReversion | None = None
+    """Optional scale-dependent mean-reverting drift (M2.2-D).
+
+    When set, the monthly drift is a function of the realized company SIZE `s = log V(t)`
+    rather than a constant:
+
+        mu_V(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)
+
+    with `mu_mature = valuation_monthly_log_return_mu`. A small company (`s <= s_onset`) grows
+    at `mu_young`; a large one reverts toward `mu_mature`, and keeps maturing as it grows. This
+    makes V(t) a genuine SDE (drift depends on the realized level), so the sampler integrates it
+    month by month. It is data-driven (the boom is tamed because the company is observably large
+    NOW, not by a calendar prior) and self-correcting per rollout. `None` => constant drift,
+    byte-identical to the legacy single-drift path. See augur/plans/prediction_market_calibration.md
+    (M2.2-D) for the empirical grounding (firm-growth scaling laws; conservative mu_mature ~
+    S&P 100-yr CAGR).
+    """
     valuation_monthly_log_return_sigma: float = Field(default=0.0, ge=0.0)
     """Monthly log-space volatility of V(t). Only meaningful when the channel is on."""
     valuation_student_t_nu: float = Field(default=5.0, gt=2.0)
@@ -183,6 +223,15 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
         # deliberately unguarded.
         if (self.current_valuation_usd is None) != (self.shares_outstanding_initial is None):
             raise ValueError("current_valuation_usd and shares_outstanding_initial must be set together or both unset")
+        # Scale-reversion (M2.2-D) reverts the drift DOWNWARD from a hot young rate toward the
+        # mature asymptote `valuation_monthly_log_return_mu`, so the young rate must be the higher
+        # end. (Equality is allowed: it degenerates to constant drift.)
+        reversion = self.valuation_drift_scale_reversion
+        if reversion is not None and reversion.monthly_log_return_mu_young < self.valuation_monthly_log_return_mu:
+            raise ValueError(
+                "valuation_drift_scale_reversion.monthly_log_return_mu_young must be >= the mature "
+                "valuation_monthly_log_return_mu (reversion is downward toward maturity)"
+            )
         return self
 
     @property
@@ -675,16 +724,38 @@ def _sample_latent_marks_vectorized(
     return paths
 
 
+def _scale_reverting_drift(
+    log_value: FloatMatrix, *, mu_mature: float, reversion: ValuationDriftScaleReversion
+) -> FloatMatrix:
+    """Monthly log-drift as a function of realized log enterprise value `s = log V`.
+
+        mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)
+
+    Vectorized over the rollout axis; `log_value` is the per-rollout `s` at a single timestep.
+    Below the onset the company gets the full hot `mu_young`; above it, drift e-folds toward the
+    mature asymptote as it grows.
+    """
+
+    excess = reversion.monthly_log_return_mu_young - mu_mature
+    over_onset = np.maximum(0.0, log_value - reversion.log_value_onset_usd)
+    return mu_mature + excess * np.exp(-over_onset / reversion.log_value_scale)
+
+
 def _sample_company_valuation_vectorized(
     issuer: PrivateEquityRiskIssuerConfig, *, valuation_seeds: tuple[int, ...], horizon_months: int
 ) -> FloatMatrix:
     """Vectorized company-valuation V(t) sampler: returns (R, horizon_months + 1).
 
-    Mirrors `_sample_latent_marks_vectorized` EXACTLY (same log-space Student-t
-    random walk) but anchored at `current_valuation_usd` and driven by the
+    Log-space Student-t random walk anchored at `current_valuation_usd`, driven by the
     valuation-specific RW params off an independent seed stream. Column 0 equals
-    `current_valuation_usd` for every rollout. Only called when the valuation
-    channel is enabled, so `current_valuation_usd` is not None.
+    `current_valuation_usd` for every rollout. Only called when the valuation channel is
+    enabled, so `current_valuation_usd` is not None.
+
+    With constant drift this is a vectorized `cumsum` (same as the latent-mark RW). With
+    scale-dependent reversion on, the drift at each step depends on the realized `log V` at that
+    step, so V(t) is a genuine SDE and we integrate month by month (still vectorized across the
+    rollout axis). The shocks are drawn identically in both branches, so turning reversion off
+    is byte-identical to the constant-drift path.
     """
 
     # Caller only invokes this when the channel is on, so V0 is set; assert to narrow for mypy.
@@ -698,7 +769,23 @@ def _sample_company_valuation_vectorized(
     rng = np.random.default_rng(_seed_from_rollout_seeds(valuation_seeds))
     shocks = rng.standard_t(df=issuer.valuation_student_t_nu, size=(rollout_count, horizon_months))
     shocks *= issuer.valuation_monthly_log_return_sigma
-    log_path = math.log(current_valuation_usd) + np.cumsum(issuer.valuation_monthly_log_return_mu + shocks, axis=1)
+
+    log_v0 = math.log(current_valuation_usd)
+    reversion = issuer.valuation_drift_scale_reversion
+    if reversion is None:
+        # Constant drift: closed-form cumulative sum (drift independent of the realized level).
+        log_path = log_v0 + np.cumsum(issuer.valuation_monthly_log_return_mu + shocks, axis=1)
+    else:
+        # Scale-dependent drift: integrate the SDE step-by-step. Each step's drift is evaluated at
+        # the realized log-value at the START of the step (explicit Euler), so the level reverts
+        # as the company grows. Vectorized across rollouts; the month loop is cheap (H ~ 120).
+        log_path = np.empty((rollout_count, horizon_months), dtype=np.float64)
+        log_v = np.full(rollout_count, log_v0, dtype=np.float64)
+        for m in range(horizon_months):
+            drift = _scale_reverting_drift(log_v, mu_mature=issuer.valuation_monthly_log_return_mu, reversion=reversion)
+            log_v = log_v + drift + shocks[:, m]
+            log_path[:, m] = log_v
+
     try:
         with np.errstate(over="raise", invalid="raise"):
             paths[:, 1:] = np.exp(log_path)

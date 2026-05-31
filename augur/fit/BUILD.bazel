@@ -240,6 +240,17 @@ py_library(
 )
 
 py_library(
+    name = "bayes_dilution",
+    srcs = ["bayes_dilution.py"],
+    deps = [
+        ":private_equity",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_library(
     name = "derive_dilution_prior_lib",
     srcs = ["derive_dilution_prior.py"],
     deps = [
@@ -261,6 +272,18 @@ py_test(
     srcs = ["test_dilution_prior.py"],
     deps = [
         ":dilution_prior",
+        ":private_equity",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bayes_dilution",
+    size = "large",
+    srcs = ["test_bayes_dilution.py"],
+    deps = [
+        ":bayes_dilution",
         ":private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

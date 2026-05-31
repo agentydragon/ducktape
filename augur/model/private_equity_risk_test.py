@@ -18,10 +18,12 @@ from augur.model.private_equity_risk import (
     PrivateEquityRiskIssuerConfig,
     PrivateEquityRiskProviderConfig,
     PublicMarketCdfAnchor,
+    ValuationDriftScaleReversion,
     _dilution_factor,
     _public_market_open_hazard_by_month,
     _sample_company_valuation_vectorized,
     _sample_issuer,
+    _scale_reverting_drift,
     _seed_from_rollout_seeds,
 )
 from augur.model.provider_config import ProviderConfig
@@ -455,21 +457,21 @@ def _valuation_issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
     the mark is the coupled V(t)/dilution machinery — keeps the assertions clean.
     """
 
-    return _issuer(
-        current_valuation_usd=1.0e11,
-        shares_outstanding_initial=1.0e9,
-        valuation_monthly_log_return_mu=0.02,
-        valuation_monthly_log_return_sigma=0.10,
-        valuation_student_t_nu=5.0,
+    defaults: dict[str, object] = {
+        "current_valuation_usd": 1.0e11,
+        "shares_outstanding_initial": 1.0e9,
+        "valuation_monthly_log_return_mu": 0.02,
+        "valuation_monthly_log_return_sigma": 0.10,
+        "valuation_student_t_nu": 5.0,
         # No legacy latent-mark drift/vol: when the channel is ON these are unused,
         # but keeping them inert makes the channel-OFF baseline below unambiguous.
-        monthly_log_return_mu=0.0,
-        monthly_log_return_sigma=0.0,
+        "monthly_log_return_mu": 0.0,
+        "monthly_log_return_sigma": 0.0,
         # Push tender/admin precursors past the horizon so mark[:,0] and the coupled
         # path aren't perturbed by event-price noise in the first columns.
-        tender_interval_months_median=600.0,
-        **updates,
-    )
+        "tender_interval_months_median": 600.0,
+    }
+    return _issuer(**{**defaults, **updates})
 
 
 def test_valuation_channel_off_by_default() -> None:
@@ -512,6 +514,109 @@ def test_valuation_channel_on_is_deterministic_under_fixed_seeds() -> None:
         a = first.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
         b = second.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=8)
         np.testing.assert_array_equal(a, b)
+
+
+# ---- M2.2-D: scale-dependent mean-reverting valuation drift -------------------------------
+
+
+def test_scale_reverting_drift_young_when_small_mature_when_large() -> None:
+    """`mu(s) = mu_mature + (mu_young - mu_mature) * exp(-max(0, s - s_onset) / s_scale)`."""
+
+    reversion = ValuationDriftScaleReversion(
+        monthly_log_return_mu_young=0.05,
+        log_value_onset_usd=math.log(1.0e10),  # reversion begins at $10B
+        log_value_scale=2.0,
+    )
+    # Below onset: full young drift.
+    small = np.array([math.log(1.0e9), math.log(5.0e9)])
+    np.testing.assert_allclose(_scale_reverting_drift(small, mu_mature=0.008, reversion=reversion), [0.05, 0.05])
+    # At onset exactly: still the full young rate (excess factor exp(0) == 1).
+    at_onset = np.array([math.log(1.0e10)])
+    np.testing.assert_allclose(_scale_reverting_drift(at_onset, mu_mature=0.008, reversion=reversion), [0.05])
+    # One e-folding above onset (s = onset + s_scale): excess (0.05-0.008) decays by 1/e.
+    one_efold = np.array([math.log(1.0e10) + 2.0])
+    expected = 0.008 + (0.05 - 0.008) / math.e
+    np.testing.assert_allclose(_scale_reverting_drift(one_efold, mu_mature=0.008, reversion=reversion), [expected])
+    # Many e-foldings above onset ($1e16 is ~7 e-foldings past $1e10 at s_scale=2): essentially
+    # fully reverted to mu_mature.
+    huge = np.array([math.log(1.0e16)])
+    assert _scale_reverting_drift(huge, mu_mature=0.008, reversion=reversion)[0] == pytest.approx(0.008, abs=1e-4)
+
+
+def test_scale_reversion_off_is_byte_identical_to_constant_drift() -> None:
+    """No reversion submodel ⇒ the fast constant-drift cumsum path, unchanged."""
+
+    seeds = (101, 102, 103, 104)
+    constant = _valuation_issuer(valuation_monthly_log_return_mu=0.03)
+    a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
+    # A second issuer with the same params re-samples identically (determinism guard).
+    b = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=36)
+    np.testing.assert_array_equal(a, b)
+
+
+def test_scale_reversion_degenerate_matches_constant_drift() -> None:
+    """`mu_young == mu_mature` makes the excess zero, so the SDE-integrated path equals the
+    constant-drift cumsum path exactly (same shocks, same drift every step)."""
+
+    seeds = (1, 2, 3, 4, 5)
+    constant = _valuation_issuer(valuation_monthly_log_return_mu=0.02)
+    degenerate = _valuation_issuer(
+        valuation_monthly_log_return_mu=0.02,
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.02,  # == mu_mature ⇒ no excess at any size
+            log_value_onset_usd=math.log(1.0e10),
+            log_value_scale=2.0,
+        ),
+    )
+    a = _sample_company_valuation_vectorized(constant, valuation_seeds=seeds, horizon_months=48)
+    b = _sample_company_valuation_vectorized(degenerate, valuation_seeds=seeds, horizon_months=48)
+    np.testing.assert_allclose(a, b, rtol=1e-12)
+
+
+def test_scale_reversion_curbs_long_horizon_growth_vs_constant_hot_drift() -> None:
+    """A hot CONSTANT drift compounds to an absurd 10y median; scale-reversion keeps the
+    near-term path (small company still hot) but tames the long horizon as V grows. The M2.2-D fix."""
+
+    seeds = tuple(range(1, 401))
+    horizon = 120
+    # Anchor both small ($1e9) so the young rate is active early.
+    hot_constant = _valuation_issuer(
+        current_valuation_usd=1.0e9, valuation_monthly_log_return_mu=0.05, valuation_monthly_log_return_sigma=0.04
+    )
+    reverting = _valuation_issuer(
+        current_valuation_usd=1.0e9,
+        valuation_monthly_log_return_mu=0.008,  # mature ~10%/yr
+        valuation_monthly_log_return_sigma=0.04,
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.05,  # same hot rate while small
+            log_value_onset_usd=math.log(1.0e10),
+            log_value_scale=2.0,
+        ),
+    )
+    v_hot = _sample_company_valuation_vectorized(hot_constant, valuation_seeds=seeds, horizon_months=horizon)
+    v_rev = _sample_company_valuation_vectorized(reverting, valuation_seeds=seeds, horizon_months=horizon)
+    v0 = 1.0e9
+    # Near term (month 3, still well below the $10B onset): the two track closely.
+    assert np.median(v_rev[:, 3]) / v0 == pytest.approx(np.median(v_hot[:, 3]) / v0, rel=0.20)
+    # Long horizon: the reverting path is materially smaller (it matured toward ~10%/yr as it
+    # grew, while the constant-hot path keeps compounding ~80%/yr). The gap widens with horizon.
+    assert np.median(v_rev[:, 120]) < 0.5 * np.median(v_hot[:, 120])
+    # And the constant-hot path is itself absurdly large at 10y (the failure mode reversion fixes).
+    assert np.median(v_hot[:, 120]) / v0 > 100.0
+
+
+def test_scale_reversion_validator_rejects_young_below_mature() -> None:
+    """Reversion is downward: a young drift below the mature asymptote is rejected."""
+
+    with pytest.raises(ValidationError, match="mu_young must be >= the mature"):
+        _valuation_issuer(
+            valuation_monthly_log_return_mu=0.05,
+            valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+                monthly_log_return_mu_young=0.01,  # below mature ⇒ invalid
+                log_value_onset_usd=math.log(1.0e10),
+                log_value_scale=2.0,
+            ),
+        )
 
 
 def _deterministic_dilution_factor(*, rate: float, horizon_months: int) -> np.ndarray:
