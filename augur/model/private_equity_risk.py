@@ -921,7 +921,7 @@ def _sample_company_valuation_vectorized(
 
 
 def _scale_reverting_rate(
-    log_value: FloatMatrix, *, rate_mature: float, reversion: ValuationDriftScaleReversion
+    log_value: FloatMatrix, *, rate_mature: float | FloatMatrix, reversion: ValuationDriftScaleReversion
 ) -> FloatMatrix:
     """Generic scale-reverting rate: `rate(s) = rate_mature + (rate_young - rate_mature) *
     exp(-max(0, s - s_onset) / s_scale)`, where `rate_young = reversion.monthly_log_return_mu_young`.
@@ -1025,6 +1025,7 @@ def _sample_company_valuation_and_shares_with_rounds_vectorized(
 
     for m in range(horizon_months):
         # 1) V random walk between events (explicit Euler with scale-reverting drift if set).
+        drift_v: FloatMatrix | float
         if v_reversion is None:
             drift_v = issuer.valuation_monthly_log_return_mu
         else:
@@ -1089,7 +1090,8 @@ def _public_market_marginal_cdf(issuer: PrivateEquityRiskIssuerConfig, *, horizo
         if issuer.annual_public_market_probability <= 0.0:
             return np.zeros_like(months)
         monthly_hazard = 1.0 - (1.0 - issuer.annual_public_market_probability) ** (1.0 / 12.0)
-        return 1.0 - (1.0 - monthly_hazard) ** months
+        flat_tail: FloatMatrix = 1.0 - (1.0 - monthly_hazard) ** months
+        return flat_tail
 
     # Piecewise-constant monthly hazard between anchors that reproduces the CDF exactly,
     # then a flat tail at `annual_public_market_probability` past the last anchor.
