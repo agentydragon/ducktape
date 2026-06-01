@@ -5,28 +5,29 @@ package(default_visibility = ["//visibility:public"])
 
 js_openapi_zod(
     name = "schema_zod",
+    out = "api/schema.zod.ts",
     generator = "//augur/api:export_schema_bin",
 )
 
 js_library(
     name = "casing",
-    srcs = ["casing.js"],
+    srcs = ["casing.ts"],
 )
 
 js_library(
     name = "frame",
-    srcs = ["frame.js"],
+    srcs = ["frame.ts"],
 )
 
 js_library(
     name = "chart",
-    srcs = ["chart.js"],
+    srcs = ["chart.ts"],
     deps = [":format"],
 )
 
 js_library(
     name = "controls",
-    srcs = ["controls.jsx"],
+    srcs = ["controls.tsx"],
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -35,5 +36,5 @@ js_library(
 
 js_library(
     name = "format",
-    srcs = ["format.js"],
+    srcs = ["format.ts"],
 )

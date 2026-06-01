@@ -266,6 +266,18 @@ def page(browser: Browser) -> Iterator[Page]:
             context.close()
 
 
+@pytest.fixture
+def page_errors(page: Page) -> list[str]:
+    """Uncaught JS exceptions thrown in the page during a test.
+
+    esbuild bundles undefined-variable and bad-prop bugs without complaint, and a screenshot diff
+    won't always surface a render-time `ReferenceError` (the crashing subtree may be off the tested
+    path). Collecting `pageerror` events lets the visual test fail loudly on any uncaught exception."""
+    errors: list[str] = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    return errors
+
+
 def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
     # Pin the `sticky top-0` header to the top of the full-page capture: Playwright paints a
     # sticky element at its last on-screen position, so a mid-page scroll (e.g. after a rollout
@@ -301,10 +313,14 @@ def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffi
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
-def test_augur_visual_golden(page: Page, augur_server: str, tmp_path: Path, case: VisualCase) -> None:
+def test_augur_visual_golden(
+    page: Page, page_errors: list[str], augur_server: str, tmp_path: Path, case: VisualCase
+) -> None:
     undeclared_dir = undeclared_outputs_dir()
     first_path = _render_case(page, augur_server, case, tmp_path, "first")
     second_path = _render_case(page, augur_server, case, tmp_path, "second")
+    if page_errors:
+        raise AssertionError(f"{case.name}: uncaught page error(s) during render:\n" + "\n".join(page_errors))
     if first_path.read_bytes() != second_path.read_bytes():
         shutil.copy(first_path, undeclared_dir / f"{case.name}.first.png")
         shutil.copy(second_path, undeclared_dir / f"{case.name}.second.png")

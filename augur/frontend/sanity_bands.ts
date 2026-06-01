@@ -5,7 +5,7 @@
 // expected range vs the observed value(s), same shape as the model-vs-market table but checked
 // against this run. Kept React-free so the sort/summary/format logic is unit-testable.
 
-import { fmtPct } from "./lib/format.js";
+import { fmtPct } from "./lib/format.ts";
 
 // `kind`s whose `observed`/`expected` numbers are probabilities in [0,1]; everything else is a
 // unitless ratio (percentile_range/percentile_bound/anchor on a ratio check) or a count

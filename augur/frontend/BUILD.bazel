@@ -1,9 +1,11 @@
 load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -21,7 +23,7 @@ package(default_visibility = ["//visibility:public"])
 
 js_library(
     name = "input_helpers",
-    srcs = ["input_helpers.js"],
+    srcs = ["input_helpers.ts"],
     deps = [
         "//augur/frontend/lib:format",
         "//augur/frontend/lib:frame",
@@ -30,7 +32,7 @@ js_library(
 
 js_library(
     name = "client",
-    srcs = ["client.js"],
+    srcs = ["client.ts"],
     deps = [
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:schema_zod",
@@ -39,7 +41,7 @@ js_library(
 
 js_library(
     name = "data_helpers",
-    srcs = ["data_helpers.js"],
+    srcs = ["data_helpers.ts"],
     deps = [
         ":input_helpers",
         "//augur/frontend/lib:format",
@@ -49,7 +51,7 @@ js_library(
 
 js_library(
     name = "hooks",
-    srcs = ["hooks.js"],
+    srcs = ["hooks.ts"],
     deps = [
         ":data_helpers",
         "//:node_modules/react",
@@ -58,7 +60,7 @@ js_library(
 
 js_library(
     name = "sanity_bands",
-    srcs = ["sanity_bands.js"],
+    srcs = ["sanity_bands.ts"],
     deps = ["//augur/frontend/lib:format"],
 )
 
@@ -66,13 +68,13 @@ js_library(
 
 js_library(
     name = "header",
-    srcs = ["header.jsx"],
+    srcs = ["header.tsx"],
     deps = ["//:node_modules/react"],
 )
 
 js_library(
     name = "skeleton",
-    srcs = ["skeleton.jsx"],
+    srcs = ["skeleton.tsx"],
     deps = [
         ":header",
         "//:node_modules/react",
@@ -81,7 +83,7 @@ js_library(
 
 js_library(
     name = "events_panel",
-    srcs = ["events_panel.jsx"],
+    srcs = ["events_panel.tsx"],
     deps = [
         ":data_helpers",
         "//:node_modules/react",
@@ -91,7 +93,7 @@ js_library(
 
 js_library(
     name = "fan_chart",
-    srcs = ["fan_chart.jsx"],
+    srcs = ["fan_chart.tsx"],
     deps = [
         ":data_helpers",
         ":input_helpers",
@@ -103,7 +105,7 @@ js_library(
 
 js_library(
     name = "histogram",
-    srcs = ["histogram.jsx"],
+    srcs = ["histogram.tsx"],
     deps = [
         ":data_helpers",
         ":input_helpers",
@@ -115,7 +117,7 @@ js_library(
 
 js_library(
     name = "metric_table",
-    srcs = ["metric_table.jsx"],
+    srcs = ["metric_table.tsx"],
     deps = [
         ":data_helpers",
         ":input_helpers",
@@ -127,7 +129,7 @@ js_library(
 
 js_library(
     name = "forms",
-    srcs = ["forms.jsx"],
+    srcs = ["forms.tsx"],
     deps = [
         ":data_helpers",
         ":header",
@@ -142,7 +144,7 @@ js_library(
 
 js_library(
     name = "calibration",
-    srcs = ["calibration.jsx"],
+    srcs = ["calibration.tsx"],
     deps = [
         ":client",
         ":data_helpers",
@@ -158,7 +160,7 @@ js_library(
 
 js_library(
     name = "budget",
-    srcs = ["budget.jsx"],
+    srcs = ["budget.tsx"],
     deps = [
         ":client",
         "//:node_modules/@mantine/core",
@@ -169,7 +171,7 @@ js_library(
 
 js_library(
     name = "app",
-    srcs = ["app.jsx"],
+    srcs = ["app.tsx"],
     deps = [
         ":budget",
         ":calibration",
@@ -194,7 +196,7 @@ js_library(
 
 js_library(
     name = "main_lib",
-    srcs = ["main.jsx"],
+    srcs = ["main.tsx"],
     deps = [
         ":app",
         "//:node_modules/react",
@@ -207,7 +209,7 @@ esbuild(
     config = {
         "jsx": "automatic",
     },
-    entry_point = "main.jsx",
+    entry_point = "main.tsx",
     format = "esm",
     output = "dist/main.js",
     platform = "browser",
@@ -222,23 +224,23 @@ esbuild(
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
-        "app.jsx",
-        "budget.jsx",
-        "calibration.jsx",
-        "client.js",
-        "data_helpers.js",
-        "events_panel.jsx",
-        "fan_chart.jsx",
-        "forms.jsx",
-        "header.jsx",
-        "histogram.jsx",
-        "hooks.js",
+        "app.tsx",
+        "budget.tsx",
+        "calibration.tsx",
+        "client.ts",
+        "data_helpers.ts",
+        "events_panel.tsx",
+        "fan_chart.tsx",
+        "forms.tsx",
+        "header.tsx",
+        "histogram.tsx",
+        "hooks.ts",
         "index.html",
-        "input_helpers.js",
-        "main.jsx",
-        "metric_table.jsx",
-        "sanity_bands.js",
-        "skeleton.jsx",
+        "input_helpers.ts",
+        "main.tsx",
+        "metric_table.tsx",
+        "sanity_bands.ts",
+        "skeleton.tsx",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:controls",
@@ -347,15 +349,39 @@ build_test(
     ],
 )
 
-# -- JS unit tests --------------------------------------------------------------
+# -- Type-check + unit tests ----------------------------------------------------
 
-js_test(
-    name = "sanity_bands_test",
-    data = [
-        ":sanity_bands",
-        "//augur/frontend/lib:format",
+# Full TypeScript type-check over the app (the hard correctness gate). `tsc --noEmit`
+# resolves free identifiers and prop shapes that esbuild bundling silently ignores
+# (e.g. a component referencing an undestructured prop).
+tsc_bin.tsc_test(
+    name = "tsc_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.json",
     ],
-    entry_point = "sanity_bands.test.mjs",
+    chdir = package_name(),
+    data = [
+        "sanity_bands.test.ts",
+        "tsconfig.json",
+        ":main_lib",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
+    tags = ["lint"],
+)
+
+vitest_bin.vitest_test(
+    name = "sanity_bands_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "sanity_bands.test.ts",
+        "vitest.config.ts",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
 )
 
 filegroup(

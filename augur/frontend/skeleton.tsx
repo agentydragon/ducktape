@@ -1,8 +1,8 @@
 import React from "react";
-import { AugurHeader } from "./header.jsx";
+import { AugurHeader } from "./header.tsx";
 
-function Skeleton({ className }) {
-  return <div className={`animate-pulse rounded bg-slate-200 dark:bg-slate-800 ${className}`} />;
+function Skeleton({ className, style }: { className: string; style?: React.CSSProperties }) {
+  return <div className={`animate-pulse rounded bg-slate-200 dark:bg-slate-800 ${className}`} style={style} />;
 }
 
 export function RolloutResultsSkeleton() {

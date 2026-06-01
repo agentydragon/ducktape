@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
-import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.js";
-import { fmtUsd, fmtNumber } from "./lib/format.js";
+import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
+import { fmtUsd, fmtNumber } from "./lib/format.ts";
 
 // Buckets the user "consumes" cash through. Reimbursable rows already net against
 // their paired reimbursement bucket on the server, so we treat them like expenses here.

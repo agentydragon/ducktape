@@ -1,4 +1,4 @@
-import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format.js";
+import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format.ts";
 
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const LOG_SCALE_UNIT = 1;
@@ -103,7 +103,7 @@ function logFanChartAxis(values) {
     min -= pad;
     max += pad;
   }
-  const tickValues = new Set();
+  const tickValues = new Set<number>();
   if (min > 0) {
     for (const value of decadeTicksAscending(Math.max(min, 1), Math.max(max, 1))) tickValues.add(value);
   } else if (max < 0) {

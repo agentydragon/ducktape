@@ -7,20 +7,20 @@ import {
   fetchProductMetricFan,
   fetchProductPortfolio,
   fetchProductRollout,
-} from "./client.js";
-import { fmtNumber } from "./lib/format.js";
-import { fmtMetricValue } from "./lib/chart.js";
+} from "./client.ts";
+import { fmtNumber } from "./lib/format.ts";
+import { fmtMetricValue } from "./lib/chart.ts";
 
-import { MetricFanChart } from "./fan_chart.jsx";
-import { TerminalDistributionHistogram } from "./histogram.jsx";
-import { TerminalMetricTable } from "./metric_table.jsx";
-import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.jsx";
-import { ProductScenarioForm } from "./forms.jsx";
-import { CalibrationWorkspace } from "./calibration.jsx";
-import { BudgetWorkspace } from "./budget.jsx";
-import { AugurHeader, SharedControls } from "./header.jsx";
-import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.jsx";
-import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.js";
+import { MetricFanChart } from "./fan_chart.tsx";
+import { TerminalDistributionHistogram } from "./histogram.tsx";
+import { TerminalMetricTable } from "./metric_table.tsx";
+import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
+import { ProductScenarioForm } from "./forms.tsx";
+import { CalibrationWorkspace } from "./calibration.tsx";
+import { BudgetWorkspace } from "./budget.tsx";
+import { AugurHeader, SharedControls } from "./header.tsx";
+import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.tsx";
+import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.ts";
 import {
   METRIC_OPTIONS,
   productInputDefaults,
@@ -39,14 +39,14 @@ import {
   horizonMonthsDefault,
   clampHorizonMonths,
   metricScaleFromSearch,
-} from "./input_helpers.js";
+} from "./input_helpers.ts";
 import {
   metricFanRows,
   terminalPercentileValue,
   selectedRolloutMetricRows,
   selectedRolloutEvents,
   visibleMetricOptions,
-} from "./data_helpers.js";
+} from "./data_helpers.ts";
 
 // Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
 // (omitted for the default), following the same replaceState pattern as the product `?s=` state.
@@ -314,6 +314,8 @@ function ProductProjectionWorkspace({
   onChangeMetricScale,
   currencyDisplay,
   onChangeCurrencyDisplay,
+  settingsOpen,
+  onChangeSettingsOpen,
 }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -569,6 +571,8 @@ function CalibrationAppSurface({
   onChangeMetricScale,
   currencyDisplay,
   onChangeCurrencyDisplay,
+  settingsOpen,
+  onChangeSettingsOpen,
 }) {
   return (
     <div

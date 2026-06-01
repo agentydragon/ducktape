@@ -1,4 +1,4 @@
-import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
+import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.ts";
 import {
   zBootstrapResponse,
   zBudgetSnapshotRequest,
@@ -13,7 +13,9 @@ import {
   zProductPortfolioResponse,
   zRolloutRequest,
   zRolloutResponse,
-} from "./lib/api/schema.zod.mjs";
+} from "./lib/api/schema.zod.ts";
+
+type FetchOptions = { signal?: AbortSignal };
 
 function describeErrorBody(body) {
   if (!body) return "";
@@ -54,43 +56,43 @@ async function postJson(path, body, signal) {
   );
 }
 
-export async function fetchAugurBootstrap({ signal } = {}) {
+export async function fetchAugurBootstrap({ signal }: FetchOptions = {}) {
   return camelizeObjectKeys(zBootstrapResponse.parse(await getJson("/api/bootstrap", signal)));
 }
 
-export async function fetchAugurDeployment({ signal } = {}) {
+export async function fetchAugurDeployment({ signal }: FetchOptions = {}) {
   return camelizeObjectKeys(zDeploymentInfo.parse(await getJson("/api/deployment", signal)));
 }
 
-export async function fetchProductPortfolio({ signal } = {}) {
+export async function fetchProductPortfolio({ signal }: FetchOptions = {}) {
   return camelizeObjectKeys(zProductPortfolioResponse.parse(await getJson("/api/product/portfolio", signal)));
 }
 
-export async function fetchProductMetricFan(metricFanRequest, { signal } = {}) {
+export async function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions = {}) {
   const request = zMetricFanRequest.parse(decamelizeObjectKeys(metricFanRequest));
   return camelizeObjectKeys(
     zMetricFanResponse.parse(await postJson("/api/product/projections/metric_fan", request, signal))
   );
 }
 
-export async function fetchProductRollout(rolloutRequest, { signal } = {}) {
+export async function fetchProductRollout(rolloutRequest, { signal }: FetchOptions = {}) {
   const request = zRolloutRequest.parse(decamelizeObjectKeys(rolloutRequest));
   return camelizeObjectKeys(
     zRolloutResponse.parse(await postJson("/api/product/projections/rollout", request, signal))
   );
 }
 
-export async function fetchCalibrationRun(calibrationRunRequest, { signal } = {}) {
+export async function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOptions = {}) {
   const request = zCalibrationRunRequest.parse(decamelizeObjectKeys(calibrationRunRequest));
   return camelizeObjectKeys(zCalibrationRunResponse.parse(await postJson("/api/calibration/run", request, signal)));
 }
 
-export async function fetchBudgetSnapshot(budgetSnapshotRequest, { signal } = {}) {
+export async function fetchBudgetSnapshot(budgetSnapshotRequest, { signal }: FetchOptions = {}) {
   const request = zBudgetSnapshotRequest.parse(decamelizeObjectKeys(budgetSnapshotRequest));
   return camelizeObjectKeys(zBudgetSnapshotResponse.parse(await postJson("/api/budget/snapshot", request, signal)));
 }
 
-export async function fetchBudgetTransactions(budgetTransactionsRequest, { signal } = {}) {
+export async function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
   const request = zBudgetTransactionsRequest.parse(decamelizeObjectKeys(budgetTransactionsRequest));
   return camelizeObjectKeys(
     zBudgetTransactionsResponse.parse(await postJson("/api/budget/transactions", request, signal))

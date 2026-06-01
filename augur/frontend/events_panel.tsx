@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { fmtNumber } from "./lib/format.js";
-import { fmtMetricValue } from "./lib/chart.js";
-import { useCurrencyDisplay } from "./hooks.js";
+import { fmtNumber } from "./lib/format.ts";
+import { fmtMetricValue } from "./lib/chart.ts";
+import { useCurrencyDisplay } from "./hooks.ts";
 import {
   ROLLOUT_EVENT_COLORS,
   ROLLOUT_EVENT_KIND_ORDER,
@@ -12,7 +12,7 @@ import {
   eventDetailText,
   eventColor,
   eventAmount,
-} from "./data_helpers.js";
+} from "./data_helpers.ts";
 
 export function SelectedRolloutEventsPanel({
   events,

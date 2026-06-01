@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 
-import { fetchCalibrationRun } from "./client.js";
-import { fmtPct } from "./lib/format.js";
-import { MetricFanChart } from "./fan_chart.jsx";
-import { RolloutResultsSkeleton } from "./skeleton.jsx";
-import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.js";
-import { markFanRows } from "./data_helpers.js";
-import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.js";
+import { fetchCalibrationRun } from "./client.ts";
+import { fmtPct } from "./lib/format.ts";
+import { MetricFanChart } from "./fan_chart.tsx";
+import { RolloutResultsSkeleton } from "./skeleton.tsx";
+import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.ts";
+import { markFanRows } from "./data_helpers.ts";
+import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.ts";
 
 // `chartValue` ending in `Usd` makes the shared `MetricFanChart` axis/tooltip format these
 // issuer channels as currency.

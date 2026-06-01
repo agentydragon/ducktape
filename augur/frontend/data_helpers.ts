@@ -1,6 +1,6 @@
-import { rowsFrom } from "./lib/frame.js";
-import { fmtNumber, fmtUsd, fmtUsdCompact } from "./lib/format.js";
-import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers.js";
+import { rowsFrom } from "./lib/frame.ts";
+import { fmtNumber, fmtUsd, fmtUsdCompact } from "./lib/format.ts";
+import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers.ts";
 
 function cu(value, currencyDisplay) {
   return currencyDisplay === "compact" ? fmtUsdCompact(value) : fmtUsd(value);
@@ -132,7 +132,7 @@ export function markFanRows(markFan) {
       year: Number(month.monthIndex) / 12,
       values: new Map(
         Object.entries(month.values ?? {})
-          .map(([percentile, value]) => [Number(percentile), Number(value)])
+          .map(([percentile, value]) => [Number(percentile), Number(value)] as [number, number])
           .filter(([percentile, value]) => Number.isFinite(percentile) && Number.isFinite(value))
       ),
     }))

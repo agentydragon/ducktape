@@ -140,7 +140,7 @@ export function SharedControls({
   return (
     <details
       open={settingsOpen}
-      onToggle={(e) => onChangeSettingsOpen(e.target.open)}
+      onToggle={(e) => onChangeSettingsOpen(e.currentTarget.open)}
       className="augur-card [&_summary::-webkit-details-marker]:hidden"
     >
       <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2 px-4 py-3">

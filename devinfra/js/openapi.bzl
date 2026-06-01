@@ -11,6 +11,7 @@ They differ in what they run on that JSON:
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "bin")
 load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
 
@@ -72,8 +73,11 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
       1. Run *generator* to produce an OpenAPI JSON document.
       2. ``@hey-api/openapi-ts --plugins zod`` emits ``<out_dir>/zod.gen.ts``
          with one ``export const z<Name>`` per OpenAPI component schema.
-      3. Strip TypeScript syntax so Node can load the file as ``.mjs``
-         (so JS tests can import the schemas without a bundler).
+      3. Emit *out*: a ``.ts``/``.mts`` *out* keeps the generated TypeScript
+         verbatim (so TypeScript consumers retain Zod's inferred types end to
+         end; the file goes through their bundler/type-checker anyway), while a
+         ``.mjs`` *out* strips the TypeScript syntax so Node/pure-JS consumers
+         can import it without a bundler.
 
     Hey-api's Zod 4 plugin handles ``"const"`` discriminators, two-arg
     ``z.record``, and ``.extend({ <key>: z.literal(...) })`` overrides for
@@ -82,8 +86,9 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
     Args:
         name:       Name of the output ``js_library`` target.
         generator:  Label of the executable that writes OpenAPI JSON to stdout.
-        out:        Package-relative path for the generated ``.mjs`` file.
-                    Defaults to ``api/schema.zod.mjs``.
+        out:        Package-relative path for the generated schema module. A
+                    ``.ts``/``.mts`` suffix keeps TypeScript; any other suffix
+                    (default ``api/schema.zod.mjs``) strips types to JavaScript.
         visibility: Visibility of the output ``js_library``.
     """
     json_out = _openapi_json_genrule(name, generator)
@@ -110,18 +115,27 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
         tool = ":_" + name + "_openapi_ts_bin",
     )
 
-    js_run_binary(
-        name = "_" + name + "_strip_types",
-        srcs = [":_" + name + "_generate_ts"],
-        outs = [out],
-        args = [gen_ts, out],
-        chdir = native.package_name(),
-        tool = "//devinfra/js:strip_ts_types",
-    )
+    if out.endswith(".ts") or out.endswith(".mts"):
+        copy_file(
+            name = "_" + name + "_emit",
+            src = ":_" + name + "_generate_ts",
+            out = out,
+        )
+        emit = ":_" + name + "_emit"
+    else:
+        js_run_binary(
+            name = "_" + name + "_strip_types",
+            srcs = [":_" + name + "_generate_ts"],
+            outs = [out],
+            args = [gen_ts, out],
+            chdir = native.package_name(),
+            tool = "//devinfra/js:strip_ts_types",
+        )
+        emit = ":_" + name + "_strip_types"
 
     js_library(
         name = name,
-        srcs = [":_" + name + "_strip_types"],
+        srcs = [emit],
         tags = ["no-lint"],
         visibility = visibility,
         deps = ["//:node_modules/zod"],

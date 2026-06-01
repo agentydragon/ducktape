@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useRef } from "react";
-import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
-import { fmtNumber } from "./lib/format.js";
-import { FAN_PERCENTILES } from "./input_helpers.js";
-import { useCurrencyDisplay } from "./hooks.js";
+import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
+import { fmtNumber } from "./lib/format.ts";
+import { FAN_PERCENTILES } from "./input_helpers.ts";
+import { useCurrencyDisplay } from "./hooks.ts";
 import {
   FAILED_ROLLOUT_COLOR,
   SELECTED_ROLLOUT_COLOR,
@@ -12,7 +12,7 @@ import {
   quantile,
   terminalMetricValue,
   rolloutStatusText,
-} from "./data_helpers.js";
+} from "./data_helpers.ts";
 
 export function TerminalDistributionHistogram({
   summaries,

@@ -17,6 +17,7 @@ const projectGlobs = [
   "x/agent_server/web/src/**",
   "x/rspcache/admin_ui/src/**",
   "airlock/frontend/**",
+  "augur/frontend/**",
 ];
 
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
@@ -104,6 +105,15 @@ export default [
   // RSPCache admin UI: React/JSX
   {
     files: ["x/rspcache/admin_ui/src/**/*.{ts,tsx}"],
+    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
+    plugins: { react },
+    settings: { react: { version: "18.3" } },
+    rules: { "react/react-in-jsx-scope": "off" },
+  },
+
+  // Augur frontend: React/JSX
+  {
+    files: ["augur/frontend/**/*.{ts,tsx}"],
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
     plugins: { react },
     settings: { react: { version: "18.3" } },

@@ -1,7 +1,7 @@
 import React from "react";
-import { fmtMetricValue } from "./lib/chart.js";
-import { FAN_PERCENTILES } from "./input_helpers.js";
-import { useCurrencyDisplay } from "./hooks.js";
+import { fmtMetricValue } from "./lib/chart.ts";
+import { FAN_PERCENTILES } from "./input_helpers.ts";
+import { useCurrencyDisplay } from "./hooks.ts";
 import {
   TABLE_NUMERIC_CELL,
   TABLE_NUMERIC_HEADER,
@@ -9,7 +9,7 @@ import {
   SELECTED_COL_CELL,
   rolloutStatusText,
   terminalMetricTableRows,
-} from "./data_helpers.js";
+} from "./data_helpers.ts";
 
 export function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
