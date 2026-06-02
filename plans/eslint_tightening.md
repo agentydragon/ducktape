@@ -60,14 +60,18 @@ hard errors in this repo — TS/Svelte should match. Dead code shouldn't build.
 Replace the two hand-picked `@typescript-eslint/*` rules with the recommended
 set (keep `consistent-type-imports`, which isn't in it). Adds, among others:
 
-- `ban-ts-comment` — flags the `@ts-ignore` comments in `x/agent_server/web`
-  (→ convert to `@ts-expect-error` + description)
-- `no-explicit-any`, `no-empty-object-type`, `no-misused-new`
+- `ban-ts-comment`, `no-explicit-any`, `no-empty-object-type`, `no-misused-new`
 
-**Note:** the repo imports the _plugin_ (`@typescript-eslint/eslint-plugin`),
-whose `.configs.recommended` is legacy-eslintrc shape. The clean flat-config
-path is adding the `typescript-eslint` meta-package and spreading
-`tseslint.configs.recommended` — a small dep addition.
+**✅ Done (#1797).** Implementation note: adding the `typescript-eslint`
+meta-package is a trap — it bundles its own plugin copy at a newer patch (8.60
+vs the repo's 8.58), tripping `aspect_rules_js`'s public-hoist conflict (two
+versions hoisted to `/node_modules/@typescript-eslint/eslint-plugin`), and once
+that hit the lockfile the build wedged. Instead we spread the already-present
+plugin's eslintrc `recommended.rules` (self-contained: TS rules + the
+core-rule-off pairs it supersedes) — **zero dependency/lockfile change**. Only 8
+violations surfaced (7 `no-explicit-any` + 1 `no-unused-expressions`, all in the
+props frontend; `ban-ts-comment` does not fire on `@ts-ignore` inside `.svelte`
+`<script>` blocks). Follow-up: dropped the now-redundant `no-unused-vars: off`.
 
 ### P3 — Type-aware linting + `no-floating-promises` — High effort, High value (spike first)
 
@@ -111,10 +115,15 @@ promote; quick count + fix.
 
 ## Status
 
-- [ ] P1 — promote dead-code warns → errors
-- [ ] P2 — typescript-eslint recommended
+- [x] P1 — promote dead-code warns → errors (#1796)
+- [x] P2 — typescript-eslint recommended (#1797)
 - [ ] P3 — type-aware linting spike + `no-floating-promises`
 - [ ] P4 — de-dupe / standardize config
 - [ ] P5 — `no-console`
+
+Follow-up cleanups (post-P2): dropped the redundant `no-unused-vars: off`, and
+loosened the eslint-family dep pins to major-floor carets — safe because ESLint
+is single-sourced via Bazel (see "Version skew" above), so there's no second
+copy to drift against.
 
 Tombstone this plan once P1–P5 are resolved (applied or documented-as-rejected).
