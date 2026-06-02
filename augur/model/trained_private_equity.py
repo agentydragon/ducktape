@@ -17,6 +17,7 @@ from augur.model.private_equity_protocol import (
     observed_private_equity_mark_matrix,
 )
 from augur.model.schemas import FrozenModel
+from augur.model.series import IssuerId, LevelSeriesKey
 from augur.model.series_model import derive_stream_rollout_seeds
 
 
@@ -79,6 +80,12 @@ class TrainedPrivateEquityModel(FrozenModel):
         except Exception as error:
             raise ValueError(f"failed to load trained private-equity model {path}: {error}") from error
         return cls(artifact=artifact)
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset({IssuerId(self.artifact.issuer_id)})
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         issuer = self.artifact.issuer_id

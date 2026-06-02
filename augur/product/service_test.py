@@ -18,6 +18,7 @@ from augur.model.series import (
     HomeValueKey,
     InflationKey,
     IssuerId,
+    LevelSeriesKey,
     LocationId,
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -75,6 +76,12 @@ class CountingModel:
     inner: Sampler
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return self.inner.emittable_level_keys()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return self.inner.emittable_private_equity_issuers()
+
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
         return self.inner.sample(request)
@@ -83,6 +90,15 @@ class CountingModel:
 @dataclass
 class MissingRequiredExogenousModel:
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        # The whole point of this fixture is to fail validation by emitting nothing while the
+        # request demands something — so it claims to emit "anything" (callers still drive the
+        # request keys directly and `validate_sample_satisfies_request` catches the empty bundle).
+        return frozenset()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)

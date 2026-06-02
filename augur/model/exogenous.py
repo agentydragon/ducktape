@@ -261,10 +261,24 @@ class Sampler(Protocol):
     Anything that can't be sampled is unusable in the augur sim. `Fittable`
     (offline trainer) and `Scorable` (metric battery) extend this protocol
     for models that additionally support training / scoring.
+
+    `emittable_level_keys` / `emittable_private_equity_issuers` advertise what the
+    sampler is configured to produce. Consumers (sample-sanity / calibration) partition
+    a list of desired series into modeled-vs-unmodeled by intersecting with these sets,
+    so a check against a series the deployment's model doesn't cover renders as
+    `unmodeled` instead of hard-failing the sample request.
     """
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         """Return all modeled external drivers as a sampled levels bundle."""
+        ...
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        """Level-series keys this sampler is configured to produce in a sampled bundle."""
+        ...
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        """PE issuers this sampler is configured to produce in `sampled.private_equity`."""
         ...
 
 

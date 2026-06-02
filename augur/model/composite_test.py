@@ -27,6 +27,12 @@ class _StaticSampler:
     pe_issuer_marks: dict[str, float] = field(default_factory=dict)
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.levels)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset(IssuerId(issuer_id) for issuer_id in self.pe_issuer_marks)
+
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
 

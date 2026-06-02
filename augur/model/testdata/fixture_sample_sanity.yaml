@@ -2,11 +2,6 @@ provider_config_path: fixture_exogenous_provider.yaml
 horizon_months: 12
 rollout_seed_start: 1301
 rollout_count: 512
-required_level_series:
-  - kind: inflation
-  - kind: sp500
-required_private_equity_issuers:
-  - private_company_a
 level_checks:
   - key: { kind: inflation }
     initial_value: 330.0

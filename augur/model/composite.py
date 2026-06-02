@@ -13,6 +13,7 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.series import IssuerId, LevelSeriesKey
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,12 @@ class CompositeModel:
     macro: Sampler
     private_equity: Sampler
     label: str = "composite"
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return self.macro.emittable_level_keys() | self.private_equity.emittable_level_keys()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return self.macro.emittable_private_equity_issuers() | self.private_equity.emittable_private_equity_issuers()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # Non-PE level series (all three magisteria) route to the macro provider;

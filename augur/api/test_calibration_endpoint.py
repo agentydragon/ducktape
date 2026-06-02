@@ -131,8 +131,6 @@ def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
         provider_config_path=Path("unused.yaml"),
         horizon_months=24,
         rollout_count=16,
-        required_level_series=(SP500Key(),),
-        required_private_equity_issuers=(IssuerId("openai"),),
         level_checks=(LevelSeriesSanityCheck(key=SP500Key(), initial_value=1.0),),
         private_equity_mark_checks=(PrivateEquityMarkSanityCheck(issuer_id=IssuerId("openai"), initial_value=100.0),),
     )

@@ -95,8 +95,8 @@ class CalibrationCatalogConfig(ApiModel):
             "Optional `SampleSanitySpec` YAML (resolved relative to the config file, like "
             "`catalog_path`). When set, `/api/calibration/run` evaluates the spec's reasonableness "
             "bands against the live rollouts and returns them as `sanity_bands`. The spec is consumed "
-            "only for its `*_checks` + `required_level_series`/`required_private_equity_issuers`; its "
-            "`provider_config_path` is ignored (the page reuses the live calibration model)."
+            "only for its `*_checks` (series/issuers to attempt are derived from each check's key); "
+            "its `provider_config_path` is ignored (the page reuses the live calibration model)."
         ),
     )
 

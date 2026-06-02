@@ -39,7 +39,7 @@ from augur.model.level_series_groups import (
     PropertyValueGroups,
 )
 from augur.model.poisson_events import PoissonEvents
-from augur.model.series import LevelSeriesKey
+from augur.model.series import IssuerId, LevelSeriesKey
 
 ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
 ScalarEventSpec = Annotated[PoissonEvents, Field(discriminator="kind")]
@@ -91,6 +91,16 @@ class IndependentSeriesModels(LevelSeriesMagisteria[ScalarSeriesSpec]):
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         return SampledExogenousBundle(**sample_independent_levels(self, request).as_bundle_kwargs())
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(
+            self.asset_prices.by_asset_price_key().keys()
+            | self.property_values.by_property_value_key().keys()
+            | self.index_series.by_index_series_key().keys()
+        )
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
 
 
 SeriesModelSpec = IndependentSeriesModels

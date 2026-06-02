@@ -38,7 +38,10 @@ class CalibrationSanityBand(ApiModel):
     expected_upper: float | None = None
     observed: list[float] = Field(default_factory=list)
     observed_labels: list[str] = Field(default_factory=list)
-    status: Literal["pass", "fail", "skipped"]
+    # `unmodeled` = this band's series/issuer isn't produced by the deployment's preset; the
+    # frontend renders these distinctly from `skipped` (band's month exceeds the sampled horizon
+    # but the series is otherwise emitted) and `fail` (band failed against an emitted series).
+    status: Literal["pass", "fail", "skipped", "unmodeled"]
     detail: str
 
 

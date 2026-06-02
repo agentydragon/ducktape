@@ -43,8 +43,8 @@ from augur.calibration.platform import Platform, PriceClient
 from augur.calibration.polymarket import PolymarketClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks
-from augur.model.series import IssuerId
+from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
+from augur.model.series import IssuerId, LevelSeriesKey
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -172,13 +172,25 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
         # Sample one full bundle that drives the market scoring, the issuer mark fan, AND the
         # sample-sanity bands — still a single rollout. The PE bundle goes to `run_calibration`/
-        # `mark_fan` (preserving today's behavior); the level series the sanity spec needs are
-        # requested here too. A spec asking for a series the preset can't produce raises -> 400.
+        # `mark_fan` (preserving today's behavior); the level series the sanity spec wants are
+        # added on top, partitioned by what the deployment's preset can actually emit so a
+        # band declared against an unmodeled series renders as "not modeled" rather than 400-ing.
+        # TODO: sample at max(request.horizon_months, max band month in spec) and drop the
+        # `skipped` status — currently a user-picked short horizon silently marks longer spec
+        # bands as skipped, which the sample-sanity team would rather always evaluate. Once
+        # that lands, the calibration tab's horizon control no longer drives sampling and can
+        # either move to the Product tab (sampling-only) or stay as a pure chart-x-axis zoom.
+        spec_modeled_level: frozenset[LevelSeriesKey] = frozenset()
+        spec_modeled_pe: frozenset[IssuerId] = frozenset()
+        unmodeled_level: frozenset[LevelSeriesKey] = frozenset()
+        unmodeled_pe: frozenset[IssuerId] = frozenset()
+        if spec is not None:
+            spec_modeled_level, spec_modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
         sampling_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            required_private_equity_issuers=frozenset({IssuerId(issuer)}),
-            **level_series_request_channels(frozenset(spec.required_level_series) if spec is not None else frozenset()),
+            required_private_equity_issuers=frozenset({IssuerId(issuer)}) | spec_modeled_pe,
+            **level_series_request_channels(spec_modeled_level),
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity
@@ -220,7 +232,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             [
                 sanity_band_to_wire(band)
                 for band in evaluate_sample_checks(
-                    spec, sampled, rollout_count=request.rollouts, horizon_months=request.horizon_months
+                    spec,
+                    sampled,
+                    rollout_count=request.rollouts,
+                    horizon_months=request.horizon_months,
+                    unmodeled_level_keys=unmodeled_level,
+                    unmodeled_pe_issuers=unmodeled_pe,
                 )
             ]
             if spec is not None

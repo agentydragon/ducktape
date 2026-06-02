@@ -13,6 +13,7 @@ from pydantic import Field, TypeAdapter, model_validator
 from augur.model.exogenous import (
     ExogenousSamplingRequest,
     SampledExogenousBundle,
+    Sampler,
     level_series_request_channels,
     validate_sample_satisfies_request,
 )
@@ -171,12 +172,21 @@ class PrivateEquityMarkSanityCheck(FrozenModel):
 
 
 class SampleSanitySpec(FrozenModel):
+    """Reasonableness-band specification for a deployment's sampled bundle.
+
+    The set of series/issuers to attempt is derived from the `*_checks` fields — each check
+    declares the key/issuer it bounds and is therefore implicitly a request to sample that
+    series. A check whose key the model can't emit is surfaced as `unmodeled` per band rather
+    than treated as a hard sampling failure; the field used to be `required_level_series` /
+    `required_private_equity_issuers` and gated the sample request, but a sanity-band YAML
+    listing a series the deployment's model doesn't cover was meant to render as "not modeled
+    by <preset>", not 400 the calibration tab.
+    """
+
     provider_config_path: Path
     horizon_months: int = Field(ge=0)
     rollout_seed_start: int = Field(default=1301, ge=0)
     rollout_count: int = Field(gt=0)
-    required_level_series: tuple[LevelSeriesKey, ...] = ()
-    required_private_equity_issuers: tuple[IssuerId, ...] = ()
     level_checks: tuple[LevelSeriesSanityCheck, ...] = ()
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
     event_kind_observed_checks: tuple[EventKindObservedCheck, ...] = ()
@@ -187,6 +197,26 @@ class SampleSanitySpec(FrozenModel):
     def rollout_seeds(self) -> tuple[int, ...]:
         return tuple(range(self.rollout_seed_start, self.rollout_seed_start + self.rollout_count))
 
+    @property
+    def attempted_level_keys(self) -> frozenset[LevelSeriesKey]:
+        """Level keys this spec bounds, derived from `level_checks[*].key`."""
+
+        return frozenset(check.key for check in self.level_checks)
+
+    @property
+    def attempted_private_equity_issuers(self) -> frozenset[IssuerId]:
+        """PE issuers this spec bounds, derived from every check carrying an `issuer_id`."""
+
+        return frozenset(
+            check.issuer_id
+            for check in (
+                *self.event_checks,
+                *self.event_kind_observed_checks,
+                *self.private_equity_protocol_checks,
+                *self.private_equity_mark_checks,
+            )
+        )
+
 
 @dataclass(frozen=True)
 class SanityBandResult:
@@ -194,14 +224,18 @@ class SanityBandResult:
 
     label: str  # human-readable, e.g. "sp500 ratio m12/m0 p1..p99"
     series_id: str  # the level-series wire id or "PE issuer 'openai' mark"
-    kind: str  # "anchor"|"percentile_bound"|"percentile_range"|"threshold_probability"|"count_range"|"event_kind_probability"|"codes_allowed"
+    kind: str  # "anchor"|"percentile_bound"|"percentile_range"|"threshold_probability"|"count_range"|"event_kind_probability"|"codes_allowed"|"unmodeled"
     month: int | None  # month index where applicable, else None
     expected_lower: float | None
     expected_upper: float | None
     observed: tuple[float, ...]  # the value(s) bounded: 1 for bound/probability, 2 for a range (lo, hi pctile values)
     observed_labels: tuple[str, ...]  # parallel labels, e.g. ("p1","p99") or ("p50",) or ("probability",)
-    status: Literal["pass", "fail", "skipped"]
-    detail: str  # "" when pass; failure/skip explanation otherwise
+    # `unmodeled` = the spec asked for this series/issuer but the deployment's preset can't
+    # emit it (e.g. a state-space artifact not trained on `rent:vallejo_ca`). The calibration
+    # tab renders these distinctly; the offline deploy gate (`run_sample_sanity`) treats them
+    # as failures so a misconfigured spec can't ship silently.
+    status: Literal["pass", "fail", "skipped", "unmodeled"]
+    detail: str  # "" when pass; failure/skip/unmodeled explanation otherwise
 
 
 def run_sample_sanity_file(path: Path) -> None:
@@ -210,12 +244,16 @@ def run_sample_sanity_file(path: Path) -> None:
 
 
 def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
-    """Deploy gate: sample the model and raise if any sanity band fails."""
+    """Deploy gate: sample the model and raise if any sanity band fails or is unmodeled.
+
+    `unmodeled` rows are deploy-blockers: the spec is documenting bands for a series the
+    preset can't emit, so something is misconfigured. The calibration tab is more lenient
+    (renders the band as "not modeled by <preset>" instead of 400-ing the page)."""
 
     results = evaluate_sample_sanity(spec, base_dir=base_dir)
-    failures = [result for result in results if result.status == "fail"]
-    if failures:
-        raise AssertionError("\n".join(f"{failure.label}: {failure.detail}" for failure in failures))
+    blockers = [result for result in results if result.status in {"fail", "unmodeled"}]
+    if blockers:
+        raise AssertionError("\n".join(f"{blocker.label}: {blocker.detail}" for blocker in blockers))
 
 
 def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[SanityBandResult]:
@@ -224,19 +262,67 @@ def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[Sa
     provider_config_path = _resolve_path(spec.provider_config_path, base_dir=base_dir)
     provider = _load_provider_config(provider_config_path)
     model = provider.realize_model()
+    sampled, unmodeled_level_keys, unmodeled_pe_issuers = sample_for_spec(spec, model)
+    return evaluate_sample_checks(
+        spec,
+        sampled,
+        rollout_count=spec.rollout_count,
+        horizon_months=spec.horizon_months,
+        unmodeled_level_keys=unmodeled_level_keys,
+        unmodeled_pe_issuers=unmodeled_pe_issuers,
+    )
+
+
+def partition_spec_coverage(
+    spec: SampleSanitySpec, model: Sampler
+) -> tuple[frozenset[LevelSeriesKey], frozenset[IssuerId], frozenset[LevelSeriesKey], frozenset[IssuerId]]:
+    """Partition a spec's attempted keys into (modeled_level, modeled_pe, unmodeled_level, unmodeled_pe).
+
+    `modeled_*` is the subset the provider advertises it can emit and goes into the sampling
+    request; `unmodeled_*` becomes `status="unmodeled"` rows in the result. The caller (server
+    calibration_run or `sample_for_spec`) decides which to request — this split is pure."""
+
+    attempted_level = spec.attempted_level_keys
+    attempted_pe = spec.attempted_private_equity_issuers
+    emittable_level = model.emittable_level_keys()
+    emittable_pe = model.emittable_private_equity_issuers()
+    modeled_level = attempted_level & emittable_level
+    modeled_pe = attempted_pe & emittable_pe
+    unmodeled_level = attempted_level - emittable_level
+    unmodeled_pe = attempted_pe - emittable_pe
+    return modeled_level, modeled_pe, unmodeled_level, unmodeled_pe
+
+
+def sample_for_spec(
+    spec: SampleSanitySpec, model: Sampler
+) -> tuple[SampledExogenousBundle, frozenset[LevelSeriesKey], frozenset[IssuerId]]:
+    """Run one sampling pass that satisfies every modeled check in `spec`, plus the unmodeled split.
+
+    Returns the sampled bundle plus the unmodeled-level-keys / unmodeled-PE-issuers sets so the
+    evaluator can emit `status="unmodeled"` rows for the deferred checks. The bundle is asserted
+    against the modeled subset of the request (so a provider bug — emitting nothing for a series
+    it advertises — still raises, while a not-modeled series merely surfaces in the UI)."""
+
+    modeled_level, modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
     request = ExogenousSamplingRequest(
         horizon_months=spec.horizon_months,
         rollout_seeds=spec.rollout_seeds,
-        **level_series_request_channels(spec.required_level_series),
-        required_private_equity_issuers=frozenset(spec.required_private_equity_issuers),
+        **level_series_request_channels(modeled_level),
+        required_private_equity_issuers=modeled_pe,
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
-    return evaluate_sample_checks(spec, sampled, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months)
+    return sampled, unmodeled_level, unmodeled_pe
 
 
 def evaluate_sample_checks(
-    spec: SampleSanitySpec, sampled: SampledExogenousBundle, *, rollout_count: int, horizon_months: int
+    spec: SampleSanitySpec,
+    sampled: SampledExogenousBundle,
+    *,
+    rollout_count: int,
+    horizon_months: int,
+    unmodeled_level_keys: frozenset[LevelSeriesKey] = frozenset(),
+    unmodeled_pe_issuers: frozenset[IssuerId] = frozenset(),
 ) -> list[SanityBandResult]:
     """Evaluate every check in `spec` against an already-sampled bundle.
 
@@ -245,34 +331,86 @@ def evaluate_sample_checks(
     rollouts sampled at a different count/horizon get correct indexing. Any check
     whose month exceeds `horizon_months` yields a `status="skipped"` result rather
     than indexing out of bounds.
+
+    Checks whose series/issuer is in the `unmodeled_*` partition collapse to a single
+    `status="unmodeled"` summary row instead of running their bands — there's nothing in
+    the bundle to evaluate against, and one row per unmodeled check keeps the calibration
+    page legible (compare to the 5-10 per-band rows a fully-modeled check produces).
     """
 
     results: list[SanityBandResult] = []
     for level_check in spec.level_checks:
+        if level_check.key in unmodeled_level_keys:
+            results.append(_unmodeled_level_row(level_check))
+            continue
         results.extend(
             _evaluate_level_check(level_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months)
         )
-    results.extend(
-        _evaluate_event_kind_check(
-            event_kind_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months
+    for event_kind_check in spec.event_kind_observed_checks:
+        if event_kind_check.issuer_id in unmodeled_pe_issuers:
+            results.append(_unmodeled_pe_row(event_kind_check.issuer_id, kind_label="event_kind"))
+            continue
+        results.append(
+            _evaluate_event_kind_check(
+                event_kind_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months
+            )
         )
-        for event_kind_check in spec.event_kind_observed_checks
-    )
     for mark_check in spec.private_equity_mark_checks:
+        if mark_check.issuer_id in unmodeled_pe_issuers:
+            results.append(_unmodeled_pe_row(mark_check.issuer_id, kind_label="mark"))
+            continue
         results.extend(
             _evaluate_mark_check(mark_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months)
         )
     for event_check in spec.event_checks:
+        if event_check.issuer_id in unmodeled_pe_issuers:
+            results.append(_unmodeled_pe_row(event_check.issuer_id, kind_label="event"))
+            continue
         results.extend(
             _evaluate_event_check(event_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months)
         )
     for protocol_check in spec.private_equity_protocol_checks:
+        if protocol_check.issuer_id in unmodeled_pe_issuers:
+            results.append(_unmodeled_pe_row(protocol_check.issuer_id, kind_label="protocol"))
+            continue
         results.extend(
             _evaluate_protocol_check(
                 protocol_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months
             )
         )
     return results
+
+
+def _unmodeled_level_row(level_check: LevelSeriesSanityCheck) -> SanityBandResult:
+    series_id = level_check.key.wire_id
+    return SanityBandResult(
+        label=f"{series_id} (not modeled)",
+        series_id=series_id,
+        kind="unmodeled",
+        month=None,
+        expected_lower=None,
+        expected_upper=None,
+        observed=(),
+        observed_labels=(),
+        status="unmodeled",
+        detail=f"level series {series_id!r} is not produced by the deployment's preset",
+    )
+
+
+def _unmodeled_pe_row(issuer_id: IssuerId, *, kind_label: str) -> SanityBandResult:
+    series_id = f"PE issuer {issuer_id!r} {kind_label}"
+    return SanityBandResult(
+        label=f"{series_id} (not modeled)",
+        series_id=series_id,
+        kind="unmodeled",
+        month=None,
+        expected_lower=None,
+        expected_upper=None,
+        observed=(),
+        observed_labels=(),
+        status="unmodeled",
+        detail=f"PE issuer {issuer_id!r} is not produced by the deployment's preset",
+    )
 
 
 def _evaluate_level_check(

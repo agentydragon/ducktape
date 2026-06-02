@@ -253,6 +253,12 @@ class StateSpaceModel:
         # PE-mark factors are internal to the joint covariance and surface via the PE bundle.
         return self.artifact.level_factors
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.artifact.level_factors)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset(self.artifact.private_equity_factor_issuers)
+
     def save(self, path: Path) -> None:
         path.write_text(self.artifact.model_dump_json(indent=2), encoding="utf-8")
 

@@ -10,12 +10,14 @@ from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBund
 from augur.model.sample_sanity import (
     LevelSeriesSanityCheck,
     PercentileRangeBound,
+    PrivateEquityMarkSanityCheck,
     SampleSanitySpec,
     evaluate_sample_checks,
+    partition_spec_coverage,
     run_sample_sanity,
     run_sample_sanity_file,
 )
-from augur.model.series import SP500Key
+from augur.model.series import HomeValueKey, IssuerId, LocationId, SP500Key
 from augur.model.testing import ConstantFrameModel
 from util.bazel.runfiles import get_required_path
 
@@ -33,7 +35,6 @@ def _spec_with_bands(*bands: PercentileRangeBound) -> SampleSanitySpec:
         provider_config_path=Path("unused.yaml"),
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
-        required_level_series=(SP500Key(),),
         level_checks=(LevelSeriesSanityCheck(key=SP500Key(), value_percentile_ranges=bands),),
     )
 
@@ -88,6 +89,78 @@ def test_evaluate_sample_checks_skips_bands_beyond_sampled_horizon() -> None:
     skipped = [result for result in results if result.status == "skipped"]
     assert len(skipped) == 1
     assert skipped[0].detail == f"month 120 > sampled horizon {_HORIZON_MONTHS}"
+
+
+def test_evaluate_sample_checks_surfaces_unmodeled_level_check() -> None:
+    """A level check whose key the sampler can't emit returns one `unmodeled` summary row."""
+
+    unmodeled_key = HomeValueKey(location_id=LocationId("prices_of_tea_china"))
+    spec = SampleSanitySpec(
+        provider_config_path=Path("unused.yaml"),
+        horizon_months=_HORIZON_MONTHS,
+        rollout_count=_ROLLOUT_COUNT,
+        level_checks=(
+            LevelSeriesSanityCheck(key=SP500Key(), value_percentile_ranges=(_PASSING_BAND,)),
+            LevelSeriesSanityCheck(
+                key=unmodeled_key,
+                value_percentile_ranges=(_PASSING_BAND, _FAILING_BAND),
+                threshold_probability_bounds=(),
+            ),
+        ),
+    )
+    model = ConstantFrameModel(levels={SP500Key(): _SP500_LEVEL})
+    modeled_level, modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
+    assert modeled_level == frozenset({SP500Key()})
+    assert unmodeled_level == frozenset({unmodeled_key})
+    assert modeled_pe == frozenset()
+    assert unmodeled_pe == frozenset()
+    sampled = _sample_constant_sp500()
+    results = evaluate_sample_checks(
+        spec,
+        sampled,
+        rollout_count=_ROLLOUT_COUNT,
+        horizon_months=_HORIZON_MONTHS,
+        unmodeled_level_keys=unmodeled_level,
+        unmodeled_pe_issuers=unmodeled_pe,
+    )
+
+    # The unmodeled level check collapses to a single summary row regardless of how many bands
+    # it carried, and never indexes into the (absent) series — proves the partition gate works.
+    unmodeled_rows = [result for result in results if result.status == "unmodeled"]
+    assert len(unmodeled_rows) == 1
+    assert unmodeled_rows[0].series_id == unmodeled_key.wire_id
+    assert unmodeled_rows[0].kind == "unmodeled"
+    # Other bands (against the modeled SP500 series) still surface.
+    assert any(result.kind == "percentile_range" and result.status == "pass" for result in results)
+
+
+def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
+    """A PE mark check whose issuer the sampler can't emit returns one `unmodeled` summary row."""
+
+    spec = SampleSanitySpec(
+        provider_config_path=Path("unused.yaml"),
+        horizon_months=_HORIZON_MONTHS,
+        rollout_count=_ROLLOUT_COUNT,
+        private_equity_mark_checks=(
+            PrivateEquityMarkSanityCheck(issuer_id=IssuerId("unmodeled_co"), initial_value=100.0),
+        ),
+    )
+    model = ConstantFrameModel(levels={SP500Key(): _SP500_LEVEL})
+    _, _, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
+    assert unmodeled_pe == frozenset({IssuerId("unmodeled_co")})
+    sampled = _sample_constant_sp500()
+    results = evaluate_sample_checks(
+        spec,
+        sampled,
+        rollout_count=_ROLLOUT_COUNT,
+        horizon_months=_HORIZON_MONTHS,
+        unmodeled_level_keys=unmodeled_level,
+        unmodeled_pe_issuers=unmodeled_pe,
+    )
+
+    assert len(results) == 1
+    assert results[0].status == "unmodeled"
+    assert "unmodeled_co" in results[0].series_id
 
 
 def test_run_sample_sanity_raises_listing_failed_bands(tmp_path: Path) -> None:

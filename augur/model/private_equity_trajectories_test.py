@@ -16,7 +16,7 @@ from augur.model.private_equity_trajectories import (
     TenderEvent,
     read_private_equity_trajectories_jsonl,
 )
-from augur.model.series import SP500Key
+from augur.model.series import IssuerId, LevelSeriesKey, SP500Key
 from util.testing.jsonl import write_jsonl
 
 
@@ -28,6 +28,12 @@ class _MinimalSampler(Sampler):
     bundle: SampledExogenousBundle = field(
         default_factory=lambda: SampledExogenousBundle(metadata={"underlying_id": "minimal"})
     )
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         return self.bundle

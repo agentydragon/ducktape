@@ -35,6 +35,7 @@ from augur.model.series import (
     CryptoSymbol,
     HomeValueKey,
     InflationKey,
+    IssuerId,
     LevelSeriesKey,
     LocationId,
     RentKey,
@@ -84,6 +85,12 @@ class _ConstantGaussianModel:
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.factor_names)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
+
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         raise NotImplementedError("metric-test fixture; sampling not exercised")
 
@@ -106,6 +113,12 @@ class _UnscoredModel:
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.factor_names)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         raise NotImplementedError("metric-test fixture; sampling not exercised")

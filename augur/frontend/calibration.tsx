@@ -84,12 +84,15 @@ function PlatformBadge({ platform }) {
 }
 
 // Reasonableness-band status → pill classes. A failing band reads loudest (rose), a passing
-// band reassuring (emerald), a skipped band muted (slate) — the same rose/amber/muted family
-// the KL tints above draw from.
+// band reassuring (emerald), a skipped band muted (slate), an unmodeled band a distinct amber
+// (the spec asked for a series the preset can't emit — a config-shape signal, not a model
+// reading) — the same rose/amber/muted family the KL tints above draw from.
 const SANITY_PILL_CLASS = {
   pass: "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-400/20",
   fail: "bg-rose-50 text-rose-700 ring-rose-600/20 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-400/20",
   skipped: "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-400/20",
+  unmodeled:
+    "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-400/20",
 };
 
 // A failing band also tints its whole row, mirroring `klToneClass` for loud KL.

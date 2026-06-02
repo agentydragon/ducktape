@@ -12,9 +12,11 @@ import { fmtPct } from "./lib/format.ts";
 // (count_range), which we render as a trimmed fixed-decimal number rather than a percentage.
 const PROBABILITY_KINDS = new Set(["threshold_probability", "event_kind_probability"]);
 
-// Loudest-first: failures, then skipped, then passes — mirrors `CleanTable`'s "loudest
-// disagreement first" ordering. Stable within a group (input order preserved).
-const STATUS_RANK = { fail: 0, skipped: 1, pass: 2 };
+// Loudest-first: failures, then unmodeled (a configuration-shape signal: the spec asked for a
+// series the preset can't emit, surfaced so it can be fixed), then skipped (band's month past
+// the sampled horizon), then passes — mirrors `CleanTable`'s "loudest disagreement first"
+// ordering. Stable within a group (input order preserved).
+const STATUS_RANK = { fail: 0, unmodeled: 1, skipped: 2, pass: 3 };
 
 function statusRank(status) {
   return STATUS_RANK[status] ?? STATUS_RANK.pass;

@@ -55,6 +55,7 @@ from augur.model.series import (
     CryptoKey,
     HomeValueKey,
     InflationKey,
+    IssuerId,
     LevelSeriesKey,
     RentKey,
     SP500Key,
@@ -295,6 +296,12 @@ class VecmModel:
         return self._mc_horizon_predictive(log_levels[: t + 1], horizon=horizon, origin=t)
 
     # ──────────────────────── Sampler ────────────────────────
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.factor_names)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset()
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         """Roll the VECM forward for each rollout seed, convert log-level paths to

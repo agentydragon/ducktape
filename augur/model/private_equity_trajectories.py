@@ -48,6 +48,7 @@ from augur.model.exogenous import (
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
+from augur.model.series import IssuerId, LevelSeriesKey
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,15 @@ class PreSampledPrivateEquitySampler:
 
     underlying: Sampler
     trajectories_by_issuer: dict[str, PrivateEquityTrajectorySet]
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        # Level series come straight from the underlying provider; this overlay only adds PE.
+        return self.underlying.emittable_level_keys()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        # The overlay overrides PE wholesale (it strips the underlying's PE bundle first), so
+        # the only PE issuers this sampler emits are the artifact's.
+        return frozenset(IssuerId(issuer) for issuer in self.trajectories_by_issuer)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # Forward the non-PE level-series channels straight to the underlying

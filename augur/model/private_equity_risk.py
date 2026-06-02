@@ -15,7 +15,7 @@ from pydantic import Field, model_validator
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, validate_sample_satisfies_request
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.schemas import FrozenModel
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.model.series_model import derive_stream_rollout_seeds
 
 BoolMatrix = npt.NDArray[np.bool_]
@@ -349,6 +349,12 @@ class PrivateEquityRiskProviderConfig(FrozenModel):
 class PrivateEquityRiskModel:
     issuers: dict[str, PrivateEquityRiskIssuerConfig]
     label: str = "private_equity_risk"
+
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset()
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset(IssuerId(issuer_id) for issuer_id in self.issuers)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         rollout_count = request.rollout_count

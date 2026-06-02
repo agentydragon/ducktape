@@ -21,15 +21,23 @@ function band(overrides) {
   };
 }
 
-test("sortSanityBands: failures first, then skipped, then passes", () => {
+test("sortSanityBands: failures first, then unmodeled, then skipped, then passes", () => {
   const input = [
     band({ label: "pass-a", status: "pass" }),
     band({ label: "skip-a", status: "skipped" }),
+    band({ label: "unmodeled-a", status: "unmodeled" }),
     band({ label: "fail-a", status: "fail" }),
     band({ label: "pass-b", status: "pass" }),
     band({ label: "fail-b", status: "fail" }),
   ];
-  expect(sortSanityBands(input).map((b) => b.label)).toEqual(["fail-a", "fail-b", "skip-a", "pass-a", "pass-b"]);
+  expect(sortSanityBands(input).map((b) => b.label)).toEqual([
+    "fail-a",
+    "fail-b",
+    "unmodeled-a",
+    "skip-a",
+    "pass-a",
+    "pass-b",
+  ]);
 });
 
 test("sortSanityBands: stable within a status group (input order preserved)", () => {

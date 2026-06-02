@@ -54,6 +54,12 @@ class ConstantFrameModel:
     metadata: Mapping[str, object] = field(default_factory=lambda: {"model_id": "constant_frame_fixture"})
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self.levels)
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        return frozenset(self.private_equity)
+
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
 

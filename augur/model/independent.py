@@ -80,6 +80,15 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
 
         return tuple(self._level_specs_by_level_key())
 
+    def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
+        return frozenset(self._level_specs_by_level_key())
+
+    def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
+        # PE marks live in `pe_marks` but are scalar mark generators only — this provider
+        # doesn't synthesize a full PrivateEquityBundle, so it advertises no PE issuers as
+        # bundle-emittable. PE-bundle emission is a CompositeModel + PE-provider job.
+        return frozenset()
+
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # PE marks travel via the typed PE bundle / metadata, never a level magisterium
         # — the inherited magisterium groups carry only level series.
