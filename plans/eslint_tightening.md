@@ -78,11 +78,26 @@ props frontend; `ban-ts-comment` does not fire on `@ts-ignore` inside `.svelte`
 Wire `parserOptions.projectService` so type-aware rules run, then enable a
 curated subset: `no-floating-promises`, `no-misused-promises`, `await-thenable`.
 
-**Risk:** this is the same class of problem that disabled `import/order` (the
-resolver needs tsconfig/filesystem access under `bazel-out`). Gate behind a
-**feasibility spike**; if it can't work under the sandbox, document why (like
-`import/order`) and stop. Biggest real-bug payoff for the fetch-heavy frontends
-if it works.
+**Risk (anticipated):** the same class of problem that disabled `import/order`
+(the resolver needs tsconfig/filesystem access under `bazel-out`).
+
+**✅ Spike succeeded — augur landed (#1799).** The feared resolver risk didn't
+materialize; the real constraint is _architectural_: type-aware rules need the
+full TS program, which the **per-file lint-gate aspect can't supply** (each lint
+action sees only one file + its deps). The fix is to run type-aware lint as a
+**whole-program test target** — `eslint` with `parserOptions.projectService` and
+inputs mirroring `tsc_test` — _not_ a gate rule. `//augur/frontend:eslint_typed_test`
+does this (`no-floating-promises`, `no-misused-promises`, `await-thenable`) and
+passes clean.
+
+**Rollout is heterogeneous** — only augur fit the pattern directly:
+
+- augur — React/TSX, Bazelized → ✅ done.
+- `x/rspcache/admin_ui` — React/TSX but **not Bazelized** (empty BUILD, manual
+  `npx` build/typecheck) → blocked on Bazelizing it first.
+- props / airlock / `x/agent_server/web` — Svelte, Bazelized → need a separate
+  **type-aware-svelte** mini-spike (whether `eslint-plugin-svelte` + the TS
+  project service work through the Svelte parser under Bazel is an open question).
 
 ### P4 — De-dupe / standardize config structure — Low–Medium effort, Medium value
 
@@ -117,13 +132,14 @@ promote; quick count + fix.
 
 - [x] P1 — promote dead-code warns → errors (#1796)
 - [x] P2 — typescript-eslint recommended (#1797)
-- [ ] P3 — type-aware linting spike + `no-floating-promises`
+- [x] P3 — type-aware linting: spike + augur landed (#1799). Rollout pending —
+      svelte frontends need a type-aware-svelte spike; rspcache needs Bazelizing.
 - [ ] P4 — de-dupe / standardize config
 - [ ] P5 — `no-console`
 
-Follow-up cleanups (post-P2): dropped the redundant `no-unused-vars: off`, and
-loosened the eslint-family dep pins to major-floor carets — safe because ESLint
-is single-sourced via Bazel (see "Version skew" above), so there's no second
-copy to drift against.
+Follow-up cleanups (post-P2, #1798): dropped the redundant `no-unused-vars: off`,
+and loosened the eslint-family dep pins to major-floor carets — safe because
+ESLint is single-sourced via Bazel (see "Version skew" above), so there's no
+second copy to drift against.
 
 Tombstone this plan once P1–P5 are resolved (applied or documented-as-rejected).
