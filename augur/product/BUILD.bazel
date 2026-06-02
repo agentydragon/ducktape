@@ -6,8 +6,8 @@ py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
+        ":asset_key",
         "//augur/api:schemas",
-        "//augur/product:asset_key",
         "@pypi//pydantic",
     ],
 )
@@ -90,6 +90,8 @@ py_test(
     name = "portfolio_test",
     srcs = ["portfolio_test.py"],
     deps = [
+        ":asset_key",
+        ":conftest",
         ":portfolio",
         "//:conftest",
         "//augur/api:finance",
@@ -107,17 +109,17 @@ py_test(
         "//augur/api:public_fixture_properties",
     ],
     deps = [
+        ":asset_key",
+        ":conftest",
         ":decode",
         ":scenarios",
         ":service",
         ":testing",
         ":wire",
         "//:conftest",
-        "//augur/api:catalog",
         "//augur/api:config",
         "//augur/api:finance",
-        "//augur/api:portfolio_source_config",
-        "//augur/api:portfolio_sources",
+        "//augur/api:wire",
         "//augur/model:exogenous",
         "//augur/model:independent",
         "//augur/model:provider_config",
@@ -126,7 +128,6 @@ py_test(
         "//augur/sim:external_series",
         "//augur/sim:scenario",
         "//augur/sim:simulate",
-        "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -140,5 +141,22 @@ py_library(
         "//augur/model:schemas",
         "//augur/model:series",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":scenarios",
+        ":service",
+        "//augur/api:catalog",
+        "//augur/api:config",
+        "//augur/api:portfolio_sources",
+        "//augur/api:wire",
+        "//augur/model:exogenous",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
     ],
 )

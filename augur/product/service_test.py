@@ -6,10 +6,9 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from augur.api.catalog import build_catalog
-from augur.api.config import Config, load_augur_config
+from augur.api.config import Config
 from augur.api.finance import FinanceSnapshot
-from augur.api.portfolio_sources import resolve_portfolio_sources
+from augur.api.wire import CatalogResponse
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import CompositeProviderConfig
@@ -36,8 +35,8 @@ from augur.model.testing import (
 )
 from augur.product import decode, service
 from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
-from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
-from augur.product.service import ProductService
+from augur.product.conftest import MakeProductService
+from augur.product.scenarios import build_scenario, resolve_primary_agent_id
 from augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS, forced_private_equity_event_fixture
 from augur.product.wire import (
     CashFinancing,
@@ -69,7 +68,6 @@ from augur.product.wire import (
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from augur.sim.simulate import simulate_dense_with_external_series
-from util.bazel.runfiles import get_required_path
 
 
 @dataclass
@@ -93,36 +91,14 @@ class MissingRequiredExogenousModel:
         return SampledExogenousBundle()
 
 
-def _augur_config() -> Config:
-    return load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-
-
 @pytest.fixture
-def counting_model() -> CountingModel:
-    config = _augur_config()
-    return CountingModel(inner=config.models[config.default_model_id].realize_model())
+def counting_model(augur_config: Config) -> CountingModel:
+    return CountingModel(inner=augur_config.models[augur_config.default_model_id].realize_model())
 
 
 @pytest.fixture
 def forced_private_equity_event_model() -> ConstantFrameModel:
     return forced_private_equity_event_fixture()
-
-
-def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductService:
-    config = augur_config or _augur_config()
-    resolved_portfolio = resolve_portfolio_sources(config)
-    catalog = build_catalog(config)
-    return ProductService(
-        portfolio=resolved_portfolio.portfolio,
-        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
-        primary_agent_id=resolve_primary_agent_id(config),
-        known_location_ids=frozenset(location.id for location in catalog.locations),
-        locations=sim_locations_from_config(config.locations),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
-        models={"current_model": model},
-        max_rollout_samples=config.max_rollout_samples,
-        max_cache_rollouts=10,
-    )
 
 
 def _with_fixed_cash(config: Config, cash_usd: float) -> Config:
@@ -143,9 +119,9 @@ def _scenario_key() -> ScenarioKey:
     return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none")
 
 
-def test_product_fails_when_sample_is_missing_required_series() -> None:
+def test_product_fails_when_sample_is_missing_required_series(make_product_service: MakeProductService) -> None:
     model = MissingRequiredExogenousModel()
-    product = _service(model)
+    product = make_product_service(model)
 
     with pytest.raises(ValueError, match=f"missing required level series: .*{SP500Key().wire_id}"):
         product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
@@ -153,9 +129,10 @@ def test_product_fails_when_sample_is_missing_required_series() -> None:
     assert model.sample_requests[0].required_level_series
 
 
-def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
-    config = _augur_config()
-    provider = config.models[config.default_model_id]
+def test_product_fails_when_crypto_holding_price_is_not_modeled(
+    augur_config: Config, make_product_service: MakeProductService
+) -> None:
+    provider = augur_config.models[augur_config.default_model_id]
     assert isinstance(provider, CompositeProviderConfig)
     assert isinstance(provider.macro, IndependentProviderConfig)
     model = provider.model_copy(
@@ -175,7 +152,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
             )
         }
     ).realize_model()
-    product = _service(model, augur_config=config)
+    product = make_product_service(model, config=augur_config)
 
     with pytest.raises(ValueError, match=r"missing required level series: .*crypto:btc"):
         product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
@@ -209,8 +186,10 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
 
 
-def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = _scenario_key()
 
     fan = product.metric_fan(
@@ -280,9 +259,9 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(counting_model:
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(
-    counting_model: CountingModel, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel, make_product_service: MakeProductService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    product = _service(counting_model)
+    product = make_product_service(counting_model)
     scenario = _scenario_key()
     original = decode.monthly_metric_arrays
     calls = 0
@@ -302,9 +281,9 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
 
 
 def test_metric_fan_does_not_materialize_rollout_events(
-    counting_model: CountingModel, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel, make_product_service: MakeProductService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    product = _service(counting_model)
+    product = make_product_service(counting_model)
     scenario = _scenario_key()
 
     def fail_rollout_events(*_args, **_kwargs):
@@ -315,8 +294,10 @@ def test_metric_fan_does_not_materialize_rollout_events(
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,)))
 
 
-def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_failed_rollout_metrics_freeze_at_zero_after_failure(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -356,8 +337,10 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_model: Cou
     assert failure.shortfall_usd == 300_000.0
 
 
-def test_default_funding_policy_sells_holdings_for_required_spend(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_default_funding_policy_sells_holdings_for_required_spend(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(model_id="current_model", horizon_months=1, monthly_spend_usd=300_000.0, spend_index="none")
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -388,9 +371,9 @@ def test_default_funding_policy_sells_holdings_for_required_spend(counting_model
 
 
 def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
-    forced_private_equity_event_model: ConstantFrameModel,
+    forced_private_equity_event_model: ConstantFrameModel, make_product_service: MakeProductService
 ) -> None:
-    product = _service(forced_private_equity_event_model)
+    product = make_product_service(forced_private_equity_event_model)
 
     detail = product.rollout(
         RolloutRequest(
@@ -426,9 +409,9 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     assert sale.proceeds_usd == pytest.approx(6_250.0)
 
 
-def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
+def test_product_rollout_collapse_revalues_unsold_private_equity(make_product_service: MakeProductService) -> None:
     issuer_id = IssuerId("private_holding_a")
-    product = _service(
+    product = make_product_service(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={
@@ -481,9 +464,9 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
     assert pe_event.liquidity_blocked is True
 
 
-def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
+def test_product_rollout_includes_private_equity_opportunity_trace(make_product_service: MakeProductService) -> None:
     issuer_id = IssuerId("private_holding_a")
-    product = _service(
+    product = make_product_service(
         ConstantFrameModel(
             levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
             private_equity={
@@ -525,8 +508,10 @@ def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
     assert opportunity.proceeds_usd == pytest.approx(0.0)
 
 
-def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
@@ -549,8 +534,10 @@ def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(counting_mod
     assert expense.amount_paid_usd == 1_000.0
 
 
-def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
@@ -569,9 +556,9 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
 
 
 def test_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
-    counting_model: CountingModel,
+    counting_model: CountingModel, make_product_service: MakeProductService
 ) -> None:
-    product = _service(counting_model)
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
@@ -605,8 +592,10 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
     assert tax_payment.shortfall_usd == 0.0
 
 
-def test_outside_rent_emits_yearly_re_pegged_obligation(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_outside_rent_emits_yearly_re_pegged_obligation(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=14,
@@ -645,8 +634,10 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(counting_model: Counting
     assert all(event.amount_paid_usd == 1_000.0 for event in expense_events)
 
 
-def test_outside_rent_zero_omits_rent_series_requirement(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_outside_rent_zero_omits_rent_series_requirement(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = _scenario_key()  # no rent
 
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,)))
@@ -654,8 +645,10 @@ def test_outside_rent_zero_omits_rent_series_requirement(counting_model: Countin
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
 
-def test_outside_rent_rejects_unknown_location(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_outside_rent_rejects_unknown_location(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -706,8 +699,10 @@ def _mortgage_purchase_scenario() -> ScenarioKey:
     )
 
 
-def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -743,10 +738,10 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(count
         assert tax_event.shortfall_usd == 0.0
 
 
-def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
-    config = _augur_config()
-    catalog = build_catalog(config)
-    primary_agent_id = resolve_primary_agent_id(config)
+def test_product_lowers_primary_residence_assignments_to_sim_scenario(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=36,
@@ -769,7 +764,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
+        properties_by_id=catalog.properties_by_id,
     )
 
     assert [(row.agent_id, row.property_id) for row in sim_scenario.initial_primary_residences] == [
@@ -781,10 +776,10 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
     ]
 
 
-def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees() -> None:
-    config = _augur_config()
-    catalog = build_catalog(config)
-    primary_agent_id = resolve_primary_agent_id(config)
+def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
@@ -807,7 +802,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
+        properties_by_id=catalog.properties_by_id,
     )
 
     rent_transfer = one(
@@ -836,10 +831,10 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     assert leasing_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5)
 
 
-def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> None:
-    config = _augur_config()
-    catalog = build_catalog(config)
-    primary_agent_id = resolve_primary_agent_id(config)
+def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
@@ -867,7 +862,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
+        properties_by_id=catalog.properties_by_id,
     )
 
     rent_transfers = [
@@ -913,10 +908,10 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
     assert leasing_amounts == pytest.approx([6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5])
 
 
-def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental() -> None:
-    config = _augur_config()
-    catalog = build_catalog(config)
-    primary_agent_id = resolve_primary_agent_id(config)
+def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental(
+    augur_config: Config, catalog: CatalogResponse
+) -> None:
+    primary_agent_id = resolve_primary_agent_id(augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=6,
@@ -936,7 +931,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
+        properties_by_id=catalog.properties_by_id,
     )
 
     rent_transfer = one(
@@ -950,10 +945,11 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     assert rent_transfer.amount_usd.series == RentKey(location_id=LocationId("location_a"))
 
 
-def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_model: CountingModel) -> None:
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+def test_future_rental_lifecycle_requires_rent_series_at_product_api(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
+    config = _with_fixed_cash(augur_config, 1_200_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=6,
@@ -974,10 +970,11 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_mo
     assert RentKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
 
-def test_primary_residence_event_emits_rollout_marker(counting_model: CountingModel) -> None:
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+def test_primary_residence_event_emits_rollout_marker(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
+    config = _with_fixed_cash(augur_config, 1_200_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -997,13 +994,15 @@ def test_primary_residence_event_emits_rollout_marker(counting_model: CountingMo
     [event] = [event for event in detail.rollout.events if event.kind == "set_primary_residence"]
     assert isinstance(event, SetPrimaryResidenceMarkerEvent)
     assert event.month_index == 1
-    assert event.agent_id == resolve_primary_agent_id(augur_config)
+    assert event.agent_id == resolve_primary_agent_id(config)
     assert event.property_id is None
     assert event.is_primary_residence is False
 
 
-def test_property_purchase_metrics_track_value_balance_and_equity(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_metrics_track_value_balance_and_equity(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -1029,10 +1028,11 @@ def test_property_purchase_metrics_track_value_balance_and_equity(counting_model
     assert HomeValueKey(location_id=LocationId("location_a")) in counting_model.sample_requests[0].required_level_series
 
 
-def test_cash_property_purchase_omits_mortgage_payments(counting_model: CountingModel) -> None:
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+def test_cash_property_purchase_omits_mortgage_payments(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
+    config = _with_fixed_cash(augur_config, 1_200_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1057,8 +1057,10 @@ def test_cash_property_purchase_omits_mortgage_payments(counting_model: Counting
     assert detail.rollout.monthly_metrics["mortgage_balance_usd"][0] == 0.0
 
 
-def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     # location_b_property has hoa_monthly_usd=150 in the public fixture.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1087,8 +1089,10 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(counting
     assert InflationKey() in counting_model.sample_requests[0].required_level_series
 
 
-def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     # location_a_property has hoa_monthly_usd=0 in the public fixture.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1108,8 +1112,10 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(counting_m
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
-def test_property_purchase_emits_homeowners_insurance_at_default_pct(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_emits_homeowners_insurance_at_default_pct(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1136,8 +1142,10 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(counting_mo
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_insurance_pct_omits_insurance(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_with_zero_insurance_pct_omits_insurance(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1155,8 +1163,10 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(counting_mode
     assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
 
 
-def test_property_purchase_emits_maintenance_at_default_pct(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_emits_maintenance_at_default_pct(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     # location_a_property is $900k. Default annual_maintenance_pct=1.0 → $750/mo at month 0.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1183,8 +1193,10 @@ def test_property_purchase_emits_maintenance_at_default_pct(counting_model: Coun
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1202,8 +1214,10 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(counting_
     assert [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"] == []
 
 
-def test_property_purchase_rejects_unknown_property(counting_model: CountingModel) -> None:
-    product = _service(counting_model)
+def test_property_purchase_rejects_unknown_property(
+    counting_model: CountingModel, make_product_service: MakeProductService
+) -> None:
+    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1218,12 +1232,13 @@ def test_property_purchase_rejects_unknown_property(counting_model: CountingMode
         product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
 
-def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(counting_model: CountingModel) -> None:
+def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
     """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
     Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction_usd."""
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 400_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+    config = _with_fixed_cash(augur_config, 400_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
@@ -1247,11 +1262,12 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(cou
     assert federal_accrual.itemized_deduction_usd > federal_accrual.standard_deduction_usd
 
 
-def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
+def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
     """`is_primary_residence=False` should produce zero MID even with a mortgage."""
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 400_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+    config = _with_fixed_cash(augur_config, 400_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
@@ -1277,11 +1293,12 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(counting
     assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
 
 
-def test_cash_property_purchase_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
+def test_cash_property_purchase_omits_mortgage_interest_deduction(
+    counting_model: CountingModel, augur_config: Config, make_product_service: MakeProductService
+) -> None:
     """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
-    augur_config = _augur_config()
-    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
-    product = _service(counting_model, augur_config=augur_config)
+    config = _with_fixed_cash(augur_config, 1_200_000.0)
+    product = make_product_service(counting_model, config=config)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
