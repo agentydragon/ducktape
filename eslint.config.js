@@ -21,7 +21,12 @@ const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 
 // Project source dirs, bucketed by framework so each config block targets the
 // right files — and a new project is declared exactly once, in the right list.
-const reactProjects = ["x/rspcache/admin_ui/src/**", "augur/frontend/**"];
+//
+// x/rspcache/admin_ui is intentionally NOT listed: its BUILD.bazel has no
+// js_library targets (the Vite build is a WIP stub), so the lint aspect never
+// runs on it. Listing it here would be dead config implying coverage that does
+// not exist — re-add once it's Bazelized (per-file js_library + tsc_test).
+const reactProjects = ["augur/frontend/**"];
 const svelteProjects = ["props/frontend/src/**", "x/agent_server/web/src/**", "airlock/frontend/**"];
 const projectGlobs = [...reactProjects, ...svelteProjects];
 
