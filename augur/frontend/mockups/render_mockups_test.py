@@ -6,7 +6,11 @@ the BuildBuddy invocation's undeclared outputs:
     bbr test //augur/frontend:mockups_render --nocache_test_results
     INV=$(cat ~/.cache/bbr/last_invocation_id)
     bbapi artifact list "$INV"
-    bbapi artifact download "$INV" mock-scenario-table.png
+    bbapi artifact download "$INV" mock-scenario-table.png -o augur/frontend/mockups/mock-scenario-table.png
+
+Rendered copies are committed next to `mockups.html` so they show up in the PR without running the
+test; regenerate them with the commands above whenever the mockups change. The render is
+deterministic (frozen clock + Inter font + fixed synthetic chart data), so the PNGs are stable.
 
 Each top-level `<section id="mock-...">` in `mockups.html` is screenshotted into its own PNG, so
 new mockups only need a new section + an entry in `_SECTIONS`.
