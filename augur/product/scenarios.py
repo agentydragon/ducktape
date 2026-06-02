@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 from more_itertools import one
 
-from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import Config, LocationConfig
 from augur.api.portfolio import PortfolioConfig
+from augur.api.wire import ActorRole, Property
 from augur.model.exogenous import LevelRequestChannels
 from augur.model.series import (
     AssetPriceKey,

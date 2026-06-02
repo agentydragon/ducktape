@@ -1,18 +1,20 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.ts";
 import {
-  zBootstrapResponse,
   zBudgetSnapshotRequest,
   zBudgetSnapshotResponse,
   zBudgetTransactionsRequest,
   zBudgetTransactionsResponse,
+  zCalibrationInfo,
   zCalibrationRunRequest,
   zCalibrationRunResponse,
+  zCatalogResponse,
   zDeploymentInfo,
   zMetricFanRequest,
   zMetricFanResponse,
   zProductPortfolioResponse,
   zRolloutRequest,
   zRolloutResponse,
+  zSettingsResponse,
 } from "./lib/api/schema.zod.ts";
 
 type FetchOptions = { signal?: AbortSignal };
@@ -56,8 +58,19 @@ async function postJson(path, body, signal) {
   );
 }
 
-export async function fetchAugurBootstrap({ signal }: FetchOptions = {}) {
-  return camelizeObjectKeys(zBootstrapResponse.parse(await getJson("/api/bootstrap", signal)));
+export async function fetchAugurCatalog({ signal }: FetchOptions = {}) {
+  return camelizeObjectKeys(zCatalogResponse.parse(await getJson("/api/catalog", signal)));
+}
+
+export async function fetchAugurSettings({ signal }: FetchOptions = {}) {
+  return camelizeObjectKeys(zSettingsResponse.parse(await getJson("/api/settings", signal)));
+}
+
+// `/api/calibration` returns the catalog info, or a null body when the deployment configures
+// none — surface that as null rather than running it through the Zod object parser.
+export async function fetchAugurCalibrationInfo({ signal }: FetchOptions = {}) {
+  const body = await getJson("/api/calibration", signal);
+  return body == null ? null : camelizeObjectKeys(zCalibrationInfo.parse(body));
 }
 
 export async function fetchAugurDeployment({ signal }: FetchOptions = {}) {

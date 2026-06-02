@@ -9,7 +9,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.api.bootstrap import ActorRole
 from augur.api.config import (
     AgentDefinition,
     CalibrationCatalogConfig,
@@ -30,6 +29,7 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
+from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.provider_config import CompositeProviderConfig

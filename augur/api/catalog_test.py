@@ -1,4 +1,4 @@
-"""Bootstrap catalog tests for public-safe fixture composition."""
+"""Catalog/settings builder tests for public-safe fixture composition."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from augur.api.bootstrap import ActorRole
-from augur.api.catalog import build_bootstrap_payload
+from augur.api.catalog import build_catalog, build_settings
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
+from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 
 
@@ -166,26 +166,26 @@ def _config(
     )
 
 
-def _property_by_id(bootstrap, property_id: str):
-    return one(property_ for property_ in bootstrap.properties if property_.id == property_id)
+def _property_by_id(catalog, property_id: str):
+    return one(property_ for property_ in catalog.properties if property_.id == property_id)
 
 
-def test_bootstrap_locations_default_to_loaded_property_source(tmp_path: Path) -> None:
+def test_catalog_locations_default_to_loaded_property_source(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(_config(properties_path))
+    catalog = build_catalog(_config(properties_path))
 
-    assert [location.id for location in bootstrap.locations] == ["location_a", "location_b"]
-    assert [property_.id for property_ in bootstrap.properties] == ["location_a_property", "location_b_property"]
+    assert [location.id for location in catalog.locations] == ["location_a", "location_b"]
+    assert [property_.id for property_ in catalog.properties] == ["location_a_property", "location_b_property"]
 
 
-def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path: Path) -> None:
+def test_catalog_san_francisco_location_carries_modeled_tax_defaults(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(_config(properties_path))
-    location = one(loc for loc in bootstrap.locations if loc.id == "san_francisco_ca")
+    catalog = build_catalog(_config(properties_path))
+    location = one(loc for loc in catalog.locations if loc.id == "san_francisco_ca")
 
     assert location.label == "San Francisco, CA"
     assert location.city == "San Francisco"
@@ -193,11 +193,11 @@ def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path:
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
 
 
-def test_bootstrap_applies_public_property_asset_urls(tmp_path: Path) -> None:
+def test_catalog_applies_public_property_asset_urls(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(
+    catalog = build_catalog(
         _config(
             properties_path,
             property_assets=(
@@ -209,17 +209,16 @@ def test_bootstrap_applies_public_property_asset_urls(tmp_path: Path) -> None:
     )
 
     assert (
-        _property_by_id(bootstrap, "location_a_property").image_url
-        == "https://cdn.example.com/augur/location-a-hero.jpg"
+        _property_by_id(catalog, "location_a_property").image_url == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
-    assert _property_by_id(bootstrap, "location_b_property").image_url is None
+    assert _property_by_id(catalog, "location_b_property").image_url is None
 
 
-def test_bootstrap_allows_explicit_public_property_asset_url(tmp_path: Path) -> None:
+def test_catalog_allows_explicit_public_property_asset_url(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(
+    catalog = build_catalog(
         _config(
             properties_path,
             property_assets=(
@@ -230,33 +229,32 @@ def test_bootstrap_allows_explicit_public_property_asset_url(tmp_path: Path) -> 
         )
     )
 
-    assert _property_by_id(bootstrap, "location_b_property").image_url == (
+    assert _property_by_id(catalog, "location_b_property").image_url == (
         "https://cdn.example.com/augur/location-b-hero.jpg"
     )
 
 
-def test_bootstrap_location_selection_filters_properties_and_locations(tmp_path: Path) -> None:
+def test_catalog_location_selection_filters_properties_and_locations(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(_config(properties_path, location_selection=("location_a",)))
+    catalog = build_catalog(_config(properties_path, location_selection=("location_a",)))
 
-    assert [location.id for location in bootstrap.locations] == ["location_a"]
-    assert [property_.id for property_ in bootstrap.properties] == ["location_a_property"]
+    assert [location.id for location in catalog.locations] == ["location_a"]
+    assert [property_.id for property_ in catalog.properties] == ["location_a_property"]
 
 
-def test_bootstrap_carries_sampling_defaults(tmp_path: Path) -> None:
+def test_settings_carries_sampling_limits(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
-    bootstrap = build_bootstrap_payload(_config(properties_path))
+    settings = build_settings(_config(properties_path))
 
-    assert bootstrap.default_rollout_samples == 8
-    assert bootstrap.max_rollout_samples == 128
-    assert bootstrap.max_horizon_months == 1200
+    assert settings.max_rollout_samples == 128
+    assert settings.max_horizon_months == 1200
 
 
-def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:
+def test_catalog_rejects_unknown_property_location(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
     records = json.loads(properties_path.read_text(encoding="utf-8"))
@@ -266,18 +264,18 @@ def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:
     with pytest.raises(
         ValueError, match="property 'location_a_property' references unknown location 'missing_location'"
     ):
-        build_bootstrap_payload(_config(properties_path))
+        build_catalog(_config(properties_path))
 
 
-def test_bootstrap_rejects_unknown_location_selection(tmp_path: Path) -> None:
+def test_catalog_rejects_unknown_location_selection(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
     with pytest.raises(ValueError, match="location_selection references unknown location ids"):
-        build_bootstrap_payload(_config(properties_path, location_selection=("missing_location",)))
+        build_catalog(_config(properties_path, location_selection=("missing_location",)))
 
 
-def test_bootstrap_rejects_duplicate_config_location_ids(tmp_path: Path) -> None:
+def test_catalog_rejects_duplicate_config_location_ids(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
     config = _config(properties_path).model_copy(
@@ -285,15 +283,15 @@ def test_bootstrap_rejects_duplicate_config_location_ids(tmp_path: Path) -> None
     )
 
     with pytest.raises(ValueError, match="duplicate location ids"):
-        build_bootstrap_payload(config)
+        build_catalog(config)
 
 
-def test_bootstrap_rejects_asset_for_unknown_property(tmp_path: Path) -> None:
+def test_catalog_rejects_asset_for_unknown_property(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
     with pytest.raises(ValueError, match="property_assets reference unknown property ids"):
-        build_bootstrap_payload(
+        build_catalog(
             _config(
                 properties_path,
                 property_assets=(

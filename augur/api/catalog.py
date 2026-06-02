@@ -1,4 +1,4 @@
-"""Builds the bootstrap payload the augur frontend reads at startup.
+"""Builds the catalog/settings/calibration payloads the augur frontend reads at startup.
 
 Loads the user's property shortlist from `config.property_source.properties_path`
 and derives display labels (residence mode, rental use) from `config.agents`
@@ -12,8 +12,8 @@ import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
-from augur.api.bootstrap import ActorRole, BootstrapResponse, CalibrationInfo, Location, Property
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
+from augur.api.wire import ActorRole, CalibrationInfo, CatalogResponse, Location, Property, SettingsResponse
 from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
@@ -89,14 +89,12 @@ def _load_properties(config: Config, *, location_by_id: dict[str, Location]) -> 
     return _apply_property_assets(config, properties)
 
 
-def _calibration_info(config: Config) -> CalibrationInfo | None:
-    catalog = config.calibration_catalog
-    if catalog is None:
-        return None
-    return CalibrationInfo(label=catalog.label or catalog.issuer, issuer=catalog.issuer)
+def build_catalog(config: Config) -> CatalogResponse:
+    """Assemble the property/location catalog (`GET /api/catalog`) from config.
 
-
-def build_bootstrap_payload(config: Config) -> BootstrapResponse:
+    Validates referential integrity — every property's `location_id` resolves, any
+    `location_selection` names known locations, and location/property ids are unique — and that
+    the product surface has its required primary owner, raising on any violation at startup."""
     available_locations = _locations_for_config(config)
     location_by_id = {location.id: location for location in available_locations}
     loaded_properties = _load_properties(config, location_by_id=location_by_id)
@@ -116,14 +114,25 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
     if not properties:
         raise ValueError("Augur property catalog has no properties after applying location_selection")
     _validate_primary_agent_exists(config)
-    return BootstrapResponse(
-        locations=locations,
-        properties=properties,
-        default_rollout_samples=config.default_rollout_samples,
+    return CatalogResponse(locations=locations, properties=properties)
+
+
+def build_settings(config: Config) -> SettingsResponse:
+    """Assemble the cross-cutting simulation settings (`GET /api/settings`): sampling/horizon
+    limits, product-panel starting values, and the model registry."""
+    return SettingsResponse(
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=MAX_HORIZON_MONTHS,
         product_input_defaults=config.product_input_defaults,
         models=tuple(sorted(config.models)),
         default_model_id=config.default_model_id,
-        calibration=_calibration_info(config),
     )
+
+
+def build_calibration_info(config: Config) -> CalibrationInfo | None:
+    """The deployment's calibration catalog info (`GET /api/calibration`), or None when no
+    `calibration_catalog` is configured."""
+    catalog = config.calibration_catalog
+    if catalog is None:
+        return None
+    return CalibrationInfo(label=catalog.label or catalog.issuer, issuer=catalog.issuer)

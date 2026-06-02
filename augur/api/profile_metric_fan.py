@@ -13,7 +13,7 @@ from pathlib import Path
 from types import FrameType
 from typing import cast, get_args
 
-from augur.api.catalog import build_bootstrap_payload
+from augur.api.catalog import build_catalog
 from augur.api.config import Config, load_augur_config
 from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.model.exogenous import Sampler
@@ -38,14 +38,14 @@ def main() -> int:
     args = _arg_parser().parse_args()
     config = load_augur_config(_config_path(args.config))
     resolved_portfolio = resolve_portfolio_sources(config)
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     service = ProductService(
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
-        known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        known_location_ids=frozenset(location.id for location in catalog.locations),
         locations=sim_locations_from_config(config.locations),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
     )
@@ -112,9 +112,7 @@ def _config_path(config: str | None) -> Path:
 
 
 def _profile_models(config: Config) -> dict[str, Sampler]:
-    return {
-        preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in config.models.items()
-    }
+    return {preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in config.models.items()}
 
 
 @contextmanager

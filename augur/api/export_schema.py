@@ -15,12 +15,12 @@ import json
 import tempfile
 from pathlib import Path
 
-from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
 from augur.api.server import create_app_from_augur_config
+from augur.api.wire import ActorRole, Property
 from augur.model.independent import IndependentProviderConfig
 
 _SCHEMA_LOCATION_ID = "schema_location"

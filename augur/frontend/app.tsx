@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import { MantineProvider, NativeSelect } from "@mantine/core";
 
 import {
-  fetchAugurBootstrap,
+  fetchAugurCalibrationInfo,
+  fetchAugurCatalog,
   fetchAugurDeployment,
+  fetchAugurSettings,
   fetchProductMetricFan,
   fetchProductPortfolio,
   fetchProductRollout,
@@ -618,7 +620,7 @@ function CalibrationAppSurface({
 }
 
 // Mounted once bootstrap has loaded so the shared defaults (which depend on bootstrap fields like
-// `maxRolloutSamples` and `exogenousPresets`) are available at state-init time. Owns the cross-tab
+// `maxRolloutSamples` and `models`) are available at state-init time. Owns the cross-tab
 // state — the active tab plus shared controls — and hands it to whichever workspace is active.
 function LoadedAppShell({ bootstrap, deployment }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
@@ -715,9 +717,17 @@ function ProductProjectionAppShell() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchAugurBootstrap({ signal: controller.signal })
-      .then((payload) => {
-        setBootstrap(payload);
+    // The bootstrap endpoint is split into cohesive resources (`/api/catalog`, `/api/settings`,
+    // `/api/calibration`). The shell needs catalog + settings together to mount (shared-control
+    // defaults read off both), so fetch them in parallel and merge back into the single view
+    // model the workspaces consume.
+    Promise.all([
+      fetchAugurCatalog({ signal: controller.signal }),
+      fetchAugurSettings({ signal: controller.signal }),
+      fetchAugurCalibrationInfo({ signal: controller.signal }),
+    ])
+      .then(([catalog, settings, calibration]) => {
+        setBootstrap({ ...catalog, ...settings, calibration });
         setBootstrapError(null);
       })
       .catch((error) => {

@@ -15,9 +15,9 @@ from typing import cast
 
 import numpy as np
 
-from augur.api.bootstrap import Property
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import Frame
+from augur.api.wire import Property
 from augur.model.exogenous import (
     ExogenousSamplingRequest,
     Sampler,
@@ -153,9 +153,7 @@ class ProductService:
 
     def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
         if scenario_key.model_id not in self._models:
-            raise ValueError(
-                f"unknown model_id: {scenario_key.model_id!r} (known presets: {sorted(self._models)})"
-            )
+            raise ValueError(f"unknown model_id: {scenario_key.model_id!r} (known presets: {sorted(self._models)})")
         if (
             scenario_key.rental_location_id is not None
             and scenario_key.rental_location_id not in self._known_location_ids

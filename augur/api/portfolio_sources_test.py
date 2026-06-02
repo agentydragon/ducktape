@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from augur.api.bootstrap import ActorRole
 from augur.api.config import AgentDefinition, Config, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
@@ -17,6 +16,7 @@ from augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from augur.api.portfolio_sources import resolve_portfolio_sources
+from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.product.asset_key import SP500AssetKey
 from plaid_utils.read_model import CurrentCashBalance, CurrentHolding

@@ -2,7 +2,7 @@
 
 Builds the app from the public fixture config (which configures the example OpenAI
 catalog scored against the `openai_pe` preset), injecting multi-platform mock clients
-so the run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
+so the run stays hermetic (no network). `/api/calibration` surfaces the catalog info;
 `/api/calibration/run` does a small run with the injected live prices.
 """
 
@@ -42,10 +42,10 @@ def client(augur_config: Config) -> Iterator[TestClient]:
         yield test_client
 
 
-def test_bootstrap_surfaces_calibration_catalog(client: TestClient) -> None:
-    response = client.get("/api/bootstrap")
+def test_calibration_info_endpoint(client: TestClient) -> None:
+    response = client.get("/api/calibration")
     assert response.status_code == 200, response.text
-    calibration = response.json()["calibration"]
+    calibration = response.json()
     assert calibration["issuer"] == "openai"
     assert calibration["label"] == "OpenAI (example Manifold catalog)"
 

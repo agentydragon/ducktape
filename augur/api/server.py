@@ -15,7 +15,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from augur.api.bootstrap import BootstrapResponse
 from augur.api.calibration_wire import (
     CALIBRATION_FAN_PERCENTILES,
     CalibrationRunRequest,
@@ -23,11 +22,12 @@ from augur.api.calibration_wire import (
     sanity_band_to_wire,
 )
 from augur.api.casing import plain_json
-from augur.api.catalog import build_bootstrap_payload
+from augur.api.catalog import build_calibration_info, build_catalog, build_settings
 from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.api.schemas import ApiModel
+from augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
 from augur.budget.service import BudgetService
 from augur.budget.wire import (
     BudgetSnapshotRequest,
@@ -88,15 +88,17 @@ class ApiServerConfig:
 def create_app(config: ApiServerConfig) -> FastAPI:
     augur_config = config.augur_config
     resolved_portfolio = resolve_portfolio_sources(augur_config)
-    bootstrap = build_bootstrap_payload(augur_config)
+    catalog = build_catalog(augur_config)
+    settings = build_settings(augur_config)
+    calibration_info = build_calibration_info(augur_config)
     deployment_info = build_deployment_info()
     product_service = ProductService(
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
-        known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        known_location_ids=frozenset(location.id for location in catalog.locations),
         locations=sim_locations_from_config(augur_config.locations),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
         models=config.models,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
@@ -119,9 +121,19 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     # passes the Response through untouched. `response_model=` is purely for the OpenAPI document
     # `augur.api.export_schema` dumps to drive the frontend's Zod/TS codegen.
 
-    @app.get("/api/bootstrap", response_model=BootstrapResponse)
-    def bootstrap_house() -> JSONResponse:
-        return payload(bootstrap)
+    @app.get("/api/catalog", response_model=CatalogResponse)
+    def catalog_route() -> JSONResponse:
+        return payload(catalog)
+
+    @app.get("/api/settings", response_model=SettingsResponse)
+    def settings_route() -> JSONResponse:
+        return payload(settings)
+
+    # Null body (HTTP 200) when the deployment configures no `calibration_catalog`; the
+    # calibration tab reads that as "no catalog" rather than erroring.
+    @app.get("/api/calibration", response_model=CalibrationInfo | None)
+    def calibration_info_route() -> JSONResponse:
+        return payload(calibration_info)
 
     @app.get("/api/deployment", response_model=DeploymentInfo)
     def deployment() -> JSONResponse:
@@ -132,10 +144,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         return payload(
             product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
         )
-
-    @app.get("/api/models")
-    def models() -> JSONResponse:
-        return payload({"models": sorted(augur_config.models), "default": augur_config.default_model_id})
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:

@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
-from augur.api.catalog import build_bootstrap_payload
+from augur.api.catalog import build_catalog
 from augur.api.config import Config, load_augur_config
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio_sources import resolve_portfolio_sources
@@ -111,14 +111,14 @@ def forced_private_equity_event_model() -> ConstantFrameModel:
 def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductService:
     config = augur_config or _augur_config()
     resolved_portfolio = resolve_portfolio_sources(config)
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     return ProductService(
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
-        known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        known_location_ids=frozenset(location.id for location in catalog.locations),
         locations=sim_locations_from_config(config.locations),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
         models={"current_model": model},
         max_rollout_samples=config.max_rollout_samples,
         max_cache_rollouts=10,
@@ -745,7 +745,7 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(count
 
 def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
     config = _augur_config()
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -769,7 +769,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
     )
 
     assert [(row.agent_id, row.property_id) for row in sim_scenario.initial_primary_residences] == [
@@ -783,7 +783,7 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
 
 def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees() -> None:
     config = _augur_config()
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -807,7 +807,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
     )
 
     rent_transfer = one(
@@ -838,7 +838,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
 
 def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> None:
     config = _augur_config()
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -867,7 +867,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
     )
 
     rent_transfers = [
@@ -915,7 +915,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
 
 def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental() -> None:
     config = _augur_config()
-    bootstrap = build_bootstrap_payload(config)
+    catalog = build_catalog(config)
     primary_agent_id = resolve_primary_agent_id(config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -936,7 +936,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
         primary_agent_id=primary_agent_id,
         initial_cash_usd=1_200_000.0,
         initial_lots=(),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id={property_.id: property_ for property_ in catalog.properties},
     )
 
     rent_transfer = one(

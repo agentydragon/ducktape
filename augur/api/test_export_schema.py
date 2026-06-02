@@ -31,6 +31,11 @@ def test_export_schema_emits_openapi_with_components() -> None:
     # The calibration routes are registered unconditionally; their presence confirms the
     # in-Python config built the full app, not a degenerate empty one.
     assert any(path.startswith("/api/calibration/") for path in doc["paths"])
+    # The startup payload is split into three cohesive GET resources (replacing the old
+    # aggregate `/api/bootstrap`); the frontend's Zod codegen depends on all three being present.
+    paths = set(doc["paths"])
+    assert {"/api/catalog", "/api/settings", "/api/calibration"} <= paths
+    assert "/api/bootstrap" not in paths
 
 
 if __name__ == "__main__":

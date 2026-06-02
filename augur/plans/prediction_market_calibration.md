@@ -29,7 +29,7 @@ read-only with respect to the model; model changes are deliberate and land in
     paste-ready config block.
 - **`augur/api`** — an exogenous-only `POST /api/calibration/run` (no personal-finance
   sim) over the materialized model presets; `preset_id` defaults to the deployment's
-  shared `default_model_id`. The configured catalog rides on `/api/bootstrap`.
+  shared `default_model_id`. The configured catalog rides on `/api/calibration`.
 - **`augur/frontend`** — a Product | Calibration tab: model picker, scored vs surfaced
   markets, and the issuer mark fan.
 - **gaffer-private** — the deployment supplies the curated `catalog.yaml`

@@ -61,10 +61,9 @@ py_library(
 )
 
 py_library(
-    name = "bootstrap",
-    srcs = ["bootstrap.py"],
+    name = "wire",
+    srcs = ["wire.py"],
     deps = [
-        ":finance",
         ":local_regulation",
         ":schemas",
         "@pypi//pydantic",
@@ -75,11 +74,11 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        ":bootstrap",
         ":local_regulation",
         ":portfolio",
         ":portfolio_source_config",
         ":schemas",
+        ":wire",
         "//augur/budget:schema",
         "//augur/model:provider_config",
         "@pypi//pydantic",
@@ -183,9 +182,9 @@ py_library(
     name = "catalog",
     srcs = ["catalog.py"],
     deps = [
-        ":bootstrap",
         ":config",
         ":local_regulation",
+        ":wire",
         "//augur/product:wire",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
@@ -206,12 +205,12 @@ py_test(
     name = "catalog_test",
     srcs = ["catalog_test.py"],
     deps = [
-        ":bootstrap",
         ":catalog",
         ":config",
         ":finance",
         ":local_regulation",
         ":portfolio_source_config",
+        ":wire",
         "//augur/model:independent",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -282,7 +281,6 @@ py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
-        ":bootstrap",
         ":calibration_wire",
         ":casing",
         ":catalog",
@@ -290,6 +288,7 @@ py_library(
         ":deployment",
         ":portfolio_sources",
         ":schemas",
+        ":wire",
         "//augur/budget:service",
         "//augur/budget:wire",
         "//augur/calibration",
@@ -399,12 +398,12 @@ py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
-        ":bootstrap",
         ":config",
         ":finance",
         ":local_regulation",
         ":portfolio_source_config",
         ":server_lib",
+        ":wire",
         "//augur/model:independent",
     ],
 )
