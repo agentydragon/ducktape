@@ -4,6 +4,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
 load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
@@ -363,6 +364,31 @@ tsc_bin.tsc_test(
     ],
     chdir = package_name(),
     data = [
+        "sanity_bands.test.ts",
+        "tsconfig.json",
+        ":main_lib",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
+    tags = ["lint"],
+)
+
+# Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
+# Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware
+# rules need the full TS program (built from tsconfig.json), which only a
+# whole-package sandbox provides. Mirrors tsc_test's inputs. See P3 in
+# plans/eslint_tightening.md.
+eslint_bin.eslint_test(
+    name = "eslint_typed_test",
+    args = [
+        "--no-config-lookup",
+        "--config",
+        "eslint.typed.config.js",
+        ".",
+    ],
+    chdir = package_name(),
+    data = [
+        "eslint.typed.config.js",
         "sanity_bands.test.ts",
         "tsconfig.json",
         ":main_lib",
