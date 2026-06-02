@@ -39,10 +39,13 @@ const svelteFiles = svelteProjects.map((g) => `${g}/*.svelte`);
 const svelteTsFiles = svelteProjects.map((g) => `${g}/*.svelte.ts`);
 const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 
-// Import ordering (TS equivalent of ruff's isort)
-// import/order is disabled: eslint-plugin-import-x's import/order rule crashes under
-// Bazel's sandboxed execution because resolve() returns null for imports in bazel-out/
-// paths and getFilePackagePath calls path.dirname(null). Affects all file types.
+// Import ordering (the TS equivalent of ruff's isort) is intentionally OFF.
+// import/order crashes under Bazel: ranking an import calls getContextPackagePath,
+// which walks up from the source file for a package.json (pkgUp) — but the
+// bazel-out execution tree has none above it, so path.dirname(null) throws. Not
+// fixable via resolver config or the whole-program test path; a Prettier
+// import-sort plugin is the realistic alternative.
+// See debug/eslint_import_order_bazel.md for the full investigation.
 const importRules = {
   "import/first": "error",
   "import/order": "off",
