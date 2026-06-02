@@ -41,6 +41,14 @@ build --@rules_python//python/config_settings:python_version=3.13
 build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
+# Make ruff + ESLint findings HARD-FAIL the build instead of only populating the
+# rules_lint_report output group. This puts the rules_lint aspects on equal
+# footing with mypy/clippy/rustfmt (whose aspect actions already fail the build
+# directly): code that doesn't lint clean no longer bazel-builds. --config=nolint
+# still bypasses — it drops the rules_lint_report output group, so the
+# report-generating action that enforces this flag is never requested.
+build --@aspect_rules_lint//lint:fail_on_violation
+
 # Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
 # output groups prevents the aspect actions from running.
 build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
