@@ -21,8 +21,8 @@ from collections.abc import Callable
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
-from augur.api.casing import decamelize_json
 from augur.calibration.platform import Market
 
 _MARKET_ENDPOINT = "https://api.manifold.markets/v0/market/"
@@ -30,9 +30,13 @@ _USER_AGENT = "augur-pm-calibration/1.0"
 
 
 class _ManifoldResponse(BaseModel):
-    """The subset of the Manifold v0 market payload calibration needs (snake-cased)."""
+    """The subset of the Manifold v0 market payload calibration needs.
 
-    model_config = ConfigDict(extra="ignore")
+    Manifold serves camelCase JSON; `alias_generator=to_camel` maps it onto these snake_case
+    fields, so any future multi-word field (e.g. `total_liquidity` <- `totalLiquidity`) parses
+    without a manual rename pass."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
     id: str
     url: str
@@ -75,7 +79,7 @@ class ManifoldClient:
             return cached[0]
         response = self._client.get(f"{_MARKET_ENDPOINT}{market_id}")
         response.raise_for_status()
-        raw = _ManifoldResponse.model_validate(decamelize_json(response.json()))
+        raw = _ManifoldResponse.model_validate(response.json())
         market = Market(id=raw.id, url=raw.url, probability=raw.probability)
         self._cache[market_id] = (market, now)
         return market

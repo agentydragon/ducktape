@@ -40,7 +40,6 @@ py_library(
     srcs = ["manifold.py"],
     deps = [
         ":platform",
-        "//augur/api:casing",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],

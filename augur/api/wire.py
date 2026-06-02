@@ -132,6 +132,16 @@ class CatalogResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
 
+    # Lookups the server/sim build off the catalog. Plain `@property` (not a serialized field), so
+    # they stay off the wire while giving every caller one spelling of the derivation.
+    @property
+    def properties_by_id(self) -> dict[str, Property]:
+        return {property_.id: property_ for property_ in self.properties}
+
+    @property
+    def location_ids(self) -> frozenset[str]:
+        return frozenset(location.id for location in self.locations)
+
 
 class SettingsResponse(ApiModel):
     """Cross-cutting simulation knobs the app shell reads at mount time, served at

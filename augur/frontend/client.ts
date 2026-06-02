@@ -58,12 +58,35 @@ async function postJson(path, body, signal) {
   );
 }
 
-export async function fetchAugurCatalog({ signal }: FetchOptions = {}) {
-  return camelizeObjectKeys(zCatalogResponse.parse(await getJson("/api/catalog", signal)));
+// Anything with a Zod-like `.parse` (structural, so we don't import zod here). `T` is the wire
+// (snake_case) output type; the helpers below carry it through camelization as `CamelCasedDeep<T>`.
+type Parser<T> = { parse: (data: unknown) => T };
+
+// GET a JSON resource, validate it against its wire schema, and camelize — the single place a
+// read does this. Returns the camelCase-typed body.
+async function apiGet<T>(path: string, schema: Parser<T>, signal?: AbortSignal) {
+  return camelizeObjectKeys(schema.parse(await getJson(path, signal)));
 }
 
-export async function fetchAugurSettings({ signal }: FetchOptions = {}) {
-  return camelizeObjectKeys(zSettingsResponse.parse(await getJson("/api/settings", signal)));
+// POST a camelCase `body`: decamelize + validate it against the request schema, then validate and
+// camelize the response — the single place a write does this.
+async function apiPost<T>(
+  path: string,
+  requestSchema: Parser<unknown>,
+  responseSchema: Parser<T>,
+  body: unknown,
+  signal?: AbortSignal
+) {
+  const request = requestSchema.parse(decamelizeObjectKeys(body));
+  return camelizeObjectKeys(responseSchema.parse(await postJson(path, request, signal)));
+}
+
+export function fetchAugurCatalog({ signal }: FetchOptions = {}) {
+  return apiGet("/api/catalog", zCatalogResponse, signal);
+}
+
+export function fetchAugurSettings({ signal }: FetchOptions = {}) {
+  return apiGet("/api/settings", zSettingsResponse, signal);
 }
 
 // `/api/calibration` returns the catalog info, or a null body when the deployment configures
@@ -73,41 +96,54 @@ export async function fetchAugurCalibrationInfo({ signal }: FetchOptions = {}) {
   return body == null ? null : camelizeObjectKeys(zCalibrationInfo.parse(body));
 }
 
-export async function fetchAugurDeployment({ signal }: FetchOptions = {}) {
-  return camelizeObjectKeys(zDeploymentInfo.parse(await getJson("/api/deployment", signal)));
+export function fetchAugurDeployment({ signal }: FetchOptions = {}) {
+  return apiGet("/api/deployment", zDeploymentInfo, signal);
 }
 
-export async function fetchProductPortfolio({ signal }: FetchOptions = {}) {
-  return camelizeObjectKeys(zProductPortfolioResponse.parse(await getJson("/api/product/portfolio", signal)));
+export function fetchProductPortfolio({ signal }: FetchOptions = {}) {
+  return apiGet("/api/product/portfolio", zProductPortfolioResponse, signal);
 }
 
-export async function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions = {}) {
-  const request = zMetricFanRequest.parse(decamelizeObjectKeys(metricFanRequest));
-  return camelizeObjectKeys(
-    zMetricFanResponse.parse(await postJson("/api/product/projections/metric_fan", request, signal))
+export function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/product/projections/metric_fan",
+    zMetricFanRequest,
+    zMetricFanResponse,
+    metricFanRequest,
+    signal
   );
 }
 
-export async function fetchProductRollout(rolloutRequest, { signal }: FetchOptions = {}) {
-  const request = zRolloutRequest.parse(decamelizeObjectKeys(rolloutRequest));
-  return camelizeObjectKeys(
-    zRolloutResponse.parse(await postJson("/api/product/projections/rollout", request, signal))
+export function fetchProductRollout(rolloutRequest, { signal }: FetchOptions = {}) {
+  return apiPost("/api/product/projections/rollout", zRolloutRequest, zRolloutResponse, rolloutRequest, signal);
+}
+
+export function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/calibration/run",
+    zCalibrationRunRequest,
+    zCalibrationRunResponse,
+    calibrationRunRequest,
+    signal
   );
 }
 
-export async function fetchCalibrationRun(calibrationRunRequest, { signal }: FetchOptions = {}) {
-  const request = zCalibrationRunRequest.parse(decamelizeObjectKeys(calibrationRunRequest));
-  return camelizeObjectKeys(zCalibrationRunResponse.parse(await postJson("/api/calibration/run", request, signal)));
+export function fetchBudgetSnapshot(budgetSnapshotRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/budget/snapshot",
+    zBudgetSnapshotRequest,
+    zBudgetSnapshotResponse,
+    budgetSnapshotRequest,
+    signal
+  );
 }
 
-export async function fetchBudgetSnapshot(budgetSnapshotRequest, { signal }: FetchOptions = {}) {
-  const request = zBudgetSnapshotRequest.parse(decamelizeObjectKeys(budgetSnapshotRequest));
-  return camelizeObjectKeys(zBudgetSnapshotResponse.parse(await postJson("/api/budget/snapshot", request, signal)));
-}
-
-export async function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
-  const request = zBudgetTransactionsRequest.parse(decamelizeObjectKeys(budgetTransactionsRequest));
-  return camelizeObjectKeys(
-    zBudgetTransactionsResponse.parse(await postJson("/api/budget/transactions", request, signal))
+export function fetchBudgetTransactions(budgetTransactionsRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/budget/transactions",
+    zBudgetTransactionsRequest,
+    zBudgetTransactionsResponse,
+    budgetTransactionsRequest,
+    signal
   );
 }

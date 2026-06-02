@@ -43,9 +43,9 @@ def main() -> int:
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
-        known_location_ids=frozenset(location.id for location in catalog.locations),
+        known_location_ids=catalog.location_ids,
         locations=sim_locations_from_config(config.locations),
-        properties_by_id={property_.id: property_ for property_ in catalog.properties},
+        properties_by_id=catalog.properties_by_id,
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
     )
