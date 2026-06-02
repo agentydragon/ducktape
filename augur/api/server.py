@@ -129,8 +129,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def settings_route() -> JSONResponse:
         return payload(settings)
 
-    # Null body (HTTP 200) when the deployment configures no `calibration_catalog`; the
-    # calibration tab reads that as "no catalog" rather than erroring.
+    # Returns JSON `null` (HTTP 200, application/json) when the deployment configures no
+    # `calibration_catalog`; the calibration tab reads that as "no catalog" rather than erroring.
     @app.get("/api/calibration", response_model=CalibrationInfo | None)
     def calibration_info_route() -> JSONResponse:
         return payload(calibration_info)
