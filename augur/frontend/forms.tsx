@@ -20,8 +20,8 @@ import {
   buildLifecycleEvents,
   defaultLifecycleEvent,
   nextLifecycleEventId,
+  FAN_PERCENTILES,
 } from "./input_helpers.ts";
-import { FAN_PERCENTILES } from "./input_helpers.ts";
 import { rolloutSliverColor, portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.ts";
 
 function firstSaleMonth(events) {
@@ -224,7 +224,7 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
       <div className="augur-field-label">Timeline (mid-horizon changes)</div>
       {events.length === 0 && (
         <div className="text-xs augur-muted">
-          Add events to change the property's rented %, primary-home status, fund a capital improvement, or sell
+          Add events to change the property&apos;s rented %, primary-home status, fund a capital improvement, or sell
           mid-horizon.
         </div>
       )}

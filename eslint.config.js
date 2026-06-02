@@ -9,6 +9,7 @@ import sveltePlugin from "eslint-plugin-svelte";
 import svelteParser from "svelte-eslint-parser";
 import importPlugin from "eslint-plugin-import-x";
 import react from "eslint-plugin-react";
+import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 // All project source directories (add new TS/Svelte projects here)
@@ -23,6 +24,9 @@ const projectGlobs = [
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
 const svelteFiles = projectGlobs.map((g) => `${g}/*.svelte`);
 const svelteTsFiles = projectGlobs.map((g) => `${g}/*.svelte.ts`);
+
+// React projects (subset of projectGlobs) get eslint-plugin-react + react-hooks.
+const reactFiles = ["x/rspcache/admin_ui/src/**", "augur/frontend/**"].map((g) => `${g}/*.{ts,tsx}`);
 
 // Import ordering (TS equivalent of ruff's isort)
 // import/order is disabled: eslint-plugin-import-x's import/order rule crashes under
@@ -43,6 +47,9 @@ const coreRules = {
   "@typescript-eslint/consistent-type-imports": "error",
   "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
   "no-unused-vars": "off",
+  // TypeScript already resolves identifiers/types; eslint's no-undef misfires on type-only
+  // names (e.g. `RequestInit`) and ambient globals, so defer to the compiler.
+  "no-undef": "off",
   ...importRules,
 };
 
@@ -100,23 +107,18 @@ export default [
     },
   },
 
-  // ── Per-project overrides ──────────────────────────────────────────────
-
-  // RSPCache admin UI: React/JSX
+  // ── React projects (eslint-plugin-react recommended + react-hooks) ──────
   {
-    files: ["x/rspcache/admin_ui/src/**/*.{ts,tsx}"],
+    files: reactFiles,
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
-    plugins: { react },
+    plugins: { react, "react-hooks": reactHooks },
     settings: { react: { version: "18.3" } },
-    rules: { "react/react-in-jsx-scope": "off" },
-  },
-
-  // Augur frontend: React/JSX
-  {
-    files: ["augur/frontend/**/*.{ts,tsx}"],
-    languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
-    plugins: { react },
-    settings: { react: { version: "18.3" } },
-    rules: { "react/react-in-jsx-scope": "off" },
+    rules: {
+      ...react.configs.recommended.rules,
+      "react/react-in-jsx-scope": "off", // automatic JSX runtime, no React import needed
+      "react/prop-types": "off", // TypeScript handles prop types
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+    },
   },
 ];

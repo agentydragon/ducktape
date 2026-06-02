@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
 import { FAN_PERCENTILES } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
@@ -223,32 +223,31 @@ export function MetricFanChart({
     return `${upper} ${lower}`;
   };
 
-  const handleMouseMove = useCallback(
-    (event) => {
-      const svg = svgRef.current;
-      if (!svg) return;
-      const rect = svg.getBoundingClientRect();
-      const svgX = event.clientX - rect.left;
-      if (svgX < margin.left || svgX > margin.left + plotWidth) {
-        setHoveredMonth(null);
-        return;
+  // Plain handlers (not useCallback): they sit after the early return above, and as DOM event
+  // handlers gain nothing from memoization.
+  const handleMouseMove = (event) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const svgX = event.clientX - rect.left;
+    if (svgX < margin.left || svgX > margin.left + plotWidth) {
+      setHoveredMonth(null);
+      return;
+    }
+    const targetYear = ((svgX - margin.left) / plotWidth) * maxYear;
+    let closest = null;
+    let closestDist = Infinity;
+    for (const row of rows) {
+      const dist = Math.abs(row.year - targetYear);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = row;
       }
-      const targetYear = ((svgX - margin.left) / plotWidth) * maxYear;
-      let closest = null;
-      let closestDist = Infinity;
-      for (const row of rows) {
-        const dist = Math.abs(row.year - targetYear);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closest = row;
-        }
-      }
-      setHoveredMonth(closest);
-    },
-    [rows, maxYear, plotWidth, margin.left]
-  );
+    }
+    setHoveredMonth(closest);
+  };
 
-  const handleMouseLeave = useCallback(() => setHoveredMonth(null), []);
+  const handleMouseLeave = () => setHoveredMonth(null);
 
   const hoveredRow = hoveredMonth;
 

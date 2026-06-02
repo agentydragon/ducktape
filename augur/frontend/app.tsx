@@ -343,7 +343,7 @@ function ProductProjectionWorkspace({
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
-  const rolloutSummaries = result?.rolloutSummaries ?? [];
+  const rolloutSummaries = useMemo(() => result?.rolloutSummaries ?? [], [result]);
   const selectedSummary = useMemo(
     () => rolloutSummaries.find((summary) => Number(summary.seed) === selectedSeed) ?? null,
     [rolloutSummaries, selectedSeed]

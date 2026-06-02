@@ -115,8 +115,8 @@ function CalibrationForm({ catalog }) {
         <div className="px-4 py-3">
           <div className="augur-eyebrow">Calibration run</div>
           <div className="mt-1 text-xs augur-muted">
-            Score a built-in exogenous model's rollouts against this deployment's curated prediction-market catalog
-            (exogenous-only — no portfolio, no product scenario). Results update live as you tune the inputs.
+            Score a built-in exogenous model&apos;s rollouts against this deployment&apos;s curated prediction-market
+            catalog (exogenous-only — no portfolio, no product scenario). Results update live as you tune the inputs.
           </div>
         </div>
         <div className="grid gap-3 px-4 py-3">
@@ -289,8 +289,9 @@ function SanityBandsPanel({ bands }) {
           <div className="augur-eyebrow">Reasonableness bands (deploy gate)</div>
           <div className="mt-1 text-xs augur-muted">
             The hardcoded <code>sample_sanity</code> reasonableness bands: an expected range vs the observed value, the
-            same shape as the model-vs-market calibration above but checked against this run's own rollouts. Tail
-            percentile bands (p1/p99) are noisier at this page's rollout count than at the deploy gate's higher count.
+            same shape as the model-vs-market calibration above but checked against this run&apos;s own rollouts. Tail
+            percentile bands (p1/p99) are noisier at this page&apos;s rollout count than at the deploy gate&apos;s
+            higher count.
           </div>
         </div>
         <div className="shrink-0 text-right">

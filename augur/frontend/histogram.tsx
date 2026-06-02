@@ -22,10 +22,14 @@ export function TerminalDistributionHistogram({
   metric,
   metricScale = "linear",
 }) {
-  if (summaries.length === 0) return null;
+  // Hooks must run unconditionally, before the early return below. `entries` is safe to compute
+  // for empty `summaries` (yields []), so it can live up here to feed the memo.
   const entries = summaries
     .map((summary) => ({ summary, value: terminalMetricValue(summary.terminalMetrics, metric) }))
     .filter((entry) => Number.isFinite(entry.value));
+  const sortedEntries = useMemo(() => entries.slice().sort((left, right) => left.value - right.value), [entries]);
+  const histogramDragRef = useRef({ dragging: false, startX: 0, startY: 0, startSeed: null, wasSelected: false });
+  if (summaries.length === 0) return null;
   const axis =
     entries.length > 0
       ? fanChartAxis(
@@ -53,10 +57,8 @@ export function TerminalDistributionHistogram({
     return ((axisCoordinate(axis, value) - axis.min) / axis.range) * 100;
   };
   const xTicks = Array.isArray(axis.ticks) ? axis.ticks.slice().sort((left, right) => left - right) : [];
-  const sortedEntries = useMemo(() => entries.slice().sort((left, right) => left.value - right.value), [entries]);
   const selectedSliderEntry = sortedEntries.find((entry) => Number(entry.summary.seed) === selectedSeed) ?? null;
   const thumbLeftPct = selectedSliderEntry ? axisLeftPct(selectedSliderEntry.value) : null;
-  const histogramDragRef = useRef({ dragging: false, startX: 0, startY: 0, startSeed: null, wasSelected: false });
   const seedAtPoint = (clientX, clientY) => {
     const target = document.elementFromPoint(clientX, clientY);
     if (!target) return null;
