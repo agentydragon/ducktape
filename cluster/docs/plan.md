@@ -195,6 +195,21 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       status as `Programmed=False` / `AddressNotAssigned`. Verify whether this is cosmetic
       (routes still work) or blocks CEC programming. If blocking, try `spec.addresses`
       with static OVH Gateway IPs, or track the upstream fix.
+- [ ] Autopopulate `tf/gitops/dns-records` IP lists from cluster state instead of a
+      hand-edited literal. After every `talos-* → ovh-ns*` rename the comments rot
+      (none of those rename commits touched the DNS TF) and IPs of nodes whose Cilium
+      L2 announce is stale stay in the `*.allegedly.works` round-robin until a human
+      notices — most recently the augur oauth2-proxy crash-looped on OIDC discovery
+      against `auth.allegedly.works` because DNS resolved to a dead IP ~2/5 of the
+      time (PR fixing the immediate bleeding: ducktape#1820). Options to wire up:
+      (a) `data "kubernetes_resources"` looking up nodes by a `gateway-public-ip`
+      label/annotation; (b) read from the main cluster TF state via
+      `terraform_remote_state` (or import the OVH node IPs directly) so the
+      provisioning side is the source of truth; (c) reuse a Cilium
+      `CiliumLoadBalancerIPPool` already constrained by node health. (a) is the
+      smallest change and would catch the L2-announce-stale case if combined with a
+      readiness gate (`Programmed=True` check). (b) is the most architecturally
+      coherent — DNS and node provisioning share state already, just not via TF.
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
