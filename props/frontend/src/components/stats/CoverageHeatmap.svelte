@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Chart, Tooltip, LinearScale } from "chart.js";
+  import { Chart, Tooltip, LinearScale, type ChartDataset, type ScriptableContext, type TooltipItem } from "chart.js";
   import { MatrixController, MatrixElement } from "chartjs-chart-matrix";
   import { formatDigest } from "../../lib/formatters";
 
@@ -47,15 +47,19 @@
     }))
   );
 
+  // The matrix data points carry a custom `best` field beyond chartjs-chart-matrix's
+  // own data-point type, so each retrieved point is cast to this local shape.
+  type MatrixPoint = { x: number; y: number; v: number; best: boolean };
+
   onMount(() => {
     chart = new Chart(canvas, {
       type: "matrix",
       data: {
         datasets: [
           {
-            data: matrixData as any,
-            backgroundColor(ctx: any) {
-              const v = ctx.dataset.data[ctx.dataIndex];
+            data: matrixData as unknown as ChartDataset["data"],
+            backgroundColor(ctx: ScriptableContext<"matrix">) {
+              const v = ctx.dataset.data[ctx.dataIndex] as unknown as MatrixPoint;
               if (!v) return "rgba(243, 244, 246, 1)"; // gray-100
               if (v.best) {
                 // Green intensity based on recall
@@ -65,11 +69,11 @@
               // Light gray for evaluated-but-not-best
               return `rgba(209, 213, 219, ${0.3 + v.v * 0.5})`;
             },
-            width: ({ chart }: any) => {
+            width: ({ chart }: { chart: Chart }) => {
               const xScale = chart.scales.x;
               return Math.max(xScale.width / (examples.length + 1) - 1, 4);
             },
-            height: ({ chart }: any) => {
+            height: ({ chart }: { chart: Chart }) => {
               const yScale = chart.scales.y;
               return Math.max(yScale.height / (definitions.length + 1) - 1, 12);
             },
@@ -83,8 +87,8 @@
           tooltip: {
             callbacks: {
               title: () => "",
-              label(ctx: any) {
-                const d = ctx.dataset.data[ctx.dataIndex];
+              label(ctx: TooltipItem<"matrix">) {
+                const d = ctx.dataset.data[ctx.dataIndex] as unknown as MatrixPoint;
                 const def = definitions[d.y];
                 const ex = examples[d.x];
                 const slug = ex.snapshot_slug.length > 20 ? ex.snapshot_slug.slice(0, 20) + "…" : ex.snapshot_slug;
@@ -114,8 +118,8 @@
             min: -0.5,
             max: definitions.length - 0.5,
             ticks: {
-              callback: (val: any) => {
-                const def = definitions[Math.round(val)];
+              callback: (val: number | string) => {
+                const def = definitions[Math.round(Number(val))];
                 return def ? formatDigest(def.image_digest) : "";
               },
               autoSkip: false,
@@ -136,7 +140,7 @@
 
   $effect(() => {
     if (chart) {
-      (chart.data.datasets[0].data as any) = matrixData;
+      chart.data.datasets[0].data = matrixData as unknown as ChartDataset["data"];
       chart.update("none");
     }
   });

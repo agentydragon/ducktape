@@ -39,8 +39,18 @@ const importRules = {
   "import/no-duplicates": "error",
 };
 
+// typescript-eslint's recommended rule set (ban-ts-comment, no-explicit-any,
+// no-empty-object-type, no-unsafe-function-type, prefer-as-const, …), pulled
+// from the already-present plugin's eslintrc `recommended` config. Its `.rules`
+// also turns off the core rules it supersedes (no-array-constructor,
+// no-unused-vars, no-unused-expressions). We layer it under coreRules so our
+// explicit overrides (no-unused-vars with the `^_` pattern, etc.) win; `no-undef`
+// is already disabled below for the type-name positives TypeScript itself catches.
+const tsRecommendedRules = tseslint.configs.recommended.rules;
+
 // Shared quality + TS rules applied everywhere
 const coreRules = {
+  ...tsRecommendedRules,
   "prefer-const": "error",
   eqeqeq: ["error", "always", { null: "ignore" }],
   "no-console": ["warn", { allow: ["warn", "error"] }],

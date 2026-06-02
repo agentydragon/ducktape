@@ -178,7 +178,7 @@
       return false;
     };
 
-    searchInIssues(snap.true_positives) || searchInIssues(snap.false_positives);
+    if (!searchInIssues(snap.true_positives)) searchInIssues(snap.false_positives);
   }
 
   // Scroll to target after file finishes loading
