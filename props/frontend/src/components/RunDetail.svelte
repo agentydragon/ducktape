@@ -133,8 +133,6 @@
     }
   }
 
-  let llmRequestsFetched = false;
-
   // Load LLM requests
   async function loadLLMRequests() {
     if (loadingLLMRequests) return;
@@ -142,7 +140,6 @@
     try {
       const response = await fetchLLMRequests(runId);
       llmRequests = response.requests;
-      llmRequestsFetched = true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load LLM requests";
       toast.error(message);

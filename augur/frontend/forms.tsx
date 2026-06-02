@@ -1,28 +1,9 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React from "react";
 import { Button, Checkbox, NativeSelect } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls.tsx";
 import { clampInteger, fmtNumber, fmtUsd } from "./lib/format.ts";
-import { fmtMetricValue } from "./lib/chart.ts";
-import { AugurHeader } from "./header.tsx";
-import {
-  LIFECYCLE_KINDS,
-  LIFECYCLE_KINDS_BY_VALUE,
-  LIFECYCLE_KIND_FROM_CODE,
-  SELL_BUCKETS,
-  SELL_BUCKET_BY_CODE,
-  DEFAULT_SELL_ORDER_CODES,
-  METRIC_OPTIONS,
-  METRIC_BY_VALUE,
-  productInputDefaults,
-  encodeInputValue,
-  decodeInputValue,
-  sellOrderBuckets,
-  buildLifecycleEvents,
-  defaultLifecycleEvent,
-  nextLifecycleEventId,
-  FAN_PERCENTILES,
-} from "./input_helpers.ts";
-import { rolloutSliverColor, portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.ts";
+import { LIFECYCLE_KINDS, SELL_BUCKETS, SELL_BUCKET_BY_CODE, defaultLifecycleEvent } from "./input_helpers.ts";
+import { portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.ts";
 
 function firstSaleMonth(events) {
   let earliest = null;

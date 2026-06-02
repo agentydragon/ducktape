@@ -2,7 +2,7 @@
   import "./app.css";
   import { onMount, setContext } from "svelte";
   import { Toaster } from "svelte-sonner";
-  import { pathname, resolve, goto, parseParams } from "$lib/router";
+  import { pathname, resolve, parseParams } from "$lib/router";
   import { captureTokenFromUrl, getToken, setToken, needsToken } from "$lib/stores/token";
   import RunTriggerModal from "$components/RunTriggerModal.svelte";
   import type { Split, ExampleKind } from "$lib/types";

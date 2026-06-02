@@ -45,7 +45,7 @@ const coreRules = {
   eqeqeq: ["error", "always", { null: "ignore" }],
   "no-console": ["warn", { allow: ["warn", "error"] }],
   "@typescript-eslint/consistent-type-imports": "error",
-  "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+  "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
   "no-unused-vars": "off",
   // TypeScript already resolves identifiers/types; eslint's no-undef misfires on type-only
   // names (e.g. `RequestInit`) and ambient globals, so defer to the compiler.
@@ -103,7 +103,7 @@ export default [
     },
     rules: {
       ...coreRules,
-      "svelte/no-unused-svelte-ignore": "warn",
+      "svelte/no-unused-svelte-ignore": "error",
     },
   },
 
@@ -138,9 +138,9 @@ export default [
     rules: {
       "react/jsx-uses-react": "error",
       "react/jsx-uses-vars": "error",
-      // Match the repo's policy elsewhere (coreRules): unused vars are warnings, not
-      // build-blocking errors. js.recommended makes them errors by default.
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      // Match the repo's policy elsewhere (coreRules): unused vars are build-blocking
+      // errors, with a leading-underscore escape hatch.
+      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
 ];

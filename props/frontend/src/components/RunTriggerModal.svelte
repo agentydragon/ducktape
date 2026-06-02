@@ -225,7 +225,6 @@
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
   >
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="bg-white dark:bg-gray-800 rounded-lg shadow-xl dark:shadow-gray-950/50 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
       role="document"

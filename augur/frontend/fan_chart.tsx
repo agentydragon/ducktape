@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
-import { FAN_PERCENTILES } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
 import {
   SELECTED_ROLLOUT_COLOR,
@@ -12,7 +11,7 @@ import {
   eventTitle,
 } from "./data_helpers.ts";
 
-function FanAxes({ left, top, plotWidth, plotHeight, height, x, y, yAxis, maxYear, metric }) {
+function FanAxes({ left, top, plotWidth, plotHeight, height, y, yAxis, maxYear, metric }) {
   return (
     <>
       {yAxis.ticks.map((value) => {
@@ -269,7 +268,6 @@ export function MetricFanChart({
           plotWidth={plotWidth}
           plotHeight={plotHeight}
           height={svgHeight}
-          x={x}
           y={y}
           yAxis={yAxis}
           maxYear={maxYear}

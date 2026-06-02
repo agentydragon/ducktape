@@ -1,6 +1,6 @@
-import React, { useMemo } from "react";
+import React from "react";
 
-import { COLORS, fmtClock, fmtHoursMin, getElapsedSec, StatCard, SUBJECTS, SectionTitle } from "./shared.jsx";
+import { COLORS, fmtClock, fmtHoursMin, StatCard, SUBJECTS, SectionTitle } from "./shared.jsx";
 
 export function StudyView({
   offline,

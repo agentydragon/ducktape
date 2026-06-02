@@ -1,11 +1,9 @@
 import React, { useCallback, useMemo, useRef } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
-import { fmtNumber } from "./lib/format.ts";
 import { FAN_PERCENTILES } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
 import {
   FAILED_ROLLOUT_COLOR,
-  SELECTED_ROLLOUT_COLOR,
   rolloutSliverColor,
   blendWithTeal,
   terminalHistogramBins,

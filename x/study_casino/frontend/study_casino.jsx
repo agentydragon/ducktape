@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { SyncIcon } from "./SyncIcon.jsx";
 import { useCasino } from "./use_casino.js";
 import { useUrlState } from "./use_url_state.js";
-import { COLORS, SUBJECTS, fmtClock, fmtHoursMin, getElapsedSec } from "./shared.jsx";
+import { COLORS, SUBJECTS, fmtClock, getElapsedSec } from "./shared.jsx";
 import { StudyView } from "./StudyView.jsx";
 import { PrizesView } from "./PrizesView.jsx";
 import { StatsView } from "./StatsView.jsx";

@@ -20,7 +20,7 @@ import { CalibrationWorkspace } from "./calibration.tsx";
 import { BudgetWorkspace } from "./budget.tsx";
 import { AugurHeader, SharedControls } from "./header.tsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.tsx";
-import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.ts";
+import { CurrencyDisplayProvider, useVisibleEventKinds, useEventSelection } from "./hooks.ts";
 import {
   METRIC_OPTIONS,
   productInputDefaults,
@@ -173,7 +173,6 @@ function RolloutResultsPanel({
   eventSelection,
   rolloutError,
 }) {
-  const { display: currencyDisplay } = useCurrencyDisplay();
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">

@@ -1,5 +1,4 @@
 import { clampInteger } from "./lib/format.ts";
-import { rowsFrom } from "./lib/frame.ts";
 
 // Sell-order is stored as a string of single-char bucket codes, in priority order. "pc" means
 // "sell public securities first, then crypto if needed"; "c" means crypto only; "" disables auto

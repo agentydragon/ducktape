@@ -204,7 +204,7 @@ function LumpyPanel({ items, bucketsById }) {
   );
 }
 
-function TransactionsPanel({ bucketLabel, transactions }) {
+function TransactionsPanel({ transactions }) {
   if (!transactions) return <div className="px-4 py-6 text-sm augur-muted">Loading…</div>;
   if (!transactions.length) {
     return <div className="px-4 py-6 text-sm augur-muted">No transactions in this bucket.</div>;
@@ -414,7 +414,7 @@ export function BudgetWorkspace() {
               {bucketTxError ? (
                 <div className="augur-note-danger p-4 text-sm">Transactions failed: {bucketTxError}</div>
               ) : (
-                <TransactionsPanel bucketLabel={bucketsById.get(selectedBucketId)?.label} transactions={bucketTx} />
+                <TransactionsPanel transactions={bucketTx} />
               )}
             </section>
           )}
