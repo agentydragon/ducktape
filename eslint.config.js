@@ -12,6 +12,13 @@ import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
+// ── Shared building blocks (factored so the per-glob configs below stay DRY) ──
+const browserGlobals = { ...globals.browser };
+const tsPlugins = { "@typescript-eslint": tseslint, import: importPlugin };
+const reactSettings = { react: { version: "18.3" } };
+// Allow intentionally-unused identifiers/args when prefixed with `_`.
+const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
+
 // All project source directories (add new TS/Svelte projects here)
 const projectGlobs = [
   "props/frontend/src/**",
@@ -57,7 +64,7 @@ const coreRules = {
   "@typescript-eslint/consistent-type-imports": "error",
   // recommended sets a plain `error`; override to keep our leading-underscore escape hatch.
   // (recommended already disables the base `no-unused-vars`, so no need to repeat that here.)
-  "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+  "@typescript-eslint/no-unused-vars": ["error", unusedVarsOptions],
   // TypeScript already resolves identifiers/types; eslint's no-undef misfires on type-only
   // names (e.g. `RequestInit`) and ambient globals, so defer to the compiler.
   "no-undef": "off",
@@ -86,12 +93,9 @@ export default [
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: "latest", sourceType: "module" },
-      globals: { ...globals.browser },
+      globals: browserGlobals,
     },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      import: importPlugin,
-    },
+    plugins: tsPlugins,
     rules: coreRules,
   },
 
@@ -106,12 +110,9 @@ export default [
     languageOptions: {
       parser: svelteParser,
       parserOptions: { parser: tsparser, ecmaVersion: "latest", sourceType: "module" },
-      globals: { ...globals.browser },
+      globals: browserGlobals,
     },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      import: importPlugin,
-    },
+    plugins: tsPlugins,
     rules: {
       ...coreRules,
       "svelte/no-unused-svelte-ignore": "error",
@@ -123,7 +124,7 @@ export default [
     files: reactFiles,
     languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
     plugins: { react, "react-hooks": reactHooks },
-    settings: { react: { version: "18.3" } },
+    settings: reactSettings,
     rules: {
       ...react.configs.recommended.rules,
       "react/react-in-jsx-scope": "off", // automatic JSX runtime, no React import needed
@@ -142,16 +143,16 @@ export default [
     files: ["x/study_casino/frontend/**/*.{js,jsx}"],
     languageOptions: {
       parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
-      globals: { ...globals.browser },
+      globals: browserGlobals,
     },
     plugins: { react },
-    settings: { react: { version: "18.3" } },
+    settings: reactSettings,
     rules: {
       "react/jsx-uses-react": "error",
       "react/jsx-uses-vars": "error",
       // Match the repo's policy elsewhere (coreRules): unused vars are build-blocking
       // errors, with a leading-underscore escape hatch.
-      "no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      "no-unused-vars": ["error", unusedVarsOptions],
     },
   },
 ];
