@@ -235,7 +235,7 @@ class TestRollingOriginPredictiveScore:
 
     def test_unscored_model_records_reason(self) -> None:
         historical = _toy_historical(20, mu=np.array([0.0]), sigma=np.array([0.01]), seed=22)
-        result = rolling_origin_predictive_score(lambda: _UnscoredModel(), historical, min_train=5, refit_every=1)
+        result = rolling_origin_predictive_score(_UnscoredModel, historical, min_train=5, refit_every=1)
         assert isinstance(result, UnscoredRollingOriginResult)
         assert "returned None" in result.unscored_reason
 

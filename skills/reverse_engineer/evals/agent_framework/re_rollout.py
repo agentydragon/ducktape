@@ -134,7 +134,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     skill_on = args.skill == "on"
     suffix = "skill_on" if skill_on else "skill_off"
     out_dir: Path = args.output_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(out_dir.mkdir, parents=True, exist_ok=True)
 
     workspace = out_dir / f"work_{suffix}"
     transcript_path = out_dir / f"transcript_{suffix}.jsonl"

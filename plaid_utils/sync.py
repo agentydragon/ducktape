@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Protocol, TypeVar, cast
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from plaid.exceptions import ApiException as PlaidApiException
@@ -49,9 +49,6 @@ class PlaidApiLike(Protocol):
     def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
     def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
     def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
-
-
-_PlaidRequestT = TypeVar("_PlaidRequestT", bound=PlaidRequestLike)
 
 
 @dataclass(frozen=True)
@@ -269,13 +266,13 @@ async def _fetch_investment_transactions(
     return out
 
 
-async def _call(
+async def _call[PlaidRequestT: PlaidRequestLike](
     api: PlaidApiLike,
     storage: PlaidLinkStorage,
     run_id: UUID,
     endpoint: str,
-    call: Callable[[_PlaidRequestT], object],
-    request: _PlaidRequestT,
+    call: Callable[[PlaidRequestT], object],
+    request: PlaidRequestT,
     item_id: str,
 ) -> dict[str, Any]:
     started = time.monotonic()

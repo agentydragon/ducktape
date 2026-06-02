@@ -157,7 +157,7 @@ async def run_grocy_eval(
     *, case: EvalCase, api: str, model: str, grocy_base_url: str, output_dir: Path, base_url: str | None = None
 ) -> EvalResult:
     """Run one eval case: seed → task → postmortem → snapshot."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
     transcript_path = output_dir / "transcript.jsonl"
     summary_path = output_dir / "summary.json"
     final_state_path = output_dir / "final_state.json"

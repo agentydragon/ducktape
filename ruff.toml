@@ -123,7 +123,13 @@ default-section = "third-party"
 # Force third-party for packages that have same-named directories in repo
 known-third-party = ["ansible", "docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
-# TODO: Auto-generate this list from Bazel once bazelized
+# TODO(first-party guard): add a CI/pre-commit check that fails when this list drifts
+#   — i.e. a top-level Python package is missing here, or a first-party import root
+#   collides with a third-party import name (from devinfra/gazelle_python.yaml). It
+#   can't be a hermetic bazel test: genquery's `scope` rejects `//...` so it can't
+#   enumerate all py targets, and a test sandbox can't glob the tree. A pre-commit /
+#   `bazel run` validator that scans the tree (or runs `bazel query`) is the shape.
+#   Until then, a missing entry surfaces as a (cryptic) bazel-out I001 from the lint aspect.
 known-first-party = [
     "devinfra",
     "util",

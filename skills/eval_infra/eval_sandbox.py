@@ -22,6 +22,7 @@ Usage:
         await agent.run(...)
 """
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -71,13 +72,13 @@ async def eval_sandbox(
     The container has host networking, proxy env wired, and `cwd`/`user`/`env`
     fields hidden from the model.
     """
-    workspace.mkdir(parents=True, exist_ok=True)
+    await asyncio.to_thread(workspace.mkdir, parents=True, exist_ok=True)
     binds: list[BindMount] = [
-        BindMount(host_path=skill.files_path.resolve(), container_path=SKILL_PATH, mode="ro"),
-        BindMount(host_path=workspace.resolve(), container_path=WORK_PATH, mode="rw"),
+        BindMount(host_path=await asyncio.to_thread(skill.files_path.resolve), container_path=SKILL_PATH, mode="ro"),
+        BindMount(host_path=await asyncio.to_thread(workspace.resolve), container_path=WORK_PATH, mode="rw"),
     ]
     if inputs is not None:
-        binds.append(BindMount(host_path=inputs.resolve(), container_path=INPUT_PATH, mode="ro"))
+        binds.append(BindMount(host_path=await asyncio.to_thread(inputs.resolve), container_path=INPUT_PATH, mode="ro"))
 
     config = ContainerExecServerConfig(
         image=image,
