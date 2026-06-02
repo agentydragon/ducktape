@@ -24,7 +24,7 @@ from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
-from augur.calibration.platform import Platform
+from augur.calibration.platform import Platform, PriceClient
 from augur.calibration.polymarket import PolymarketClient
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
@@ -41,9 +41,7 @@ def main(argv: list[str] | None = None) -> int:
 
     augur_config = load_augur_config(args.config)
     preset_id = args.preset or augur_config.default_model_id
-    print(
-        f"loaded config: presets={list(augur_config.models)}, default={augur_config.default_model_id}"
-    )
+    print(f"loaded config: presets={list(augur_config.models)}, default={augur_config.default_model_id}")
     print(f"running preset: {preset_id}")
 
     catalog_config = augur_config.calibration_catalog
@@ -64,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     sampled = model.sample(sampling)
     bundle = sampled.private_equity
 
-    price_clients = {
+    price_clients: dict[Platform, PriceClient] = {
         Platform.MANIFOLD: ManifoldClient(),
         Platform.POLYMARKET: PolymarketClient(),
         Platform.KALSHI: KalshiClient(),
