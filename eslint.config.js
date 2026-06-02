@@ -121,4 +121,26 @@ export default [
       "react-hooks/exhaustive-deps": "error",
     },
   },
+
+  // ── study_casino frontend: browser React JS/JSX (no TypeScript) ──────────
+  // Not in projectGlobs (deliberately untyped JS), so it only matches js.recommended.
+  // Give it browser globals (fetch/window/document/WebSocket/...) and JSX parsing so
+  // no-undef doesn't misfire on browser builtins; the two react/jsx-uses-* rules stop
+  // no-unused-vars from flagging `React` and components that are only referenced in JSX.
+  {
+    files: ["x/study_casino/frontend/**/*.{js,jsx}"],
+    languageOptions: {
+      parserOptions: { ecmaVersion: "latest", sourceType: "module", ecmaFeatures: { jsx: true } },
+      globals: { ...globals.browser },
+    },
+    plugins: { react },
+    settings: { react: { version: "18.3" } },
+    rules: {
+      "react/jsx-uses-react": "error",
+      "react/jsx-uses-vars": "error",
+      // Match the repo's policy elsewhere (coreRules): unused vars are warnings, not
+      // build-blocking errors. js.recommended makes them errors by default.
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+    },
+  },
 ];
