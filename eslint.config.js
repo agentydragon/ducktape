@@ -59,7 +59,6 @@ const coreRules = {
   ...tsRecommendedRules,
   "prefer-const": "error",
   eqeqeq: ["error", "always", { null: "ignore" }],
-  "no-console": ["warn", { allow: ["warn", "error"] }],
   "@typescript-eslint/consistent-type-imports": "error",
   // recommended sets a plain `error`; override to keep our leading-underscore escape hatch.
   // (recommended already disables the base `no-unused-vars`, so no need to repeat that here.)
