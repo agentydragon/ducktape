@@ -378,7 +378,7 @@ export function BudgetWorkspace() {
         {snapshot?.coverageStarts && (
           <div className="mt-2 text-[11px] augur-muted">
             Spend before <span className="font-semibold">{snapshot.coverageStarts}</span> is partial -- one or more
-            linked accounts didn't return earlier transactions. The selected window is clamped to that date for
+            linked accounts didn&apos;t return earlier transactions. The selected window is clamped to that date for
             consistency.
           </div>
         )}
