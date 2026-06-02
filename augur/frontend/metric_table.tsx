@@ -1,6 +1,6 @@
 import React from "react";
 import { fmtMetricValue } from "./lib/chart.ts";
-import { FAN_PERCENTILES } from "./input_helpers.ts";
+import { FAN_PERCENTILES, scenarioColor } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
 import {
   TABLE_NUMERIC_CELL,
@@ -9,6 +9,8 @@ import {
   SELECTED_COL_CELL,
   rolloutStatusText,
   terminalMetricTableRows,
+  terminalMetricValue,
+  quantile,
 } from "./data_helpers.ts";
 
 export function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
@@ -81,6 +83,78 @@ export function TerminalMetricTable({ summaries, selectedSummary, metrics, selec
                     {fmtMetricValue(row.metric.chartValue, row.selectedValue, currencyDisplay)}
                   </td>
                 )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Compact median-terminal comparison across the scenario set: rows are metrics, one column per
+// scenario, each cell the P50 terminal value with the P5–P95 spread beneath. Computed client-side
+// from each scenario's rollout summaries (no extra request). The detailed percentile breakdown for
+// the active scenario stays in <TerminalMetricTable> above. Hidden for a lone scenario.
+export function TerminalScenarioComparison({ scenarios, resultsById, metrics, activeId }) {
+  const { display: currencyDisplay } = useCurrencyDisplay();
+  if (scenarios.length <= 1) return null;
+  const columns = scenarios.map((scenario, index) => ({
+    scenario,
+    color: scenarioColor(index),
+    isActive: scenario.id === activeId,
+    summaries: resultsById.get(scenario.id)?.rolloutSummaries ?? [],
+  }));
+  if (columns.every((column) => column.summaries.length === 0)) return null;
+  return (
+    <div className="border-t border-slate-200 dark:border-slate-700" data-product-scenario-comparison="">
+      <div className="px-4 py-3">
+        <div className="augur-eyebrow">Terminal scenario comparison</div>
+        <div className="mt-1 text-xs augur-muted">Median terminal value per scenario, with the P5–P95 range below.</div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
+          <thead>
+            <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              <th className="px-4 py-2 font-semibold">Metric</th>
+              {columns.map((column) => (
+                <th
+                  key={column.scenario.id}
+                  className={TABLE_NUMERIC_HEADER}
+                  data-product-scenario-comparison-col={column.scenario.id}
+                >
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: column.color }} />
+                    <span className={column.isActive ? "font-semibold text-slate-700 dark:text-slate-200" : ""}>
+                      {column.scenario.label}
+                    </span>
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {metrics.map((metric) => (
+              <tr key={metric.value}>
+                <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                  {metric.label}
+                </th>
+                {columns.map((column) => {
+                  const values = column.summaries.map((summary) =>
+                    terminalMetricValue(summary.terminalMetrics, metric)
+                  );
+                  return (
+                    <td key={column.scenario.id} className={TABLE_NUMERIC_CELL}>
+                      <div className="font-semibold">
+                        {fmtMetricValue(metric.chartValue, quantile(values, 50), currencyDisplay)}
+                      </div>
+                      <div className="text-[11px] augur-muted">
+                        {fmtMetricValue(metric.chartValue, quantile(values, 5), currencyDisplay)} –{" "}
+                        {fmtMetricValue(metric.chartValue, quantile(values, 95), currencyDisplay)}
+                      </div>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

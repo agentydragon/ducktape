@@ -121,10 +121,20 @@ js_library(
     srcs = ["metric_table.tsx"],
     deps = [
         ":data_helpers",
+        ":hooks",
         ":input_helpers",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "scenario_tabs",
+    srcs = ["scenario_tabs.tsx"],
+    deps = [
+        ":input_helpers",
+        "//:node_modules/react",
     ],
 )
 
@@ -202,6 +212,7 @@ js_library(
         ":hooks",
         ":input_helpers",
         ":metric_table",
+        ":scenario_tabs",
         ":skeleton",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -257,6 +268,7 @@ filegroup(
         "main.tsx",
         "metric_table.tsx",
         "sanity_bands.ts",
+        "scenario_tabs.tsx",
         "skeleton.tsx",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
@@ -382,6 +394,7 @@ tsc_bin.tsc_test(
     data = [
         "budget_adjustments.test.ts",
         "budget_csv.test.ts",
+        "input_helpers.test.ts",
         "sanity_bands.test.ts",
         "tsconfig.json",
         ":budget_adjustments",
@@ -411,6 +424,7 @@ eslint_bin.eslint_test(
         "budget_adjustments.test.ts",
         "budget_csv.test.ts",
         "eslint.typed.config.js",
+        "input_helpers.test.ts",
         "sanity_bands.test.ts",
         "tsconfig.json",
         ":budget_adjustments",
@@ -454,6 +468,18 @@ vitest_bin.vitest_test(
         "budget_adjustments.test.ts",
         "vitest.config.ts",
         ":budget_adjustments",
+        "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "input_helpers_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "input_helpers.test.ts",
+        "vitest.config.ts",
+        ":input_helpers",
         "//:node_modules",
     ],
 )

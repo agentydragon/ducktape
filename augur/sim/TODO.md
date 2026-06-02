@@ -60,22 +60,16 @@ Anything fully shipped is removed — git history is the record of done work.
   (use the per-rollout panel for that) — the fan markers are just
   "something happens here" guides.
 
-- **Multi-scenario comparison.** The product UI today renders one
-  `ScenarioKey` at a time. The deleted scenario-set surface was the only
-  place where side-by-side fan-chart overlay existed (e.g. "rent for two
-  years and then buy" vs. "buy now"). Re-add in the product shape:
-  - URL state encodes a set (rename `?s=` → `?scenarios=`; one-scenario
-    URLs decode as a 1-element set so links from before the change keep
-    working).
-  - One shared exogenous bundle per request (single sample of the
-    market path) so the comparison stays apples-to-apples across
-    scenarios — vary only the user-driven knobs, not the underlying
-    paths.
-  - Frontend renders matched percentile fans with one color per scenario,
-    a shared x-axis, a small comparison legend, and a per-scenario
-    "controls" panel collapsible into a side-by-side grid.
-  - Terminal-percentile table grows columns per scenario; rollout
-    sliver/event panel selection scopes to one scenario at a time.
+- **Multi-scenario comparison: side-by-side controls.** The scenario-set
+  overlay landed: `?scenarios=` URL state (pre-multi `?s=` links still decode as
+  a 1-element set), one median/P5–P95 fan per scenario in its own color with a
+  legend, a per-scenario terminal comparison table, and a chip selector that
+  scopes the rollout histogram/events/detail to the active scenario.
+  Apples-to-apples is free — every scenario shares the seed set, and identical
+  seeds reproduce identical sampled exogenous paths, so no backend comparison
+  endpoint was needed. Remaining: the active scenario's "controls" form is edited
+  one at a time; collapsing it into a side-by-side grid would let several
+  scenarios be tuned at once.
 
 ## Tax
 

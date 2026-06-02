@@ -15,8 +15,9 @@ import { fmtMetricValue } from "./lib/chart.ts";
 
 import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionHistogram } from "./histogram.tsx";
-import { TerminalMetricTable } from "./metric_table.tsx";
+import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
+import { ScenarioTabs } from "./scenario_tabs.tsx";
 import { ProductScenarioForm } from "./forms.tsx";
 import { CalibrationWorkspace } from "./calibration.tsx";
 import { BudgetWorkspace } from "./budget.tsx";
@@ -25,10 +26,15 @@ import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } f
 import { CurrencyDisplayProvider, useVisibleEventKinds, useEventSelection } from "./hooks.ts";
 import {
   METRIC_OPTIONS,
+  MAX_SCENARIOS,
   productInputDefaults,
-  productInputToSearch,
-  productInputFromSearch,
   productMetricFanRequest,
+  scenarioSetToSearch,
+  scenarioSetFromSearch,
+  makeScenarioEntry,
+  defaultScenarioLabel,
+  scenarioColor,
+  nextLifecycleEventId,
   rolloutCountFromSearch,
   rolloutCountDefault,
   clampRolloutCount,
@@ -166,8 +172,11 @@ function RolloutResultsPanel({
   selectedSeed,
   onSelectSeed,
   selectedRolloutLoading,
-  fanRows,
+  fanSeries,
   percentiles,
+  scenarios,
+  resultsById,
+  activeId,
   selectedRows,
   selectedEvents,
   selectedSummary,
@@ -194,10 +203,10 @@ function RolloutResultsPanel({
         loadingSeed={selectedRolloutLoading ? selectedSeed : null}
         onSelect={onSelectSeed}
       />
-      {fanRows.length > 0 ? (
+      {fanSeries.some((entry) => entry.rows.length > 0) ? (
         <div className="relative">
           <MetricFanChart
-            rows={fanRows}
+            series={fanSeries}
             metric={selectedMetric}
             metricScale={metricScale}
             percentiles={percentiles}
@@ -226,6 +235,12 @@ function RolloutResultsPanel({
       ) : (
         <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
       )}
+      <TerminalScenarioComparison
+        scenarios={scenarios}
+        resultsById={resultsById}
+        metrics={visibleMetrics}
+        activeId={activeId}
+      />
       {selectedSeed != null && selectedEvents.length > 0 && (
         <EventKindLegend events={selectedEvents} visibility={visibleEventKinds} />
       )}
@@ -318,10 +333,14 @@ function ProductProjectionWorkspace({
   settingsOpen,
   onChangeSettingsOpen,
 }) {
-  const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
+  const [scenarioSet, setScenarioSet] = useState(() => scenarioSetFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
-  const [result, setResult] = useState(null);
-  const [runError, setRunError] = useState(null);
+  // One metric-fan response per scenario id. Every scenario shares the seed set, and identical
+  // seeds reproduce identical sampled exogenous paths, so the overlaid fans are apples-to-apples
+  // (no backend comparison endpoint needed). Updated in place as each fan arrives so the comparison
+  // fans don't blank out while the active scenario is being edited.
+  const [resultsById, setResultsById] = useState(() => new Map());
+  const [errorsById, setErrorsById] = useState(() => new Map());
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
   const [selectedSeed, setSelectedSeed] = useState(null);
@@ -329,22 +348,54 @@ function ProductProjectionWorkspace({
   const [rolloutError, setRolloutError] = useState(null);
   const eventSelection = useEventSelection();
   const visibleEventKinds = useVisibleEventKinds();
-  const visibleMetrics = useMemo(() => visibleMetricOptions(input), [input]);
+
+  const { scenarios, activeId } = scenarioSet;
+  const activeScenario = scenarios.find((entry) => entry.id === activeId) ?? scenarios[0];
+  const input = activeScenario.input;
+  // Metric list is the union across scenarios: a metric stays offered as long as *some* scenario
+  // surfaces it (e.g. "Property value" once any scenario buys), so a comparison never hides a column.
+  const visibleMetrics = useMemo(() => {
+    const visibleValues = new Set();
+    for (const entry of scenarios)
+      for (const metric of visibleMetricOptions(entry.input)) visibleValues.add(metric.value);
+    return METRIC_OPTIONS.filter((metric) => visibleValues.has(metric.value));
+  }, [scenarios]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
-  const request = useMemo(
+
+  const requestEntries = useMemo(
     () =>
-      productMetricFanRequest(input, bootstrap, selectedMetric, {
-        rolloutCount,
-        firstSeed,
-        model,
-        horizonMonths,
-      }),
-    [input, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
+      scenarios.map((entry) => ({
+        id: entry.id,
+        request: productMetricFanRequest(entry.input, bootstrap, selectedMetric, {
+          rolloutCount,
+          firstSeed,
+          model,
+          horizonMonths,
+        }),
+      })),
+    [scenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
-  const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
-  const fanRows = useMemo(() => metricFanRows(result), [result]);
-  const rolloutSummaries = useMemo(() => result?.rolloutSummaries ?? [], [result]);
+  const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
+  const activeResult = resultsById.get(activeId) ?? null;
+  const runError = errorsById.get(activeId) ?? null;
+
+  // One overlay series per scenario; color is by position so it stays put as the active selection
+  // moves. The active scenario also drives the histogram, selected-rollout overlay, and events.
+  const fanSeries = useMemo(
+    () =>
+      scenarios.map((entry, index) => ({
+        id: entry.id,
+        label: entry.label,
+        color: scenarioColor(index),
+        rows: metricFanRows(resultsById.get(entry.id)),
+        isActive: entry.id === activeId,
+      })),
+    [scenarios, resultsById, activeId]
+  );
+
+  const scenarioCacheKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
+  const rolloutSummaries = useMemo(() => activeResult?.rolloutSummaries ?? [], [activeResult]);
   const selectedSummary = useMemo(
     () => rolloutSummaries.find((summary) => Number(summary.seed) === selectedSeed) ?? null,
     [rolloutSummaries, selectedSeed]
@@ -356,17 +407,60 @@ function ProductProjectionWorkspace({
     [selectedDetail, selectedMetric]
   );
   const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
-  const failedCount = result?.failedCount ?? null;
-  const terminalP50 = terminalPercentileValue(result, 50);
-  const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
-  const selectedRolloutLoading = selectedSeed != null && result != null && !selectedDetail && !rolloutError;
+  const failedCount = activeResult?.failedCount ?? null;
+  const terminalP50 = terminalPercentileValue(activeResult, 50);
+  const selectedRolloutLoading = selectedSeed != null && activeResult != null && !selectedDetail && !rolloutError;
+
+  const updateInput = (patch) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      scenarios: previous.scenarios.map((entry) =>
+        entry.id === previous.activeId ? { ...entry, input: { ...entry.input, ...patch } } : entry
+      ),
+    }));
+  const resetActiveScenario = () =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      scenarios: previous.scenarios.map((entry) =>
+        entry.id === previous.activeId ? { ...entry, input: productInputDefaults(bootstrap) } : entry
+      ),
+    }));
+  const selectScenario = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
+  const renameScenario = (id, label) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      scenarios: previous.scenarios.map((entry) => (entry.id === id ? { ...entry, label } : entry)),
+    }));
+  const addScenario = () =>
+    setScenarioSet((previous) => {
+      if (previous.scenarios.length >= MAX_SCENARIOS) return previous;
+      const source = previous.scenarios.find((entry) => entry.id === previous.activeId) ?? previous.scenarios[0];
+      // Duplicate the active scenario's inputs; lifecycle events get fresh React keys so the copy
+      // and the original never share a key.
+      const clonedInput = {
+        ...source.input,
+        propertyLifecycleEvents: source.input.propertyLifecycleEvents.map((event) => ({
+          ...event,
+          _id: nextLifecycleEventId(),
+        })),
+      };
+      const entry = makeScenarioEntry(clonedInput, defaultScenarioLabel(previous.scenarios.length));
+      return { scenarios: [...previous.scenarios, entry], activeId: entry.id };
+    });
+  const deleteScenario = (id) =>
+    setScenarioSet((previous) => {
+      if (previous.scenarios.length <= 1) return previous;
+      const scenarios = previous.scenarios.filter((entry) => entry.id !== id);
+      const nextActiveId = previous.activeId === id ? scenarios[0].id : previous.activeId;
+      return { scenarios, activeId: nextActiveId };
+    });
 
   useEffect(() => {
-    const params = new URLSearchParams(productInputToSearch(input, bootstrap));
+    const params = new URLSearchParams(scenarioSetToSearch(scenarios, activeId, bootstrap));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shell-owned shared params live outside the product input, as do the budget tab's
-    // planning params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the
-    // product `?s=` state doesn't drop them when switching away from and back to another tab.
+    // The shell-owned shared params live outside the scenario set, as do the budget tab's planning
+    // params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the product
+    // `?s=`/`?scenarios=` state doesn't drop them when switching away from and back to another tab.
     const currentParams = new URLSearchParams(window.location.search);
     for (const key of ["n", "seed", "x", "h", "scale", "fmt", "bhide", "bset"]) {
       const value = currentParams.get(key);
@@ -377,7 +471,7 @@ function ProductProjectionWorkspace({
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.replaceState(null, "", newUrl);
     }
-  }, [input, bootstrap, currencyDisplay]);
+  }, [scenarios, activeId, bootstrap, currencyDisplay]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -394,33 +488,52 @@ function ProductProjectionWorkspace({
     return () => controller.abort();
   }, []);
 
+  // Drop cached fans/errors for scenarios that no longer exist (deleted from the set).
+  useEffect(() => {
+    const ids = new Set(scenarios.map((entry) => entry.id));
+    const prune = (previous) => {
+      const next = new Map([...previous].filter(([id]) => ids.has(id)));
+      return next.size === previous.size ? previous : next;
+    };
+    setResultsById(prune);
+    setErrorsById(prune);
+  }, [scenarios]);
+
   useEffect(() => {
     const controller = new AbortController();
-    setResult(null);
+    // Fan out one request per scenario over the shared seed set. Results land in place (no clear)
+    // so the comparison fans stay put while the active scenario is being edited; unchanged
+    // scenarios re-request the same key and return from the server's rollout cache.
     const handle = setTimeout(() => {
-      fetchProductMetricFan(request, { signal: controller.signal })
-        .then((payload) => {
-          setResult(payload);
-          setRunError(null);
-        })
-        .catch((error) => {
-          if (error?.name === "AbortError") return;
-          setResult(null);
-          setRunError(error?.message || String(error));
-        });
+      for (const { id, request } of requestEntries) {
+        fetchProductMetricFan(request, { signal: controller.signal })
+          .then((payload) => {
+            setResultsById((previous) => new Map(previous).set(id, payload));
+            setErrorsById((previous) => {
+              if (!previous.has(id)) return previous;
+              const next = new Map(previous);
+              next.delete(id);
+              return next;
+            });
+          })
+          .catch((error) => {
+            if (error?.name === "AbortError") return;
+            setErrorsById((previous) => new Map(previous).set(id, error?.message || String(error)));
+          });
+      }
     }, 120);
     return () => {
       clearTimeout(handle);
       controller.abort();
     };
-  }, [request]);
+  }, [requestEntries]);
 
   useEffect(() => {
-    if (selectedSeed == null || !result?.rolloutSummaries) return;
-    if (!result.rolloutSummaries.some((summary) => Number(summary.seed) === selectedSeed)) {
+    if (selectedSeed == null || !activeResult?.rolloutSummaries) return;
+    if (!activeResult.rolloutSummaries.some((summary) => Number(summary.seed) === selectedSeed)) {
       setSelectedSeed(null);
     }
-  }, [result, selectedSeed]);
+  }, [activeResult, selectedSeed]);
 
   useEffect(() => {
     eventSelection.clear();
@@ -428,11 +541,11 @@ function ProductProjectionWorkspace({
   }, [selectedDetailKey]);
 
   useEffect(() => {
-    if (selectedSeed == null || result == null || selectedDetailKey == null) return;
+    if (selectedSeed == null || activeResult == null || selectedDetailKey == null) return;
     if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
     setRolloutError(null);
-    fetchProductRollout({ scenario: request.scenario, seed: selectedSeed }, { signal: controller.signal })
+    fetchProductRollout({ scenario: activeRequest.scenario, seed: selectedSeed }, { signal: controller.signal })
       .then((payload) => {
         setRolloutDetails((previous) => {
           const next = new Map(previous);
@@ -445,7 +558,7 @@ function ProductProjectionWorkspace({
         setRolloutError(error?.message || String(error));
       });
     return () => controller.abort();
-  }, [request.scenario, result, rolloutDetails, selectedDetailKey, selectedSeed]);
+  }, [activeRequest.scenario, activeResult, rolloutDetails, selectedDetailKey, selectedSeed]);
 
   return (
     <div
@@ -458,6 +571,16 @@ function ProductProjectionWorkspace({
       />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-5">
+          <ScenarioTabs
+            scenarios={scenarios}
+            activeId={activeId}
+            onSelect={selectScenario}
+            onAdd={addScenario}
+            onDelete={deleteScenario}
+            onRename={renameScenario}
+          />
+        </div>
         <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
           <div className="min-w-0 space-y-5">
             <SharedControls
@@ -485,7 +608,7 @@ function ProductProjectionWorkspace({
               portfolio={portfolio}
               portfolioError={portfolioError}
               onChange={updateInput}
-              onReset={() => setInput(productInputDefaults(bootstrap))}
+              onReset={resetActiveScenario}
               horizonMonths={horizonMonths}
             />
           </div>
@@ -493,7 +616,7 @@ function ProductProjectionWorkspace({
           <div className="min-w-0 space-y-5">
             {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
 
-            {result ? (
+            {activeResult ? (
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="augur-card p-4">
                   <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
@@ -504,7 +627,7 @@ function ProductProjectionWorkspace({
                 <div className="augur-card p-4">
                   <div className="augur-eyebrow">Failed rollouts</div>
                   <div className="mt-2 text-2xl font-semibold augur-tabular">
-                    {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
+                    {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutSeeds.length)}
                   </div>
                 </div>
               </div>
@@ -512,7 +635,7 @@ function ProductProjectionWorkspace({
               <StatCardsSkeleton />
             )}
 
-            {result ? (
+            {activeResult ? (
               <RolloutResultsPanel
                 visibleMetrics={visibleMetrics}
                 selectedMetric={selectedMetric}
@@ -522,8 +645,11 @@ function ProductProjectionWorkspace({
                 selectedSeed={selectedSeed}
                 onSelectSeed={setSelectedSeed}
                 selectedRolloutLoading={selectedRolloutLoading}
-                fanRows={fanRows}
-                percentiles={request.percentiles}
+                fanSeries={fanSeries}
+                percentiles={activeRequest.percentiles}
+                scenarios={scenarios}
+                resultsById={resultsById}
+                activeId={activeId}
                 selectedRows={selectedRows}
                 selectedEvents={selectedEvents}
                 selectedSummary={selectedSummary}
