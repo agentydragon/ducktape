@@ -546,8 +546,10 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 // not by hue.
 
 // Per-scenario fan colors, indexed by position. Index 0 is the existing single-scenario blue so
-// a lone scenario renders byte-identically to the pre-comparison chart.
-export const SCENARIO_COLORS = ["#1d4ed8", "#db2777", "#0d9488", "#d97706", "#7c3aed"];
+// a lone scenario renders byte-identically to the pre-comparison chart. Deliberately red-free:
+// red (`FAILED_ROLLOUT_COLOR`) is reserved for failed rollouts, so a red line never reads as a
+// scenario hue. Blue / teal / violet / gold / cyan.
+export const SCENARIO_COLORS = ["#1d4ed8", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"];
 export const MAX_SCENARIOS = SCENARIO_COLORS.length;
 
 export function scenarioColor(index) {

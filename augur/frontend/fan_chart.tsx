@@ -334,12 +334,24 @@ export function MetricFanChart({
         ) : (
           <>
             {orderedSeries.map((entry) => (
-              <polygon
-                key={`band-${entry.id}`}
-                points={band(entry.rows, outerHigh, outerLow)}
-                fill={entry.color}
-                opacity={entry.isActive ? 0.16 : 0.1}
-              />
+              <React.Fragment key={`bounds-${entry.id}`}>
+                <polyline
+                  points={line(entry.rows, outerLow)}
+                  fill="none"
+                  stroke={entry.color}
+                  strokeWidth={entry.isActive ? 1.25 : 1}
+                  strokeDasharray="4 3"
+                  opacity={entry.isActive ? 0.6 : 0.4}
+                />
+                <polyline
+                  points={line(entry.rows, outerHigh)}
+                  fill="none"
+                  stroke={entry.color}
+                  strokeWidth={entry.isActive ? 1.25 : 1}
+                  strokeDasharray="4 3"
+                  opacity={entry.isActive ? 0.6 : 0.4}
+                />
+              </React.Fragment>
             ))}
             {orderedSeries.map((entry) => (
               <polyline
