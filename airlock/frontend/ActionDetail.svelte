@@ -2,7 +2,7 @@
   import { getApiClient } from "./api.ts";
   import type { Action, DoneState, RejectedState } from "./types.ts";
 
-  let { action }: { action: Action } = $props();
+  const { action }: { action: Action } = $props();
   let rejectReason = $state("");
   let approving = $state(false);
   let rejecting = $state(false);

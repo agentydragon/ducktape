@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Action } from "./types.ts";
 
-  let { pending, recent }: { pending: Action[]; recent: Action[] } = $props();
+  const { pending, recent }: { pending: Action[]; recent: Action[] } = $props();
 
   function fmt(iso: string): string {
     return new Date(iso).toLocaleString();
