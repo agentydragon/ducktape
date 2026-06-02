@@ -18,20 +18,31 @@ locals {
   domain = "allegedly.works"
 
   # Public Gateway node IPs. Update when public Gateway-capable nodes change.
+  # Comments name the current node (post talos-* → ovh-ns* renames). An IP listed
+  # here lands in the `*.allegedly.works` round-robin, so a dead IP gives every
+  # consumer a ~1/N transient failure rate — only list IPs whose node is currently
+  # announcing the Cilium gateway.
   public_gateway_ips = [
-    "147.135.37.175", # talos-kimsufi-cp-0
-    "147.135.39.162", # talos-kimsufi-worker-0
-    "147.135.39.176", # talos-kimsufi-worker-1
-    "147.135.104.5",  # talos-ks-game-worker-0
-    "147.135.104.16", # talos-ks-game-worker-1
+    "147.135.37.175", # ovh-ns102453 (formerly talos-kimsufi-cp-0)
+    "147.135.39.162", # ovh-ns103656 (formerly talos-kimsufi-worker-0)
+    "147.135.104.16", # ovh-ns104963 (formerly talos-ks-game-worker-1)
+    # Dropped 2026-06-02: `.176` (ovh-ns103711, formerly talos-kimsufi-worker-1) and
+    # `.5` (ovh-ns104952, formerly talos-ks-game-worker-0) — both nodes are up but
+    # the IPs return RST (Cilium L2 announce not active on these post-rename), so
+    # the augur oauth2-proxy and similar consumers intermittently fail OIDC
+    # discovery when their DNS round-robin lands on one. Restore once L2
+    # announcement / per-node public-IP wiring is fixed.
   ]
 
-  # Kubernetes API endpoints. Keep this narrower than public_gateway_ips:
-  # kubeconfigs use api.allegedly.works:6443, and worker-only gateway nodes do
-  # not serve the apiserver on that port.
+  # Kubernetes API endpoints — every control-plane node, not just the ones whose
+  # Cilium gateway is healthy. The apiserver listens on the host directly so it
+  # is independent of L2-announce state: `ovh-ns103711` (`.176`) is dropped from
+  # `public_gateway_ips` above for gateway-RST reasons but still serves the API
+  # on :6443.
   kube_api_ips = [
-    "147.135.37.175", # talos-kimsufi-cp-0
-    "147.135.39.162", # talos-kimsufi-worker-0
+    "147.135.37.175", # ovh-ns102453 (formerly talos-kimsufi-cp-0)
+    "147.135.39.162", # ovh-ns103656 (formerly talos-kimsufi-worker-0)
+    "147.135.39.176", # ovh-ns103711 (formerly talos-kimsufi-worker-1)
   ]
 }
 
