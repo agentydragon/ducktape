@@ -19,21 +19,20 @@ const reactSettings = { react: { version: "18.3" } };
 // Allow intentionally-unused identifiers/args when prefixed with `_`.
 const unusedVarsOptions = { argsIgnorePattern: "^_", varsIgnorePattern: "^_" };
 
-// All project source directories (add new TS/Svelte projects here)
-const projectGlobs = [
-  "props/frontend/src/**",
-  "x/agent_server/web/src/**",
-  "x/rspcache/admin_ui/src/**",
-  "airlock/frontend/**",
-  "augur/frontend/**",
-];
+// Project source dirs, bucketed by framework so each config block targets the
+// right files — and a new project is declared exactly once, in the right list.
+const reactProjects = ["x/rspcache/admin_ui/src/**", "augur/frontend/**"];
+const svelteProjects = ["props/frontend/src/**", "x/agent_server/web/src/**", "airlock/frontend/**"];
+const projectGlobs = [...reactProjects, ...svelteProjects];
 
+// All projects' .ts/.tsx get the shared TS rules. .svelte (+ .svelte.ts) come
+// only from the Svelte projects; the React projects' .ts/.tsx additionally get
+// eslint-plugin-react + react-hooks (the Svelte projects' .ts are plain modules,
+// so React rules — notably react-hooks/rules-of-hooks — stay off them).
 const tsFiles = projectGlobs.map((g) => `${g}/*.{ts,tsx}`);
-const svelteFiles = projectGlobs.map((g) => `${g}/*.svelte`);
-const svelteTsFiles = projectGlobs.map((g) => `${g}/*.svelte.ts`);
-
-// React projects (subset of projectGlobs) get eslint-plugin-react + react-hooks.
-const reactFiles = ["x/rspcache/admin_ui/src/**", "augur/frontend/**"].map((g) => `${g}/*.{ts,tsx}`);
+const svelteFiles = svelteProjects.map((g) => `${g}/*.svelte`);
+const svelteTsFiles = svelteProjects.map((g) => `${g}/*.svelte.ts`);
+const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 
 // Import ordering (TS equivalent of ruff's isort)
 // import/order is disabled: eslint-plugin-import-x's import/order rule crashes under
