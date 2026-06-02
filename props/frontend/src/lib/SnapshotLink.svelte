@@ -10,7 +10,7 @@
     showFull?: boolean; // Show full slug instead of first component
   }
 
-  let { slug, showFull = false }: Props = $props();
+  const { slug, showFull = false }: Props = $props();
 
   const displayText = $derived(showFull ? slug : formatSnapshotSlug(slug));
 </script>

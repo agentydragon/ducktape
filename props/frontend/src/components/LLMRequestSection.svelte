@@ -7,7 +7,7 @@
   interface Props {
     requestBody: Record<string, unknown>;
   }
-  let { requestBody }: Props = $props();
+  const { requestBody }: Props = $props();
 
   const inputItems = Array.isArray(requestBody.input) ? (requestBody.input as Record<string, unknown>[]) : null;
   const inputStr = typeof requestBody.input === "string" ? requestBody.input : null;
@@ -31,7 +31,7 @@
 
   <!-- Input conversation items -->
   {#if inputItems}
-    {#each inputItems as item}
+    {#each inputItems as item, i (i)}
       {@const role = typeof item.role === "string" ? item.role : null}
       {@const itype = typeof item.type === "string" ? item.type : null}
       {#if role}

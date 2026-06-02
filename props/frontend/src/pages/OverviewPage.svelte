@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, getContext } from "svelte";
+  import { SvelteURLSearchParams } from "svelte/reactivity";
   import { goto } from "$lib/router";
   import type { RunModalPrefill } from "$lib/types";
   import { fetchOverview, fetchCoverage, type OverviewResponse, type CoverageResponse } from "$lib/api/client";
@@ -16,7 +17,7 @@
     initialData?: OverviewResponse;
   }
 
-  let { initialData }: Props = $props();
+  const { initialData }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let overview: OverviewResponse | null = $state(initialData ?? null);
@@ -75,7 +76,7 @@
   });
 
   function handleNavigateToRuns(filters: RunModalPrefill) {
-    const params = new URLSearchParams();
+    const params = new SvelteURLSearchParams();
     if (filters.definitionId) params.set("definition", filters.definitionId);
     if (filters.split) params.set("split", filters.split);
     if (filters.kind) params.set("kind", filters.kind);

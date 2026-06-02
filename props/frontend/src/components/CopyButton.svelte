@@ -9,7 +9,7 @@
     successMessage?: string;
   }
 
-  let { text, label = "Copy", successMessage = "Copied to clipboard" }: Props = $props();
+  const { text, label = "Copy", successMessage = "Copied to clipboard" }: Props = $props();
 
   let copied = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;

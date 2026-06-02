@@ -3,8 +3,20 @@
   import { toast } from "svelte-sonner";
   import { splitBadgeClass } from "$lib/colors";
   import { formatLocationAnchor } from "$lib/formatters";
-  import type { SnapshotDetailResponse, FileContentResponse, FileTreeResponse, ClusterResponse } from "$lib/api/client";
-  import { fetchSnapshotDetail, fetchSnapshotTree, fetchSnapshotFile, fetchSnapshotClusters } from "$lib/api/client";
+  import type {
+    SnapshotDetailResponse,
+    FileContentResponse,
+    FileTreeResponse,
+    ClusterResponse,
+    OccurrenceStatsRow,
+  } from "$lib/api/client";
+  import {
+    fetchSnapshotDetail,
+    fetchSnapshotTree,
+    fetchSnapshotFile,
+    fetchSnapshotClusters,
+    fetchOccurrenceStats,
+  } from "$lib/api/client";
   import FileTree from "$components/FileTree.svelte";
   import FileViewer from "$components/FileViewer.svelte";
   import TabButton from "$components/TabButton.svelte";
@@ -14,8 +26,6 @@
   import OccurrenceLink from "$lib/OccurrenceLink.svelte";
   import CreditBadge from "$components/stats/CreditBadge.svelte";
   import OccurrenceStats from "$components/stats/OccurrenceStats.svelte";
-  import { fetchOccurrenceStats } from "$lib/api/client";
-  import type { OccurrenceStatsRow } from "$lib/api/client";
   import { createExpansionState } from "$lib/expansionState.svelte";
 
   interface Props {
@@ -23,7 +33,7 @@
     initialSnapshot?: SnapshotDetailResponse;
     initialTree?: FileTreeResponse;
   }
-  let { slug, initialSnapshot, initialTree }: Props = $props();
+  const { slug, initialSnapshot, initialTree }: Props = $props();
 
   // Parse the slug into components.
   // Snapshot slugs are "org/date" (2 parts), optionally followed by issueId/occurrenceId.
@@ -50,7 +60,7 @@
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
   let occurrenceStats: OccurrenceStatsRow[] = $state([]);
-  let occurrenceStatsMap = $derived(new Map(occurrenceStats.map((o) => [`${o.tp_id}:${o.occurrence_id}`, o])));
+  const occurrenceStatsMap = $derived(new Map(occurrenceStats.map((o) => [`${o.tp_id}:${o.occurrence_id}`, o])));
   let clusters: ClusterResponse[] = $state([]);
 
   async function loadData() {

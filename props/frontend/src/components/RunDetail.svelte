@@ -38,7 +38,7 @@
     initialFileContents?: Map<string, FileContentResponse>;
     initialLLMRequests?: LLMRequestInfo[];
   }
-  let { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
+  const { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
   // State
   let run: AgentRunDetail | null = $state(initialRun ?? null);

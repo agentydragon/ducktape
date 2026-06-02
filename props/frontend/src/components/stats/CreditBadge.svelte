@@ -4,7 +4,7 @@
     nRuns: number;
   }
 
-  let { meanCredit, nRuns }: Props = $props();
+  const { meanCredit, nRuns }: Props = $props();
 
   const colorClass = $derived(
     meanCredit >= 0.7

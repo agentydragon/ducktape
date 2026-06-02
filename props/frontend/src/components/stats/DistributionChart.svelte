@@ -12,7 +12,7 @@
     color?: string;
   }
 
-  let {
+  const {
     values,
     title,
     numBuckets = 10,

@@ -7,7 +7,7 @@
     initialData?: ExampleDetailResponse;
   }
 
-  let { initialData }: Props = $props();
+  const { initialData }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let example: ExampleDetailResponse | null = $state(initialData ?? null);

@@ -5,7 +5,7 @@
   interface Props {
     definitionId: string;
   }
-  let { definitionId }: Props = $props();
+  const { definitionId }: Props = $props();
 
   let definition: DefinitionDetailResponse | null = $state(null);
   let loading = $state(true);

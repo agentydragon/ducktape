@@ -11,7 +11,7 @@
     displayText?: string; // Override default issueId display
   }
 
-  let { runId, issueId, displayText }: Props = $props();
+  const { runId, issueId, displayText }: Props = $props();
 
   const text = $derived(displayText ?? issueId);
 </script>

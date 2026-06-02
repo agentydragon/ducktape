@@ -13,7 +13,7 @@
     example: Example;
   }
 
-  let { example }: Props = $props();
+  const { example }: Props = $props();
 
   const displayText = $derived(
     example.kind === "whole_snapshot"

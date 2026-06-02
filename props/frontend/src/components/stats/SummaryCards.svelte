@@ -7,7 +7,7 @@
     data: OverviewResponse;
   }
 
-  let { data }: Props = $props();
+  const { data }: Props = $props();
 
   // Find best definition by valid whole-snapshot recall (preserves full StatsWithCI)
   function findBestDefinition(): { def: DefinitionRow; recall_stats: StatsWithCI } | null {

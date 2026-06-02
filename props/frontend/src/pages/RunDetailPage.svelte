@@ -4,7 +4,7 @@
   interface Props {
     runId: string;
   }
-  let { runId }: Props = $props();
+  const { runId }: Props = $props();
 </script>
 
 {#if runId}

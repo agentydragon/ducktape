@@ -26,7 +26,7 @@
     prefill?: Prefill;
   }
 
-  let { open, onClose, prefill }: Props = $props();
+  const { open, onClose, prefill }: Props = $props();
 
   type RunMode = "validation" | "optimize" | "improve";
   let mode: RunMode = $state("validation");

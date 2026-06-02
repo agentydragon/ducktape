@@ -31,7 +31,7 @@
     initialRuns?: RunInfo[];
     initialTotalCount?: number;
   }
-  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
+  const { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
     $props();
 
   // State

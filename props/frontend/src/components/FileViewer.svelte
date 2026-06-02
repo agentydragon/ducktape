@@ -32,7 +32,7 @@
     defaultCollapsed?: boolean;
   }
 
-  let {
+  const {
     file,
     tps = [],
     fps = [],
@@ -153,7 +153,7 @@
     return map;
   });
 
-  let expandedIssues = $state(new SvelteSet<string>());
+  const expandedIssues = new SvelteSet<string>();
 
   function toggleIssue(id: string) {
     if (expandedIssues.has(id)) {

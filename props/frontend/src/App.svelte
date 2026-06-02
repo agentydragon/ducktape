@@ -28,8 +28,8 @@
   let usernameInput = $state("");
   let passwordInput = $state("");
   // Disable the other mode when one has input
-  let tokenHasInput = $derived(tokenInput.trim().length > 0);
-  let credsHasInput = $derived(usernameInput.trim().length > 0 || passwordInput.length > 0);
+  const tokenHasInput = $derived(tokenInput.trim().length > 0);
+  const credsHasInput = $derived(usernameInput.trim().length > 0 || passwordInput.length > 0);
 
   function handleOpenRunModal(prefill?: ModalPrefill) {
     modalPrefill = prefill;

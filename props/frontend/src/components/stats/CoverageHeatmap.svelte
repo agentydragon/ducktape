@@ -33,7 +33,7 @@
     cells: Cell[];
   }
 
-  let { definitions, examples, cells }: Props = $props();
+  const { definitions, examples, cells }: Props = $props();
 
   let canvas: HTMLCanvasElement;
   let chart: Chart | null = $state(null);
@@ -161,7 +161,7 @@
       class="flex flex-col justify-around text-xs text-gray-600 dark:text-gray-400 font-mono"
       style="min-width: 100px;"
     >
-      {#each definitions as def}
+      {#each definitions as def (def.image_digest)}
         <div class="flex items-center gap-1 truncate" title={def.image_digest}>
           {formatDigest(def.image_digest)} ({def.best_on_count})
         </div>

@@ -7,7 +7,7 @@
   interface Props {
     responseBody: Record<string, unknown>;
   }
-  let { responseBody }: Props = $props();
+  const { responseBody }: Props = $props();
 
   const outputItems = Array.isArray(responseBody.output) ? (responseBody.output as Record<string, unknown>[]) : null;
   const usage = responseBody.usage as Record<string, unknown> | null | undefined;
@@ -22,7 +22,7 @@
 
   <!-- Output items -->
   {#if outputItems}
-    {#each outputItems as item}
+    {#each outputItems as item, i (i)}
       {@const itype = typeof item.type === "string" ? item.type : null}
       {#if itype === "message"}
         <ExpandableItem {item}>

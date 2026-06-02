@@ -8,7 +8,7 @@
     requests: LLMRequestInfo[];
     initialExpanded?: number[];
   }
-  let { requests, initialExpanded = [] }: Props = $props();
+  const { requests, initialExpanded = [] }: Props = $props();
 </script>
 
 {#if requests.length === 0}

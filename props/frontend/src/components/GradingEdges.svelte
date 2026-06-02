@@ -20,7 +20,7 @@
     snapshotSlug?: string; // For linking TP/FP occurrence IDs
   }
 
-  let {
+  const {
     edges,
     missedOccurrences = [],
     totalCredit,

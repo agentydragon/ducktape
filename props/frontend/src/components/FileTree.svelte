@@ -10,9 +10,9 @@
     selectedPath?: string;
   }
 
-  let { nodes, onFileClick, selectedPath }: Props = $props();
+  const { nodes, onFileClick, selectedPath }: Props = $props();
 
-  let expanded = $state(new SvelteSet<string>());
+  const expanded = new SvelteSet<string>();
 
   function toggleExpand(path: string) {
     if (expanded.has(path)) {

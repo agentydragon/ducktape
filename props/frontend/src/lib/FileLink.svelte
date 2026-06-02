@@ -11,7 +11,7 @@
     displayText?: string; // Override default filePath display
   }
 
-  let { snapshotSlug, filePath, displayText }: Props = $props();
+  const { snapshotSlug, filePath, displayText }: Props = $props();
 
   const text = $derived(displayText ?? filePath);
 </script>

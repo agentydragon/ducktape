@@ -20,7 +20,7 @@
     snapshotSlug?: string; // For linking grading edge targets (TP/FP occurrences)
   }
 
-  let {
+  const {
     kind,
     issueId,
     rationale,
