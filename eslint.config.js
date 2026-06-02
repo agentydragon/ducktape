@@ -55,8 +55,9 @@ const coreRules = {
   eqeqeq: ["error", "always", { null: "ignore" }],
   "no-console": ["warn", { allow: ["warn", "error"] }],
   "@typescript-eslint/consistent-type-imports": "error",
+  // recommended sets a plain `error`; override to keep our leading-underscore escape hatch.
+  // (recommended already disables the base `no-unused-vars`, so no need to repeat that here.)
   "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-  "no-unused-vars": "off",
   // TypeScript already resolves identifiers/types; eslint's no-undef misfires on type-only
   // names (e.g. `RequestInit`) and ambient globals, so defer to the compiler.
   "no-undef": "off",
