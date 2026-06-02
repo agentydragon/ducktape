@@ -134,12 +134,11 @@ py_test(
     name = "portfolio_sources_test",
     srcs = ["portfolio_sources_test.py"],
     deps = [
-        ":config",
         ":finance",
         ":portfolio",
         ":portfolio_source_config",
         ":portfolio_sources",
-        "//augur/model:independent",
+        ":testing",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -227,7 +226,7 @@ py_library(
     deps = [
         ":config",
         ":server_lib",
-        ":testing",
+        "//augur:conftest",
         "//augur/product:testing",
         "@pypi//fastapi",
         "@pypi//pytest",
@@ -240,7 +239,11 @@ py_library(
     srcs = ["testing.py"],
     deps = [
         ":config",
+        ":finance",
         ":local_regulation",
+        ":portfolio_source_config",
+        ":wire",
+        "//augur/model:independent",
         "//util/bazel:runfiles",
     ],
 )

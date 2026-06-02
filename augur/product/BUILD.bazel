@@ -151,10 +151,10 @@ py_library(
     deps = [
         ":scenarios",
         ":service",
+        "//augur:conftest",
         "//augur/api:catalog",
         "//augur/api:config",
         "//augur/api:portfolio_sources",
-        "//augur/api:testing",
         "//augur/api:wire",
         "//augur/model:exogenous",
         "@pypi//pytest",

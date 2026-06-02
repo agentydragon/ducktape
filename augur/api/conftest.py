@@ -8,13 +8,7 @@ from fastapi.testclient import TestClient
 
 from augur.api.config import Config
 from augur.api.server import ApiServerConfig, create_app
-from augur.api.testing import load_fixture_config
 from augur.product.testing import capacity_limited_private_equity_fixture, forced_private_equity_event_fixture
-
-
-@pytest.fixture(scope="module")
-def augur_config() -> Config:
-    return load_fixture_config()
 
 
 @pytest.fixture

@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
-from augur.api.config import AgentDefinition, Config, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.portfolio_source_config import (
@@ -16,26 +15,9 @@ from augur.api.portfolio_source_config import (
     PortfolioSourcesConfig,
 )
 from augur.api.portfolio_sources import resolve_portfolio_sources
-from augur.api.wire import ActorRole
-from augur.model.independent import IndependentProviderConfig
+from augur.api.testing import minimal_config
 from augur.product.asset_key import SP500AssetKey
 from plaid_utils.read_model import CurrentCashBalance, CurrentHolding
-
-
-def _minimal_config(**overrides: object) -> Config:
-    defaults: dict[str, object] = {
-        "agents": (AgentDefinition(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
-        "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
-        "portfolio_sources": PortfolioSourcesConfig(
-            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash_usd=100.0))
-        ),
-        "default_rollout_samples": 128,
-        "max_rollout_samples": 1_000_000,
-        "models": {"current_model": IndependentProviderConfig()},
-        "default_model_id": "current_model",
-    }
-    defaults.update(overrides)
-    return Config(**defaults)
 
 
 def _plaid_config() -> PortfolioSourcesConfig:
@@ -60,11 +42,11 @@ def _plaid_config() -> PortfolioSourcesConfig:
 
 
 def test_disabled_plaid_source_resolves_fixed_source() -> None:
-    config = _minimal_config()
+    config = minimal_config()
 
     resolved = resolve_portfolio_sources(config)
 
-    assert resolved.snapshot == FinanceSnapshot(as_of_date="2026-05-01", cash_usd=100.0)
+    assert resolved.snapshot == FinanceSnapshot(as_of_date="2026-05-12")
     assert resolved.portfolio == PortfolioConfig()
 
 
@@ -72,7 +54,7 @@ def test_enabled_plaid_source_requires_database_url(monkeypatch: pytest.MonkeyPa
     monkeypatch.delenv("AUGUR_PLAID_DATABASE_URL", raising=False)
 
     with pytest.raises(ValueError, match="AUGUR_PLAID_DATABASE_URL"):
-        resolve_portfolio_sources(_minimal_config(portfolio_sources=_plaid_config()))
+        resolve_portfolio_sources(minimal_config(portfolio_sources=_plaid_config()))
 
 
 def test_plaid_source_adds_cash_and_sp500_proxy_position(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,7 +112,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(monkeypatch: pytest.Mon
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_cash_balances", fake_cash)
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_holdings", fake_holdings)
 
-    resolved = resolve_portfolio_sources(_minimal_config(portfolio_sources=_plaid_config()))
+    resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=_plaid_config()))
 
     assert resolved.snapshot.cash_usd == 600.0
     assert resolved.snapshot.as_of_date == "2026-06-01"
@@ -194,7 +176,7 @@ def test_plaid_source_reuses_existing_portfolio_account(monkeypatch: pytest.Monk
             update={"cash": PlaidCashSourceConfig(), "sp500_proxy_groups": _plaid_config().plaid.sp500_proxy_groups}
         )
     )
-    config = _minimal_config(
+    config = minimal_config(
         portfolio_sources=source.model_copy(
             update={
                 "fixed": FixedPortfolioSourceConfig(

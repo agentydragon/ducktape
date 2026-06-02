@@ -28,7 +28,7 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
-from augur.api.testing import fixture_regulation
+from augur.api.testing import fixture_regulation, minimal_config
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
@@ -38,28 +38,10 @@ from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfi
 from augur.product.asset_key import SP500AssetKey
 
 
-def _minimal_config(**overrides: object) -> Config:
-    """Build a placeholder Config for schema-shape tests. Values are
-    intentionally generic — deployments supply their own real values."""
-    defaults: dict[str, object] = {
-        "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
-        "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
-        "portfolio_sources": PortfolioSourcesConfig(
-            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
-        ),
-        "default_rollout_samples": 128,
-        "max_rollout_samples": 1_000_000,
-        "models": {"current_model": IndependentProviderConfig()},
-        "default_model_id": "current_model",
-    }
-    defaults.update(overrides)
-    return Config(**defaults)
-
-
 def test_minimal_config_validates_with_explicit_sampling_config() -> None:
-    config = _minimal_config()
+    config = minimal_config()
 
-    assert config.agents[0].actor_id == "alpha"
+    assert config.agents[0].actor_id == "owner"
     assert config.location_selection is None
     assert config.default_rollout_samples == 128
     assert config.max_rollout_samples == 1_000_000
@@ -67,9 +49,9 @@ def test_minimal_config_validates_with_explicit_sampling_config() -> None:
 
 def test_sampling_config_is_required() -> None:
     with pytest.raises(ValidationError, match="default_rollout_samples"):
-        _minimal_config(default_rollout_samples=None)
+        minimal_config(default_rollout_samples=None)
     with pytest.raises(ValidationError, match="max_rollout_samples"):
-        _minimal_config(max_rollout_samples=None)
+        minimal_config(max_rollout_samples=None)
 
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
@@ -106,12 +88,12 @@ def test_property_asset_property_ids_must_be_unique() -> None:
 
 
 def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
-    config = _minimal_config(
+    config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             fixed=FixedPortfolioSourceConfig(
                 snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
                 portfolio=PortfolioConfig(
-                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
+                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
                     holdings=(
                         HoldingPositionConfig(
                             position_id="voo_position",
@@ -143,7 +125,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
 
 
 def test_config_carries_optional_plaid_portfolio_source() -> None:
-    config = _minimal_config(
+    config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             plaid=PlaidPortfolioSourceConfig(
                 enabled=True,
@@ -152,7 +134,7 @@ def test_config_carries_optional_plaid_portfolio_source() -> None:
                     PlaidSp500ProxyGroupConfig(
                         position_id="wealthfront_sp500",
                         portfolio_account_id="wealthfront_taxable",
-                        owner_agent_id="alpha",
+                        owner_agent_id="owner",
                         plaid_account_ids=("wealthfront-plaid-account",),
                     ),
                 ),
@@ -173,13 +155,13 @@ def test_enabled_plaid_portfolio_source_must_select_something() -> None:
 
 
 def test_location_selection_accepts_location_strings() -> None:
-    config = _minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
+    config = minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
 
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
 
 def test_config_can_define_deployment_owned_locations() -> None:
-    config = _minimal_config(
+    config = minimal_config(
         locations=(
             LocationConfig(
                 location_id="location_a",
@@ -223,11 +205,11 @@ def test_snapshot_optional_fields_default_to_zero() -> None:
 
 def test_unknown_field_is_rejected() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        _minimal_config(extra_field="nope")
+        minimal_config(extra_field="nope")
 
 
 def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
-    config = _minimal_config(location_selection=("san_francisco_ca",))
+    config = minimal_config(location_selection=("san_francisco_ca",))
 
     path = tmp_path / "config.yaml"
     path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
@@ -238,7 +220,7 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
 
 def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path) -> None:
     model_path = tmp_path / "private_equity_model.json"
-    config = _minimal_config(
+    config = minimal_config(
         models={
             "current_model": {
                 "type": "composite",
@@ -255,7 +237,7 @@ def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path)
 
 
 def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
-    config = _minimal_config(
+    config = minimal_config(
         models={
             "current_model": {
                 "type": "composite",
@@ -280,7 +262,7 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 models={
                     "current_model": {
@@ -311,7 +293,7 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 models={
                     "current_model": {
@@ -345,7 +327,7 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) ->
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 calibration_catalog=CalibrationCatalogConfig(
                     catalog_path=Path("catalog.yaml"), issuer="openai", sample_sanity_path=Path("sample_sanity.yaml")
@@ -370,7 +352,7 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
     (tmp_path / "assets").mkdir()
     (tmp_path / "config.yaml").write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(
                     properties_path=Path("properties.json"),
                     asset_dir=Path("assets"),

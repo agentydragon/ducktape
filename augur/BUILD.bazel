@@ -2,6 +2,20 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Shared `augur_config` fixture for every augur test tree (api, product). pytest discovers it by
+# walking up from each test; the per-package conftests depend on this target so it lands in their
+# runfiles.
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//augur/api:config",
+        "//augur/api:testing",
+        "@pypi//pytest",
+    ],
+)
+
 py_library(
     name = "dates",
     srcs = ["dates.py"],
