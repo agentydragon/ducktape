@@ -11,7 +11,7 @@ import numpy as np
 from pydantic import Field
 
 from augur.dates import months_between
-from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.private_equity_protocol import (
     neutral_private_equity_issuer_bundle,
     observed_private_equity_mark_matrix,
@@ -96,7 +96,6 @@ class TrainedPrivateEquityModel(FrozenModel):
             levels = observed_private_equity_mark_matrix(levels, events)
 
         return SampledExogenousBundle(
-            levels=SERIES_LEVELS_SCHEMA.to_frame(),
             private_equity=neutral_private_equity_issuer_bundle(
                 issuer,
                 observed_mark=levels,

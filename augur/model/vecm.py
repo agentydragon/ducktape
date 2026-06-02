@@ -19,10 +19,10 @@ of truth used by:
   predictive `MultivariateNormal` over the cumulative h-step log-return,
   closed form at h=1, MC-fitted Gaussian at h>1.
 - `VecmModel.sample(request)` — rolls the recurrence forward stochastically
-  per rollout, converts log-level paths to multipliers, dispatches augur
-  series ids (inflation, sp500, home_value:*, rent:*, crypto:*) onto factor
-  paths via `location_series_sources`, scales by the deployment's
-  `latest_observations`, and returns a `SampledExogenousBundle`.
+  per rollout, converts log-level paths to multipliers, routes each typed
+  level key onto the factor that *is* its key (factor identity == LevelSeriesKey),
+  scales by the deployment's `latest_observations`, and returns a
+  `SampledExogenousBundle`.
 
 VecmModel implements Sampler + Fittable + Scorable from one class — the
 trainable thing and the runtime sampler are the same object, parameterised
@@ -47,14 +47,7 @@ from numpyro.infer.autoguide import AutoDelta
 from numpyro.optim import Adam
 from pydantic import Field
 
-from augur.frames import concat_frames
-from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    series_levels_frame,
-)
-from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_magisteria
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
@@ -224,10 +217,9 @@ class VecmModel:
     1. Fit results (factor_names, n_factors, params, train_log_levels):
        populated by `fit(historical)` or `from_blob(...)`. Define the
        statistical model.
-    2. Deployment-layer config (latest_observations, location_series_sources):
-       set by `VecmProviderConfig.realize_model` from YAML. Define how
-       factor paths map onto augur series ids and how multipliers scale to
-       absolute levels.
+    2. Deployment-layer config (latest_observations): set by
+       `VecmProviderConfig.realize_model` from YAML. Defines how
+       multipliers scale to absolute levels.
     3. Provenance ids (model_version_id, evidence_set_id,
        calibration_artifact_id): set after fit or load via
        `_compute_provenance`. Surface as bundle metadata.
@@ -237,14 +229,13 @@ class VecmModel:
     config: VecmConfig = field(default_factory=VecmConfig)
 
     # Fit results.
-    factor_names: tuple[str, ...] = ()
+    factor_names: tuple[LevelSeriesKey, ...] = ()
     n_factors: int = 0
     params: dict[str, np.ndarray] = field(default_factory=dict)
     train_log_levels: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))
 
     # Deployment-layer config.
     latest_observations: dict[str, Any] = field(default_factory=dict)
-    location_series_sources: LocationSeriesSources | None = None
 
     # Provenance.
     model_version_id: str = ""
@@ -306,33 +297,35 @@ class VecmModel:
     # ──────────────────────── Sampler ────────────────────────
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        """Roll the VECM forward for each rollout seed, convert log-level
-        paths to multipliers, dispatch augur series ids onto factors, scale
-        by deployment `latest_observations`, populate tender events, and
-        emit a `SampledExogenousBundle`."""
-        if self.location_series_sources is None:
-            raise RuntimeError("VecmModel.sample requires location_series_sources; set via realize_model")
+        """Roll the VECM forward for each rollout seed, convert log-level paths to
+        multipliers, scale by deployment `latest_observations`, and emit a
+        `SampledExogenousBundle`. Each factor's identity is its typed `LevelSeriesKey`;
+        a level series is sampled from the factor that *is* its key."""
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
         if rollout_count == 0:
             multipliers = np.empty((0, horizon_months + 1, self.n_factors), dtype="float64")
         else:
             multipliers = self._simulate_multipliers(rollout_seeds=request.rollout_seeds, horizon_months=horizon_months)
-        factor_names = self.factor_names or tuple(f"f{i}" for i in range(self.n_factors))
-        path_by_factor = {
-            factor_name: multipliers[:, :, factor_index] for factor_index, factor_name in enumerate(factor_names)
+        path_by_factor: dict[LevelSeriesKey, np.ndarray] = {
+            factor: multipliers[:, :, factor_index] for factor_index, factor in enumerate(self.factor_names)
         }
-        level_blocks = [
-            series_levels_frame(
-                key,
-                self._level_series(key, path_by_factor=path_by_factor),
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
-            )
-            for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
-        ]
+
+        def blocks[KeyT: LevelSeriesKey](keys: frozenset[KeyT]) -> list[tuple[KeyT, np.ndarray]]:
+            return [
+                (key, self._level_series(key, path_by_factor=path_by_factor))
+                for key in sorted(keys, key=lambda key: key.wire_id)
+            ]
+
+        frames = assemble_level_magisteria(
+            asset_price_blocks=blocks(request.required_asset_prices),
+            property_value_blocks=blocks(request.required_property_values),
+            index_blocks=blocks(request.required_index_series),
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+        )
         return SampledExogenousBundle(
-            levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            **frames.as_bundle_kwargs(),
             metadata={
                 "model_version_id": self.model_version_id,
                 "model_id": self.label,
@@ -352,7 +345,9 @@ class VecmModel:
         factor names, and the training log-level history needed to roll
         forward at sample time."""
         payload: dict[str, Any] = {
-            "factor_names": np.array(self.factor_names, dtype=object),
+            # On-disk factor identity is the wire-id string array, decoded back to typed
+            # LevelSeriesKeys by `from_blob` at the single `parse_level_series_key` boundary.
+            "factor_names": np.array([factor.wire_id for factor in self.factor_names], dtype=object),
             "n_factors": np.array(self.n_factors),
             "train_log_levels": self.train_log_levels,
             **self.params,
@@ -365,17 +360,17 @@ class VecmModel:
         blob_path: Path,
         *,
         latest_observations: Mapping[str, Any],
-        location_series_sources: LocationSeriesSources,
         evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
         """Load post-fit state from a `.npz` written by `save(...)`, attach
         deployment-layer config from the runtime YAML, and compute
-        provenance ids."""
+        provenance ids. The on-disk wire-id factor names decode to typed
+        `LevelSeriesKey`s at this single `parse_level_series_key` boundary."""
         with np.load(blob_path, allow_pickle=True) as data:
             param_keys = {k for k in data.files if k not in {"factor_names", "n_factors", "train_log_levels"}}
             params = {k: np.asarray(data[k]) for k in param_keys}
-            factor_names = tuple(str(name) for name in data["factor_names"])
+            factor_names = tuple(parse_level_series_key(str(name)) for name in data["factor_names"])
             train_log_levels = np.asarray(data["train_log_levels"])
             n_factors = int(data["n_factors"])
         model = cls(
@@ -385,7 +380,6 @@ class VecmModel:
             params=params,
             train_log_levels=train_log_levels,
             latest_observations=dict(latest_observations),
-            location_series_sources=location_series_sources,
         )
         model._compute_provenance(evidence_source_id)
         return model
@@ -458,41 +452,21 @@ class VecmModel:
 
     # ──────────────────────── Internal: bundle dispatch ────────────────────────
 
-    def _level_series(self, key: LevelSeriesKey, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
-        match key:
-            case InflationKey() | SP500Key() | CryptoKey():
-                # These factor names match the wire id exactly.
-                return self._factor_level(key.wire_id, path_by_factor=path_by_factor)
-            case HomeValueKey(location_id=location_id):
-                return self._factor_level(
-                    self._location_factor("home_value", location_id), path_by_factor=path_by_factor
-                )
-            case RentKey(location_id=location_id):
-                return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
-
-    def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
-        if self.location_series_sources is None:
-            raise RuntimeError("VecmModel has no location_series_sources")
-        source_by_location = (
-            self.location_series_sources.home_value if kind == "home_value" else self.location_series_sources.rent
-        )
+    def _level_series(self, key: LevelSeriesKey, *, path_by_factor: dict[LevelSeriesKey, np.ndarray]) -> np.ndarray:
+        # Post-collapse, a level series is sampled from the factor that *is* its key
+        # (factor identity == the typed key); there is no source-name indirection.
         try:
-            return source_by_location[location_id]
+            multiplier = path_by_factor[key]
         except KeyError as error:
-            raise ValueError(f"location_series_sources.{kind} has no entry for {location_id!r}") from error
+            raise ValueError(f"VECM fit blob has no factor {key.wire_id!r}") from error
+        return self._latest_factor_value(key) * multiplier
 
-    def _factor_level(self, factor_name: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
-        try:
-            multiplier = path_by_factor[factor_name]
-        except KeyError as error:
-            raise ValueError(f"VECM fit blob has no factor {factor_name!r}") from error
-        return self._latest_factor_value(factor_name) * multiplier
-
-    def _latest_factor_value(self, factor_name: str) -> float:
-        direct = self.latest_observations.get(factor_name)
+    def _latest_factor_value(self, key: LevelSeriesKey) -> float:
+        # `latest_observations` is keyed by the factor's wire id (the deployment YAML form).
+        direct = self.latest_observations.get(key.wire_id)
         if isinstance(direct, (int, float)):
             return float(direct)
-        match parse_level_series_key(factor_name):
+        match key:
             case SP500Key():
                 return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
             case RentKey(location_id="san_francisco_ca"):
@@ -502,11 +476,11 @@ class VecmModel:
             case CryptoKey(symbol=symbol):
                 return self._latest_observation_value(f"{symbol}_close_latest")
             case HomeValueKey() | RentKey():
-                for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
-                    by_factor = self.latest_observations.get(key)
-                    if isinstance(by_factor, dict) and factor_name in by_factor:
-                        return _observation_value(by_factor[factor_name], f"{key}[{factor_name!r}]")
-        raise ValueError(f"VECM config latest_observations has no usable latest value for factor {factor_name!r}")
+                for obs_key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
+                    by_factor = self.latest_observations.get(obs_key)
+                    if isinstance(by_factor, dict) and key.wire_id in by_factor:
+                        return _observation_value(by_factor[key.wire_id], f"{obs_key}[{key.wire_id!r}]")
+        raise ValueError(f"VECM config latest_observations has no usable latest value for factor {key.wire_id!r}")
 
     def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:
         if key in self.latest_observations:
@@ -523,7 +497,7 @@ class VecmModel:
         self.evidence_set_id = "evidence_set:" + stable_identity_digest(
             {
                 "evidence_source_id": evidence_source_id,
-                "factor_names": self.factor_names,
+                "factor_names": [factor.wire_id for factor in self.factor_names],
                 "latest_observations": dict(self.latest_observations),
             }
         )
@@ -559,15 +533,11 @@ class VecmProviderConfig(FrozenModel):
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
-    location_series_sources: LocationSeriesSourcesConfig
 
     def realize_model(self) -> VecmModel:
         blob_path = (
             self.trained_blob if self.trained_blob is not None else get_required_path(_BUNDLED_VECM_BLOB_RUNFILE)
         )
         return VecmModel.from_blob(
-            blob_path,
-            latest_observations=self.latest_observations,
-            location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
-            evidence_source_id=str(blob_path),
+            blob_path, latest_observations=self.latest_observations, evidence_source_id=str(blob_path)
         )

@@ -169,8 +169,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 lot_id=lot.lot_id,
                 agent_id=account_by_id[position.account_id].owner_agent_id,
                 account_id=position.account_id,
-                # InitialLot.asset_id is still a sim-frame wire string (typed in Phase 2/4).
-                asset_id=position.value_series.wire_id,
+                asset=position.value_series,
                 purchase_month_index=-int(lot.holding_period_months_at_start),
                 quantity=float(lot.quantity),
                 cost_basis_per_unit_usd=lot.cost_basis_per_unit_usd,

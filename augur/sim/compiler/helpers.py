@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from augur.model.series import LevelSeriesKey
+from augur.product.asset_key import AssetKey
 from augur.sim.scenario import FixedAmount, SeriesIndexedAmount
 
 NO_CODE = -1
@@ -41,11 +43,38 @@ class StringTable:
         return self.intern(value)
 
 
+class AssetTable:
+    """Typed intern table for lot/sale/chain `AssetKey` identities — the asset twin of
+    `StringTable`. Keyed by the typed key (no wire-string round-trip), so the same asset
+    interns to the same code wherever it appears and the engine's asset-code matching holds.
+    Codes index `CompiledSimulation.assets`; decode lifts them back to `AssetKey` typed."""
+
+    def __init__(self) -> None:
+        self._by_key: dict[AssetKey, int] = {}
+        self.values: list[AssetKey] = []
+
+    def intern(self, asset: AssetKey | None) -> int:
+        if asset is None:
+            return NO_CODE
+        existing = self._by_key.get(asset)
+        if existing is not None:
+            return existing
+        code = len(self.values)
+        self._by_key[asset] = code
+        self.values.append(asset)
+        return code
+
+    def require(self, asset: AssetKey) -> int:
+        return self.intern(asset)
+
+
 def slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str) -> int:
     return account_slot_by_key.get((agent_id, account_id), NO_CODE)
 
 
-def amount_arrays(amount: Any, series_index_by_id: dict[str, int]) -> tuple[int, float, float, int, int, int]:
+def amount_arrays(
+    amount: Any, series_index_by_id: dict[LevelSeriesKey, int]
+) -> tuple[int, float, float, int, int, int]:
     if isinstance(amount, int | float):
         return AMOUNT_FIXED, float(amount), 0.0, NO_CODE, 0, 1
     if isinstance(amount, FixedAmount):
@@ -55,7 +84,7 @@ def amount_arrays(amount: Any, series_index_by_id: dict[str, int]) -> tuple[int,
             AMOUNT_SERIES_INDEXED,
             0.0,
             float(amount.base_amount_usd),
-            series_index_by_id[amount.series_id],
+            series_index_by_id[amount.series],
             int(amount.base_month_index),
             int(amount.adjustment_period_months),
         )

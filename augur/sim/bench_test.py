@@ -13,8 +13,9 @@ import polars as pl
 import pytest_bazel
 
 from augur.model.deterministic import Deterministic
-from augur.model.series import CryptoKey, CryptoSymbol
+from augur.model.series import CryptoSymbol
 from augur.model.series_model import SeriesModelBundle
+from augur.product.asset_key import CryptoAssetKey
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.scenario import InitialLot
 from augur.sim.simulate import simulate
@@ -58,21 +59,39 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     new_lot = InitialLot(
         lot_id="alice_efv",
         agent_id="alice",
-        asset_id="crypto:efv",
+        asset=CryptoAssetKey(symbol=CryptoSymbol("efv")),
         purchase_month_index=-12,
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    series = {
-        **base.external_series.model.by_level_key(),
-        CryptoKey(symbol=CryptoSymbol("efv")): Deterministic(levels=[100.0] * 25),
-    }
+    # Extend the (all-crypto) base model in place within its asset-price magisterium —
+    # add one new crypto symbol, leaving the other magisteria untouched.
+    base_model = base.external_series.model
+    extended_model = base_model.model_copy(
+        update={
+            "asset_prices": base_model.asset_prices.model_copy(
+                update={
+                    "crypto": {
+                        **base_model.asset_prices.crypto,
+                        CryptoSymbol("efv"): Deterministic(levels=[100.0] * 25),
+                    }
+                }
+            )
+        }
+    )
     extended = base.model_copy(
         update={
             "initial_lots": [*base.initial_lots, new_lot],
-            "external_series": SeriesModelBundle.independent(series),
+            "external_series": SeriesModelBundle(model=extended_model),
             "liquidity_policies": [
-                p.model_copy(update={"asset_preference_chain": [*p.asset_preference_chain, "crypto:efv"]})
+                p.model_copy(
+                    update={
+                        "asset_preference_chain": [
+                            *p.asset_preference_chain,
+                            CryptoAssetKey(symbol=CryptoSymbol("efv")),
+                        ]
+                    }
+                )
                 for p in base.liquidity_policies
             ],
         }

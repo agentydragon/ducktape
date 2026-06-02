@@ -16,9 +16,9 @@ import yaml
 from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
-from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousSamplingRequest, level_keys_in_bundle, level_series_request_channels
 from augur.model.provider_config import ProviderConfig
-from augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
+from augur.model.series import HomeValueKey, LevelSeriesKey, RentKey
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.vecm import VecmProviderConfig
 
@@ -44,29 +44,28 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
     model = parsed.realize_model()
-    locations = sorted(parsed.location_series_sources.home_value)
+    # Post-collapse the model's typed factors ARE the level keys; derive the home-value and
+    # rent locations directly from them (there is no location_series_sources to consult).
+    home_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, HomeValueKey))
+    rent_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, RentKey))
     required_level_series: frozenset[LevelSeriesKey] = frozenset(
-        {
-            key
-            for location in locations
-            for key in (HomeValueKey(location_id=LocationId(location)), RentKey(location_id=LocationId(location)))
-        }
+        {HomeValueKey(location_id=loc) for loc in home_locations} | {RentKey(location_id=loc) for loc in rent_locations}
     )
     sampled = model.sample(
-        ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
+        ExogenousSamplingRequest(
+            rollout_seeds=(7, 8), horizon_months=12, **level_series_request_channels(required_level_series)
+        )
     )
 
     assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
-    assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} == {
-        key.wire_id for key in required_level_series
-    }
-    for location in locations:
-        assert sampled.level_matrix(
-            HomeValueKey(location_id=LocationId(location)), rollout_count=2, horizon_months=12
-        ).shape == (2, 13)
-        assert sampled.level_matrix(
-            RentKey(location_id=LocationId(location)), rollout_count=2, horizon_months=12
-        ).shape == (2, 13)
+    assert level_keys_in_bundle(sampled) == set(required_level_series)
+    for home_loc in home_locations:
+        assert sampled.level_matrix(HomeValueKey(location_id=home_loc), rollout_count=2, horizon_months=12).shape == (
+            2,
+            13,
+        )
+    for rent_loc in rent_locations:
+        assert sampled.level_matrix(RentKey(location_id=rent_loc), rollout_count=2, horizon_months=12).shape == (2, 13)
 
 
 @pytest.mark.parametrize("model_label", ["state_space"])
@@ -85,23 +84,20 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
     assert parsed.conditioning.observations
 
     model = parsed.realize_model()
-    locations = sorted(parsed.location_series_sources.home_value)
+    home_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, HomeValueKey))
+    rent_locations = sorted(factor.location_id for factor in model.factor_names if isinstance(factor, RentKey))
     required_level_series: frozenset[LevelSeriesKey] = frozenset(
-        {
-            key
-            for location in locations
-            for key in (HomeValueKey(location_id=LocationId(location)), RentKey(location_id=LocationId(location)))
-        }
+        {HomeValueKey(location_id=loc) for loc in home_locations} | {RentKey(location_id=loc) for loc in rent_locations}
     )
     sampled = model.sample(
-        ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
+        ExogenousSamplingRequest(
+            rollout_seeds=(7, 8), horizon_months=12, **level_series_request_channels(required_level_series)
+        )
     )
 
     assert str(sampled.metadata["model_version_id"]).startswith("model_version:")
     assert sampled.metadata["source_manifest"]
-    assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} >= {
-        key.wire_id for key in required_level_series
-    }
+    assert level_keys_in_bundle(sampled) >= set(required_level_series)
 
 
 if __name__ == "__main__":

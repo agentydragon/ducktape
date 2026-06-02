@@ -332,10 +332,6 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -
                         "trained_artifact_path": "state_space_artifact.json",
                         "conditioning": {"start_at": "2026-05-27", "observations": {}},
                         "current_mortgage30_rate_pct": 6.23,
-                        "location_series_sources": {
-                            "home_value": {"location_a": "home_value:location_a"},
-                            "rent": {"location_a": "rent:location_a"},
-                        },
                     }
                 },
             )

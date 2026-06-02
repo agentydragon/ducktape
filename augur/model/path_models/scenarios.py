@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from augur.model.series import LevelSeriesKey
+
 
 @dataclass(frozen=True)
 class HistoricalSeries:
-    factor_names: tuple[str, ...]
+    factor_names: tuple[LevelSeriesKey, ...]
     levels: np.ndarray
     months: tuple[str, ...]
 

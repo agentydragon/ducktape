@@ -9,17 +9,18 @@ from more_itertools import one
 from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import Config, LocationConfig
 from augur.api.portfolio import PortfolioConfig
+from augur.model.exogenous import LevelRequestChannels
 from augur.model.series import (
-    CryptoKey,
+    AssetPriceKey,
     HomeValueKey,
+    IndexSeriesKey,
     InflationKey,
     IssuerId,
-    LevelSeriesKey,
     LocationId,
+    PropertyValueKey,
     RentKey,
-    SP500Key,
 )
-from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey, SP500AssetKey
+from augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, asset_price_key
 from augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -123,8 +124,8 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
 
 
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
-    # Keyed by the sim-frame wire id (matching InitialLot.asset_id) so sim events
-    # can be labeled; the wire id is derived from the typed `value_series`.
+    # Keyed by the sim-frame wire id (matching the `asset_id` column on decoded sim event
+    # frames) so sim events can be labeled; the wire id is derived from the typed `value_series`.
     return {
         position.value_series.wire_id: f"{position.label or position.symbol} ({position.symbol})"
         for position in portfolio.holdings
@@ -133,56 +134,54 @@ def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
 
 def required_level_series(
     scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...], properties_by_id: dict[str, Property]
-) -> frozenset[LevelSeriesKey]:
+) -> LevelRequestChannels:
+    """The non-PE level series a scenario needs, as the magisterium request channels —
+    splattable straight into `ExogenousSamplingRequest(**required_level_series(...))`."""
     # PE lot asset_ids (`private_equity:<issuer>`) flow through the typed
-    # PrivateEquityBundle, not through the level-series channel — they're
+    # PrivateEquityBundle, not through the level-series channels — they're
     # surfaced via `required_private_equity_issuers` instead.
-    keys: set[LevelSeriesKey] = set()
+    asset_prices: set[AssetPriceKey] = set()
+    property_values: set[PropertyValueKey] = set()
+    index_series: set[IndexSeriesKey] = set()
     for lot in initial_lots:
-        if lot.asset is None or isinstance(lot.asset, PrivateEquityAssetKey):
+        if isinstance(lot.asset, PrivateEquityAssetKey):
             continue
-        keys.add(_level_key_from_asset_key(lot.asset))
+        asset_prices.add(asset_price_key(lot.asset))
     if scenario_key.spend_index == "inflation":
-        keys.add(InflationKey())
+        index_series.add(InflationKey())
     if scenario_key.monthly_rent_usd > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
-        keys.add(RentKey(location_id=LocationId(scenario_key.rental_location_id)))
+        index_series.add(RentKey(location_id=LocationId(scenario_key.rental_location_id)))
     if scenario_key.property_purchase is not None:
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
-        keys.add(HomeValueKey(location_id=LocationId(property_.location_id)))
+        property_values.add(HomeValueKey(location_id=LocationId(property_.location_id)))
         if property_.hoa_monthly_usd > 0:
-            keys.add(InflationKey())
+            index_series.add(InflationKey())
         if scenario_key.annual_insurance_pct > 0:
-            keys.add(InflationKey())
+            index_series.add(InflationKey())
         if scenario_key.annual_maintenance_pct > 0:
-            keys.add(InflationKey())
+            index_series.add(InflationKey())
         if scenario_key.property_purchase.initial_rental is not None or _has_positive_rented_fraction_event(
             scenario_key.property_purchase
         ):
-            keys.add(RentKey(location_id=LocationId(property_.location_id)))
+            index_series.add(RentKey(location_id=LocationId(property_.location_id)))
     # PE tender policy with an inflation-indexed floor needs the CPI series.
     if (
         scenario_key.pe_tender_policy.liquid_net_worth_floor_usd > 0
         and scenario_key.pe_tender_policy.index_floor_to_inflation
     ):
-        keys.add(InflationKey())
+        index_series.add(InflationKey())
     # Cash-buffer trigger / sale, when inflation-indexed, also need the CPI series.
     funding_policy = scenario_key.funding_policy
     if funding_policy.cash_buffer_index_to_inflation and (
         funding_policy.cash_buffer_trigger_below_usd > 0 or funding_policy.cash_buffer_sale_usd > 0
     ):
-        keys.add(InflationKey())
-    return frozenset(keys)
-
-
-def _level_key_from_asset_key(asset_key: CryptoAssetKey | object) -> LevelSeriesKey:
-    """Translate a non-PE `AssetKey` (lot identifier) to its `LevelSeriesKey` peer."""
-
-    if isinstance(asset_key, SP500AssetKey):
-        return SP500Key()
-    if isinstance(asset_key, CryptoAssetKey):
-        return CryptoKey(symbol=asset_key.symbol)
-    raise ValueError(f"unsupported non-PE asset key {asset_key!r}")
+        index_series.add(InflationKey())
+    return {
+        "required_asset_prices": frozenset(asset_prices),
+        "required_property_values": frozenset(property_values),
+        "required_index_series": frozenset(index_series),
+    }
 
 
 def required_private_equity_issuers(initial_lots: tuple[InitialLot, ...]) -> frozenset[IssuerId]:
@@ -244,7 +243,7 @@ def build_scenario(
                 to_account_id=LANDLORD_ACCOUNT_ID,
                 amount_due_usd=SeriesIndexedAmount(
                     base_amount_usd=float(scenario_key.monthly_rent_usd),
-                    series_id=RentKey(location_id=LocationId(scenario_key.rental_location_id)).wire_id,
+                    series=RentKey(location_id=LocationId(scenario_key.rental_location_id)),
                     adjustment_period_months=12,
                 ),
             )
@@ -331,7 +330,7 @@ def build_scenario(
                     to_account_id=HOA_ACCOUNT_ID,
                     amount_due_usd=SeriesIndexedAmount(
                         base_amount_usd=float(property_.hoa_monthly_usd),
-                        series_id=InflationKey().wire_id,
+                        series=InflationKey(),
                         adjustment_period_months=1,
                     ),
                     deduction_category=property_deduction_category,
@@ -361,9 +360,7 @@ def build_scenario(
                     to_agent_id=INSURER_AGENT_ID,
                     to_account_id=INSURER_ACCOUNT_ID,
                     amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_insurance_usd,
-                        series_id=InflationKey().wire_id,
-                        adjustment_period_months=1,
+                        base_amount_usd=monthly_insurance_usd, series=InflationKey(), adjustment_period_months=1
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
@@ -394,9 +391,7 @@ def build_scenario(
                     to_agent_id=MAINTENANCE_VENDOR_AGENT_ID,
                     to_account_id=MAINTENANCE_VENDOR_ACCOUNT_ID,
                     amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_maintenance_usd,
-                        series_id=InflationKey().wire_id,
-                        adjustment_period_months=1,
+                        base_amount_usd=monthly_maintenance_usd, series=InflationKey(), adjustment_period_months=1
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
@@ -569,7 +564,7 @@ def _wire_landlord_rental(
     terms = _rental_cashflow_terms(purchase, property_=property_)
     if terms is None:
         return _EMPTY_LANDLORD_RENTAL_WIRING
-    rent_series = RentKey(location_id=LocationId(property_.location_id)).wire_id
+    rent_series = RentKey(location_id=LocationId(property_.location_id))
     base_monthly_rent = terms.base_monthly_rent
     vacancy_multiplier = terms.vacancy_multiplier
     rental_segments = _rental_cashflow_segments(purchase, horizon_months=horizon_months)
@@ -595,7 +590,7 @@ def _wire_landlord_rental(
                 to_agent_id=primary_agent_id,
                 to_account_id=PRIMARY_ACCOUNT_ID,
                 amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=base_monthly_collected, series_id=rent_series, adjustment_period_months=12
+                    base_amount_usd=base_monthly_collected, series=rent_series, adjustment_period_months=12
                 ),
                 # Rental income is ordinary income (taxed at owner's marginal bracket).
                 # §469 passive-loss limitation is explicitly deferred per the plan.
@@ -626,7 +621,7 @@ def _wire_landlord_rental(
                         to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
                         amount_usd=SeriesIndexedAmount(
                             base_amount_usd=base_monthly_collected * management_fee_fraction,
-                            series_id=rent_series,
+                            series=rent_series,
                             adjustment_period_months=12,
                         ),
                         # Management fee is a Schedule E deduction against rental income.
@@ -646,7 +641,7 @@ def _wire_landlord_rental(
                         to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
                         to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
                         amount_usd=SeriesIndexedAmount(
-                            base_amount_usd=leasing_fee_base, series_id=rent_series, adjustment_period_months=12
+                            base_amount_usd=leasing_fee_base, series=rent_series, adjustment_period_months=12
                         ),
                         # Leasing fee is a Schedule E deduction against rental income.
                         deduction_category="ordinary",
@@ -774,9 +769,7 @@ def _initial_rented_fraction(purchase: PropertyPurchase) -> float:
 def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmount:
     if scenario_key.spend_index == "inflation":
         return SeriesIndexedAmount(
-            base_amount_usd=float(scenario_key.monthly_spend_usd),
-            series_id=InflationKey().wire_id,
-            adjustment_period_months=1,
+            base_amount_usd=float(scenario_key.monthly_spend_usd), series=InflationKey(), adjustment_period_months=1
         )
     if scenario_key.spend_index == "none":
         return float(scenario_key.monthly_spend_usd)
@@ -818,35 +811,33 @@ def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount 
 
     if not index_to_inflation or usd <= 0:
         return usd
-    return SeriesIndexedAmount(base_amount_usd=usd, series_id=InflationKey().wire_id, adjustment_period_months=1)
+    return SeriesIndexedAmount(base_amount_usd=usd, series=InflationKey(), adjustment_period_months=1)
 
 
 def _asset_preference_chain_from_sell_order(
     funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
-) -> list[str]:
-    """Translate the wire's `sell_order` tuple to a deduplicated asset-ID list for the sim.
+) -> list[AssetKey]:
+    """Translate the wire's `sell_order` tuple to a deduplicated `AssetKey` list for the sim.
 
     `stocks` covers anything that isn't crypto or private equity — ETFs, individual stocks,
-    mutual funds; `crypto` covers asset_ids under the `crypto:` namespace. Private equity
-    (`private_equity:` namespace) is *never* included in any liquidity-sale bucket: it's only
-    saleable at sparse tender events, dispatched by `PrivateEquityTenderPolicy` outside the
-    liquidity-policy path. A bucket absent from `sell_order` means "don't auto-sell from this
-    bucket"; an empty `sell_order` yields an empty chain (hard-demand failures still fire).
+    mutual funds; `crypto` covers `CryptoAssetKey` holdings. Private equity is *never* included
+    in any liquidity-sale bucket: it's only saleable at sparse tender events, dispatched by
+    `PrivateEquityTenderPolicy` outside the liquidity-policy path. A bucket absent from
+    `sell_order` means "don't auto-sell from this bucket"; an empty `sell_order` yields an
+    empty chain (hard-demand failures still fire).
     """
 
-    asset_ids: list[str] = []
+    assets: list[AssetKey] = []
     for bucket in funding_policy.sell_order:
         if bucket == "stocks":
-            asset_ids.extend(
-                lot.asset_id
-                for lot in initial_lots
-                if not isinstance(lot.asset, CryptoAssetKey | PrivateEquityAssetKey)
+            assets.extend(
+                lot.asset for lot in initial_lots if not isinstance(lot.asset, CryptoAssetKey | PrivateEquityAssetKey)
             )
         elif bucket == "crypto":
-            asset_ids.extend(lot.asset_id for lot in initial_lots if isinstance(lot.asset, CryptoAssetKey))
+            assets.extend(lot.asset for lot in initial_lots if isinstance(lot.asset, CryptoAssetKey))
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
-    return list(dict.fromkeys(asset_ids))
+    return list(dict.fromkeys(assets))
 
 
 def _source_account_ids_from_sell_order(
@@ -859,7 +850,7 @@ def _source_account_ids_from_sell_order(
         dict.fromkeys(
             lot.account_id
             for lot in initial_lots
-            if lot.agent_id == primary_agent_id and lot.asset_id in selected_asset_ids
+            if lot.agent_id == primary_agent_id and lot.asset in selected_asset_ids
         )
     )
 
@@ -880,7 +871,7 @@ def _build_private_equity_tender_policies(
         return []
     if floor_usd > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation:
         floor: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
-            base_amount_usd=floor_usd, series_id=InflationKey().wire_id, adjustment_period_months=1
+            base_amount_usd=floor_usd, series=InflationKey(), adjustment_period_months=1
         )
     else:
         floor = FixedAmount(amount_usd=floor_usd)

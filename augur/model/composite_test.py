@@ -6,13 +6,13 @@ import numpy as np
 import pytest
 import pytest_bazel
 
-from augur.frames import concat_frames
 from augur.model.composite import CompositeModel
 from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_levels_frame,
+    assemble_level_magisteria,
+    level_series_request_channels,
+    partition_level_blocks,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
@@ -29,15 +29,22 @@ class _StaticSampler:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
-        level_frames = [
-            series_levels_frame(
-                key,
-                np.full((request.rollout_count, request.horizon_months + 1), value, dtype=np.float64),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
-            )
-            for key, value in self.levels.items()
-        ]
+
+        def matrix(value: float) -> np.ndarray:
+            return np.full((request.rollout_count, request.horizon_months + 1), value, dtype=np.float64)
+
+        # Route this fixture's flat constant levels into the three magisterium block-groups
+        # (a typed fan-out, not a merge) before assembling the bundle frames.
+        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(
+            (key, matrix(value)) for key, value in self.levels.items()
+        )
+        frames = assemble_level_magisteria(
+            asset_price_blocks=asset_price_blocks,
+            property_value_blocks=property_value_blocks,
+            index_blocks=index_blocks,
+            rollout_count=request.rollout_count,
+            horizon_months=request.horizon_months,
+        )
         pe_parts = [
             neutral_private_equity_issuer_bundle(
                 issuer_id,
@@ -49,7 +56,9 @@ class _StaticSampler:
             for issuer_id, mark in self.pe_issuer_marks.items()
         ]
         return SampledExogenousBundle(
-            levels=concat_frames(level_frames, SERIES_LEVELS_SCHEMA),
+            asset_prices=frames.asset_prices,
+            property_values=frames.property_values,
+            index_series=frames.index_series,
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
         )
 
@@ -61,7 +70,7 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
     request = ExogenousSamplingRequest(
         horizon_months=3,
         rollout_seeds=(7,),
-        required_level_series=frozenset({InflationKey()}),
+        **level_series_request_channels(frozenset({InflationKey()})),
         required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
     )
 

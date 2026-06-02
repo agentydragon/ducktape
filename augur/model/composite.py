@@ -5,14 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-import polars as pl
-
-from augur.frames import concat_frames
 from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
+    merge_level_magisteria,
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
@@ -27,26 +24,26 @@ class CompositeModel:
     label: str = "composite_exogenous_model"
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # `required_level_series` only carries non-PE `LevelSeriesKey` values
-        # post-migration; PE is routed via `required_private_equity_issuers`.
+        # Non-PE level series (all three magisteria) route to the macro provider;
+        # PE routes via `required_private_equity_issuers` to the PE provider.
         macro_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=request.required_level_series,
+            required_asset_prices=request.required_asset_prices,
+            required_property_values=request.required_property_values,
+            required_index_series=request.required_index_series,
             required_private_equity_issuers=frozenset(),
         )
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=frozenset(),
             required_private_equity_issuers=request.required_private_equity_issuers,
         )
 
         macro_bundle = self.macro.sample(macro_request)
         pe_bundle = self.private_equity.sample(pe_request)
-        _reject_duplicate_ids(macro_bundle.levels, pe_bundle.levels, id_column="series_id", label="level series")
         sampled = SampledExogenousBundle(
-            levels=concat_frames([macro_bundle.levels, pe_bundle.levels], SERIES_LEVELS_SCHEMA),
+            **merge_level_magisteria(macro_bundle, pe_bundle),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
             metadata={
                 "model_id": self.label,
@@ -57,20 +54,6 @@ class CompositeModel:
         )
         validate_sample_satisfies_request(request, sampled)
         return sampled
-
-
-def _reject_duplicate_ids(left: pl.DataFrame, right: pl.DataFrame, *, id_column: str, label: str) -> None:
-    left_ids = _ids(left, id_column)
-    right_ids = _ids(right, id_column)
-    duplicate = sorted(left_ids & right_ids)
-    if duplicate:
-        raise ValueError(f"composite exogenous providers produced duplicate {label}: {duplicate}")
-
-
-def _ids(frame: pl.DataFrame, column: str) -> frozenset[str]:
-    if frame.is_empty():
-        return frozenset()
-    return frozenset(str(value) for value in frame.get_column(column).unique().to_list())
 
 
 def _private_equity_prices_usd(metadata: Mapping[str, object]) -> dict[str, float]:

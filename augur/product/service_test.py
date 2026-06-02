@@ -10,7 +10,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio_sources import resolve_portfolio_sources
-from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import CompositeProviderConfig
 from augur.model.series import (
@@ -35,6 +35,7 @@ from augur.model.testing import (
     level_matrix_with_step,
 )
 from augur.product import decode, service
+from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS, forced_private_equity_event_fixture
@@ -65,7 +66,7 @@ from augur.product.wire import (
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
 )
-from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from augur.sim.simulate import simulate_dense_with_external_series
 from util.bazel.runfiles import get_required_path
@@ -87,7 +88,9 @@ class MissingRequiredExogenousModel:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
-        return SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame())
+        # Empty bundle (all magisteria default to typed-empty frames) — models the
+        # provider that fails to satisfy the request's required level series.
+        return SampledExogenousBundle()
 
 
 def _augur_config() -> Config:
@@ -158,7 +161,17 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
     model = provider.model_copy(
         update={
             "macro": provider.macro.model_copy(
-                update={"crypto": {symbol: spec for symbol, spec in provider.macro.crypto.items() if symbol != "btc"}}
+                update={
+                    "asset_prices": provider.macro.asset_prices.model_copy(
+                        update={
+                            "crypto": {
+                                symbol: spec
+                                for symbol, spec in provider.macro.asset_prices.crypto.items()
+                                if symbol != "btc"
+                            }
+                        }
+                    )
+                }
             )
         }
     ).realize_model()
@@ -176,7 +189,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
             InitialLot(
                 lot_id="unpriced_lot",
                 agent_id="agent_a",
-                asset_id="crypto:missing",
+                asset=CryptoAssetKey(symbol=CryptoSymbol("missing")),
                 purchase_month_index=-1,
                 quantity=2.0,
                 cost_basis_per_unit_usd=1.0,
@@ -188,9 +201,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
     dense = simulate_dense_with_external_series(
         scenario,
         rollout_count=1,
-        external_series=ExternalSeriesContext(
-            series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty()
-        ),
+        external_series=ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty()),
         locations={},
     )
 
@@ -397,7 +408,7 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     [pe_event] = [event for event in detail.rollout.events if event.kind == "private_equity_event"]
     assert isinstance(pe_event, PrivateEquityMarkerEvent)
     assert pe_event.month_index == 1
-    assert pe_event.asset_id == "private_equity:private_holding_a"
+    assert pe_event.asset == PrivateEquityAssetKey(issuer_id=IssuerId("private_holding_a"))
     assert pe_event.asset_label == "Private Holding A (PHA)"
     assert pe_event.event_kind == "acquisition_cashout"
     assert pe_event.regime == "acquired"
@@ -407,7 +418,8 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     [sale] = [
         event
         for event in detail.rollout.events
-        if event.kind == "holding_sale" and event.asset_id == "private_equity:private_holding_a"
+        if event.kind == "holding_sale"
+        and event.asset == PrivateEquityAssetKey(issuer_id=IssuerId("private_holding_a"))
     ]
     assert isinstance(sale, HoldingSaleEvent)
     assert sale.units == pytest.approx(250.0)
@@ -458,7 +470,8 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
     assert [
         event
         for event in detail.rollout.events
-        if event.kind == "holding_sale" and event.asset_id == "private_equity:private_holding_a"
+        if event.kind == "holding_sale"
+        and event.asset == PrivateEquityAssetKey(issuer_id=IssuerId("private_holding_a"))
     ] == []
     [pe_event] = [event for event in detail.rollout.events if event.kind == "private_equity_event"]
     assert isinstance(pe_event, PrivateEquityMarkerEvent)
@@ -804,7 +817,7 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     )
     assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
     assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5 * 0.90)
-    assert rent_transfer.amount_usd.series_id == "rent:location_a"
+    assert rent_transfer.amount_usd.series == RentKey(location_id=LocationId("location_a"))
 
     management_fee = one(
         transfer
@@ -867,7 +880,7 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
     for rent_transfer in rent_transfers:
         assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
         rent_amounts.append(rent_transfer.amount_usd.base_amount_usd)
-        assert rent_transfer.amount_usd.series_id == "rent:location_a"
+        assert rent_transfer.amount_usd.series == RentKey(location_id=LocationId("location_a"))
     assert rent_amounts == pytest.approx([6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90])
 
     management_fees = [
@@ -934,7 +947,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
     assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
     assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
     assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(4_200.0 * 0.5 * 0.95)
-    assert rent_transfer.amount_usd.series_id == "rent:location_a"
+    assert rent_transfer.amount_usd.series == RentKey(location_id=LocationId("location_a"))
 
 
 def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_model: CountingModel) -> None:

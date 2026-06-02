@@ -4,46 +4,53 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter, ValidationError
 
-from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousSamplingRequest, level_keys_in_bundle, level_series_request_channels
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import ProviderConfig
 from augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 
 
 def _example_config() -> IndependentProviderConfig:
-    # Typed per-kind config: no magic-prefix keys. Singletons are scalar;
-    # home_value/rent are keyed by location sub-id; PE marks live in their own
+    # Typed magisterium config: no magic-prefix keys. Each level series sits inside its
+    # magisterium sub-group (asset_prices / property_values / index_series); singletons are
+    # scalar, crypto/home_value/rent are keyed by sub-id. PE marks live in their own
     # issuer-keyed map (they are not level series).
     return IndependentProviderConfig.model_validate(
         {
             "type": "independent",
-            "inflation": {
-                "kind": "gbm",
-                "initial_value": 1.0,
-                "monthly_log_return_mu": 0.0024906250,
-                "monthly_log_return_sigma": 0.0043301270,
-            },
-            "sp500": {
-                "kind": "gbm",
-                "initial_value": 1.0,
-                "monthly_log_return_mu": 0.0047333327,
-                "monthly_log_return_sigma": 0.0461880215,
-            },
-            "home_value": {
-                "san_francisco_ca": {
+            "asset_prices": {
+                "sp500": {
                     "kind": "gbm",
                     "initial_value": 1.0,
-                    "monthly_log_return_mu": 0.0026498025,
-                    "monthly_log_return_sigma": 0.0230940108,
+                    "monthly_log_return_mu": 0.0047333327,
+                    "monthly_log_return_sigma": 0.0461880215,
                 }
             },
-            "rent": {
-                "san_francisco_ca": {
+            "property_values": {
+                "home_value": {
+                    "san_francisco_ca": {
+                        "kind": "gbm",
+                        "initial_value": 1.0,
+                        "monthly_log_return_mu": 0.0026498025,
+                        "monthly_log_return_sigma": 0.0230940108,
+                    }
+                }
+            },
+            "index_series": {
+                "inflation": {
                     "kind": "gbm",
                     "initial_value": 1.0,
-                    "monthly_log_return_mu": 0.0024625000,
-                    "monthly_log_return_sigma": 0.0086602540,
-                }
+                    "monthly_log_return_mu": 0.0024906250,
+                    "monthly_log_return_sigma": 0.0043301270,
+                },
+                "rent": {
+                    "san_francisco_ca": {
+                        "kind": "gbm",
+                        "initial_value": 1.0,
+                        "monthly_log_return_mu": 0.0024625000,
+                        "monthly_log_return_sigma": 0.0086602540,
+                    }
+                },
             },
             "private_equity_marks": {
                 "private_equity_x": {
@@ -64,22 +71,24 @@ def test_independent_model_samples_levels_and_events() -> None:
         ExogenousSamplingRequest(
             horizon_months=12,
             rollout_seeds=(7, 8),
-            required_level_series=frozenset(
-                {
-                    InflationKey(),
-                    SP500Key(),
-                    HomeValueKey(location_id=LocationId("san_francisco_ca")),
-                    RentKey(location_id=LocationId("san_francisco_ca")),
-                }
+            **level_series_request_channels(
+                frozenset(
+                    {
+                        InflationKey(),
+                        SP500Key(),
+                        HomeValueKey(location_id=LocationId("san_francisco_ca")),
+                        RentKey(location_id=LocationId("san_francisco_ca")),
+                    }
+                )
             ),
         )
     )
 
-    assert set(sampled.levels.get_column("series_id").unique()) == {
-        InflationKey().wire_id,
-        SP500Key().wire_id,
-        HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id,
-        RentKey(location_id=LocationId("san_francisco_ca")).wire_id,
+    assert level_keys_in_bundle(sampled) == {
+        InflationKey(),
+        SP500Key(),
+        HomeValueKey(location_id=LocationId("san_francisco_ca")),
+        RentKey(location_id=LocationId("san_francisco_ca")),
     }
     # IndependentModel doesn't sample PE channels — the typed PE bundle stays empty.
     assert sampled.private_equity.is_empty()
@@ -95,6 +104,27 @@ def test_independent_provider_config_roundtrips_through_discriminated_union() ->
     assert config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,))).metadata[
         "private_equity_prices_usd"
     ] == {"private_equity_x": 50.0}
+
+
+def test_realized_model_keeps_magisterium_structure() -> None:
+    # The runtime model holds level specs as the three magisterium sub-groups (same shape
+    # as config / the sampled bundle), not a flattened opaque key map. The config-only
+    # `private_equity_marks` sibling travels separately as `pe_marks`.
+    model = _example_config().realize_model()
+    assert model.index_series.inflation is not None
+    assert model.asset_prices.sp500 is not None
+    assert set(model.property_values.home_value) == {"san_francisco_ca"}
+    assert set(model.index_series.rent) == {"san_francisco_ca"}
+    assert not model.asset_prices.crypto
+    assert set(model.pe_marks) == {"private_equity_x"}
+    # The level series surface as typed FactorKeys (a subset of which are LevelSeriesKeys),
+    # one per series across all three magisteria.
+    assert {key.wire_id for key in model.factor_names} == {
+        "inflation",
+        "sp500",
+        "home_value:san_francisco_ca",
+        "rent:san_francisco_ca",
+    }
 
 
 def test_legacy_prefix_keys_are_rejected() -> None:

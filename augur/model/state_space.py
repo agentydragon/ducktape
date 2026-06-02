@@ -23,16 +23,14 @@ from numpyro import distributions as dist
 from pydantic import Field, model_validator
 
 from augur.dates import months_between
-from augur.frames import concat_frames
 from augur.model.conditioning import ExogenousConditioningContext, ObservationTreatment, latest_observations_by_series
 from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_levels_frame,
+    assemble_level_magisteria,
+    partition_level_blocks,
     validate_sample_satisfies_request,
 )
-from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import (
@@ -41,20 +39,11 @@ from augur.model.private_equity_protocol import (
 )
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
-from augur.model.series import (
-    CryptoKey,
-    HomeValueKey,
-    IssuerId,
-    LevelSeriesKey,
-    LocationId,
-    RentKey,
-    SP500Key,
-    parse_level_series_key,
-    try_parse_level_series_key,
-)
+from augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
 from augur.model.series_model import derive_stream_rollout_seeds
+from augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
-from augur.product.asset_key import PrivateEquityAssetKey, parse_asset_key
+from augur.product.asset_key import PrivateEquityAssetKey
 
 _MIN_MONTHLY_VARIANCE = 1e-8
 _OFF_BLOCK_SHRINKAGE = 0.0
@@ -65,23 +54,6 @@ class StateSpacePrivateEquityEventPrior(FrozenModel):
     tender_interval_months_median: float = Field(gt=0)
     tender_interval_log_sigma: float = Field(gt=0)
     last_tender_observed_at: date | None = None
-
-
-def _classify_factor(factor: str) -> LevelSeriesKey | IssuerId:
-    """Classify a `factor_names` entry as either a `LevelSeriesKey` (non-PE) or the
-    `IssuerId` of a private-equity mark factor.
-
-    The artifact's on-disk JSON keeps `factor_names` as wire-id strings; this
-    helper is the single boundary that turns each wire-id back into a typed key.
-    Raises `ValueError` for unrecognized wire ids.
-    """
-
-    if (level_key := try_parse_level_series_key(factor)) is not None:
-        return level_key
-    asset_key = parse_asset_key(factor)
-    if not isinstance(asset_key, PrivateEquityAssetKey):
-        raise ValueError(f"state-space factor {factor!r} is neither a level series nor a PE mark")
-    return asset_key.issuer_id
 
 
 class StateSpaceModelArtifact(FrozenModel):
@@ -131,22 +103,23 @@ class StateSpaceModelArtifact(FrozenModel):
         return self
 
     @cached_property
-    def factor_classifications(self) -> tuple[LevelSeriesKey | IssuerId, ...]:
-        """Typed classification of every `factor_names` entry. Parsed once."""
+    def factor_classifications(self) -> tuple[FactorKey, ...]:
+        """Typed `FactorKey` for every on-disk wire-id `factor_names` entry. Parsed once
+        at the single `parse_factor_key` decode boundary."""
 
-        return tuple(_classify_factor(factor) for factor in self.factor_names)
+        return tuple(parse_factor_key(factor) for factor in self.factor_names)
 
     @cached_property
     def level_factors(self) -> tuple[LevelSeriesKey, ...]:
         """Non-PE level-series factors in `factor_names` order."""
 
-        return tuple(item for item in self.factor_classifications if not isinstance(item, str))
+        return tuple(item for item in self.factor_classifications if not isinstance(item, PrivateEquityMarkKey))
 
     @cached_property
     def private_equity_factor_issuers(self) -> tuple[IssuerId, ...]:
         """PE issuer ids in `factor_names` order."""
 
-        return tuple(IssuerId(item) for item in self.factor_classifications if isinstance(item, str))
+        return tuple(item.issuer_id for item in self.factor_classifications if isinstance(item, PrivateEquityMarkKey))
 
 
 @dataclass(frozen=True)
@@ -167,13 +140,11 @@ class StateSpaceProviderConfig(FrozenModel):
     trained_artifact_path: Path
     conditioning: ExogenousConditioningContext
     current_mortgage30_rate_pct: float
-    location_series_sources: LocationSeriesSourcesConfig
 
     def realize_model(self) -> StateSpaceModel:
         return StateSpaceModel.from_path(
             self.trained_artifact_path,
             conditioning=self.conditioning,
-            location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
             evidence_source_id=str(self.trained_artifact_path),
         )
 
@@ -182,7 +153,6 @@ class StateSpaceProviderConfig(FrozenModel):
 class StateSpaceModel:
     artifact: StateSpaceModelArtifact
     conditioning: ExogenousConditioningContext
-    location_series_sources: LocationSeriesSources
     label: str = "state_space"
     model_version_id: str = ""
     evidence_set_id: str = ""
@@ -190,18 +160,13 @@ class StateSpaceModel:
 
     @classmethod
     def from_path(
-        cls,
-        path: Path,
-        *,
-        conditioning: ExogenousConditioningContext,
-        location_series_sources: LocationSeriesSources,
-        evidence_source_id: str,
+        cls, path: Path, *, conditioning: ExogenousConditioningContext, evidence_source_id: str
     ) -> StateSpaceModel:
         try:
             artifact = StateSpaceModelArtifact.model_validate_json(path.read_text(encoding="utf-8"))
         except Exception as error:
             raise ValueError(f"failed to load trained state-space model {path}: {error}") from error
-        model = cls(artifact=artifact, conditioning=conditioning, location_series_sources=location_series_sources)
+        model = cls(artifact=artifact, conditioning=conditioning)
         model._compute_provenance(evidence_source_id)
         return model
 
@@ -215,7 +180,9 @@ class StateSpaceModel:
         prior_manifest: Mapping[str, Any],
         additional_factors: tuple[StateSpaceAdditionalFactor, ...] = (),
     ) -> StateSpaceModelArtifact:
-        base_factor_names = tuple(historical.factor_names)
+        # The artifact's on-disk factor identity is the wire-id string; the typed
+        # FactorKeys on `historical` project to it here, the artifact's write boundary.
+        base_factor_names = tuple(factor.wire_id for factor in historical.factor_names)
         returns = historical_log_returns(historical)
         if returns.shape[0] < 3:
             raise ValueError("state-space training needs at least three monthly return rows")
@@ -281,8 +248,10 @@ class StateSpaceModel:
         )
 
     @property
-    def factor_names(self) -> tuple[str, ...]:
-        return self.artifact.factor_names
+    def factor_names(self) -> tuple[LevelSeriesKey, ...]:
+        # The Sampler/Scorable `factor_names` is the level-series basis; the artifact's
+        # PE-mark factors are internal to the joint covariance and surface via the PE bundle.
+        return self.artifact.level_factors
 
     def save(self, path: Path) -> None:
         path.write_text(self.artifact.model_dump_json(indent=2), encoding="utf-8")
@@ -303,32 +272,32 @@ class StateSpaceModel:
             issuer_id: self._private_equity_event_series(issuer_id, request)
             for issuer_id in sorted(self.artifact.private_equity_event_priors)
         }
-        level_blocks = []
+        # PE marks live in the canonical PrivateEquityBundle below; the level magisteria
+        # carry only non-PE series. Each on-disk factor name is classified once to its typed
+        # FactorKey; post-collapse a level factor *is* its level key, so it routes straight
+        # into the right magisterium with no source-name indirection.
+        level_by_key: dict[LevelSeriesKey, np.ndarray] = {}
         observed_mark_by_issuer: dict[str, np.ndarray] = {}
-        pe_issuer_by_wire_id = {
-            PrivateEquityAssetKey(issuer_id=issuer_id).wire_id: issuer_id
-            for issuer_id in self.artifact.private_equity_factor_issuers
-        }
-        for series_id, factor_name in sorted(self._series_factor_map().items()):
-            if factor_name not in path_by_factor:
-                continue
+        for factor_name, classification in zip(
+            self.artifact.factor_names, self.artifact.factor_classifications, strict=True
+        ):
             levels = path_by_factor[factor_name]
-            if (private_equity_issuer := pe_issuer_by_wire_id.get(series_id)) is not None:
-                # PE marks live in the canonical PrivateEquityBundle below; the legacy
-                # `levels` frame only carries non-PE series now.
-                if str(private_equity_issuer) in event_by_issuer:
-                    observed_mark_by_issuer[str(private_equity_issuer)] = observed_private_equity_mark_matrix(
-                        levels, event_by_issuer[str(private_equity_issuer)]
+            if isinstance(classification, PrivateEquityMarkKey):
+                issuer = str(classification.issuer_id)
+                if issuer in event_by_issuer:
+                    observed_mark_by_issuer[issuer] = observed_private_equity_mark_matrix(
+                        levels, event_by_issuer[issuer]
                     )
                 continue
-            level_blocks.append(
-                series_levels_frame(
-                    parse_level_series_key(series_id),
-                    levels,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                )
-            )
+            level_by_key[classification] = levels
+        asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(level_by_key.items())
+        frames = assemble_level_magisteria(
+            asset_price_blocks=asset_price_blocks,
+            property_value_blocks=property_value_blocks,
+            index_blocks=index_blocks,
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+        )
         private_equity_parts = [
             neutral_private_equity_issuer_bundle(
                 issuer_id,
@@ -344,7 +313,7 @@ class StateSpaceModel:
             PrivateEquityBundle.combine(private_equity_parts) if private_equity_parts else PrivateEquityBundle.empty()
         )
         sampled = SampledExogenousBundle(
-            levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            **frames.as_bundle_kwargs(),
             private_equity=private_equity,
             metadata={
                 "model_version_id": self.model_version_id,
@@ -370,12 +339,14 @@ class StateSpaceModel:
         n_steps = historical.levels.shape[0] - 1
         if t + horizon > n_steps:
             return None
+        # `historical.factor_names` are typed FactorKeys; the artifact indexes by their
+        # wire id (its on-disk factor identity). Align columns through that wire-id projection.
         factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
         try:
-            indices = [factor_index[factor] for factor in historical.factor_names]
+            indices = [factor_index[factor.wire_id] for factor in historical.factor_names]
         except KeyError:
             return None
-        mean = np.asarray([self.artifact.monthly_log_return_mu[factor] for factor in historical.factor_names])
+        mean = np.asarray([self.artifact.monthly_log_return_mu[factor.wire_id] for factor in historical.factor_names])
         cov = np.asarray(self.artifact.monthly_log_return_cov, dtype=np.float64)[np.ix_(indices, indices)]
         return dist.MultivariateNormal(
             jnp.asarray(mean * horizon, dtype=jnp.float32),
@@ -439,23 +410,10 @@ class StateSpaceModel:
         return levels
 
     def _series_factor_map(self) -> dict[str, str]:
-        factors = set(self.artifact.factor_names)
-        mapping: dict[str, str] = {}
-        for factor, classification in zip(
-            self.artifact.factor_names, self.artifact.factor_classifications, strict=True
-        ):
-            # Both PE and level-series factors keep their wire-id form as the
-            # series-id lookup key. Classification just ensures they round-trip
-            # cleanly through the typed boundary.
-            del classification  # presence in the classification is enough
-            mapping[factor] = factor
-        for location_id, factor in self.location_series_sources.home_value.items():
-            if factor in factors:
-                mapping[HomeValueKey(location_id=LocationId(location_id)).wire_id] = factor
-        for location_id, factor in self.location_series_sources.rent.items():
-            if factor in factors:
-                mapping[RentKey(location_id=LocationId(location_id)).wire_id] = factor
-        return mapping
+        # Post-collapse, a conditioning series id IS the factor's own wire id (factor
+        # identity == series id), so the series→factor map is the identity over the
+        # artifact's factors — no source-name indirection.
+        return {factor: factor for factor in self.artifact.factor_names}
 
     def _private_equity_event_series(self, issuer_id: str, request: ExogenousSamplingRequest) -> np.ndarray:
         prior = self.artifact.private_equity_event_priors[issuer_id]
@@ -552,10 +510,10 @@ def _regularize_covariance(factor_names: tuple[str, ...], covariance: np.ndarray
 
 
 def _coupling_allowed(left: str, right: str) -> bool:
-    left_classification = _classify_factor(left)
-    right_classification = _classify_factor(right)
-    left_is_pe = isinstance(left_classification, str)
-    right_is_pe = isinstance(right_classification, str)
+    left_classification = parse_factor_key(left)
+    right_classification = parse_factor_key(right)
+    left_is_pe = isinstance(left_classification, PrivateEquityMarkKey)
+    right_is_pe = isinstance(right_classification, PrivateEquityMarkKey)
     if isinstance(left_classification, CryptoKey) or isinstance(right_classification, CryptoKey):
         return isinstance(left_classification, CryptoKey) and isinstance(right_classification, CryptoKey)
     if left_is_pe:

@@ -30,6 +30,34 @@ from augur.fit.metrics import (
 )
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from augur.model.series import (
+    CryptoKey,
+    CryptoSymbol,
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKey,
+    LocationId,
+    RentKey,
+    SP500Key,
+)
+
+# Distinct synthetic level-series keys for the metric fixtures. Identities are
+# arbitrary — these tests check numeric scoring, not series semantics — but they must be
+# real typed keys now that factor identity is a LevelSeriesKey rather than an "f0"/"f1" string.
+_SYNTHETIC_FACTOR_POOL: tuple[LevelSeriesKey, ...] = (
+    SP500Key(),
+    InflationKey(),
+    CryptoKey(symbol=CryptoSymbol("btc")),
+    CryptoKey(symbol=CryptoSymbol("eth")),
+    HomeValueKey(location_id=LocationId("san_francisco_ca")),
+    RentKey(location_id=LocationId("san_francisco_ca")),
+)
+
+
+def _synthetic_factor_keys(n: int) -> tuple[LevelSeriesKey, ...]:
+    if n > len(_SYNTHETIC_FACTOR_POOL):
+        raise ValueError(f"metric fixtures support at most {len(_SYNTHETIC_FACTOR_POOL)} factors; got {n}")
+    return _SYNTHETIC_FACTOR_POOL[:n]
 
 
 def _gaussian_log_density(x: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> float:
@@ -51,7 +79,7 @@ class _ConstantGaussianModel:
     def __init__(self, mu: np.ndarray, sigma: np.ndarray) -> None:
         self._mu = np.asarray(mu, dtype="float64")
         self._sigma = np.asarray(sigma, dtype="float64")
-        self.factor_names: tuple[str, ...] = tuple(f"f{i}" for i in range(len(self._mu)))
+        self.factor_names: tuple[LevelSeriesKey, ...] = _synthetic_factor_keys(len(self._mu))
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
@@ -74,7 +102,7 @@ class _UnscoredModel:
     """Model that returns None from predictive() — like a bootstrap."""
 
     label = "unscored"
-    factor_names: tuple[str, ...] = ("f0",)
+    factor_names: tuple[LevelSeriesKey, ...] = (SP500Key(),)
 
     def fit(self, historical: HistoricalSeries) -> None:
         del historical
@@ -93,7 +121,7 @@ def _toy_historical(n_steps: int, *, mu: np.ndarray, sigma: np.ndarray, seed: in
     log_returns = rng.normal(loc=mu, scale=sigma, size=(n_steps, n_factors))
     levels = np.exp(np.concatenate([np.zeros((1, n_factors)), np.cumsum(log_returns, axis=0)], axis=0))
     months = tuple(f"2000-{i:02d}" for i in range(n_steps + 1))
-    return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(n_factors)), levels=levels, months=months)
+    return HistoricalSeries(factor_names=_synthetic_factor_keys(n_factors), levels=levels, months=months)
 
 
 class TestHeldOutPredictiveScore:

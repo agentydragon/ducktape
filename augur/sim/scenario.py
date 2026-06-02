@@ -11,13 +11,13 @@ external-series bundle reference, and tax profiles per agent.
 from __future__ import annotations
 
 from enum import StrEnum
-from functools import cached_property
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
 
+from augur.model.series import IndexSeriesKey
 from augur.model.series_model import SeriesModelBundle
-from augur.product.asset_key import AssetKey, try_parse_asset_key
+from augur.product.asset_key import AssetKey
 
 
 class FilingStatus(StrEnum):
@@ -64,11 +64,16 @@ class SeriesIndexedAmount(BaseModel):
     With `adjustment_period_months=12`, a rent obligation stays flat for
     the first lease year, resets at month 12, stays flat through month 23,
     and so on.
+
+    `series` is a typed `IndexSeriesKey` (inflation or a location's rent) —
+    the index whose level path scales the amount. Asset prices, home values,
+    and PE marks are never amount indices, so the magisterium type makes
+    `series=SP500Key()` / `series=HomeValueKey(...)` a type error.
     """
 
     kind: Literal["series_indexed"] = "series_indexed"
     base_amount_usd: float
-    series_id: str
+    series: IndexSeriesKey
     base_month_index: NonNegativeInt = 0
     adjustment_period_months: PositiveInt = 1
 
@@ -231,30 +236,19 @@ class InitialLot(BaseModel):
     holding account used for FIFO pools; lots in different accounts
     are not fungible.
 
-    `asset_id` is the wire-id string used as a flat lookup key into the
-    compiler's series-index table. The typed `asset` cached property
-    parses it once at access into the `AssetKey` discriminated union;
-    dispatch sites read `lot.asset` instead of re-parsing the wire-id.
-    `asset` is `None` when the wire-id is not a recognized asset
-    classification — engine machinery still treats these as opaque
-    string keys.
+    `asset` is the typed `AssetKey` discriminated union identifying what
+    is held (sp500 / a crypto symbol / a PE issuer). Dispatch sites match
+    on it with `isinstance`; the compiler derives the lot's pricing series
+    from it via `asset_price_key`.
     """
 
     lot_id: str
     agent_id: str
     account_id: str = "checking"
-    asset_id: str
+    asset: AssetKey
     purchase_month_index: int
     quantity: float
     cost_basis_per_unit_usd: float
-
-    @cached_property
-    def asset(self) -> AssetKey | None:
-        """Typed asset classification for this lot, parsed once from `asset_id`."""
-
-        return try_parse_asset_key(self.asset_id)
-
-    model_config = ConfigDict(ignored_types=(cached_property,))
 
 
 class ScheduledAssetSale(BaseModel):
@@ -274,18 +268,10 @@ class ScheduledAssetSale(BaseModel):
     cause_id: str
     agent_id: str
     source_account_id: str = "checking"
-    asset_id: str
+    asset: AssetKey
     quantity: float
     proceeds_account_id: str
     price_per_unit_usd: float | None = None
-
-    @cached_property
-    def asset(self) -> AssetKey | None:
-        """Typed asset classification for this sale, parsed once from `asset_id`."""
-
-        return try_parse_asset_key(self.asset_id)
-
-    model_config = ConfigDict(ignored_types=(cached_property,))
 
 
 class LiquidityPolicy(BaseModel):
@@ -305,9 +291,9 @@ class LiquidityPolicy(BaseModel):
     # Holding accounts the policy may liquidate. Empty preserves the original behavior:
     # sell only lots already in `account_id`.
     source_account_ids: tuple[str, ...] = ()
-    asset_preference_chain: list[str]
+    asset_preference_chain: list[AssetKey]
     # `AmountSpec = float | AmountSchedule` — pass a raw float for a constant buffer, or a
-    # `SeriesIndexedAmount` (e.g. `series_id="inflation"`) to keep the buffer in real terms.
+    # `SeriesIndexedAmount` (e.g. `series=InflationKey()`) to keep the buffer in real terms.
     cash_buffer_trigger_below_usd: AmountSpec = 0.0
     cash_buffer_sale_usd: AmountSpec = 0.0
     cause_id_prefix: str = "liquidity_sale"
@@ -679,7 +665,9 @@ class Scenario(BaseModel):
         seen: dict[tuple[str, str, str, int], str] = {}
         duplicates: list[tuple[str, str, str, int, str, str]] = []
         for lot in self.initial_lots:
-            key = (lot.agent_id, lot.account_id, lot.asset_id, lot.purchase_month_index)
+            # Dedup/sort/message on the asset's wire id (a stable, ordered string id) — the
+            # tuple stays string-keyed so `sorted(duplicates)` compares cleanly.
+            key = (lot.agent_id, lot.account_id, lot.asset.wire_id, lot.purchase_month_index)
             previous_lot_id = seen.get(key)
             if previous_lot_id is not None:
                 duplicates.append((*key, previous_lot_id, lot.lot_id))

@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from pydantic import TypeAdapter, ValidationError
 
 from augur.model.series import (
+    AssetPriceKey,
     CryptoKey,
     HomeValueKey,
+    IndexSeriesKey,
     InflationKey,
+    PropertyValueKey,
     RentKey,
     SP500Key,
     parse_level_series_key,
     try_parse_level_series_key,
 )
+
+_INDEX_ADAPTER: TypeAdapter[IndexSeriesKey] = TypeAdapter(IndexSeriesKey)
+_ASSET_PRICE_ADAPTER: TypeAdapter[AssetPriceKey] = TypeAdapter(AssetPriceKey)
+_PROPERTY_VALUE_ADAPTER: TypeAdapter[PropertyValueKey] = TypeAdapter(PropertyValueKey)
 
 
 def test_level_series_key_round_trip_through_wire_id() -> None:
@@ -48,6 +56,29 @@ def test_parse_level_series_key_rejects_unknown_wire_ids() -> None:
 def test_try_parse_level_series_key_returns_none_for_pe_wire_ids() -> None:
     assert try_parse_level_series_key("private_equity:acme") is None
     assert try_parse_level_series_key("private_equity_regime_code:acme") is None
+
+
+def test_magisteria_unions_accept_their_members_and_reject_others() -> None:
+    # The magisterium split is enforced statically by mypy on reference fields;
+    # the discriminated unions also reject foreign members at runtime. A series
+    # only escalates amounts if it's an index; only prices a lot if asset-price;
+    # only values a property if home-value.
+    assert _INDEX_ADAPTER.validate_python(InflationKey().model_dump()) == InflationKey()
+    assert _INDEX_ADAPTER.validate_python(RentKey(location_id="sf").model_dump()) == RentKey(location_id="sf")
+    assert _ASSET_PRICE_ADAPTER.validate_python(SP500Key().model_dump()) == SP500Key()
+    assert _ASSET_PRICE_ADAPTER.validate_python(CryptoKey(symbol="btc").model_dump()) == CryptoKey(symbol="btc")
+    assert _PROPERTY_VALUE_ADAPTER.validate_python(HomeValueKey(location_id="sf").model_dump()) == HomeValueKey(
+        location_id="sf"
+    )
+
+    # Cross-magisterium values are rejected: sp500 (asset price) is not an index,
+    # rent (index) is not an asset price, crypto (asset price) is not a property value.
+    with pytest.raises(ValidationError):
+        _INDEX_ADAPTER.validate_python(SP500Key().model_dump())
+    with pytest.raises(ValidationError):
+        _ASSET_PRICE_ADAPTER.validate_python(RentKey(location_id="sf").model_dump())
+    with pytest.raises(ValidationError):
+        _PROPERTY_VALUE_ADAPTER.validate_python(CryptoKey(symbol="btc").model_dump())
 
 
 if __name__ == "__main__":

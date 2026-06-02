@@ -9,15 +9,6 @@ py_library(
 )
 
 py_library(
-    name = "location_series_sources",
-    srcs = ["location_series_sources.py"],
-    deps = [
-        ":schemas",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "conditioning",
     srcs = ["conditioning.py"],
     deps = [
@@ -32,6 +23,7 @@ py_library(
     deps = [
         ":private_equity_bundle",
         ":series",
+        "//augur:frames",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -64,6 +56,30 @@ py_test(
         ":series",
         "//:conftest",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "state_space_factor",
+    srcs = ["state_space_factor.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "state_space_factor_test",
+    srcs = ["state_space_factor_test.py"],
+    deps = [
+        ":series",
+        ":state_space_factor",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -72,11 +88,9 @@ py_library(
     name = "private_equity_protocol",
     srcs = ["private_equity_protocol.py"],
     deps = [
-        ":exogenous",
         ":private_equity_bundle",
         ":series",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 
@@ -86,11 +100,9 @@ py_library(
     deps = [
         ":exogenous",
         ":private_equity_bundle",
-        ":private_equity_protocol",
         ":schemas",
         ":series",
         ":series_model",
-        "//augur:frames",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -102,6 +114,8 @@ py_test(
     deps = [
         ":series",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -144,6 +158,7 @@ py_library(
         ":poisson_events",
         ":series",
         "//augur:frames",
+        "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pydantic",
     ],
@@ -160,7 +175,6 @@ py_library(
         ":schemas",
         ":series",
         ":series_model",
-        "//augur:frames",
         "//augur/model/path_models:scenarios",
         "@pypi//jax",
         "@pypi//numpy",
@@ -175,16 +189,15 @@ py_library(
     deps = [
         ":conditioning",
         ":exogenous",
-        ":location_series_sources",
         ":private_equity_bundle",
         ":private_equity_protocol",
         ":provenance",
         ":schemas",
         ":series",
         ":series_model",
+        ":state_space_factor",
         ":trained_private_equity",
         "//augur:dates",
-        "//augur:frames",
         "//augur/model/path_models:scenarios",
         "//augur/product:asset_key",
         "@pypi//jax",
@@ -200,11 +213,9 @@ py_library(
     data = ["//augur/fit/calibrated:trained_vecm_blob"],
     deps = [
         ":exogenous",
-        ":location_series_sources",
         ":provenance",
         ":schemas",
         ":series",
-        "//augur:frames",
         "//augur/model/path_models:scenarios",
         "//util/bazel:runfiles",
         "@pypi//jax",
@@ -220,7 +231,6 @@ py_test(
     srcs = ["vecm_test.py"],
     deps = [
         ":exogenous",
-        ":location_series_sources",
         ":series",
         ":vecm",
         "//:conftest",
@@ -238,7 +248,6 @@ py_test(
     deps = [
         ":conditioning",
         ":exogenous",
-        ":location_series_sources",
         ":series",
         ":state_space",
         ":trained_private_equity",
@@ -275,7 +284,6 @@ py_library(
         ":series",
         "//util/bazel:runfiles",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -309,7 +317,6 @@ py_library(
         ":exogenous",
         ":private_equity_bundle",
         ":series",
-        "//augur:frames",
         "@pypi//numpy",
     ],
 )
@@ -321,6 +328,7 @@ py_test(
         ":deterministic",
         ":exogenous",
         ":gbm",
+        ":level_series_groups",
         ":series",
         ":series_model",
         ":testing",
@@ -341,9 +349,8 @@ py_test(
         ":provider_config",
         ":series",
         "//:conftest",
-        "//augur/product:asset_key",
-        "@pypi//numpy",
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -353,10 +360,8 @@ py_library(
     srcs = ["trained_private_equity.py"],
     deps = [
         ":exogenous",
-        ":private_equity_bundle",
         ":private_equity_protocol",
         ":schemas",
-        ":series",
         ":series_model",
         "//augur:dates",
         "//augur:frames",
@@ -370,6 +375,7 @@ py_test(
     srcs = ["private_equity_risk_test.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_risk",
         ":provider_config",
         ":series",
@@ -387,9 +393,6 @@ py_library(
     deps = [
         ":exogenous",
         ":private_equity_bundle",
-        ":series",
-        "//augur:frames",
-        "@pypi//polars",
     ],
 )
 
@@ -399,10 +402,10 @@ py_test(
     deps = [
         ":composite",
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_protocol",
         ":series",
         "//:conftest",
-        "//augur:frames",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -416,10 +419,7 @@ py_library(
         ":exogenous",
         ":private_equity_bundle",
         ":private_equity_protocol",
-        ":series",
-        "//augur:frames",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 
@@ -428,11 +428,11 @@ py_test(
     srcs = ["private_equity_trajectories_test.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_trajectories",
         ":series",
         "//:conftest",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

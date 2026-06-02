@@ -37,6 +37,23 @@ def codes_to_strings(plan: CompiledSimulation, codes: np.ndarray) -> np.ndarray:
     return out.reshape(np.asarray(codes).shape)
 
 
+def codes_to_asset_wire_ids(plan: CompiledSimulation, codes: np.ndarray) -> np.ndarray:
+    """Vectorize asset-code → wire-id over an int-code array; preserves shape.
+
+    Asset codes index `plan.assets` (typed `AssetKey`); the output is each asset's wire-id
+    string (or None for NO_CODE) for the `asset_id` output column + cause-id interpolation —
+    the output-frame string contract the frontend reads. Decode that needs the *type* reads
+    `plan.assets[code]` directly instead."""
+
+    flat = np.asarray(codes, dtype=np.int64).reshape(-1)
+    out = np.empty(flat.size, dtype=object)
+    assets = plan.assets
+    for i in range(flat.size):
+        code = int(flat[i])
+        out[i] = assets[code].wire_id if code >= 0 else None
+    return out.reshape(np.asarray(codes).shape)
+
+
 def r_first_view(state: np.ndarray) -> np.ndarray:
     """Move R (trailing axis per B0) to axis 1 so the decoders can keep using their
     (h1, r, count[, ...]) row-major iteration order over the resulting flat buffer."""

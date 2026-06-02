@@ -72,27 +72,29 @@ def _validate_series_indexed_amounts(
                 f"series-indexed amount {label} is active at month {before_base[0]} "
                 f"before base month {amount.base_month_index}"
             )
+        # series_levels is keyed by the frame's wire-string series_id (typed in a later phase).
+        wire_id = amount.series.wire_id
         required_months = {int(amount.base_month_index)}
         required_months.update(amount._reset_month(month) for month in months)
         for month in sorted(required_months):
             missing_rollouts = [
                 rollout_index
                 for rollout_index in range(rollout_count)
-                if series_levels.get((amount.series_id, month, rollout_index)) is None
+                if series_levels.get((wire_id, month, rollout_index)) is None
             ]
             if missing_rollouts:
                 raise KeyError(
-                    f"series-indexed amount {label} references external series {amount.series_id!r} "
+                    f"series-indexed amount {label} references external series {wire_id!r} "
                     f"at month {month}, but it is missing rollout(s): {_format_rollout_sample(missing_rollouts)}"
                 )
         zero_base_rollouts = [
             rollout_index
             for rollout_index in range(rollout_count)
-            if series_levels[(amount.series_id, int(amount.base_month_index), rollout_index)] == 0.0
+            if series_levels[(wire_id, int(amount.base_month_index), rollout_index)] == 0.0
         ]
         if zero_base_rollouts:
             raise ValueError(
-                f"external series {amount.series_id!r} has zero base level at month "
+                f"external series {wire_id!r} has zero base level at month "
                 f"{amount.base_month_index} for rollout(s): {_format_rollout_sample(zero_base_rollouts)}"
             )
 

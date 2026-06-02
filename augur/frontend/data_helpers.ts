@@ -320,12 +320,29 @@ export function propertyPurchaseDetail(event, currencyDisplay) {
 const dueWithShortfallDetail = (event, currencyDisplay) =>
   formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd, currencyDisplay);
 
+// A human-friendly name for the typed `AssetKey` an event carries — the display fallback when
+// no curated `assetLabel` is set. Derived from the kind's own identifying field (crypto ticker,
+// PE issuer, the S&P index name), not the old `crypto:btc`-style wire string.
+function assetDisplayName(asset) {
+  if (!asset) return undefined;
+  switch (asset.kind) {
+    case "crypto":
+      return asset.symbol.toUpperCase();
+    case "private_equity":
+      return asset.issuerId;
+    case "sp500":
+      return "S&P 500";
+    default:
+      return undefined;
+  }
+}
+
 // Single source of truth for per-event-kind label + detail rendering. Adding a new
 // `RolloutEvent` discriminator must add an entry here, otherwise eventLabel/eventDetailText fall
 // back to the generic "Event" / "" defaults.
 export const EVENT_FORMATTERS = {
   holding_sale: {
-    label: (event) => `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`,
+    label: (event) => `Sold ${event.assetLabel ?? assetDisplayName(event.asset) ?? "asset"}`,
     detail: (event, currencyDisplay) =>
       `${fmtNumber(event.units)} units; basis ${cu(event.costBasisUsd, currencyDisplay)}`,
   },
@@ -407,7 +424,7 @@ export const EVENT_FORMATTERS = {
   },
   private_equity_event: {
     label: (event) => {
-      const label = event.assetLabel ?? event.assetId ?? "Private equity";
+      const label = event.assetLabel ?? assetDisplayName(event.asset) ?? "Private equity";
       if (event.eventKind === "tender") return `Tender: ${label}`;
       if (event.eventKind === "public_market_open") return `Public market: ${label}`;
       if (event.eventKind === "acquisition_cashout") return `Acquisition: ${label}`;
@@ -432,7 +449,7 @@ export const EVENT_FORMATTERS = {
   },
   private_equity_opportunity: {
     label: (event) => {
-      const label = event.assetLabel ?? event.assetId ?? "Private equity";
+      const label = event.assetLabel ?? assetDisplayName(event.asset) ?? "Private equity";
       const outcome = String(event.outcome ?? "").replace(/_/g, " ");
       return `PE opportunity: ${label}${outcome ? ` (${outcome})` : ""}`;
     },

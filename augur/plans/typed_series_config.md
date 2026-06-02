@@ -149,9 +149,152 @@ End state: config carries zero prefixes; frames/artifacts/API still do.
 
 ## Phase 2 — In-memory polars frames
 
-Replace the one prefix-keyed frame with **per-kind frames** (no `kind` column —
-the frame is the kind; rows carry only their sub-id). Sub-agent inventory
-(~11 files beyond the schema defs):
+**Landed so far:**
+
+- `IndependentExogenousModel` holds level specs as a per-kind
+  `LevelSeriesGroups[ScalarSeriesSpec]` (not a flattened `dict[LevelSeriesKey,
+…]`), mirroring config / the sampled bundle. Added `LevelSeriesGroups.level_groups()`.
+- `SeriesIndexedAmount.series_id: str` → `series: LevelSeriesKey` (rent/inflation
+  amount index is now a typed key). The string consumers (`amount_arrays`,
+  `simulate.py` validation, `collect_series_ids`) read `series.wire_id` as a
+  temporary shim because the intern table / frame are still wire-string keyed.
+
+### Magisteria — the structuring principle for Phase 2 (DECIDED)
+
+The flat `series_id` string bag conflates three **disjoint** concerns. Code
+audit (`engine/phases.py` — the only consumer of `external_values`) confirms
+every non-PE series belongs to exactly one, defined by **what references it**:
+
+| Magisterium        | Member kinds              | Referenced by      | Mechanic                                                    | Forbidden nonsense             |
+| ------------------ | ------------------------- | ------------------ | ----------------------------------------------------------- | ------------------------------ |
+| **Asset price**    | `sp500`, `crypto`         | a holding/lot      | `value = qty × price[t]` (absolute)                         | a lot denominated in inflation |
+| **Property value** | `home_value:<loc>`        | a property         | `value = price × hv[t]/hv[base]` (ratio)                    | a property priced by crypto    |
+| **Index**          | `inflation`, `rent:<loc>` | a recurring amount | `amt = base × idx[t]/idx[base]` (ratio)                     | rent escalated by sp500        |
+| _(Private equity)_ | _PE issuers_              | a PE lot           | _typed `PrivateEquityBundle` (already its own magisterium)_ | —                              |
+
+The three reference sources are already disjoint in code (`lot.asset_id`,
+`property.location_id`, `amount.series`) — nothing crosses. Phase 2 makes that
+de-facto separation **type-enforced** so the cross-wirings are unrepresentable.
+This is the same move `PrivateEquityBundle` already made; we give the other
+groupings the same first-class treatment.
+
+**Type design** — narrow the reference unions to their magisterium:
+
+```python
+# augur/model/series.py
+type AssetPriceKey    = SP500Key | CryptoKey           # prices a lot (non-PE)
+type PropertyValueKey = HomeValueKey                   # values a property
+type IndexSeriesKey   = InflationKey | RentKey          # escalates an amount
+# LevelSeriesKey stays the SUM — the model/sample layer still works over all
+# non-PE level series uniformly (a sampler is asked for "these level series"):
+type LevelSeriesKey   = AssetPriceKey | PropertyValueKey | IndexSeriesKey
+```
+
+Reference fields narrow (cross-wiring → mypy error):
+
+- `SeriesIndexedAmount.series: IndexSeriesKey` (tightens the just-landed `series`).
+- lot price ref → `AssetPriceKey` (`_level_key_from_asset_key` already returns this).
+- property value ref → `PropertyValueKey` (`HomeValueKey`).
+
+**Model bundle — magisteria, not bare per-kind.** `SampledExogenousBundle`
+groups by magisterium, each a sub-bundle; per-kind frames live _inside_ a
+magisterium where a magisterium spans >1 kind:
+
+```python
+@dataclass(frozen=True)
+class SampledExogenousBundle:
+    asset_prices: AssetPriceFrames      # sp500 (scalar) + crypto (symbol-keyed)
+    property_values: pl.DataFrame       # home_value, location-keyed (single kind)
+    index_levels: IndexFrames           # inflation (scalar) + rent (location-keyed)
+    private_equity: PrivateEquityBundle # unchanged
+    metadata: Mapping[str, object]
+```
+
+**Split the sample/request layer too (DECIDED).** `ExogenousSamplingRequest`'s
+single `required_level_series: frozenset[LevelSeriesKey]` fragments into three
+magisterium channels alongside the existing PE channel:
+
+```python
+required_asset_prices: frozenset[AssetPriceKey]       = frozenset()
+required_property_values: frozenset[PropertyValueKey] = frozenset()
+required_index_series: frozenset[IndexSeriesKey]      = frozenset()
+required_private_equity_issuers: frozenset[IssuerId]  = frozenset()
+```
+
+Each provider's `sample()` produces/validates per magisterium, and the bundle
+exposes typed read accessors per magisterium (`asset_price_matrix(AssetPriceKey)`,
+`property_value_matrix(PropertyValueKey)`, `index_matrix(IndexSeriesKey)`).
+`LevelSeriesKey` remains the **sum** only as an internal convenience where a
+single helper genuinely ranges over all non-PE level series (e.g. the
+`LevelSeriesGroups` config shape); the runtime sample/consume path is fully
+magisterium-typed.
+
+### Staged landing (each commit green on RBE before the next)
+
+- **A.** Narrowed reference union types in `series.py` (`AssetPriceKey` /
+  `PropertyValueKey` / `IndexSeriesKey`; `LevelSeriesKey` = their sum) + narrow
+  the reference fields (`SeriesIndexedAmount.series: IndexSeriesKey`,
+  `_level_key_from_asset_key -> AssetPriceKey`). Purely additive narrowing.
+- **B.** `SampledExogenousBundle` → magisterium sub-bundles + per-magisterium
+  builders / anchor / validate / accessors; update all ~10 producers + model
+  consumers. Request stays the sum here (validate routes), so B is self-contained.
+- **C.** Split `ExogenousSamplingRequest` into the three magisterium channels +
+  update every builder (`product/scenarios.required_level_series`, composite,
+  `sample_sanity`, testing, vecm) and `validate_sample_satisfies_request`.
+- **D1.** ✅ Deleted the structurally-dead `series_events` / `event_id` /
+  `external_event_*` frame (never populated, never read).
+- **D2 (= D + Phase 4, merged — DECIDED "type everything incl. output + API"). ✅ done.**
+  Typed the sim's asset/series identity end to end, with the API wire riding along:
+  - **D2a** ✅ — typed scenario fields: `InitialLot.asset` / `ScheduledAssetSale.asset:
+AssetKey`, `LiquidityPolicy.asset_preference_chain: list[AssetKey]` (dropped the
+    `try_parse_asset_key` `.asset` property; the field IS the typed key). The lot→price
+    mapper landed as `asset_key.asset_price_key` (not `model/series.py` — that would be a
+    circular import; `asset_key` already imports `series` + is imported by the sim).
+    Migrated every constructor incl. bench_scenario + the bare-string engine tests
+    (`asset_id="btc"`/`"ixus"` → `CryptoAssetKey(symbol=...)`; both fixed-price sales, so
+    no series-fixture coordination). `api/portfolio.to_initial_lots` passes
+    `asset=position.value_series` straight through.
+  - **D2b** ✅ — typed series intern: `series_index_by_id: dict[LevelSeriesKey,int]` through
+    all 7 compile functions; `collect_level_series_keys`; `CompiledSimulation.series_keys`;
+    `product/decode` rebuilds typed. The external frame stays flat (per "Sim storage stays
+    flat") — the string↔typed bridge is localized to two boundary sites (collect parse + the
+    cube wire_id index map), removed when the frame itself goes typed.
+  - **D2c** ✅ — typed asset intern: dedicated `AssetTable` (`list[AssetKey]` +
+    `dict[AssetKey,int]`) for lot/sale/chain codes alongside `StringTable`;
+    `CompiledSimulation.assets`. PE-guard `lot_asset_series_index` (PE prices via
+    `pe_channels`). codec lifts codes → wire ids via `codes_to_asset_wire_ids` (the
+    `asset_id` output column + cause-ids stay wire strings for the frontend);
+    `product/decode._lot_value_by_month` reads `plan.assets[code]` typed.
+  - **D2d** ✅ (satisfied by D2b+c) — the projection asset↔series pricing join
+    (`asset_lots.asset_id == series_values.series_id`) is now a value-equality join on wire
+    ids that are _provably typed-derived_ (both produced via `.wire_id` from typed identity).
+    It does no prefix dispatch (`startswith`/`partition`), so it already satisfies the
+    endpoint guard; reshaping the internal frames to `(kind,sub_id)` columns or a cube-index
+    join buys nothing externally and fights "Sim storage stays flat", so it's deferred to the
+    eventual full frame-schema retype (Phase 4) rather than forced here.
+  - **D2e** ✅ — `product/wire.py` `HoldingSaleEvent`/`PrivateEquity*Event` carry
+    `asset: AssetKey`; `asset_id` is a `@computed_field` deriving `asset.wire_id`, so the
+    frontend's `event.assetId` fallback (`data_helpers.js`) is unchanged. `spend_index`
+    stays a `Literal` policy flag, out of scope.
+- **E.** (partial ✅) Deleted now-dead `try_parse_asset_key`. `parse_asset_key` /
+  `parse_level_series_key` / `try_parse_level_series_key` / `wire_id` remain load-bearing at
+  the flat-frame + output-column boundaries (decode parse, collect parse, cube bridge,
+  `asset_id`/cause-id columns, computed wire `asset_id`); they're deleted when Phase 3/4
+  retypes the frames + artifacts.
+
+**Sim storage stays flat.** The engine reads one numeric cube
+`external_values[idx, rollout, month]` via dense int indices; nothing reads the
+frame by kind. The intern table is typed (`dict[LevelSeriesKey | AssetKey,
+int]`) and the `projections.py` asset↔series join keyed on typed identity, but
+the cube and `ExternalSeriesContext` remain one flat working frame — splitting
+sim storage by magisterium buys nothing and fans out the pricing join.
+
+**Dead frame:** `series_events` / `event_id` is structurally dead (no producer
+ever populates it; PE tender moved to the bundle). Delete it in this phase.
+
+Replace the one prefix-keyed frame with magisterium sub-bundles (no `kind`
+column — the frame/field is the kind; rows carry only their sub-id). Sub-agent
+inventory (~11 files beyond the schema defs):
 
 | #   | Schema / column                                                                                 | Change                                                                                                                                                                                                                                                                                                                                                                       |
 | --- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

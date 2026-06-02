@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.api.schemas import ApiModel, Frame, Percentage
+from augur.product.asset_key import AssetKey
 
 SpendIndex = Literal["none", "inflation"]
 SellableBucket = Literal["stocks", "crypto"]
@@ -256,7 +257,7 @@ class _RolloutEventBase(ApiModel):
 
 class HoldingSaleEvent(_RolloutEventBase):
     kind: Literal["holding_sale"] = "holding_sale"
-    asset_id: str
+    asset: AssetKey
     asset_label: str | None = None
     units: NonNegativeFloat
     proceeds_usd: NonNegativeFloat
@@ -266,7 +267,7 @@ class HoldingSaleEvent(_RolloutEventBase):
 class PrivateEquityMarkerEvent(_RolloutEventBase):
     kind: Literal["private_equity_event"] = "private_equity_event"
     issuer_id: str
-    asset_id: str
+    asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime
@@ -281,7 +282,7 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
 class PrivateEquityOpportunityEvent(_RolloutEventBase):
     kind: Literal["private_equity_opportunity"] = "private_equity_opportunity"
     issuer_id: str
-    asset_id: str
+    asset: AssetKey
     asset_label: str | None = None
     event_kind: PrivateEquityEventKind
     regime: PrivateEquityRegime

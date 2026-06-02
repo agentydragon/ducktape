@@ -292,6 +292,7 @@ py_library(
     deps = [
         ":locations",
         "//augur/model:deterministic",
+        "//augur/model:level_series_groups",
         "//augur/model:series_model",
         "@pypi//pytest",
     ],
@@ -306,6 +307,7 @@ SIMULATE_TEST_DEPS = [
     "//augur:frames",
     "//augur/model:exogenous",
     "//augur/model:gbm",
+    "//augur/model:level_series_groups",
     "//augur/model:private_equity_bundle",
     "//augur/model:private_equity_protocol",
     "//augur/model:series",
@@ -361,6 +363,7 @@ py_library(
     deps = [
         ":scenario",
         "//augur/model:gbm",
+        "//augur/model:level_series_groups",
         "//augur/model:series_model",
     ],
 )

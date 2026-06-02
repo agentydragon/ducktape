@@ -10,9 +10,9 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import PrivateEquityEventKindCode
+from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from augur.product.asset_key import PrivateEquityAssetKey
-from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays
 from augur.sim.scenario import Scenario
 
 
@@ -72,7 +72,8 @@ def compile_private_equity_tenders(
     scenario: Scenario,
     strings: StringTable,
     *,
-    series_index_by_id: dict[str, int],
+    asset_table: AssetTable,
+    series_index_by_id: dict[LevelSeriesKey, int],
     lot_agent_codes: np.ndarray,
     lot_asset_codes: np.ndarray,
     cash_agent_codes: np.ndarray,
@@ -152,8 +153,8 @@ def compile_private_equity_tenders(
         if lot_count > 0:
             owner_lots = lot_agent_codes == owner_code
             pe_codes = {
-                strings.require(f"private_equity:{issuer}") for issuer in issuer_to_lots
-            }  # asset_id wire form for this issuer's mark series
+                asset_table.require(PrivateEquityAssetKey(issuer_id=IssuerId(issuer))) for issuer in issuer_to_lots
+            }  # AssetTable codes for this issuer's PE lots (match `lot_asset_codes`)
             non_pe_lot = ~np.isin(lot_asset_codes, list(pe_codes)) if pe_codes else np.ones(lot_count, dtype=np.bool_)
             pe_policy_owner_non_pe_lot_mask[policy_idx, :lot_count] = owner_lots & non_pe_lot
 

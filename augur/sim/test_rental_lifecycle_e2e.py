@@ -15,7 +15,8 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.model.series import LocationId, RentKey
+from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
@@ -46,7 +47,10 @@ from augur.sim.simulate import simulate_with_external_series
 TENANT_AGENT_ID = "tenant"
 OWNER_AGENT_ID = "owner"
 MGMT_AGENT_ID = "property_management_agency"
-RENT_SERIES_ID = "rent:test_location"
+RENT_SERIES_KEY = RentKey(location_id=LocationId("test_location"))
+# Frame helpers (_flat_series / _multi_series) still key the series_values frame
+# by the wire string; SeriesIndexedAmount now takes the typed key directly.
+RENT_SERIES_ID = RENT_SERIES_KEY.wire_id
 
 
 def _flat_series(*, series_id: str, value: float, months: int, rollouts: int) -> ExternalSeriesContext:
@@ -57,10 +61,7 @@ def _flat_series(*, series_id: str, value: float, months: int, rollouts: int) ->
         for rollout in range(rollouts)
         for month in range(months)
     ]
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
-    )
+    return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
 
 
 def _multi_series(*, levels_by_series: dict[str, dict[int, list[float]]]) -> ExternalSeriesContext:
@@ -77,10 +78,7 @@ def _multi_series(*, levels_by_series: dict[str, dict[int, list[float]]]) -> Ext
                 rows.append(
                     {"rollout_index": rollout_index, "month_index": month_index, "series_id": series_id, "value": value}
                 )
-    return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
-    )
+    return ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(rows)))
 
 
 def _rental_scenario(
@@ -113,7 +111,7 @@ def _rental_scenario(
             to_agent_id=OWNER_AGENT_ID,
             to_account_id="checking",
             amount_usd=SeriesIndexedAmount(
-                base_amount_usd=base_collected, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                base_amount_usd=base_collected, series=RENT_SERIES_KEY, adjustment_period_months=12
             ),
         )
     ]
@@ -133,7 +131,7 @@ def _rental_scenario(
                 to_account_id="checking",
                 amount_usd=SeriesIndexedAmount(
                     base_amount_usd=base_collected * management_fee_pct / 100.0,
-                    series_id=RENT_SERIES_ID,
+                    series=RENT_SERIES_KEY,
                     adjustment_period_months=12,
                 ),
             )
@@ -149,7 +147,7 @@ def _rental_scenario(
                 to_agent_id=MGMT_AGENT_ID,
                 to_account_id="checking",
                 amount_usd=SeriesIndexedAmount(
-                    base_amount_usd=leasing_base, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    base_amount_usd=leasing_base, series=RENT_SERIES_KEY, adjustment_period_months=12
                 ),
             )
             for fire_month in range(0, horizon_months, avg_tenancy_months)
@@ -270,7 +268,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     income_category="ordinary",
@@ -285,7 +283,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     income_category="ordinary",
@@ -300,7 +298,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     income_category="ordinary",
@@ -315,7 +313,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier * 0.08,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     deduction_category="ordinary",
@@ -330,7 +328,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier * 0.08,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     deduction_category="ordinary",
@@ -345,7 +343,7 @@ class TestRentalLifecycleCashflows:
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier * 0.08,
-                        series_id=RENT_SERIES_ID,
+                        series=RENT_SERIES_KEY,
                         adjustment_period_months=12,
                     ),
                     deduction_category="ordinary",
@@ -465,7 +463,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=monthly_rent, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=monthly_rent, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -527,7 +525,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 ),
@@ -540,7 +538,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=MGMT_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=500.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=500.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     deduction_category="ordinary",
                 ),
@@ -592,7 +590,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=6_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=6_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -608,7 +606,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id="hoa",
                     to_account_id="checking",
                     amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=400.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=400.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     deduction_category="ordinary",
                     deductible_fraction=1.0,
@@ -658,7 +656,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -735,7 +733,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -916,7 +914,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=5_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -1064,9 +1062,7 @@ class TestRentalIncomeTaxation:
 
     def test_property_sale_requires_home_value_series(self, san_francisco_location: Location):
         scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
-        ctx = ExternalSeriesContext(
-            series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty()
-        )
+        ctx = ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty())
 
         with pytest.raises(
             KeyError, match=r"property sale for property_id 'p1'.*home-value series 'home_value:san_francisco'"
@@ -1645,7 +1641,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=4_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -1733,7 +1729,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=4_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=4_000.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -1838,7 +1834,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id=OWNER_AGENT_ID,
                     to_account_id="checking",
                     amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=2_500.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=2_500.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     income_category="ordinary",
                 )
@@ -1854,7 +1850,7 @@ class TestRentalIncomeTaxation:
                     to_agent_id="hoa",
                     to_account_id="checking",
                     amount_due_usd=SeriesIndexedAmount(
-                        base_amount_usd=400.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                        base_amount_usd=400.0, series=RENT_SERIES_KEY, adjustment_period_months=12
                     ),
                     deduction_category="ordinary",
                     deductible_fraction=0.5,

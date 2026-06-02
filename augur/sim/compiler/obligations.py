@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from augur.model.series import LevelSeriesKey
 from augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
@@ -79,7 +80,7 @@ def compile_obligation_slots(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
-    series_index_by_id: dict[str, int],
+    series_index_by_id: dict[LevelSeriesKey, int],
     properties: PropertyCompileOutput,
     property_slot_by_id: dict[str, int],
     liabilities: LiabilityCompileOutput,

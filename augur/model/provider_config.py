@@ -22,9 +22,6 @@ exogenous_provider:
     trained_blob: /opt/augur/trained_vecm.npz
     latest_observations: {sp500: 5500.0, ...}
     current_mortgage30_rate_pct: 6.5
-    location_series_sources:
-      home_value: {san_francisco_ca: home, vallejo_ca: vallejo_home}
-      rent: {san_francisco_ca: rent, ...}
   private_equity:
     type: trained_private_equity
     trained_model_path: /etc/augur/private_equity_model.json
@@ -47,19 +44,20 @@ exogenous_provider:
 
 ```yaml
 exogenous_provider:
-  # Independent-per-series provider. Every series id is enumerated; PE issuer prices
-  # live in the YAML as the `initial_value` of their `private_equity:*` series, and
-  # every required PE auxiliary series must also be enumerated.
+  # Independent-per-series provider. Every level series is enumerated inside its
+  # magisterium group (asset_prices / property_values / index_series); singletons are
+  # scalar, crypto/home_value/rent are keyed by sub-id. PE issuer marks live in their own
+  # `private_equity_marks` map keyed by issuer id — they are not level series, so they are
+  # not enumerated in any magisterium. No magic-prefix keys anywhere.
   type: independent
-  series:
+  asset_prices:
+    sp500: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00477, monthly_log_return_sigma: 0.04619}
+    crypto:
+      btc: {kind: constant, value: 75000.0}
+  index_series:
     inflation: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00237, monthly_log_return_sigma: 0.00433}
-    "private_equity:private_equity_x": {kind: gbm, initial_value: 50.0, monthly_log_return_mu: 0.00642, monthly_log_return_sigma: 0.10103}
-    ...
-  events:
-    "private_equity_sale_opportunity:private_equity_x":
-      kind: poisson
-      monthly_lambda: 0.013888889
-      min_horizon_months: 12
+  private_equity_marks:
+    private_equity_x: {kind: gbm, initial_value: 50.0, monthly_log_return_mu: 0.00642, monthly_log_return_sigma: 0.10103}
 ```
 
 Each per-type config lives next to the model/provider it instantiates and

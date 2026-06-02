@@ -7,18 +7,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    Sampler,
-    series_levels_frame,
-)
-from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler, assemble_level_magisteria
 from augur.model.private_equity_trajectories import (
     PreSampledPrivateEquitySampler,
     PrivateEquityTrajectorySet,
@@ -30,15 +22,15 @@ from augur.model.series import SP500Key
 
 @dataclass(frozen=True)
 class _MinimalSampler(Sampler):
-    """A trivial Sampler that emits whatever level frame it was constructed with —
+    """A trivial Sampler that emits the typed level bundle it was constructed with —
     no PE, no other channels — so tests can isolate the overlay's behavior."""
 
-    levels: pl.DataFrame = field(default_factory=lambda: SERIES_LEVELS_SCHEMA.to_frame())
+    bundle: SampledExogenousBundle = field(
+        default_factory=lambda: SampledExogenousBundle(metadata={"underlying_id": "minimal"})
+    )
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        return SampledExogenousBundle(
-            levels=self.levels, private_equity=PrivateEquityBundle.empty(), metadata={"underlying_id": "minimal"}
-        )
+        return self.bundle
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -222,8 +214,18 @@ def test_sampler_overlay_layered_pe_bundle_uses_artifact() -> None:
 def test_sampler_overlay_preserves_underlying_non_pe_series() -> None:
     """Non-PE level series from the underlying flow through unchanged."""
 
-    sp500_levels = series_levels_frame(SP500Key(), np.array([[1.0, 1.02, 1.05]]), rollout_count=1, horizon_months=2)
-    underlying = _MinimalSampler(levels=sp500_levels)
+    frames = assemble_level_magisteria(
+        asset_price_blocks=[(SP500Key(), np.array([[1.0, 1.02, 1.05]]))],
+        property_value_blocks=[],
+        index_blocks=[],
+        rollout_count=1,
+        horizon_months=2,
+    )
+    underlying = _MinimalSampler(
+        bundle=SampledExogenousBundle(
+            asset_prices=frames.asset_prices, property_values=frames.property_values, index_series=frames.index_series
+        )
+    )
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(0,)))
 

@@ -202,7 +202,7 @@ class ProductService:
         sampling_request = ExogenousSamplingRequest(
             horizon_months=int(scenario_key.horizon_months),
             rollout_seeds=seeds,
-            required_level_series=required_level_series(
+            **required_level_series(
                 scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
             ),
             required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),

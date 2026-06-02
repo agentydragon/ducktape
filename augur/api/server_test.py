@@ -337,7 +337,7 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
         "month_index": 0,
         "amount_usd": 50_000.0,
         "kind": "holding_sale",
-        "asset_id": "sp500",
+        "asset": {"kind": "sp500"},
         "asset_label": "SP500 Proxy (VOO)",
         "units": 100.0,
         "proceeds_usd": 50_000.0,
@@ -376,7 +376,7 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
 
     [pe_event] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_event"]
     assert pe_event["month_index"] == 1
-    assert pe_event["asset_id"] == "private_equity:private_holding_a"
+    assert pe_event["asset"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     assert pe_event["asset_label"] == "Private Holding A (PHA)"
     assert pe_event["event_kind"] == "acquisition_cashout"
     assert pe_event["regime"] == "acquired"
@@ -386,7 +386,8 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
     [sale] = [
         event
         for event in detail["rollout"]["events"]
-        if event["kind"] == "holding_sale" and event["asset_id"] == "private_equity:private_holding_a"
+        if event["kind"] == "holding_sale"
+        and event["asset"] == {"kind": "private_equity", "issuer_id": "private_holding_a"}
     ]
     assert sale["units"] == pytest.approx(250.0)
     assert sale["proceeds_usd"] == pytest.approx(6_250.0)
@@ -577,7 +578,7 @@ def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url:
     pe_sales = [
         event
         for event in detail["rollout"]["events"]
-        if event["kind"] == "holding_sale" and str(event["asset_id"]).startswith("private_equity:")
+        if event["kind"] == "holding_sale" and event["asset"]["kind"] == "private_equity"
     ]
     assert len(pe_sales) >= 1, (
         f"expected at least 1 PE holding_sale event, got {len(pe_sales)}; "

@@ -8,13 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 
-from augur.frames import concat_frames
-from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    series_levels_frame,
-)
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, assemble_level_magisteria
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
@@ -62,21 +56,28 @@ class ConstantFrameModel:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
-        level_frames = [
-            series_levels_frame(
-                key,
-                _level_matrix(self._require_level(key), request),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
-            )
-            for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
-        ]
+
+        def blocks[KeyT: LevelSeriesKey](keys: frozenset[KeyT]) -> list[tuple[KeyT, np.ndarray]]:
+            return [
+                (key, _level_matrix(self._require_level(key), request))
+                for key in sorted(keys, key=lambda key: key.wire_id)
+            ]
+
+        # Sample each of the request's three typed channels separately; the bundle's
+        # magisteria never pass through one merged level-key set.
+        frames = assemble_level_magisteria(
+            asset_price_blocks=blocks(request.required_asset_prices),
+            property_value_blocks=blocks(request.required_property_values),
+            index_blocks=blocks(request.required_index_series),
+            rollout_count=request.rollout_count,
+            horizon_months=request.horizon_months,
+        )
         pe_parts = [
             _pe_bundle_from_channels(issuer_id, self._require_pe(issuer_id), request)
             for issuer_id in sorted(request.required_private_equity_issuers)
         ]
         return SampledExogenousBundle(
-            levels=concat_frames(level_frames, SERIES_LEVELS_SCHEMA),
+            **frames.as_bundle_kwargs(),
             private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
             metadata=dict(self.metadata),
         )

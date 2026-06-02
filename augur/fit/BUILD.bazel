@@ -12,7 +12,7 @@ py_library(
     srcs = ["evidence_data.py"],
     data = [":evidence_source_files"],
     deps = [
-        "//augur/model:location_series_sources",
+        "//augur/model:series",
         "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pandas",
@@ -73,7 +73,7 @@ py_library(
     srcs = ["data.py"],
     deps = [
         ":evidence_data",
-        "//augur/model:location_series_sources",
+        "//augur/model:series",
         "//augur/model/path_models:scenarios",
         "//util/bazel:runfiles",
         "@pypi//numpy",

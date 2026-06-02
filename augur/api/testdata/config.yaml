@@ -55,47 +55,51 @@ exogenous_presets:
       #   monthly_log_return_sigma = annual_vol / sqrt(12)
       #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
       type: independent
-      # Per-kind typed groups: singletons (inflation/sp500) are scalar; crypto is
-      # keyed by symbol; home_value/rent by location id. No magic-prefix keys.
-      inflation: # annual return 3%, vol 1.5%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0024906250
-        monthly_log_return_sigma: 0.0043301270
-      sp500: # annual return 7%, vol 16%
-        kind: gbm
-        initial_value: 1.0
-        monthly_log_return_mu: 0.0047666667
-        monthly_log_return_sigma: 0.0461880215
-      crypto:
-        btc:
-          kind: constant
-          value: 75000.0
-        eth:
-          kind: constant
-          value: 2100.0
-      home_value:
-        location_a: # annual return 3.5%, vol 8%
+      # Typed magisterium groups: asset_prices (sp500 singleton + crypto by symbol),
+      # property_values (home_value by location), index_series (inflation singleton + rent
+      # by location). No magic-prefix keys.
+      asset_prices:
+        sp500: # annual return 7%, vol 16%
           kind: gbm
           initial_value: 1.0
-          monthly_log_return_mu: 0.0026500000
-          monthly_log_return_sigma: 0.0230940108
-        location_b:
+          monthly_log_return_mu: 0.0047666667
+          monthly_log_return_sigma: 0.0461880215
+        crypto:
+          btc:
+            kind: constant
+            value: 75000.0
+          eth:
+            kind: constant
+            value: 2100.0
+      property_values:
+        home_value:
+          location_a: # annual return 3.5%, vol 8%
+            kind: gbm
+            initial_value: 1.0
+            monthly_log_return_mu: 0.0026500000
+            monthly_log_return_sigma: 0.0230940108
+          location_b:
+            kind: gbm
+            initial_value: 1.0
+            monthly_log_return_mu: 0.0026500000
+            monthly_log_return_sigma: 0.0230940108
+      index_series:
+        inflation: # annual return 3%, vol 1.5%
           kind: gbm
           initial_value: 1.0
-          monthly_log_return_mu: 0.0026500000
-          monthly_log_return_sigma: 0.0230940108
-      rent:
-        location_a: # annual return 3%, vol 3%
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0024625000
-          monthly_log_return_sigma: 0.0086602540
-        location_b:
-          kind: gbm
-          initial_value: 1.0
-          monthly_log_return_mu: 0.0024625000
-          monthly_log_return_sigma: 0.0086602540
+          monthly_log_return_mu: 0.0024906250
+          monthly_log_return_sigma: 0.0043301270
+        rent:
+          location_a: # annual return 3%, vol 3%
+            kind: gbm
+            initial_value: 1.0
+            monthly_log_return_mu: 0.0024625000
+            monthly_log_return_sigma: 0.0086602540
+          location_b:
+            kind: gbm
+            initial_value: 1.0
+            monthly_log_return_mu: 0.0024625000
+            monthly_log_return_sigma: 0.0086602540
     private_equity:
       # Exercise the PE risk provider on the public devserver path while keeping
       # fixture marks deterministic: zero monthly drift/vol, semiannual tenders.

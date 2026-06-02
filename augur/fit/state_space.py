@@ -206,7 +206,7 @@ def _historical_cumulative_return(
     historical: HistoricalSeries, factor_name: str, start: date, end: date
 ) -> float | None:
     try:
-        factor_idx = historical.factor_names.index(factor_name)
+        factor_idx = [factor.wire_id for factor in historical.factor_names].index(factor_name)
     except ValueError:
         return None
     periods = [pd.Period(month, freq="M") for month in historical.months]
@@ -223,7 +223,7 @@ def _historical_cumulative_return(
 
 
 def _monthly_sigma(historical: HistoricalSeries, factor_name: str) -> float:
-    factor_idx = historical.factor_names.index(factor_name)
+    factor_idx = [factor.wire_id for factor in historical.factor_names].index(factor_name)
     returns = np.diff(np.log(historical.levels[:, factor_idx]))
     return float(np.std(returns, ddof=1))
 

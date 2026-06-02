@@ -32,7 +32,8 @@ def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path, monk
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled() -> None:
     historical, evidence = load_fred_only_evidence()
 
-    assert historical.factor_names == evidence.factor_names
+    # `historical` carries typed LevelSeriesKeys; the evidence layer keeps the wire-id strings.
+    assert tuple(factor.wire_id for factor in historical.factor_names) == evidence.factor_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)
     assert evidence.latest_observations["evidence_mode"] == {
         "mode": "fred_only_synthesized",

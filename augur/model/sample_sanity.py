@@ -10,7 +10,12 @@ import numpy as np
 import yaml
 from pydantic import Field, TypeAdapter, model_validator
 
-from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, validate_sample_satisfies_request
+from augur.model.exogenous import (
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    level_series_request_channels,
+    validate_sample_satisfies_request,
+)
 from augur.model.provider_config import (
     CompositeProviderConfig,
     ProviderConfig,
@@ -222,7 +227,7 @@ def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[Sa
     request = ExogenousSamplingRequest(
         horizon_months=spec.horizon_months,
         rollout_seeds=spec.rollout_seeds,
-        required_level_series=frozenset(spec.required_level_series),
+        **level_series_request_channels(spec.required_level_series),
         required_private_equity_issuers=frozenset(spec.required_private_equity_issuers),
     )
     sampled = model.sample(request)

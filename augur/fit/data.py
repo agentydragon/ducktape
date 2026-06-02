@@ -24,15 +24,15 @@ from augur.fit.evidence_data import (
     FRED_SF_RENT_CPI_CSV,
     FRED_SFXRSA_CSV,
     FRED_SP500_CSV,
-    LOCATION_SERIES_SOURCES,
+    ZILLOW_HOME_VALUE_REGIONS,
     ExogenousEvidence,
     PeriodReturns,
     _source_path,
     calibrate_series_path_priors,
     load_exogenous_evidence,
 )
-from augur.model.location_series_sources import LocationSeriesSources
 from augur.model.path_models.scenarios import HistoricalSeries
+from augur.model.series import HomeValueKey, parse_level_series_key
 
 
 def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, ExogenousEvidence]:
@@ -93,8 +93,9 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     `ExogenousEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
-    series_sources = LocationSeriesSources.from_config(LOCATION_SERIES_SOURCES)
-    home_factor_names = tuple(dict.fromkeys(series_sources.home_value.values()))
+    # Home-value factors are derived structurally from the configured locations (each one's
+    # HomeValueKey wire id); the FRED-only path replicates one Case-Shiller SF series across them.
+    home_factor_names = tuple(HomeValueKey(location_id=loc).wire_id for loc in ZILLOW_HOME_VALUE_REGIONS)
     factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
     sp500_path = _source_path(FRED_SP500_CSV)
     home_path = _source_path(FRED_SFXRSA_CSV)
@@ -179,4 +180,7 @@ def _historical_from_log_returns(
     levels = np.exp(cum)
     first_period = pd.Period(return_months[0], freq="M") - 1
     months = (str(first_period), *tuple(return_months))
-    return HistoricalSeries(factor_names=factor_names, levels=levels, months=months)
+    # The evidence layer carries wire-id factor names; this is the typed boundary where they
+    # decode to LevelSeriesKeys for the model-facing HistoricalSeries.
+    level_keys = tuple(parse_level_series_key(name) for name in factor_names)
+    return HistoricalSeries(factor_names=level_keys, levels=levels, months=months)

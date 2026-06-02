@@ -127,13 +127,5 @@ latest_observations:
       source: ../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv
       state: CA
       value: 520969.8257389618
-location_series_sources:
-  home_value:
-    san_francisco_ca: home_value:san_francisco_ca
-    vallejo_ca: home_value:vallejo_ca
-  rent:
-    mare_island_vallejo_ca: rent:san_francisco_ca
-    san_francisco_ca: rent:san_francisco_ca
-    vallejo_ca: rent:san_francisco_ca
 trained_blob: /home/agentydragon/code/ducktape/augur/fit/calibrated/trained_vecm.npz
 type: vecm

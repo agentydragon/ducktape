@@ -6,14 +6,13 @@ py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
     deps = [
+        "//augur/model:series",
         "@pypi//numpy",
     ],
 )
 
 py_library(
-    name = "density",
+    name = "_density",
     srcs = ["_density.py"],
-    deps = [
-        "@pypi//numpy",
-    ],
+    deps = ["@pypi//numpy"],
 )

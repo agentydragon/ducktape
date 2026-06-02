@@ -129,12 +129,14 @@ class PreSampledPrivateEquitySampler:
     trajectories_by_issuer: dict[str, PrivateEquityTrajectorySet]
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        # `required_level_series` only carries non-PE typed keys; pass straight
-        # through to the underlying provider.
+        # Forward the non-PE level-series channels straight to the underlying
+        # provider; this overlay only adds PE trajectories on top.
         underlying_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=request.required_level_series,
+            required_asset_prices=request.required_asset_prices,
+            required_property_values=request.required_property_values,
+            required_index_series=request.required_index_series,
         )
         bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:
@@ -163,7 +165,9 @@ class PreSampledPrivateEquitySampler:
             )
 
         sampled = SampledExogenousBundle(
-            levels=bundle.levels,
+            asset_prices=bundle.asset_prices,
+            property_values=bundle.property_values,
+            index_series=bundle.index_series,
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )

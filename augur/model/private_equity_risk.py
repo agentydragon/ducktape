@@ -12,12 +12,7 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import Field, model_validator
 
-from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    validate_sample_satisfies_request,
-)
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, validate_sample_satisfies_request
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.schemas import FrozenModel
 from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -382,7 +377,6 @@ class PrivateEquityRiskModel:
             )
 
         sampled = SampledExogenousBundle(
-            levels=SERIES_LEVELS_SCHEMA.to_frame(),
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             metadata={
                 "model_id": self.label,

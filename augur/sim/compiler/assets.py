@@ -7,7 +7,9 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from augur.sim.compiler.helpers import NO_CODE, StringTable, slot
+from augur.model.series import LevelSeriesKey
+from augur.product.asset_key import asset_price_key
+from augur.sim.compiler.helpers import NO_CODE, AssetTable, StringTable, slot
 from augur.sim.scenario import Scenario
 
 
@@ -32,8 +34,9 @@ class SaleCompileOutput:
 def compile_sales(
     scenario: Scenario,
     strings: StringTable,
+    assets: AssetTable,
     account_slot_by_key: dict[tuple[str, str], int],
-    series_index_by_id: dict[str, int],
+    series_index_by_id: dict[LevelSeriesKey, int],
 ) -> SaleCompileOutput:
     count = len(scenario.scheduled_asset_sales)
     cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
@@ -51,14 +54,14 @@ def compile_sales(
         month[idx] = int(sale.month)
         agent[idx] = strings.require(sale.agent_id)
         source_account[idx] = strings.require(sale.source_account_id)
-        asset[idx] = strings.require(sale.asset_id)
+        asset[idx] = assets.require(sale.asset)
         quantity[idx] = float(sale.quantity)
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
         proceeds_slot[idx] = slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
         if sale.price_per_unit_usd is not None:
             price_fixed[idx] = float(sale.price_per_unit_usd)
         else:
-            price_series[idx] = series_index_by_id[sale.asset_id]
+            price_series[idx] = series_index_by_id[asset_price_key(sale.asset)]
     return SaleCompileOutput(
         cause=cause,
         month=month,

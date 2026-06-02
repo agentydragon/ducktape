@@ -9,7 +9,9 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays, slot
+from augur.model.series import LevelSeriesKey
+from augur.product.asset_key import asset_price_key_or_none
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, AssetTable, StringTable, amount_arrays, slot
 from augur.sim.scenario import Scenario
 
 
@@ -45,8 +47,9 @@ class LiquidityPolicyCompileOutput:
 def compile_liquidity_policies(
     scenario: Scenario,
     strings: StringTable,
+    asset_table: AssetTable,
     account_slot_by_key: dict[tuple[str, str], int],
-    series_index_by_id: dict[str, int],
+    series_index_by_id: dict[LevelSeriesKey, int],
 ) -> LiquidityPolicyCompileOutput:
     policy_count = len(scenario.liquidity_policies)
     slot_count = max(1, policy_count)
@@ -96,9 +99,11 @@ def compile_liquidity_policies(
             sale_adjustment_period[idx],
         ) = amount_arrays(policy.cash_buffer_sale_usd, series_index_by_id)
         prefixes.append(policy.cause_id_prefix)
-        for asset_idx, asset_id in enumerate(policy.asset_preference_chain):
-            assets[idx, asset_idx] = strings.require(asset_id)
-            asset_series[idx, asset_idx] = series_index_by_id.get(asset_id, NO_CODE)
+        # PE assets are valid chain members for decode/labeling but price off-series → NO_CODE.
+        for asset_idx, asset in enumerate(policy.asset_preference_chain):
+            assets[idx, asset_idx] = asset_table.require(asset)
+            price_key = asset_price_key_or_none(asset)
+            asset_series[idx, asset_idx] = NO_CODE if price_key is None else series_index_by_id.get(price_key, NO_CODE)
     return LiquidityPolicyCompileOutput(
         agent=agent,
         account=account,

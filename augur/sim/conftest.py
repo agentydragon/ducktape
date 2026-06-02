@@ -7,20 +7,25 @@ from collections.abc import Callable, Sequence
 import pytest
 
 from augur.model.deterministic import Deterministic
-from augur.model.series import CryptoKey, CryptoSymbol, LevelSeriesKey
+from augur.model.level_series_groups import AssetPriceGroups
+from augur.model.series import CryptoSymbol
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.locations import Location
 
 DeterministicSeriesModelBundleFactory = Callable[[Sequence[float]], SeriesModelBundle]
 
 # Module-level singleton so the fixture's default isn't a call in arg defaults (ruff B008).
-_DEFAULT_SERIES_KEY: LevelSeriesKey = CryptoKey(symbol=CryptoSymbol("vti"))
+_DEFAULT_SYMBOL = CryptoSymbol("vti")
 
 
 @pytest.fixture
 def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
-    def build(levels: Sequence[float], *, key: LevelSeriesKey = _DEFAULT_SERIES_KEY) -> SeriesModelBundle:
-        return SeriesModelBundle.independent({key: Deterministic(levels=list(levels))})
+    def build(levels: Sequence[float], *, symbol: CryptoSymbol = _DEFAULT_SYMBOL) -> SeriesModelBundle:
+        # The fixture's series lives in the asset-price magisterium (a crypto symbol); all
+        # callers take the default. No flat LevelSeriesKey map is constructed.
+        return SeriesModelBundle.independent(
+            asset_prices=AssetPriceGroups(crypto={symbol: Deterministic(levels=list(levels))})
+        )
 
     return build
 

@@ -10,7 +10,7 @@ import yaml
 from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
-from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.provider_config import ProviderConfig
 from augur.model.series import InflationKey, IssuerId
 from augur.model.state_space import StateSpaceProviderConfig
@@ -26,7 +26,7 @@ def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path) 
         ExogenousSamplingRequest(
             rollout_seeds=tuple(range(1301, 1301 + rollout_count)),
             horizon_months=6,
-            required_level_series=frozenset({InflationKey()}),
+            **level_series_request_channels(frozenset({InflationKey()})),
         )
     )
 

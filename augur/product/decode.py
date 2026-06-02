@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import cast
 
 import numpy as np
 import polars as pl
 
 from augur.model.series import HomeValueKey, LocationId
-from augur.product.asset_key import PrivateEquityAssetKey, parse_asset_key
+from augur.product.asset_key import AssetKey, PrivateEquityAssetKey, asset_price_key, parse_asset_key
 from augur.product.wire import (
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
@@ -168,7 +169,7 @@ def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code:
     """
 
     return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset_id: not _is_private_equity(asset_id)
+        dense, primary_agent_code=primary_agent_code, include=lambda asset: not isinstance(asset, PrivateEquityAssetKey)
     )
 
 
@@ -176,42 +177,42 @@ def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agen
     """Sum of private-equity lots priced at the latest sampled mark for each issuer."""
 
     return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset_id: _is_private_equity(asset_id)
+        dense, primary_agent_code=primary_agent_code, include=lambda asset: isinstance(asset, PrivateEquityAssetKey)
     )
 
 
-def _is_private_equity(asset_id: str) -> bool:
-    return isinstance(parse_asset_key(asset_id), PrivateEquityAssetKey)
-
-
-def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, include) -> np.ndarray:
+def _lot_value_by_month(
+    dense: DenseSimulationResult, *, primary_agent_code: int, include: Callable[[AssetKey], bool]
+) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
-    series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
+    series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
     pe_issuer_index = {str(issuer_id): idx for idx, issuer_id in enumerate(plan.pe_issuers.issuer_ids)}
     for lot in range(plan.lot_id_codes.shape[0]):
         if int(plan.lot_agent_codes[lot]) != primary_agent_code:
             continue
-        asset_id = plan.strings[int(plan.lot_asset_codes[lot])]
-        if not include(asset_id):
+        asset = plan.assets[int(plan.lot_asset_codes[lot])]
+        if not include(asset):
             continue
         quantity = dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX]
         # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
-        # read from the series-id-indexed external_values.
-        if isinstance(parsed := parse_asset_key(asset_id), PrivateEquityAssetKey):
-            issuer_idx = pe_issuer_index.get(str(parsed.issuer_id))
+        # read from the series-indexed external_values cube.
+        if isinstance(asset, PrivateEquityAssetKey):
+            issuer_idx = pe_issuer_index.get(str(asset.issuer_id))
             if issuer_idx is None:
-                raise ValueError(f"holding asset {asset_id!r} has no compiled PE channels")
+                raise ValueError(f"holding asset {asset.wire_id!r} has no compiled PE channels")
             price = plan.pe_channels.marks[issuer_idx, _SINGLE_ROLLOUT_INDEX, :]
         else:
-            series_index = series_index_by_id.get(asset_id)
+            series_index = series_index_by_id.get(asset_price_key(asset))
             if series_index is None:
-                raise ValueError(f"holding asset {asset_id!r} has no modeled price series in the compiled simulation")
+                raise ValueError(
+                    f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
+                )
             price = plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :]
         missing_price = (np.abs(quantity) > 1e-9) & ~np.isfinite(price)
         if missing_price.any():
             months = ", ".join(str(month) for month in np.flatnonzero(missing_price)[:5])
-            raise ValueError(f"holding asset {asset_id!r} has non-finite modeled price at month(s): {months}")
+            raise ValueError(f"holding asset {asset.wire_id!r} has non-finite modeled price at month(s): {months}")
         values += quantity * price
     # Clamp: floating-point rounding in FIFO dollar-sells (sold_units = sold_value / price)
     # can leave lot quantities at ~-1e-10, producing a tiny negative value here.
@@ -252,7 +253,7 @@ def _holding_sale_events(
         HoldingSaleEvent(
             month_index=int(row["month_index"]),
             amount_usd=float(row["proceeds_usd"]),
-            asset_id=str(row["asset_id"]),
+            asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             units=float(row["units_sold"]),
             proceeds_usd=float(row["proceeds_usd"]),
@@ -288,7 +289,7 @@ def _private_equity_events(
             month_index=int(row["month_index"]),
             amount_usd=0.0,
             issuer_id=str(row["issuer_id"]),
-            asset_id=str(row["asset_id"]),
+            asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             event_kind=str(row["event_kind"]),
             regime=str(row["regime"]),
@@ -326,7 +327,7 @@ def _private_equity_opportunities(
             month_index=int(row["month_index"]),
             amount_usd=float(row["proceeds_usd"]),
             issuer_id=str(row["issuer_id"]),
-            asset_id=str(row["asset_id"]),
+            asset=parse_asset_key(str(row["asset_id"])),
             asset_label=asset_label_by_id.get(str(row["asset_id"])),
             event_kind=str(row["event_kind"]),
             regime=str(row["regime"]),
@@ -463,7 +464,7 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
 def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
-    series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
+    series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
     for prop in range(plan.properties.id.shape[0]):
         if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
             continue
@@ -472,7 +473,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
         if purchase_month < 0:
             continue
         location_id = plan.strings[int(plan.properties.location_id[prop])]
-        series_index = series_index_by_id.get(HomeValueKey(location_id=LocationId(location_id)).wire_id)
+        series_index = series_index_by_id.get(HomeValueKey(location_id=LocationId(location_id)))
         if series_index is None:
             continue
         levels = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)

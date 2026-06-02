@@ -27,6 +27,7 @@ from numpyro import distributions as dist
 
 from augur.model.exogenous import Sampler
 from augur.model.path_models.scenarios import HistoricalSeries
+from augur.model.series import LevelSeriesKey
 
 
 class Fittable(Sampler, Protocol):
@@ -38,7 +39,7 @@ class Fittable(Sampler, Protocol):
     """
 
     label: str
-    factor_names: tuple[str, ...]
+    factor_names: tuple[LevelSeriesKey, ...]
 
     def fit(self, historical: HistoricalSeries) -> None: ...
 
@@ -54,7 +55,7 @@ class Scorable(Sampler, Protocol):
     """
 
     label: str
-    factor_names: tuple[str, ...]
+    factor_names: tuple[LevelSeriesKey, ...]
 
     def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
         """Joint predictive distribution over the cumulative `horizon`-step

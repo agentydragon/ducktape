@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest
 import pytest_bazel
 
-from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, level_series_request_channels
 from augur.model.sample_sanity import (
     LevelSeriesSanityCheck,
     PercentileRangeBound,
@@ -43,7 +43,7 @@ def _sample_constant_sp500(*, horizon_months: int = _HORIZON_MONTHS) -> SampledE
     request = ExogenousSamplingRequest(
         horizon_months=horizon_months,
         rollout_seeds=tuple(range(_ROLLOUT_COUNT)),
-        required_level_series=frozenset({SP500Key()}),
+        **level_series_request_channels(frozenset({SP500Key()})),
     )
     return model.sample(request)
 
@@ -97,9 +97,10 @@ def test_run_sample_sanity_raises_listing_failed_bands(tmp_path: Path) -> None:
     provider_path.write_text(
         dedent(f"""
             type: independent
-            sp500:
-              kind: constant
-              value: {_SP500_LEVEL}
+            asset_prices:
+              sp500:
+                kind: constant
+                value: {_SP500_LEVEL}
         """),
         encoding="utf-8",
     )

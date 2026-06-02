@@ -24,7 +24,6 @@ from pathlib import Path
 import yaml
 
 from augur.fit.data import load_evidence
-from augur.fit.evidence_data import LOCATION_SERIES_SOURCES
 from augur.fit.state_space import fit_state_space_artifact
 from augur.model.provider_config import StateSpaceProviderConfig, VecmProviderConfig
 from augur.model.state_space import write_state_space_artifact
@@ -81,7 +80,6 @@ def main(argv: list[str] | None = None) -> int:
             trained_blob=out_blob,
             latest_observations=dict(evidence.latest_observations),
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_series_sources=LOCATION_SERIES_SOURCES,
         )
     elif args.model == "state_space":
         artifact, conditioning = fit_state_space_artifact(
@@ -94,7 +92,6 @@ def main(argv: list[str] | None = None) -> int:
             trained_artifact_path=out_blob,
             conditioning=conditioning,
             current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_series_sources=LOCATION_SERIES_SOURCES,
         )
     else:
         raise AssertionError(f"unsupported model {args.model!r}")

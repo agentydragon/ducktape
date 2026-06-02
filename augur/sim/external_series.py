@@ -19,15 +19,36 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from augur.frames import FrameSpec
-from augur.model.exogenous import SERIES_VALUES_SCHEMA, SampledExogenousBundle, series_values_from_bundle
+from augur.model.exogenous import SampledExogenousBundle, level_value_rows
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series_model import SeriesModelBundle, materialize_series_values
 
-SERIES_EVENTS_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "event_id": pl.Utf8(), "active": pl.Boolean()}
+# CLEANUP(2026-05-30): Phase 2 stage D retypes the sim intern table + the
+# projections asset↔series join to typed keys; this flat `series_id`-string frame
+# (and `series_values_from_bundle_shim`) go away then. Until then the sim keeps
+# its single flat working frame, rebuilt from the bundle's per-magisterium frames.
+SERIES_VALUES_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
+
+
+def _series_values_from_bundle_shim(bundle: SampledExogenousBundle) -> pl.DataFrame:
+    """Rebuild the legacy flat `series_id`-keyed frame from per-magisterium frames.
+
+    Stamps each per-kind frame's rows with `series_id = key.wire_id`. Sim
+    handoff shim — removed with the stage-D intern/join retype.
+    """
+
+    blocks = [
+        frame.with_columns(pl.lit(key.wire_id, dtype=pl.Utf8()).alias("series_id")).select(SERIES_VALUES_SCHEMA.names())
+        for key, frame in level_value_rows(bundle)
+    ]
+    if not blocks:
+        return SERIES_VALUES_SCHEMA.to_frame()
+    return pl.concat(blocks, how="vertical")
+
+
 EXTERNAL_SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
-EXTERNAL_SERIES_EVENTS_FRAME = FrameSpec("series_events", SERIES_EVENTS_SCHEMA)
 
 
 @dataclass(frozen=True)
@@ -38,16 +59,12 @@ class ExternalSeriesContext:
     rent levels). `private_equity` carries the typed PE protocol bundle —
     mark, regime, event-kind, fractions, blocked, recovery — per issuer;
     the sim compiler reads it directly by issuer index, no series-id
-    translation in the middle.
-
-    `series_events` is a legacy holdover used by a few engine paths that
-    still index events by wire id; PE tender events have moved to the
-    `private_equity.sale_opportunity_active` channel and no longer flow
-    through this frame.
+    translation in the middle. PE tender events live on the
+    `private_equity.sale_opportunity_active` channel — there is no separate
+    exogenous-event frame.
     """
 
     series_values: pl.DataFrame
-    series_events: pl.DataFrame
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
 
     def series_at(self, month_index: int) -> pl.DataFrame:
@@ -70,7 +87,6 @@ def materialize_external_series(
         series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
             materialize_series_values(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
         ),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
         private_equity=PrivateEquityBundle.empty(),
     )
 
@@ -80,12 +96,11 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
 
     The typed `PrivateEquityBundle` is the canonical source of PE protocol
     state — the engine reads PE channels directly from `pe_channels` arrays
-    compiled out of the bundle. Non-PE rows on `bundle.levels` are passed
-    through unchanged.
+    compiled out of the bundle. Non-PE level series are flattened from the
+    bundle's per-magisterium frames into the sim's single working frame.
     """
 
     return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle)),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(_series_values_from_bundle_shim(bundle)),
         private_equity=bundle.private_equity,
     )

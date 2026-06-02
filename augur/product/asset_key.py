@@ -1,11 +1,13 @@
 """Typed identifiers for sim/product asset references.
 
-`Lot.asset_id`, the `asset_id` column on sim event frames, and the
-`asset_id` field on product wire events used to encode the asset's kind in a
-magic prefix (`"private_equity:..."`, `"crypto:..."`) that Python dispatch
-sites then matched with `.startswith(...)`. That dispatch is now typed: an
-`AssetKey` is a Pydantic discriminated union with a `StrEnum` `kind`
-discriminator, recovered from the wire string by `parse_asset_key`.
+The `asset_id` column on sim event frames and the `asset_id` field on product
+wire events used to encode the asset's kind in a magic prefix
+(`"private_equity:..."`, `"crypto:..."`) that Python dispatch sites then matched
+with `.startswith(...)`. That dispatch is now typed: an `AssetKey` is a Pydantic
+discriminated union with a `StrEnum` `kind` discriminator. Scenario lots/sales
+carry the typed key directly (`InitialLot.asset`, `ScheduledAssetSale.asset`,
+`LiquidityPolicy.asset_preference_chain`); the wire string is recovered by
+`parse_asset_key` only at the frame/wire boundaries that still serialize it.
 
 The wire string format is preserved for serialization (JSON, polars
 columns, fixture YAML). Producers obtain it via `AssetKey.wire_id`.
@@ -19,7 +21,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from augur.model.schemas import FrozenModel
-from augur.model.series import CryptoSymbol, IssuerId
+from augur.model.series import AssetPriceKey, CryptoKey, CryptoSymbol, IssuerId, SP500Key
 
 
 class AssetKind(StrEnum):
@@ -87,10 +89,29 @@ def parse_asset_key(wire_id: str) -> AssetKey:
     raise ValueError(f"unrecognized asset wire id {wire_id!r}")
 
 
-def try_parse_asset_key(wire_id: str) -> AssetKey | None:
-    """Return a typed key or `None` for unrecognized asset wire ids."""
+def asset_price_key(asset: AssetKey) -> AssetPriceKey:
+    """Map a tradable `AssetKey` (a lot/sale identifier) to its asset-price series key.
 
-    try:
-        return parse_asset_key(wire_id)
-    except ValueError:
+    A lot is priced by an asset-price series, so the result is narrowed to the
+    `AssetPriceKey` magisterium — never an index or property-value series. Private
+    equity is priced by its own typed `PrivateEquityBundle`, not a level series, so
+    it has no asset-price key and raises.
+    """
+
+    if isinstance(asset, SP500AssetKey):
+        return SP500Key()
+    if isinstance(asset, CryptoAssetKey):
+        return CryptoKey(symbol=asset.symbol)
+    raise ValueError(f"private-equity asset {asset!r} has no asset-price series key")
+
+
+def asset_price_key_or_none(asset: AssetKey) -> AssetPriceKey | None:
+    """`asset_price_key` for tradable assets; `None` for private equity (priced off-series).
+
+    For compile sites that range over mixed lots/chains and must skip PE (which is
+    priced by the typed `PrivateEquityBundle`, not an asset-price level series).
+    """
+
+    if isinstance(asset, PrivateEquityAssetKey):
         return None
+    return asset_price_key(asset)

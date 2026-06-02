@@ -13,8 +13,7 @@ import pytest
 import pytest_bazel
 from numpyro import distributions as dist
 
-from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.location_series_sources import LocationSeriesSources
+from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.series import CryptoKey, CryptoSymbol, HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 from augur.model.vecm import VecmConfig, VecmModel
@@ -23,14 +22,21 @@ from augur.model.vecm import VecmConfig, VecmModel
 def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
-    return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(levels.shape[1])), levels=levels, months=months)
+    # Synthetic 2-factor cointegration data: the factor identities are arbitrary (the test
+    # exercises fit/predictive shapes, not series semantics) — two distinct level keys suffice.
+    return HistoricalSeries(factor_names=(SP500Key(), InflationKey()), levels=levels, months=months)
 
 
 def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     return HistoricalSeries(
-        factor_names=("sp500", "home_value:san_francisco_ca", "rent:san_francisco_ca", "inflation"),
+        factor_names=(
+            SP500Key(),
+            HomeValueKey(location_id=LocationId("san_francisco_ca")),
+            RentKey(location_id=LocationId("san_francisco_ca")),
+            InflationKey(),
+        ),
         levels=levels,
         months=months,
     )
@@ -109,23 +115,21 @@ class TestVecmModel:
             "rent:san_francisco_ca": 3000.0,
             "inflation": 320.0,
         }
-        model.location_series_sources = LocationSeriesSources(
-            home_value={"san_francisco_ca": "home_value:san_francisco_ca"},
-            rent={"san_francisco_ca": "rent:san_francisco_ca"},
-        )
         model._compute_provenance(evidence_source_id="test")
 
         sampled = model.sample(
             ExogenousSamplingRequest(
                 horizon_months=12,
                 rollout_seeds=(7, 8),
-                required_level_series=frozenset(
-                    {
-                        SP500Key(),
-                        InflationKey(),
-                        HomeValueKey(location_id=LocationId("san_francisco_ca")),
-                        RentKey(location_id=LocationId("san_francisco_ca")),
-                    }
+                **level_series_request_channels(
+                    frozenset(
+                        {
+                            SP500Key(),
+                            InflationKey(),
+                            HomeValueKey(location_id=LocationId("san_francisco_ca")),
+                            RentKey(location_id=LocationId("san_francisco_ca")),
+                        }
+                    )
                 ),
             )
         )
@@ -144,7 +148,7 @@ class TestVecmModel:
 
     def test_offdiag_loadings_are_scaled_by_target_factor_volatility(self) -> None:
         model = VecmModel(
-            factor_names=("sp500", "inflation"),
+            factor_names=(SP500Key(), InflationKey()),
             n_factors=2,
             train_log_levels=np.zeros((1, 2), dtype=np.float64),
             params={
@@ -156,7 +160,6 @@ class TestVecmModel:
             },
         )
         model.latest_observations = {"sp500": 5500.0, "inflation": 320.0}
-        model.location_series_sources = LocationSeriesSources(home_value={}, rent={})
         model._compute_provenance(evidence_source_id="test")
 
         cov = model._cov_np()
@@ -164,7 +167,9 @@ class TestVecmModel:
 
         sampled = model.sample(
             ExogenousSamplingRequest(
-                horizon_months=1, rollout_seeds=tuple(range(512)), required_level_series=frozenset({InflationKey()})
+                horizon_months=1,
+                rollout_seeds=tuple(range(512)),
+                **level_series_request_channels(frozenset({InflationKey()})),
             )
         )
 
@@ -185,7 +190,11 @@ class TestVecmModel:
         log_levels = np.concatenate([np.zeros((1, 3)), log_levels], axis=0)
         levels = np.exp(log_levels - log_levels[0])
         months = tuple(f"2010-{i:02d}" for i in range(levels.shape[0]))
-        historical = HistoricalSeries(factor_names=("sp500", "crypto:btc", "crypto:eth"), levels=levels, months=months)
+        historical = HistoricalSeries(
+            factor_names=(SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))),
+            levels=levels,
+            months=months,
+        )
 
         model = VecmModel(config=VecmConfig(n_iters=300))
         model.fit(historical)
@@ -194,15 +203,16 @@ class TestVecmModel:
             "btc_close_latest": 65_000.0,
             "eth_close_latest": 3_200.0,
         }
-        model.location_series_sources = LocationSeriesSources(home_value={}, rent={})
         model._compute_provenance(evidence_source_id="test")
 
         sampled = model.sample(
             ExogenousSamplingRequest(
                 horizon_months=6,
                 rollout_seeds=(11, 12),
-                required_level_series=frozenset(
-                    {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
+                **level_series_request_channels(
+                    frozenset(
+                        {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
+                    )
                 ),
             )
         )

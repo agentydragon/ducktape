@@ -124,9 +124,12 @@ def held_out_predictive_score(
         )
 
     held_out_count = n_steps - train_end
+    # Report labels are the factors' wire ids — the metric breakdown is a human-readable
+    # {factor_label: score} report; the typed LevelSeriesKey identity rides on `historical`.
+    factor_labels = tuple(factor.wire_id for factor in historical.factor_names)
     log_densities: list[float] = []
-    marginal_totals: dict[str, float] = dict.fromkeys(historical.factor_names, 0.0)
-    crps_totals: dict[str, float] = dict.fromkeys(historical.factor_names, 0.0)
+    marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
+    crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     log_levels = np.log(historical.levels)
     for t in range(train_end, n_steps):
         pred = model.predictive(historical, t, horizon=1)
@@ -139,9 +142,9 @@ def held_out_predictive_score(
             )
         observed = log_levels[t + 1] - log_levels[t]
         log_densities.append(joint_log_density(pred, observed))
-        for name, value in marginal_log_densities(pred, observed, historical.factor_names).items():
+        for name, value in marginal_log_densities(pred, observed, factor_labels).items():
             marginal_totals[name] += value
-        for name, value in gaussian_crps(pred, observed, historical.factor_names).items():
+        for name, value in gaussian_crps(pred, observed, factor_labels).items():
             crps_totals[name] += value
 
     total = float(sum(log_densities))
@@ -215,11 +218,12 @@ def rolling_origin_predictive_score(
         raise ValueError(f"min_train {min_train} leaves no held-out months (n_steps={n_steps})")
 
     label_holder = model_factory().label
+    factor_labels = tuple(factor.wire_id for factor in historical.factor_names)
     fit_cache: FittableScorable | None = None
     fit_origin: int | None = None
     log_densities: list[float] = []
-    marginal_totals: dict[str, float] = dict.fromkeys(historical.factor_names, 0.0)
-    crps_totals: dict[str, float] = dict.fromkeys(historical.factor_names, 0.0)
+    marginal_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
+    crps_totals: dict[str, float] = dict.fromkeys(factor_labels, 0.0)
     log_levels = np.log(historical.levels)
 
     for t in range(min_train, n_steps):
@@ -245,9 +249,9 @@ def rolling_origin_predictive_score(
             )
         observed = log_levels[t + 1] - log_levels[t]
         log_densities.append(joint_log_density(pred, observed))
-        for name, value in marginal_log_densities(pred, observed, historical.factor_names).items():
+        for name, value in marginal_log_densities(pred, observed, factor_labels).items():
             marginal_totals[name] += value
-        for name, value in gaussian_crps(pred, observed, historical.factor_names).items():
+        for name, value in gaussian_crps(pred, observed, factor_labels).items():
             crps_totals[name] += value
 
     total, per_month, mean_se = _summarise_scores(log_densities)

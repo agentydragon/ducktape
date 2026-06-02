@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
-from augur.sim.codec.helpers import codes_to_strings, frame_from_columns, text
+from augur.sim.codec.helpers import codes_to_strings, frame_from_columns
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES
 
@@ -131,8 +131,9 @@ def _attempted_sources(plan: CompiledSimulation, policy: int) -> str:
 
     if policy < 0:
         return ""
+    # `liquidity_policies.assets` are AssetTable codes; lift to wire ids for the joined string.
     return ",".join(
-        text(plan, asset_code) or ""
+        plan.assets[asset_code].wire_id
         for asset_code in plan.liquidity_policies.assets[policy].tolist()
         if asset_code >= 0
     )

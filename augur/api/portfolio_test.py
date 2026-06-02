@@ -40,9 +40,9 @@ def test_holding_tax_lots_expand_to_sim_initial_lots() -> None:
     assert portfolio.holdings[0].current_value_usd == 60_000.0
     assert portfolio.holdings[0].total_cost_basis_usd == 39_000.0
     assert portfolio.total_holdings_value_usd == 60_000.0
-    assert [(lot.lot_id, lot.agent_id, lot.account_id, lot.asset_id, lot.purchase_month_index) for lot in lots] == [
-        ("voo_2024_05_20", "agent_a", "taxable_brokerage", "sp500", -24),
-        ("voo_2026_05_20", "agent_a", "taxable_brokerage", "sp500", 0),
+    assert [(lot.lot_id, lot.agent_id, lot.account_id, lot.asset, lot.purchase_month_index) for lot in lots] == [
+        ("voo_2024_05_20", "agent_a", "taxable_brokerage", SP500AssetKey(), -24),
+        ("voo_2026_05_20", "agent_a", "taxable_brokerage", SP500AssetKey(), 0),
     ]
     assert lots[0].quantity == 100.0
     assert lots[0].cost_basis_per_unit_usd == 300.0

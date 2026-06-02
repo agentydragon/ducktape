@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from augur.model.series import LevelSeriesKey
 from augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
@@ -49,7 +50,7 @@ def compile_transfer_slots(
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     profile_index_by_agent: dict[str, int],
-    series_index_by_id: dict[str, int],
+    series_index_by_id: dict[LevelSeriesKey, int],
 ) -> TransferCompileOutput:
     by_month: list[list[ScheduledTransfer | RecurringTransfer]] = []
     max_slots = 0

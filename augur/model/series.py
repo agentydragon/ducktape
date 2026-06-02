@@ -34,8 +34,9 @@ class LevelSeriesKind(StrEnum):
     `StrEnum` (not `IntEnum`) so the discriminator renders as a human-readable
     `kind: crypto` wherever a `LevelSeriesKey` is Pydantic-serialized (config,
     API wire, trained artifacts). The values double as the per-kind field names
-    on the sampled-levels bundle and on `LevelSeriesGroups`, so `key.kind` is
-    both the discriminator and the bundle attribute name.
+    within each magisterium group (`AssetPriceGroups.sp500`/`.crypto`, etc.) and
+    on the sampled-levels bundle, so `key.kind` is both the discriminator and the
+    in-magisterium attribute name.
     """
 
     INFLATION = "inflation"
@@ -93,6 +94,20 @@ class CryptoKey(_LevelKeyBase):
     def wire_id(self) -> str:
         return f"crypto:{self.symbol}"
 
+
+# Magisteria: non-PE level series partition by WHAT REFERENCES them. The split is
+# load-bearing typing — a reference field annotated with one magisterium cannot be
+# wired to a series from another (a lot priced by inflation, rent escalated by
+# sp500, …), so those cross-wirings are mypy errors. `LevelSeriesKey` is the sum,
+# used only where a helper genuinely ranges over all non-PE level series.
+type AssetPriceKey = Annotated[SP500Key | CryptoKey, Field(discriminator="kind")]
+"""Prices a holding/lot: sp500 or a crypto symbol (PE marks are off in their own bundle)."""
+
+type PropertyValueKey = Annotated[HomeValueKey, Field(discriminator="kind")]
+"""Values a property at sale: the location's home-value series."""
+
+type IndexSeriesKey = Annotated[InflationKey | RentKey, Field(discriminator="kind")]
+"""Escalates a recurring amount: CPI inflation or a location's rent series."""
 
 type LevelSeriesKey = Annotated[
     InflationKey | SP500Key | HomeValueKey | RentKey | CryptoKey, Field(discriminator="kind")

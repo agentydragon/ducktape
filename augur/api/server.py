@@ -40,7 +40,7 @@ from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
 from augur.calibration.platform import Platform, PriceClient
 from augur.calibration.polymarket import PolymarketClient
-from augur.model.exogenous import ExogenousSamplingRequest, Sampler
+from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks
 from augur.model.series import IssuerId
@@ -166,7 +166,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
             required_private_equity_issuers=frozenset({IssuerId(issuer)}),
-            required_level_series=frozenset(spec.required_level_series) if spec is not None else frozenset(),
+            **level_series_request_channels(frozenset(spec.required_level_series) if spec is not None else frozenset()),
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity

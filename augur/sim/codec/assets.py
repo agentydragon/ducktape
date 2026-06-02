@@ -11,6 +11,7 @@ from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEqui
 from augur.product.asset_key import PrivateEquityAssetKey
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
+    codes_to_asset_wire_ids,
     codes_to_strings,
     frame_from_columns,
     r_first_view,
@@ -52,7 +53,7 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
             "lot_id": codes_to_strings(plan, plan.lot_id_codes)[slots],
             "agent_id": codes_to_strings(plan, plan.lot_agent_codes)[slots],
             "account_id": codes_to_strings(plan, plan.lot_account_codes)[slots],
-            "asset_id": codes_to_strings(plan, plan.lot_asset_codes)[slots],
+            "asset_id": codes_to_asset_wire_ids(plan, plan.lot_asset_codes)[slots],
             "purchase_month_index": plan.lot_purchase_month.astype(np.int64)[slots],
             "cost_basis_per_unit_usd": plan.lot_cost_basis_per_unit.astype(np.float64)[slots],
             "remaining_quantity": state.reshape(-1),
@@ -99,7 +100,7 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
     asset_codes = plan.liquidity_policies.assets[policies, asset_idxs]
     # Per-event cause_id is "{policy_prefix}_m{month}_{asset_name}". O(N) Python comp over
     # the gathered events, not the dense iteration space.
-    asset_names = codes_to_strings(plan, plan.liquidity_policies.assets)[policies, asset_idxs]
+    asset_names = codes_to_asset_wire_ids(plan, plan.liquidity_policies.assets)[policies, asset_idxs]
     prefixes_per_event = np.array(plan.liquidity_policies.cause_id_prefixes, dtype=object)[policies]
     cause_ids = np.array(
         [f"{p}_m{m}_{a}" for p, m, a in zip(prefixes_per_event, months, asset_names, strict=True)], dtype=object
@@ -262,7 +263,7 @@ def _lot_disposition_frame(
         cause_id=cause_ids,
         agent_id=codes_to_strings(plan, agent_codes),
         source_account_id=codes_to_strings(plan, source_account_codes),
-        asset_id=codes_to_strings(plan, asset_codes),
+        asset_id=codes_to_asset_wire_ids(plan, asset_codes),
         lot_id=codes_to_strings(plan, plan.lot_id_codes)[lots],
         purchase_month_index=plan.lot_purchase_month.astype(np.int64)[lots],
         units_sold=units,

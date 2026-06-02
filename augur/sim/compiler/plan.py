@@ -12,7 +12,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from augur.model.series import HomeValueKey, LocationId
+from augur.model.series import HomeValueKey, LevelSeriesKey, LocationId
+from augur.product.asset_key import AssetKey, asset_price_key_or_none
 from augur.sim.compiler.assets import SaleCompileOutput, compile_sales
 from augur.sim.compiler.deductions import (
     MIDCompileOutput,
@@ -20,7 +21,7 @@ from augur.sim.compiler.deductions import (
     compile_federal_salt_deductions,
     compile_mortgage_interest_deductions,
 )
-from augur.sim.compiler.helpers import NO_CODE, StringTable
+from augur.sim.compiler.helpers import NO_CODE, AssetTable, StringTable
 from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
 from augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
@@ -37,7 +38,7 @@ from augur.sim.compiler.properties import (
     PropertyCompileOutput,
     compile_properties_and_liabilities,
 )
-from augur.sim.compiler.series import collect_series_ids, external_event_values_cube, external_values_cube
+from augur.sim.compiler.series import collect_level_series_keys, external_values_cube
 from augur.sim.compiler.tax import (
     TaxCompileOutput,
     TaxLiabilityCompileOutput,
@@ -88,7 +89,12 @@ class CompiledSimulation:
     rollout_count: int
     slot_plan: SlotPlan
     strings: tuple[str, ...]
-    series_ids: tuple[str, ...]
+    # Typed asset identity for each lot/sale/chain asset code (`lot_asset_codes`,
+    # `sales.asset`, `liquidity_policies.assets`). Decode lifts those codes back to `AssetKey`.
+    assets: tuple[AssetKey, ...]
+    # Typed level-series identity for each row of `external_values` (the dense price cube);
+    # the row index is `series_index_by_id[key]`. PE marks live in `pe_channels`, not here.
+    series_keys: tuple[LevelSeriesKey, ...]
     external_values: NDArray[np.float64]
     agent_codes: NDArray[np.int64]
     cash_agent_codes: NDArray[np.int64]
@@ -137,10 +143,6 @@ class CompiledSimulation:
     liability_owner_profile_index: NDArray[np.int64]
     sales: SaleCompileOutput
     obligations: ObligationCompileOutput
-    # External event-series tables, parallel to `series_ids` / `external_values` but for
-    # boolean event paths (private-equity tender opportunities, future regime-change events).
-    external_event_ids: tuple[str, ...]
-    external_event_values: NDArray[np.bool_]
     # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
     # appearing in `initial_lots`. For each issuer:
     #   - the event-series index identifying its tender-opportunity stream (NO_CODE if no
@@ -164,6 +166,7 @@ def compile_simulation(
     locations: dict[str, Location],
 ) -> CompiledSimulation:
     strings = StringTable()
+    assets = AssetTable()
     horizon = int(scenario.horizon_months)
 
     account_slot_by_key: dict[tuple[str, str], int] = {}
@@ -185,22 +188,11 @@ def compile_simulation(
         agent_slot_by_id[agent.agent_id] = len(agent_codes)
         agent_codes.append(strings.require(agent.agent_id))
 
-    series_ids = collect_series_ids(scenario, external_series)
-    series_index_by_id = {series_id: idx for idx, series_id in enumerate(series_ids)}
+    series_keys = collect_level_series_keys(scenario, external_series)
+    series_index_by_id = {key: idx for idx, key in enumerate(series_keys)}
     _reject_missing_property_sale_home_values(scenario, external_series)
     external_values = external_values_cube(
         external_series, series_index_by_id=series_index_by_id, rollout_count=rollout_count, horizon_months=horizon
-    )
-    external_event_ids = tuple(
-        str(event_id)
-        for event_id in external_series.series_events.select("event_id").unique().get_column("event_id").to_list()
-    )
-    external_event_index_by_id = {event_id: idx for idx, event_id in enumerate(external_event_ids)}
-    external_event_values = external_event_values_cube(
-        external_series,
-        event_index_by_id=external_event_index_by_id,
-        rollout_count=rollout_count,
-        horizon_months=horizon,
     )
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
@@ -243,7 +235,7 @@ def compile_simulation(
     )
     property_home_value_series_index = np.array(
         [
-            series_index_by_id.get(HomeValueKey(location_id=LocationId(p.location_id)).wire_id, NO_CODE)
+            series_index_by_id.get(HomeValueKey(location_id=LocationId(p.location_id)), NO_CODE)
             for p in scenario.scheduled_property_purchases
         ],
         dtype=np.int64,
@@ -273,13 +265,13 @@ def compile_simulation(
     mid = compile_mortgage_interest_deductions(scenario, strings, tax=tax, liabilities=liabilities)
     salt = compile_federal_salt_deductions(scenario, strings, tax=tax)
 
-    sales = compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
+    sales = compile_sales(scenario, strings, assets, account_slot_by_key, series_index_by_id)
 
     obligations = compile_obligation_slots(
         scenario, strings, account_slot_by_key, series_index_by_id, properties, property_slot_by_id, liabilities, tax
     )
 
-    liquidity_policies = compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
+    liquidity_policies = compile_liquidity_policies(scenario, strings, assets, account_slot_by_key, series_index_by_id)
 
     lot_id_codes: list[int] = []
     lot_agent_codes: list[int] = []
@@ -292,20 +284,29 @@ def compile_simulation(
         lot_id_codes.append(strings.require(lot.lot_id))
         lot_agent_codes.append(strings.require(lot.agent_id))
         lot_account_codes.append(strings.require(lot.account_id))
-        lot_asset_codes.append(strings.require(lot.asset_id))
+        lot_asset_codes.append(assets.require(lot.asset))
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_cost_basis_per_unit.append(float(lot.cost_basis_per_unit_usd))
         lot_initial_quantity.append(float(lot.quantity))
 
     lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
     lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
+    # PE-guard: PE lots are priced by `pe_channels` marks, not the price cube, so they have no
+    # asset-price series (`asset_price_key_or_none` → None → NO_CODE).
     lot_asset_series_index = np.asarray(
-        [series_index_by_id.get(lot.asset_id, NO_CODE) for lot in scenario.initial_lots], dtype=np.int64
+        [
+            NO_CODE
+            if (price_key := asset_price_key_or_none(lot.asset)) is None
+            else series_index_by_id.get(price_key, NO_CODE)
+            for lot in scenario.initial_lots
+        ],
+        dtype=np.int64,
     )
     cash_agent_codes_arr = np.asarray([strings.require(b.agent_id) for b in scenario.initial_cash], dtype=np.int64)
     pe_issuers, pe_policies = compile_private_equity_tenders(
         scenario,
         strings,
+        asset_table=assets,
         series_index_by_id=series_index_by_id,
         lot_agent_codes=lot_agent_codes_arr,
         lot_asset_codes=lot_asset_codes_arr,
@@ -342,7 +343,8 @@ def compile_simulation(
         rollout_count=rollout_count,
         slot_plan=slot_plan,
         strings=tuple(strings.values),
-        series_ids=series_ids,
+        assets=tuple(assets.values),
+        series_keys=series_keys,
         external_values=external_values,
         agent_codes=np.asarray(agent_codes, dtype=np.int64),
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
@@ -376,8 +378,6 @@ def compile_simulation(
         lifecycle_events=lifecycle_events,
         sales=sales,
         obligations=obligations,
-        external_event_ids=external_event_ids,
-        external_event_values=external_event_values,
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,
         pe_channels=pe_channels,
