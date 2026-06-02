@@ -20,7 +20,6 @@ from pydantic_ai.result import RunContext
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 from pydantic_ai.toolsets.function import FunctionToolset
-from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import BindMount
@@ -40,6 +39,7 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
 )
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 logger = logging.getLogger(__name__)
 

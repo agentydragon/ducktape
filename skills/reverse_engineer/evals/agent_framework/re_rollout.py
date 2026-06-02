@@ -36,16 +36,16 @@ from typing import Literal
 
 from agent_framework import Agent, AgentSession, FunctionTool, Message
 from pydantic import BaseModel, Field
-from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
-from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from skills.eval_infra.af_chat_client import build_model_client
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.eval_infra.eval_sandbox import INPUT_PATH, WORK_PATH, eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
 from skills.eval_infra.termination import terminate_when
 from skills.eval_infra.transcript import JsonlTranscriptProvider
+from skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 from skills.skill_spec import SkillSpec
 from util.bazel.runfiles import get_required_path
 

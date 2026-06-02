@@ -85,7 +85,13 @@ ignore = [
     "PLR0911",  # too many returns
     "PLR0913",  # too many arguments - often leads to unhelpful refactors
     "B904",     # raise from e
-    "E501"      # line length (formatter handles wrapping)
+    "E501",     # line length (formatter handles wrapping)
+    # EXE002 (file is executable but has no shebang): the lint *aspect* runs ruff on
+    # bazel-out copies, which Bazel marks executable, so EXE002 fires on essentially
+    # every Python file regardless of the source permission bit. Real source files are
+    # non-executable, so pre-commit (which lints the actual tree) never triggers this
+    # and loses no signal. The rest of the EXE group (shebang presence/content) is kept.
+    "EXE002",
 ]
 
 # Avoid conflicts between ruff-format and trailing-comma rules
@@ -147,6 +153,21 @@ known-first-party = [
     "tana",
     "tests",  # test packages (until colocated under main packages)
     "wt",
+    # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
+    # root, where ruff cannot auto-detect first-party packages (it only sees
+    # bazel-out/ copies), so any first-party top-level package missing here gets its
+    # imports mis-sorted into the third-party group, producing spurious I001. (When
+    # ruff runs from the repo root — e.g. pre-commit — auto-detection masks omissions.)
+    "agent_cli",
+    "aiquota",
+    "airlock",
+    "augur",
+    "cluster",
+    "mako_utils",
+    "nix",
+    "plaid_utils",
+    "skills",
+    "third_party",
 ]
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma

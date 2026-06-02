@@ -23,7 +23,6 @@ from crewai import Agent, Crew, Process, Task
 from crewai.tools import BaseTool
 from fastmcp.client import Client
 from pydantic import BaseModel, Field, PrivateAttr
-from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
@@ -42,6 +41,7 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
 )
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 logger = logging.getLogger(__name__)
 

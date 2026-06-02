@@ -20,8 +20,8 @@ from pathlib import Path
 import aiodocker
 import pytest_bazel
 from agent_framework import ChatResponse, Content, Message
-from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 
+from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_SKILL_SPEC
 from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
 from skills.info_gathering.evals.function_learning.function_learning import run_game

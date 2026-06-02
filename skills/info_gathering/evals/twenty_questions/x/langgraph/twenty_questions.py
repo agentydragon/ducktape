@@ -33,7 +33,6 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
-from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import BindMount
@@ -53,6 +52,7 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
 )
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
+from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
 logger = logging.getLogger(__name__)
 
