@@ -43,9 +43,10 @@ const reactFiles = reactProjects.map((g) => `${g}/*.{ts,tsx}`);
 // import/order crashes under Bazel: ranking an import calls getContextPackagePath,
 // which walks up from the source file for a package.json (pkgUp) — but the
 // bazel-out execution tree has none above it, so path.dirname(null) throws. Not
-// fixable via resolver config or the whole-program test path; a Prettier
-// import-sort plugin is the realistic alternative.
-// See debug/eslint_import_order_bazel.md for the full investigation.
+// fixable via resolver config or the whole-program test path. A Prettier
+// import-sort plugin could order .ts/.tsx/.js but not .svelte (it doesn't touch
+// prettier-plugin-svelte's parser) and needs Nix+Bazel+pnpm wiring, so import
+// ordering is parked. See debug/eslint_import_order_bazel.md for the full investigation.
 const importRules = {
   "import/first": "error",
   "import/order": "off",

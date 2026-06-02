@@ -54,15 +54,27 @@ lint aspect runs read-only; we don't have a hermetic local `eslint --fix` path).
 `import-x`'s package-path walk fundamentally fights Bazel's `bazel-out`
 execution layout. Not worth working around in ESLint.
 
-If import ordering is wanted, the realistic path is a **Prettier import-sort
-plugin** instead of ESLint:
+A **Prettier import-sort plugin** (`@ianvs/` or `@trivago/prettier-plugin-sort-imports`)
+was then evaluated as the alternative — and **parked**:
 
-- `@trivago/prettier-plugin-sort-imports` — purely syntactic grouping/ordering;
-  no resolver, no `package.json` walk, no `bazel-out` interaction. Prettier
-  already runs in pre-commit and auto-fixes, so it covers every frontend
-  uniformly and reorders on save/commit.
-- (`prettier-plugin-organize-imports` uses the TS language service — likely the
-  same project-context problems; prefer the syntactic plugin.)
+- It can sort `.ts` / `.tsx` / `.js` (these plugins hook Prettier's
+  babel/typescript parsers — purely syntactic, no resolver / `package.json` /
+  `bazel-out` issues), but **not `.svelte`**: they don't touch
+  `prettier-plugin-svelte`'s parser, so the `.svelte` components in `props`,
+  `agent_server`, and `airlock` (the bulk of those apps) wouldn't be sorted.
+  Coverage would be inconsistent within a single frontend (a `.ts` sorted, the
+  `.svelte` next to it not).
+- Wiring spans **three build systems**: the Nix-bundled prettier
+  (`nix/packages/prettier/` — `package.json` + an `npmDepsHash` rebuild, since
+  pre-commit's `language: system` prettier resolves plugins off the Nix wrapper's
+  `NODE_PATH`), the pnpm/Bazel `prettier_bin` (`//:prettierrc` deps + lockfile),
+  and `.prettierrc.cjs` (`require()` + `importOrder` groups, with
+  `importOrderSideEffects` care so a side-effect `import "./x.css"` / polyfill
+  isn't reordered into a behavior change) — plus a one-time repo-wide reorder.
 
-That's a formatter change (one big reorder diff, then maintained automatically),
-tracked as a follow-up rather than forcing `import/order` through ESLint.
+For that partial, frontend-inconsistent coverage at a multi-system cost, it
+wasn't worth it. The import hygiene that DOES work under Bazel is already on
+(`import/first`, `import/no-duplicates`, `import/newline-after-import`); only
+grouping/ordering is missing. (`prettier-plugin-organize-imports` uses the TS
+language service — likely the same project-context problems, so the syntactic
+plugin is the only candidate.)
