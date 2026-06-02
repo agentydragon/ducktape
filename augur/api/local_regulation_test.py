@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.api.local_regulation import TaxRegime, tax_regimes_for_local_regulation
-from augur.api.testing import san_francisco_regulation
+from augur.api.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
 
 
-def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment() -> None:
-    regulation = san_francisco_regulation()
+def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment(
+    san_francisco_regulation: LocalRegulation,
+) -> None:
+    regulation = san_francisco_regulation
 
     regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=True, rented=True)
 
@@ -18,8 +19,8 @@ def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment() -> No
     assert TaxRegime.CALIFORNIA_OWNER_OCCUPIED in regimes
 
 
-def test_investment_property_treatment_when_owner_does_not_occupy() -> None:
-    regulation = san_francisco_regulation()
+def test_investment_property_treatment_when_owner_does_not_occupy(san_francisco_regulation: LocalRegulation) -> None:
+    regulation = san_francisco_regulation
 
     regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=False, rented=True)
 
@@ -28,8 +29,8 @@ def test_investment_property_treatment_when_owner_does_not_occupy() -> None:
     assert TaxRegime.RENTAL_DEPRECIATION in regimes
 
 
-def test_existing_tax_regimes_are_preserved_and_deduplicated() -> None:
-    regulation = san_francisco_regulation()
+def test_existing_tax_regimes_are_preserved_and_deduplicated(san_francisco_regulation: LocalRegulation) -> None:
+    regulation = san_francisco_regulation
 
     regimes = tax_regimes_for_local_regulation(
         regulation,

@@ -5,43 +5,16 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 
+from augur.api.conftest import MinimalConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
-from augur.api.portfolio_source_config import (
-    FixedPortfolioSourceConfig,
-    PlaidCashSourceConfig,
-    PlaidPortfolioSourceConfig,
-    PlaidSp500ProxyGroupConfig,
-    PortfolioSourcesConfig,
-)
+from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PlaidCashSourceConfig, PortfolioSourcesConfig
 from augur.api.portfolio_sources import resolve_portfolio_sources
-from augur.api.testing import minimal_config
 from augur.product.asset_key import SP500AssetKey
 from plaid_utils.read_model import CurrentCashBalance, CurrentHolding
 
 
-def _plaid_config() -> PortfolioSourcesConfig:
-    return PortfolioSourcesConfig(
-        fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-01", cash_usd=100.0)),
-        plaid=PlaidPortfolioSourceConfig(
-            enabled=True,
-            cash=PlaidCashSourceConfig(plaid_account_ids=("checking",)),
-            sp500_proxy_groups=(
-                PlaidSp500ProxyGroupConfig(
-                    position_id="wealthfront_sp500",
-                    portfolio_account_id="wealthfront_taxable",
-                    owner_agent_id="owner",
-                    account_label="Wealthfront",
-                    label="SP500 proxy",
-                    plaid_account_ids=("wealthfront_account",),
-                    default_holding_period_months_at_start=24,
-                ),
-            ),
-        ),
-    )
-
-
-def test_disabled_plaid_source_resolves_fixed_source() -> None:
+def test_disabled_plaid_source_resolves_fixed_source(minimal_config: MinimalConfig) -> None:
     config = minimal_config()
 
     resolved = resolve_portfolio_sources(config)
@@ -50,14 +23,18 @@ def test_disabled_plaid_source_resolves_fixed_source() -> None:
     assert resolved.portfolio == PortfolioConfig()
 
 
-def test_enabled_plaid_source_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_enabled_plaid_source_requires_database_url(
+    monkeypatch: pytest.MonkeyPatch, minimal_config: MinimalConfig, plaid_config: PortfolioSourcesConfig
+) -> None:
     monkeypatch.delenv("AUGUR_PLAID_DATABASE_URL", raising=False)
 
     with pytest.raises(ValueError, match="AUGUR_PLAID_DATABASE_URL"):
-        resolve_portfolio_sources(minimal_config(portfolio_sources=_plaid_config()))
+        resolve_portfolio_sources(minimal_config(portfolio_sources=plaid_config))
 
 
-def test_plaid_source_adds_cash_and_sp500_proxy_position(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plaid_source_adds_cash_and_sp500_proxy_position(
+    monkeypatch: pytest.MonkeyPatch, minimal_config: MinimalConfig, plaid_config: PortfolioSourcesConfig
+) -> None:
     monkeypatch.setenv("AUGUR_PLAID_DATABASE_URL", "postgresql://example/plaidmcp")
 
     async def fake_cash(**kwargs) -> tuple[CurrentCashBalance, ...]:
@@ -112,7 +89,7 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(monkeypatch: pytest.Mon
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_cash_balances", fake_cash)
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_holdings", fake_holdings)
 
-    resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=_plaid_config()))
+    resolved = resolve_portfolio_sources(minimal_config(portfolio_sources=plaid_config))
 
     assert resolved.snapshot.cash_usd == 600.0
     assert resolved.snapshot.as_of_date == "2026-06-01"
@@ -144,7 +121,9 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(monkeypatch: pytest.Mon
     )
 
 
-def test_plaid_source_reuses_existing_portfolio_account(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plaid_source_reuses_existing_portfolio_account(
+    monkeypatch: pytest.MonkeyPatch, minimal_config: MinimalConfig, plaid_config: PortfolioSourcesConfig
+) -> None:
     monkeypatch.setenv("AUGUR_PLAID_DATABASE_URL", "postgresql://example/plaidmcp")
 
     async def fake_cash(**kwargs) -> tuple[CurrentCashBalance, ...]:
@@ -172,8 +151,8 @@ def test_plaid_source_reuses_existing_portfolio_account(monkeypatch: pytest.Monk
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_cash_balances", fake_cash)
     monkeypatch.setattr("augur.api.portfolio_sources.read_current_holdings", fake_holdings)
     source = PortfolioSourcesConfig(
-        plaid=_plaid_config().plaid.model_copy(
-            update={"cash": PlaidCashSourceConfig(), "sp500_proxy_groups": _plaid_config().plaid.sp500_proxy_groups}
+        plaid=plaid_config.plaid.model_copy(
+            update={"cash": PlaidCashSourceConfig(), "sp500_proxy_groups": plaid_config.plaid.sp500_proxy_groups}
         )
     )
     config = minimal_config(

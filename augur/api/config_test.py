@@ -19,7 +19,9 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
+from augur.api.conftest import MinimalConfig
 from augur.api.finance import FinanceSnapshot
+from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -28,7 +30,6 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
-from augur.api.testing import fixture_regulation, minimal_config
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
@@ -38,7 +39,7 @@ from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfi
 from augur.product.asset_key import SP500AssetKey
 
 
-def test_minimal_config_validates_with_explicit_sampling_config() -> None:
+def test_minimal_config_validates_with_explicit_sampling_config(minimal_config: MinimalConfig) -> None:
     config = minimal_config()
 
     assert config.agents[0].actor_id == "owner"
@@ -47,11 +48,12 @@ def test_minimal_config_validates_with_explicit_sampling_config() -> None:
     assert config.max_rollout_samples == 1_000_000
 
 
-def test_sampling_config_is_required() -> None:
+def test_sampling_config_is_required(minimal_config: MinimalConfig) -> None:
+    base = minimal_config().model_dump(mode="json")
     with pytest.raises(ValidationError, match="default_rollout_samples"):
-        minimal_config(default_rollout_samples=None)
+        Config.model_validate({**base, "default_rollout_samples": None})
     with pytest.raises(ValidationError, match="max_rollout_samples"):
-        minimal_config(max_rollout_samples=None)
+        Config.model_validate({**base, "max_rollout_samples": None})
 
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
@@ -87,7 +89,7 @@ def test_property_asset_property_ids_must_be_unique() -> None:
         )
 
 
-def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
+def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: MinimalConfig) -> None:
     config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             fixed=FixedPortfolioSourceConfig(
@@ -124,7 +126,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
     assert fixed.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 
-def test_config_carries_optional_plaid_portfolio_source() -> None:
+def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalConfig) -> None:
     config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             plaid=PlaidPortfolioSourceConfig(
@@ -154,13 +156,15 @@ def test_enabled_plaid_portfolio_source_must_select_something() -> None:
         PlaidPortfolioSourceConfig(enabled=True)
 
 
-def test_location_selection_accepts_location_strings() -> None:
+def test_location_selection_accepts_location_strings(minimal_config: MinimalConfig) -> None:
     config = minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
 
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
 
-def test_config_can_define_deployment_owned_locations() -> None:
+def test_config_can_define_deployment_owned_locations(
+    minimal_config: MinimalConfig, fixture_regulation: LocalRegulation
+) -> None:
     config = minimal_config(
         locations=(
             LocationConfig(
@@ -168,7 +172,7 @@ def test_config_can_define_deployment_owned_locations() -> None:
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=fixture_regulation(),
+                local_regulation=fixture_regulation,
             ),
         ),
         location_selection=("location_a",),
@@ -203,12 +207,12 @@ def test_snapshot_optional_fields_default_to_zero() -> None:
     assert snapshot.cash_usd == 0.0
 
 
-def test_unknown_field_is_rejected() -> None:
+def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         minimal_config(extra_field="nope")
 
 
-def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
+def test_yaml_round_trip_through_dump_and_load(tmp_path: Path, minimal_config: MinimalConfig) -> None:
     config = minimal_config(location_selection=("san_francisco_ca",))
 
     path = tmp_path / "config.yaml"
@@ -218,7 +222,9 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
     assert reloaded == config
 
 
-def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path) -> None:
+def test_config_accepts_composite_provider_with_trained_private_equity(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     model_path = tmp_path / "private_equity_model.json"
     config = minimal_config(
         models={
@@ -236,7 +242,7 @@ def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path)
     assert provider.private_equity.trained_model_path == model_path
 
 
-def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
+def test_config_accepts_composite_provider_with_private_equity_risk(minimal_config: MinimalConfig) -> None:
     config = minimal_config(
         models={
             "current_model": {
@@ -256,7 +262,9 @@ def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
     assert provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
 
 
-def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp_path) -> None:
+def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "private_equity_model.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
@@ -287,7 +295,9 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp
     assert provider.private_equity.trained_model_path == (tmp_path / "private_equity_model.json").resolve()
 
 
-def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -> None:
+def test_relative_state_space_artifact_path_anchors_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "state_space_artifact.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
@@ -320,7 +330,9 @@ def test_calibration_catalog_sample_sanity_path_defaults_to_none() -> None:
     assert catalog.sample_sanity_path is None
 
 
-def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) -> None:
+def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     """Both `catalog_path` and the optional `sample_sanity_path` resolve against the yaml dir,
     like the other ConfigMap-mounted deployment paths."""
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
@@ -344,7 +356,7 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) ->
     assert reloaded.calibration_catalog.sample_sanity_path == (tmp_path / "sample_sanity.yaml").resolve()
 
 
-def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> None:
+def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, minimal_config: MinimalConfig) -> None:
     """ConfigMap mounts put config.yaml + properties.json side-by-side, so the
     yaml stores `properties_path: properties.json` and the loader resolves
     against the yaml's directory."""
