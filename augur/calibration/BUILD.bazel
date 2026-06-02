@@ -169,6 +169,7 @@ py_test(
         "//augur/model:series",
         "//augur/model:testing",
         "@pypi//numpy",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -196,6 +197,7 @@ py_test(
         ":testing",
         "//:conftest",
         "//augur/model:private_equity_risk",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

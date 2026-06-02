@@ -115,22 +115,25 @@ def _with_fixed_cash(config: Config, cash_usd: float) -> Config:
     )
 
 
-def _scenario_key() -> ScenarioKey:
+@pytest.fixture
+def scenario_key() -> ScenarioKey:
     return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none")
 
 
-def test_product_fails_when_sample_is_missing_required_series(make_product_service: MakeProductService) -> None:
+def test_product_fails_when_sample_is_missing_required_series(
+    make_product_service: MakeProductService, scenario_key: ScenarioKey
+) -> None:
     model = MissingRequiredExogenousModel()
     product = make_product_service(model)
 
     with pytest.raises(ValueError, match=f"missing required level series: .*{SP500Key().wire_id}"):
-        product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
+        product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
     assert model.sample_requests[0].required_level_series
 
 
 def test_product_fails_when_crypto_holding_price_is_not_modeled(
-    augur_config: Config, make_product_service: MakeProductService
+    augur_config: Config, make_product_service: MakeProductService, scenario_key: ScenarioKey
 ) -> None:
     provider = augur_config.models[augur_config.default_model_id]
     assert isinstance(provider, CompositeProviderConfig)
@@ -155,7 +158,7 @@ def test_product_fails_when_crypto_holding_price_is_not_modeled(
     product = make_product_service(model, config=augur_config)
 
     with pytest.raises(ValueError, match=r"missing required level series: .*crypto:btc"):
-        product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
+        product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
 
 def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> None:
@@ -187,10 +190,10 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
 
 
 def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    counting_model: CountingModel, make_product_service: MakeProductService, scenario_key: ScenarioKey
 ) -> None:
     product = make_product_service(counting_model)
-    scenario = _scenario_key()
+    scenario = scenario_key
 
     fan = product.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(0, 50, 100))
@@ -259,10 +262,13 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(
-    counting_model: CountingModel, make_product_service: MakeProductService, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel,
+    make_product_service: MakeProductService,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario_key: ScenarioKey,
 ) -> None:
     product = make_product_service(counting_model)
-    scenario = _scenario_key()
+    scenario = scenario_key
     original = decode.monthly_metric_arrays
     calls = 0
 
@@ -281,10 +287,13 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
 
 
 def test_metric_fan_does_not_materialize_rollout_events(
-    counting_model: CountingModel, make_product_service: MakeProductService, monkeypatch: pytest.MonkeyPatch
+    counting_model: CountingModel,
+    make_product_service: MakeProductService,
+    monkeypatch: pytest.MonkeyPatch,
+    scenario_key: ScenarioKey,
 ) -> None:
     product = make_product_service(counting_model)
-    scenario = _scenario_key()
+    scenario = scenario_key
 
     def fail_rollout_events(*_args, **_kwargs):
         raise AssertionError("metric fan should not build selected-rollout event detail")
@@ -635,10 +644,10 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
 
 
 def test_outside_rent_zero_omits_rent_series_requirement(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    counting_model: CountingModel, make_product_service: MakeProductService, scenario_key: ScenarioKey
 ) -> None:
     product = make_product_service(counting_model)
-    scenario = _scenario_key()  # no rent
+    scenario = scenario_key  # no rent
 
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,)))
 
@@ -684,7 +693,8 @@ def test_scenario_key_rejects_location_without_rent() -> None:
         )
 
 
-def _mortgage_purchase_scenario() -> ScenarioKey:
+@pytest.fixture
+def mortgage_purchase_scenario() -> ScenarioKey:
     return ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -700,11 +710,11 @@ def _mortgage_purchase_scenario() -> ScenarioKey:
 
 
 def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    counting_model: CountingModel, make_product_service: MakeProductService, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
     product = make_product_service(counting_model)
 
-    detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
+    detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
 
     [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
     assert isinstance(purchase, PropertyPurchaseEvent)
@@ -1000,11 +1010,11 @@ def test_primary_residence_event_emits_rollout_marker(
 
 
 def test_property_purchase_metrics_track_value_balance_and_equity(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    counting_model: CountingModel, make_product_service: MakeProductService, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
     product = make_product_service(counting_model)
 
-    detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
+    detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
 
     # month_index=0 is the pre-purchase opening snapshot; the property activates at index 1
     # (end of purchase month). Values mark-to-market against the home_value series so the index-1

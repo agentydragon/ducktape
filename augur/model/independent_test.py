@@ -10,7 +10,8 @@ from augur.model.provider_config import ProviderConfig
 from augur.model.series import HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 
 
-def _example_config() -> IndependentProviderConfig:
+@pytest.fixture
+def example_config() -> IndependentProviderConfig:
     # Typed magisterium config: no magic-prefix keys. Each level series sits inside its
     # magisterium sub-group (asset_prices / property_values / index_series); singletons are
     # scalar, crypto/home_value/rent are keyed by sub-id. PE marks live in their own
@@ -64,8 +65,8 @@ def _example_config() -> IndependentProviderConfig:
     )
 
 
-def test_independent_model_samples_levels_and_events() -> None:
-    model = _example_config().realize_model()
+def test_independent_model_samples_levels_and_events(example_config: IndependentProviderConfig) -> None:
+    model = example_config.realize_model()
 
     sampled = model.sample(
         ExogenousSamplingRequest(
@@ -97,20 +98,22 @@ def test_independent_model_samples_levels_and_events() -> None:
     assert sampled.metadata["private_equity_prices_usd"] == {"private_equity_x": 50.0}
 
 
-def test_independent_provider_config_roundtrips_through_discriminated_union() -> None:
+def test_independent_provider_config_roundtrips_through_discriminated_union(
+    example_config: IndependentProviderConfig,
+) -> None:
     adapter: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
-    config = adapter.validate_python(_example_config().model_dump())
+    config = adapter.validate_python(example_config.model_dump())
     assert isinstance(config, IndependentProviderConfig)
     assert config.realize_model().sample(ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(9,))).metadata[
         "private_equity_prices_usd"
     ] == {"private_equity_x": 50.0}
 
 
-def test_realized_model_keeps_magisterium_structure() -> None:
+def test_realized_model_keeps_magisterium_structure(example_config: IndependentProviderConfig) -> None:
     # The runtime model holds level specs as the three magisterium sub-groups (same shape
     # as config / the sampled bundle), not a flattened opaque key map. The config-only
     # `private_equity_marks` sibling travels separately as `pe_marks`.
-    model = _example_config().realize_model()
+    model = example_config.realize_model()
     assert model.index_series.inflation is not None
     assert model.asset_prices.sp500 is not None
     assert set(model.property_values.home_value) == {"san_francisco_ca"}

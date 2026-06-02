@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -24,9 +25,11 @@ from augur.model.provider_config import ProviderConfig
 from augur.product.testing import capacity_limited_private_equity_fixture, forced_private_equity_event_fixture
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
-# `make_catalog_config` takes the property-shortlist path for the catalog-builder tests).
+# `make_catalog_config` takes the property-shortlist path for the catalog-builder tests) or a
+# TestClient over a given models map (`make_client`).
 MinimalConfig = Callable[..., Config]
 MakeCatalogConfig = Callable[..., Config]
+MakeClient = Callable[[dict[str, Any]], TestClient]
 
 
 @pytest.fixture
@@ -184,16 +187,24 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
 
 
 @pytest.fixture
-def forced_private_equity_event_client(augur_config: Config) -> Iterator[TestClient]:
-    with _client_with(augur_config, {"current_model": forced_private_equity_event_fixture()}) as client:
-        yield client
+def make_client(augur_config: Config) -> Iterator[MakeClient]:
+    """Factory building a `TestClient` over the fixture deployment with the given models map.
+    Every client it hands out is entered and torn down at fixture exit."""
+    with contextlib.ExitStack() as stack:
+
+        def _make(models: dict[str, Any]) -> TestClient:
+            return stack.enter_context(
+                TestClient(create_app(ApiServerConfig(augur_config=augur_config, models=models, price_clients={})))
+            )
+
+        yield _make
 
 
 @pytest.fixture
-def capacity_limited_private_equity_client(augur_config: Config) -> Iterator[TestClient]:
-    with _client_with(augur_config, {"current_model": capacity_limited_private_equity_fixture()}) as client:
-        yield client
+def forced_private_equity_event_client(make_client: MakeClient) -> TestClient:
+    return make_client({"current_model": forced_private_equity_event_fixture()})
 
 
-def _client_with(augur_config: Config, models: dict[str, Any]) -> TestClient:
-    return TestClient(create_app(ApiServerConfig(augur_config=augur_config, models=models, price_clients={})))
+@pytest.fixture
+def capacity_limited_private_equity_client(make_client: MakeClient) -> TestClient:
+    return make_client({"current_model": capacity_limited_private_equity_fixture()})

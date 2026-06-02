@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import itertools
 
+import pytest
 import pytest_bazel
 
 from augur.calibration.catalog import ExactMarket, ManifoldRef, MarketCatalog
@@ -29,7 +30,8 @@ def _ipo_market(manifold_id: str, by_date: str) -> ExactMarket:
     )
 
 
-def _catalog() -> MarketCatalog:
+@pytest.fixture
+def catalog() -> MarketCatalog:
     # Anchor 2026-05-27. Deadlines map to months 7 / 19 / 31 / 43, plus a -1 month before
     # sim start. The 2030 market (0.80) sits below the 2029 market (0.93): market noise.
     return MarketCatalog(
@@ -44,12 +46,13 @@ def _catalog() -> MarketCatalog:
     )
 
 
-def _prices() -> ManifoldClient:
+@pytest.fixture
+def prices() -> ManifoldClient:
     return mock_manifold_client({"B27": 0.30, "B28": 0.55, "B29": 0.93, "B30": 0.80, "BPRE": 0.99})
 
 
-def test_derives_monotone_anchors_dropping_market_noise() -> None:
-    anchors = derive_public_market_anchors(_catalog(), price_client=_prices())
+def test_derives_monotone_anchors_dropping_market_noise(catalog: MarketCatalog, prices: ManifoldClient) -> None:
+    anchors = derive_public_market_anchors(catalog, price_client=prices)
 
     # The before-sim-start market (month -1) and the non-monotone 2030 point are dropped.
     assert [anchor.month for anchor in anchors] == [7, 19, 31]
@@ -62,10 +65,10 @@ def test_derives_monotone_anchors_dropping_market_noise() -> None:
     assert all(later >= earlier for earlier, later in itertools.pairwise(cumulatives))
 
 
-def test_derived_anchors_validate_against_m1_issuer_config() -> None:
+def test_derived_anchors_validate_against_m1_issuer_config(catalog: MarketCatalog, prices: ManifoldClient) -> None:
     # The whole point of the derivation: the output must satisfy the M1 model validator
     # (strictly-increasing month, non-decreasing CDF), so the markets can feed the model.
-    anchors = derive_public_market_anchors(_catalog(), price_client=_prices())
+    anchors = derive_public_market_anchors(catalog, price_client=prices)
     config = PrivateEquityRiskIssuerConfig(current_mark_usd=100.0, public_market_cdf_anchors=anchors)
     assert config.public_market_cdf_anchors == anchors
 

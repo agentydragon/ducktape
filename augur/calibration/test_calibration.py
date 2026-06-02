@@ -12,6 +12,7 @@ from datetime import date
 
 import numpy as np
 import numpy.typing as npt
+import pytest
 import pytest_bazel
 
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle, wilson_interval
@@ -37,7 +38,8 @@ def _event_kind_codes(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64
     return events
 
 
-def _model() -> ConstantFrameModel:
+@pytest.fixture
+def model() -> ConstantFrameModel:
     return ConstantFrameModel(
         private_equity={
             IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
@@ -45,7 +47,8 @@ def _model() -> ConstantFrameModel:
     )
 
 
-def _catalog() -> MarketCatalog:
+@pytest.fixture
+def catalog() -> MarketCatalog:
     """One exact ipo_by_date, one exact pre_ipo_failure, one correlate (ipo_by_date) market."""
     return MarketCatalog(
         metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
@@ -78,23 +81,26 @@ def _catalog() -> MarketCatalog:
     )
 
 
-def _price_clients() -> dict[Platform, PriceClient]:
+@pytest.fixture
+def price_clients() -> dict[Platform, PriceClient]:
     return mock_price_clients({Platform.MANIFOLD: {"AAA": 0.40, "BBB": 0.10, "CCC": 0.66}})
 
 
-def _run():
+def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
     return run_calibration(
-        _model(),
-        _catalog(),
+        model,
+        catalog,
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=tuple(range(4)),
-        price_clients=_price_clients(),
+        price_clients=price_clients,
     )
 
 
-def test_clean_rows_score_events() -> None:
-    result = _run()
+def test_clean_rows_score_events(
+    model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
+) -> None:
+    result = _run(model, catalog, price_clients)
     assert result.issuer == _ISSUER
     assert result.rollout_count == 4
     clean = {row.market_id: row for row in result.clean}
@@ -120,8 +126,10 @@ def test_clean_rows_score_events() -> None:
     assert math.isclose(fail.p_model, 1 / 3)
 
 
-def test_surfaced_row_carries_augur_context() -> None:
-    result = _run()
+def test_surfaced_row_carries_augur_context(
+    model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
+) -> None:
+    result = _run(model, catalog, price_clients)
     assert [row.market_id for row in result.surfaced] == ["CCC"]
     surfaced = result.surfaced[0]
     assert surfaced.platform == "manifold"
@@ -135,24 +143,25 @@ def test_surfaced_row_carries_augur_context() -> None:
     assert surfaced.augur_context.p_model == 0.25
 
 
-def test_run_calibration_reuses_supplied_bundle() -> None:
+def test_run_calibration_reuses_supplied_bundle(
+    model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
+) -> None:
     # Sampling the bundle once and threading it into run_calibration must yield the same
     # scoring as letting run_calibration sample internally -- the backend reuses one bundle
     # for both the clean/surfaced scoring and the mark_fan.
-    catalog = _catalog()
     seeds = tuple(range(4))
-    bundle = sample_private_equity_bundle(_model(), issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     from_bundle = run_calibration(
-        _model(),
+        model,
         catalog,
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
-        price_clients=_price_clients(),
+        price_clients=price_clients,
         bundle=bundle,
     )
     internal = run_calibration(
-        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=_price_clients()
+        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients
     )
     assert from_bundle == internal
     # The same bundle also drives the mark_fan, so both views come from one rollout.
@@ -160,13 +169,13 @@ def test_run_calibration_reuses_supplied_bundle() -> None:
     assert fan.months[0].values == {"50.0": 50.0}
 
 
-def test_mark_fan_shape() -> None:
+def test_mark_fan_shape(model: ConstantFrameModel) -> None:
     request = ExogenousSamplingRequest(
         horizon_months=_HORIZON,
         rollout_seeds=tuple(range(4)),
         required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
     )
-    bundle = _model().sample(request).private_equity
+    bundle = model.sample(request).private_equity
     fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(5.0, 50.0, 95.0))
     assert fan.channel == PrivateEquityFloatChannel.MARK_USD_PER_UNIT
     assert fan.percentiles == [5.0, 50.0, 95.0]
@@ -183,7 +192,7 @@ def test_wilson_interval_edges() -> None:
     assert math.isclose((lo + hi) / 2, 0.5, abs_tol=1e-9)
 
 
-def test_multi_platform_dispatches_to_correct_client() -> None:
+def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) -> None:
     """Kalshi + Manifold markets each hit their own client and carry the right platform tag."""
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-29"},
@@ -208,7 +217,7 @@ def test_multi_platform_dispatches_to_correct_client() -> None:
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
     result = run_calibration(
-        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=tuple(range(4)), price_clients=clients
+        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=tuple(range(4)), price_clients=clients
     )
     by_id = {row.market_id: row for row in result.clean}
     assert by_id["M1"].platform == "manifold"

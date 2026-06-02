@@ -22,7 +22,8 @@ from augur.calibration.platform import Platform
 from util.bazel.runfiles import get_required_path
 
 
-def _catalog() -> MarketCatalog:
+@pytest.fixture
+def catalog() -> MarketCatalog:
     """A small in-memory catalog with one of each variant, built as typed objects."""
     return MarketCatalog(
         metadata={"source": "manifold", "as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
@@ -53,8 +54,7 @@ def _catalog() -> MarketCatalog:
     )
 
 
-def test_partitions_dispatch_on_variant() -> None:
-    catalog = _catalog()
+def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
     assert [m.market_id for m in catalog.exact_markets()] == ["AAA"]
     assert [m.market_id for m in catalog.surfaced_markets()] == ["BBB", "CCC"]
     (exact,) = catalog.exact_markets()

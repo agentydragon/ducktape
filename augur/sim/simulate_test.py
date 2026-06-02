@@ -78,7 +78,8 @@ def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[
     )
 
 
-def _alice_bob_scenario() -> Scenario:
+@pytest.fixture
+def alice_bob_scenario() -> Scenario:
     return Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
         initial_cash=[
@@ -737,12 +738,12 @@ def test_scenario_rejects_primary_residence_assignment_at_or_after_sale() -> Non
         )
 
 
-def test_alice_gives_bob_five_dollars_one_rollout() -> None:
+def test_alice_gives_bob_five_dollars_one_rollout(alice_bob_scenario: Scenario) -> None:
     """One scheduled transfer at month 0 moves $5 from Bob to Alice.
     After month 0: Alice $15, Bob $15. The transfer is on the log;
     the post-step cross-section reflects it; total cash in the
     system is conserved at every month."""
-    result = simulate(_alice_bob_scenario(), rollout_count=1, locations={})
+    result = simulate(alice_bob_scenario, rollout_count=1, locations={})
 
     initial = result.cash_balances.filter(pl.col("month_index") == 0).sort("agent_id")
     assert initial.get_column("balance_usd").to_list() == [10.0, 20.0]
@@ -784,9 +785,9 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
     assert result.events_log.transfers.is_empty()
 
 
-def test_rejects_zero_rollout_count() -> None:
+def test_rejects_zero_rollout_count(alice_bob_scenario: Scenario) -> None:
     with pytest.raises(ValueError, match="rollout_count"):
-        simulate(_alice_bob_scenario(), rollout_count=0, locations={})
+        simulate(alice_bob_scenario, rollout_count=0, locations={})
 
 
 def test_recurring_paycheck_accrues_monthly() -> None:
