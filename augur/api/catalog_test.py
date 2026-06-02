@@ -12,8 +12,9 @@ from more_itertools import one
 from augur.api.catalog import build_catalog, build_settings
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
-from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.local_regulation import TaxRegime
 from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
+from augur.api.testing import fixture_regulation, san_francisco_regulation
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 
@@ -83,40 +84,8 @@ def _write_builtin_properties(path: Path) -> None:
     )
 
 
-def _fixture_regulation() -> LocalRegulation:
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-            TaxRegime.FEDERAL_CAPITAL_GAINS,
-            TaxRegime.CALIFORNIA_INCOME_TAX,
-        ),
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location.",
-    )
-
-
-def _san_francisco_regulation() -> LocalRegulation:
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-            TaxRegime.FEDERAL_CAPITAL_GAINS,
-            TaxRegime.CALIFORNIA_INCOME_TAX,
-            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
-        ),
-        property_tax_annual_pct=1.18,
-        notes="San Francisco fixture",
-    )
-
-
 def _fixture_locations() -> tuple[LocationConfig, ...]:
-    regulation = _fixture_regulation()
+    regulation = fixture_regulation()
     return (
         LocationConfig(
             location_id="location_a",
@@ -139,7 +108,7 @@ def _fixture_locations() -> tuple[LocationConfig, ...]:
             label="San Francisco, CA",
             city="San Francisco",
             state="CA",
-            local_regulation=_san_francisco_regulation(),
+            local_regulation=san_francisco_regulation(),
             notes=("San Francisco fixture.",),
         ),
     )

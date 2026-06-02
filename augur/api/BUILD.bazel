@@ -117,9 +117,9 @@ py_test(
     deps = [
         ":config",
         ":finance",
-        ":local_regulation",
         ":portfolio",
         ":portfolio_source_config",
+        ":testing",
         "//augur/model:independent",
         "//augur/model:private_equity_risk",
         "//augur/model:provider_config",
@@ -150,6 +150,7 @@ py_test(
     srcs = ["local_regulation_test.py"],
     deps = [
         ":local_regulation",
+        ":testing",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -210,6 +211,7 @@ py_test(
         ":finance",
         ":local_regulation",
         ":portfolio_source_config",
+        ":testing",
         ":wire",
         "//augur/model:independent",
         "@pypi//more_itertools",
@@ -225,10 +227,21 @@ py_library(
     deps = [
         ":config",
         ":server_lib",
+        ":testing",
         "//augur/product:testing",
-        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":config",
+        ":local_regulation",
+        "//util/bazel:runfiles",
     ],
 )
 

@@ -154,9 +154,9 @@ py_library(
         "//augur/api:catalog",
         "//augur/api:config",
         "//augur/api:portfolio_sources",
+        "//augur/api:testing",
         "//augur/api:wire",
         "//augur/model:exogenous",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
     ],
 )

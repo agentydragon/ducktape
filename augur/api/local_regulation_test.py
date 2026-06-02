@@ -2,28 +2,12 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.api.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
-
-
-def _san_francisco_regulation() -> LocalRegulation:
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-            TaxRegime.FEDERAL_CAPITAL_GAINS,
-            TaxRegime.CALIFORNIA_INCOME_TAX,
-            TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
-            TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
-        ),
-        property_tax_annual_pct=1.18,
-        notes="San Francisco fixture",
-    )
+from augur.api.local_regulation import TaxRegime, tax_regimes_for_local_regulation
+from augur.api.testing import san_francisco_regulation
 
 
 def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment() -> None:
-    regulation = _san_francisco_regulation()
+    regulation = san_francisco_regulation()
 
     regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=True, rented=True)
 
@@ -35,7 +19,7 @@ def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment() -> No
 
 
 def test_investment_property_treatment_when_owner_does_not_occupy() -> None:
-    regulation = _san_francisco_regulation()
+    regulation = san_francisco_regulation()
 
     regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=False, rented=True)
 
@@ -45,7 +29,7 @@ def test_investment_property_treatment_when_owner_does_not_occupy() -> None:
 
 
 def test_existing_tax_regimes_are_preserved_and_deduplicated() -> None:
-    regulation = _san_francisco_regulation()
+    regulation = san_francisco_regulation()
 
     regimes = tax_regimes_for_local_regulation(
         regulation,

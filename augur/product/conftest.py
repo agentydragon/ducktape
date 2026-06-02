@@ -5,13 +5,13 @@ from collections.abc import Callable
 import pytest
 
 from augur.api.catalog import build_catalog
-from augur.api.config import Config, load_augur_config
+from augur.api.config import Config
 from augur.api.portfolio_sources import resolve_portfolio_sources
+from augur.api.testing import load_fixture_config
 from augur.api.wire import CatalogResponse
 from augur.model.exogenous import Sampler
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
-from util.bazel.runfiles import get_required_path
 
 # What the `make_product_service` fixture hands tests: build a ProductService for one model.
 MakeProductService = Callable[..., ProductService]
@@ -19,7 +19,7 @@ MakeProductService = Callable[..., ProductService]
 
 @pytest.fixture(scope="module")
 def augur_config() -> Config:
-    return load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    return load_fixture_config()
 
 
 @pytest.fixture(scope="module")

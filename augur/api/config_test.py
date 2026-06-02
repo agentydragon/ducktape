@@ -20,7 +20,6 @@ from augur.api.config import (
     load_augur_config,
 )
 from augur.api.finance import FinanceSnapshot
-from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -29,6 +28,7 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
+from augur.api.testing import fixture_regulation
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
@@ -54,19 +54,6 @@ def _minimal_config(**overrides: object) -> Config:
     }
     defaults.update(overrides)
     return Config(**defaults)
-
-
-def _fixture_regulation() -> LocalRegulation:
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-        ),
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location.",
-    )
 
 
 def test_minimal_config_validates_with_explicit_sampling_config() -> None:
@@ -199,7 +186,7 @@ def test_config_can_define_deployment_owned_locations() -> None:
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=_fixture_regulation(),
+                local_regulation=fixture_regulation(),
             ),
         ),
         location_selection=("location_a",),

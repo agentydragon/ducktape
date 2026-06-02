@@ -28,7 +28,7 @@ import pytest
 import pytest_bazel
 import uvicorn
 
-from augur.api.config import load_augur_config
+from augur.api.testing import load_fixture_config
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.platform import Platform
 from augur.calibration.testing import mock_price_clients
@@ -238,7 +238,7 @@ def _hermetic_prices() -> dict[Platform, dict[str, float]]:
 
 @pytest.fixture(scope="module")
 def augur_server() -> Iterator[str]:
-    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    config = load_fixture_config()
     # Inject hermetic mock clients so the calibration tab's auto-run never hits the network.
     app = build_dev_app(config, price_clients=mock_price_clients(_hermetic_prices()))
     port = pick_free_port("127.0.0.1")
