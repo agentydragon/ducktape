@@ -16,6 +16,7 @@ With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
@@ -23,6 +24,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
@@ -203,11 +205,46 @@ def _wait_for_calibration_page(page: Page) -> None:
 # events. Schema version 6 (the v6 bump moved `firstSeed` out of `?s=` into `?seed=`).
 _PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
 
+# Two-scenario "rent vs. buy" comparison. Each scenario's `input` overrides only the fields that
+# differ from the product defaults (the codec merges the rest over `productInputDefaults`); the
+# whole set rides the URL-encoded `?scenarios=` param. The fixture property `location_a_property`
+# backs the mortgage scenario.
+_COMPARISON_SCENARIOS = {
+    "v": 1,
+    "active": 0,
+    "scenarios": [
+        {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
+        {
+            "label": "Buy (mortgage)",
+            "input": {"propertyId": "location_a_property", "financingKind": "mortgage", "livesHere": True},
+        },
+    ],
+}
+_COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})
+
+
+def _wait_for_scenario_comparison(page: Page) -> None:
+    """Wait for the multi-scenario overlay: the scenario bar, two scenario fans + legend, and the
+    per-scenario comparison table."""
+    page.add_style_tag(content=deterministic_style())
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
+    # Both scenario fans have drawn their median lines.
+    page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 2', timeout=30_000)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+    _wait_for_product_chart_geometry(page)
+
+
 VISUAL_CASES = (
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
+    VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
     VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )
 

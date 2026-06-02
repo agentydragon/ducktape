@@ -238,9 +238,6 @@ the wrong structure.
   over event streams.
 - **Outside-rent timeline events** — add product events for changing, starting,
   or ending outside rent so housing-cost cashflows are explicit scenario state.
-- **Multi-scenario comparison** — reintroduce product comparison as a set of
-  paired `ScenarioKey`s sharing one sampled exogenous bundle, with matched
-  percentile fans and per-scenario controls.
 - **Tax surface beyond the current ordinary/LTCG/STCG/MID/SALT/rental/property
   sale model** — qualified dividends, capital losses + carryforward, passive
   loss limitation/release, NIIT, filing statuses beyond single, §121

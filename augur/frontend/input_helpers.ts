@@ -532,3 +532,118 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
     percentiles: FAN_PERCENTILES,
   };
 }
+
+// -- Scenario set (multi-scenario comparison) ---------------------------------
+//
+// The product view can hold a *set* of scenarios that share one set of rollout seeds (and
+// thus one sampled exogenous bundle — identical seeds reproduce identical market paths, so
+// the comparison is apples-to-apples without any backend change). Each entry carries its own
+// `ProductInput`; the chart overlays one median/P5/P95 fan per scenario, one color each.
+//
+// One scenario is "active": its rollout histogram, selected-rollout overlay, events, and the
+// detailed terminal-percentile table scope to it. Color is assigned by position so it stays
+// stable as the active selection changes; the active scenario is distinguished by line weight,
+// not by hue.
+
+// Per-scenario fan colors, indexed by position. Index 0 is the existing single-scenario blue so
+// a lone scenario renders byte-identically to the pre-comparison chart.
+export const SCENARIO_COLORS = ["#1d4ed8", "#db2777", "#0d9488", "#d97706", "#7c3aed"];
+export const MAX_SCENARIOS = SCENARIO_COLORS.length;
+
+export function scenarioColor(index) {
+  const count = SCENARIO_COLORS.length;
+  return SCENARIO_COLORS[((index % count) + count) % count];
+}
+
+export function defaultScenarioLabel(index) {
+  return `Scenario ${index + 1}`;
+}
+
+let _nextScenarioId = 0;
+// Stable per-entry id used as the React key and the active-scenario handle. Purely UI state — the
+// URL encodes scenarios positionally, so ids are minted fresh on every decode.
+export function nextScenarioId() {
+  _nextScenarioId += 1;
+  return `scn-${_nextScenarioId}`;
+}
+
+export function makeScenarioEntry(input, label) {
+  return { id: nextScenarioId(), label, input };
+}
+
+// Lifecycle-event `_id`s are UI-only React keys; drop them from the persisted form so two
+// scenarios that share a lifecycle plan don't also share (colliding) keys after a decode.
+function serializeScenarioInput(input) {
+  const events = Array.isArray(input.propertyLifecycleEvents) ? input.propertyLifecycleEvents : [];
+  return { ...input, propertyLifecycleEvents: events.map(({ _id, ...rest }) => rest) };
+}
+
+function deserializeScenarioInput(raw, defaults) {
+  const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
+  // Regenerate lifecycle `_id`s so keys are unique across the freshly-decoded set.
+  merged.propertyLifecycleEvents = Array.isArray(raw?.propertyLifecycleEvents)
+    ? raw.propertyLifecycleEvents.map((event) => ({ ...event, _id: nextLifecycleEventId() }))
+    : [];
+  return merged;
+}
+
+// Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
+// single default scenario rather than misreading fields (mirrors the `?s=` version gate).
+const SCENARIO_SET_VERSION = 1;
+
+function decodeScenarioSet(packed, bootstrap) {
+  let payload;
+  try {
+    payload = JSON.parse(packed);
+  } catch (error) {
+    // A hand-edited / truncated link is external input, not a bug: fall back like `?s=` does.
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+  if (payload?.v !== SCENARIO_SET_VERSION || !Array.isArray(payload.scenarios) || payload.scenarios.length === 0) {
+    return null;
+  }
+  const defaults = productInputDefaults(bootstrap);
+  const scenarios = payload.scenarios.slice(0, MAX_SCENARIOS).map((raw, index) => {
+    const label = typeof raw?.label === "string" && raw.label !== "" ? raw.label : defaultScenarioLabel(index);
+    return makeScenarioEntry(deserializeScenarioInput(raw?.input, defaults), label);
+  });
+  const activeIndex = Number.isInteger(payload.active)
+    ? Math.max(0, Math.min(scenarios.length - 1, payload.active))
+    : 0;
+  return { scenarios, activeId: scenarios[activeIndex].id };
+}
+
+// Encode the whole set to a query string. A single scenario keeps the compact, shareable, and
+// backward-compatible `?s=`/`?lc=` form; two or more switch to a `?scenarios=` JSON blob (robust
+// to arbitrary labels and value types, at the cost of a longer URL).
+export function scenarioSetToSearch(scenarios, activeId, bootstrap) {
+  if (scenarios.length <= 1) {
+    return productInputToSearch(scenarios[0].input, bootstrap);
+  }
+  const activeIndex = Math.max(
+    0,
+    scenarios.findIndex((entry) => entry.id === activeId)
+  );
+  const payload = {
+    v: SCENARIO_SET_VERSION,
+    active: activeIndex,
+    scenarios: scenarios.map((entry) => ({ label: entry.label, input: serializeScenarioInput(entry.input) })),
+  };
+  const params = new URLSearchParams();
+  // `set` percent-encodes the JSON value, so the returned string has no raw `&`/`=` to confuse
+  // the shell's `new URLSearchParams(...)` re-parse.
+  params.set("scenarios", JSON.stringify(payload));
+  return params.toString();
+}
+
+export function scenarioSetFromSearch(searchString, bootstrap) {
+  const packed = new URLSearchParams(searchString).get("scenarios");
+  if (packed != null) {
+    const decoded = decodeScenarioSet(packed, bootstrap);
+    if (decoded) return decoded;
+  }
+  // Any pre-multi link (or a malformed `?scenarios=`) decodes as a 1-element set.
+  const entry = makeScenarioEntry(productInputFromSearch(searchString, bootstrap), defaultScenarioLabel(0));
+  return { scenarios: [entry], activeId: entry.id };
+}

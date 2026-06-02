@@ -255,7 +255,7 @@ function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttr
       </div>
       {rows.length > 0 ? (
         <MetricFanChart
-          rows={rows}
+          series={[{ id: "mark", label: title, color: "#1d4ed8", rows, isActive: true }]}
           metric={metric}
           metricScale={metricScale}
           percentiles={percentiles}
