@@ -511,6 +511,7 @@ py_test(
         "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
+    main = "mockups/render_mockups_test.py",
     deps = [
         "//util:playwright",
         "//util/bazel:runfiles",
