@@ -6,6 +6,7 @@ metadata:
   annotations:
     description: Agent RBAC for harbor namespace. Lightweight — only RoleBindings. Depends on namespace existing + claude-rbac for ClusterRoles.
 spec:
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/harbor/agent-rbac
   prune: true
