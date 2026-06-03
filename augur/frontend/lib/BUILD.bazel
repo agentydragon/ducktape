@@ -38,3 +38,9 @@ js_library(
     name = "format",
     srcs = ["format.ts"],
 )
+
+js_library(
+    name = "toast",
+    srcs = ["toast.ts"],
+    deps = ["//:node_modules/@mantine/notifications"],
+)

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 
 import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
 import { fmtMetricValue } from "./lib/chart.ts";
+import { toastFetchError } from "./lib/toast.ts";
 
 import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionHistogram } from "./histogram.tsx";
@@ -33,13 +33,6 @@ import {
   selectedRolloutEvents,
   visibleMetricOptions,
 } from "./data_helpers.ts";
-
-// Surface a failed backend fetch as a red toast instead of letting it fail quietly — a 502/timeout
-// on a projection should be visible, not just leave the chart showing stale data. A stable `id` per
-// source coalesces repeated failures into one toast rather than stacking a new one per retry.
-function toastFetchError(id, title, error) {
-  notifications.show({ id, color: "red", title, message: error?.message || String(error), autoClose: 8000 });
-}
 
 function RolloutResultsPanel({
   visibleMetrics,

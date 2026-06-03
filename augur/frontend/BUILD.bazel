@@ -180,6 +180,7 @@ js_library(
         ":skeleton",
         "//:node_modules/react",
         "//augur/frontend/lib:format",
+        "//augur/frontend/lib:toast",
     ],
 )
 
@@ -207,6 +208,7 @@ js_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//augur/frontend/lib:format",
+        "//augur/frontend/lib:toast",
     ],
 )
 
@@ -226,10 +228,10 @@ js_library(
         ":scenario_editor",
         ":skeleton",
         "//:node_modules/@mantine/core",
-        "//:node_modules/@mantine/notifications",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:format",
+        "//augur/frontend/lib:toast",
     ],
 )
 

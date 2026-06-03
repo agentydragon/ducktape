@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.ts";
 import { fmtPct, fmtVolume } from "./lib/format.ts";
+import { toastFetchError } from "./lib/toast.ts";
 import { MetricFanChart } from "./fan_chart.tsx";
 import { RolloutResultsSkeleton } from "./skeleton.tsx";
 import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.ts";
@@ -462,6 +463,7 @@ export function CalibrationWorkspace({
           if (error?.name === "AbortError") return;
           setResponse(null);
           setRunError(error?.message || String(error));
+          toastFetchError("calibration-run", "Calibration run failed", error);
         });
     }, 120);
     return () => {

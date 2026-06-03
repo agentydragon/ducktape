@@ -5,6 +5,7 @@ import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
 import { buildSummaryCsv, buildTransactionsCsv } from "./budget_csv.ts";
 import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments.ts";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
+import { toastFetchError } from "./lib/toast.ts";
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
 // income render in their own panels (or, for inflow, alongside their family's expenses).
@@ -619,6 +620,7 @@ export function BudgetWorkspace() {
       .catch((error) => {
         if (error?.name === "AbortError") return;
         setSnapshotError(error?.message || String(error));
+        toastFetchError("budget-snapshot", "Budget snapshot failed", error);
       });
     return () => controller.abort();
   }, [windowSpec]);
@@ -633,6 +635,7 @@ export function BudgetWorkspace() {
       .catch((error) => {
         if (error?.name === "AbortError") return;
         setBucketTxError(error?.message || String(error));
+        toastFetchError("budget-transactions", "Transactions failed", error);
       });
     return () => controller.abort();
   }, [selectedBucketId, windowSpec]);
