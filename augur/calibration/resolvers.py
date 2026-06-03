@@ -26,10 +26,11 @@ company. Pass the issuer through ``trajectories_from_bundle``.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
-from enum import Enum
+from enum import Enum, StrEnum
 
 import numpy as np
 import numpy.typing as npt
@@ -149,6 +150,119 @@ def resolve_market(traj: RolloutTrajectory, *, mapping_kind: str, params: dict[s
                 by_month=traj.month_on_or_before(date.fromisoformat(str(params["by_date"]))),
             )
     raise ValueError(f"mapping_kind {mapping_kind!r} is not cleanly resolvable against augur (surface it instead)")
+
+
+class Direction(StrEnum):
+    """Which side of a threshold resolves a market YES.
+
+    `ABOVE` is `value >= threshold`; `BELOW` is `value < threshold`. The two are
+    exact complements, so a YES/NO threshold and a half-open `[low, high)` bucket
+    family tile the line without gaps or overlap.
+    """
+
+    ABOVE = "above"
+    BELOW = "below"
+
+
+@dataclass(frozen=True)
+class ResolutionCounts:
+    """Per-rollout YES/NO/UNRESOLVED tally for one market across all rollouts.
+
+    The common currency both the PE per-trajectory loop and the vectorized macro
+    resolvers reduce to, so a single row builder turns either into a scored row.
+    """
+
+    yes: int
+    no: int
+    unresolved: int
+
+    @property
+    def n_resolved(self) -> int:
+        return self.yes + self.no
+
+    @property
+    def p_model(self) -> float | None:
+        """YES share among resolved rollouts, or None when none resolved."""
+        return self.yes / self.n_resolved if self.n_resolved else None
+
+    @classmethod
+    def from_resolutions(cls, resolutions: Iterator[Resolution]) -> ResolutionCounts:
+        counts = Counter(resolutions)
+        return cls(counts[Resolution.YES], counts[Resolution.NO], counts[Resolution.UNRESOLVED])
+
+
+def level_threshold_counts(
+    matrix: npt.NDArray[np.float64], *, threshold: float, direction: Direction, at_month: int, horizon_months: int
+) -> ResolutionCounts:
+    """Point-in-time threshold on a level series, vectorized over rollouts.
+
+    YES iff the series value AT `at_month` is on `direction`'s side of `threshold`
+    (e.g. "S&P 500 >= 7500 on 2026-12-31"). Every rollout resolves when `at_month`
+    is within the simulated horizon; an `at_month` beyond the horizon (or before
+    month 0) is UNRESOLVED for all rollouts. `matrix` is `(rollout, month)`.
+    """
+    n = int(matrix.shape[0])
+    if at_month < 0 or at_month > horizon_months:
+        return ResolutionCounts(yes=0, no=0, unresolved=n)
+    column = matrix[:, at_month]
+    yes_mask = column >= threshold if direction is Direction.ABOVE else column < threshold
+    yes = int(np.count_nonzero(yes_mask))
+    return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)
+
+
+def inflation_yoy_counts(
+    matrix: npt.NDArray[np.float64],
+    *,
+    threshold: float,
+    direction: Direction,
+    at_month: int,
+    horizon_months: int,
+    window_months: int = 12,
+) -> ResolutionCounts:
+    """Trailing year-over-year change of an index series, vectorized over rollouts.
+
+    `yoy = value[at_month] / value[at_month - window] - 1`, compared to `threshold`
+    (a fraction, e.g. 0.03 for 3%). The index path starts at `as_of` (month 0), so a
+    trailing window reaching before month 0 is NOT covered by the sample and the
+    whole market is UNRESOLVED — only `at_date >= as_of + window` is scoreable
+    without a pre-`as_of` index anchor (see the plan's gotchas).
+    """
+    n = int(matrix.shape[0])
+    if at_month - window_months < 0 or at_month > horizon_months:
+        return ResolutionCounts(yes=0, no=0, unresolved=n)
+    yoy = matrix[:, at_month] / matrix[:, at_month - window_months] - 1.0
+    yes_mask = yoy >= threshold if direction is Direction.ABOVE else yoy < threshold
+    yes = int(np.count_nonzero(yes_mask))
+    return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)
+
+
+def bucket_model_counts(
+    matrix: npt.NDArray[np.float64],
+    *,
+    lows: list[float | None],
+    highs: list[float | None],
+    at_month: int,
+    horizon_months: int,
+) -> npt.NDArray[np.int64] | None:
+    """Per-bucket rollout counts at `at_month` for a categorical family, vectorized.
+
+    Bucket `i` is the half-open interval `[lows[i], highs[i])`; `None` means an
+    open end (`-inf` / `+inf`). Returns `None` (unscoreable) when `at_month` is
+    outside the simulated horizon. For a tiling family the counts sum to the
+    rollout count; rollouts outside every bucket are simply uncounted.
+    """
+    if at_month < 0 or at_month > horizon_months:
+        return None
+    column = matrix[:, at_month]
+    counts = np.zeros(len(lows), dtype=np.int64)
+    for i, (low, high) in enumerate(zip(lows, highs, strict=True)):
+        mask = np.ones(column.shape, dtype=bool)
+        if low is not None:
+            mask &= column >= low
+        if high is not None:
+            mask &= column < high
+        counts[i] = int(np.count_nonzero(mask))
+    return counts
 
 
 def trajectories_from_bundle(

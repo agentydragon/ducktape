@@ -41,6 +41,39 @@ are deleted and the CI prefix-guard is in place.
 - [ ] Phase 4 — API wire (`asset_id`, `spend_index`) typed; delete `wire_id`/`parse_*`;
       add CI prefix-guard
 
+## Whole-model calibration
+
+Lift calibration from one PE issuer ("a stock") to the whole augur joint model,
+scoring prediction markets across macro channels too (S&P, inflation, …) as
+marginals. Design + gotchas: <augur/plans/whole_model_calibration.md>. v0
+measures per-market only — no aggregate loss, no fitting.
+
+- [ ] **Slice 1 — macro markets in the calibration view.**
+  - [ ] Vectorized macro resolvers over the `(rollout, month)` channel matrix
+        (no per-rollout object): `level_at_date` (point-in-time threshold),
+        `inflation_yoy` (12-month change), both returning `ResolutionCounts`,
+        with unit tests. Keep `RolloutTrajectory` for the PE path.
+  - [ ] Multinomial bucket families: `BucketFamily` catalog type + categorical
+        `D_KL(market ‖ model)` scoring (per-bucket p_market/p_model), with tests.
+  - [ ] Anchor macro series to live spot at `as_of` (catalog `anchors`).
+  - [ ] Thread macro scoring through `run_calibration` / API `/api/calibration/run`
+        / `calibration_report` CLI: sample the macro level series the catalog
+        needs, intersect with `emittable_level_keys` (surface unmodeled).
+  - [ ] Seed the example catalog with the initial S&P (Manifold + Kalshi bucket
+        family) and CPI (Kalshi) markets.
+  - [ ] Frontend: render categorical bucket families; macro Bernoulli markets
+        flow through the existing clean table.
+- [ ] **Typed `MarketMapping`.** Replace loose `mapping_kind: str` +
+      `mapping_params: dict` with a discriminated union (issuer-event / level /
+      inflation); make invalid bindings unrepresentable. Atomic catalog rewrite.
+- [ ] **Drop `CalibrationCatalogConfig.issuer`.** Catalog markets self-describe
+      their target; the run covers the union of referenced issuers/series.
+      Atomically switch gaffer's config to the new shape.
+- [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
+      (today's `mark_fan` is PE-only).
+- [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
+      rollups of per-market KL once the weighting policy is decided.
+
 ## Exogenous Models & Evidence
 
 - [ ] **Plaid-fed portfolio granularity.** v0 Plaid portfolio import maps configured

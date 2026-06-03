@@ -26,22 +26,42 @@ from datetime import date
 
 import httpx
 import numpy as np
+import numpy.typing as npt
 from polymarket.errors import PolymarketError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from statsmodels.stats.proportion import proportion_confint
 
-from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog, SurfacedMarket
+from augur.calibration.catalog import (
+    LEVEL_MAPPING_KINDS,
+    BucketFamily,
+    CorrelateMarket,
+    ExactMarket,
+    MarketCatalog,
+    SurfacedMarket,
+)
 from augur.calibration.platform import Market, Platform, PriceClient
 from augur.calibration.resolvers import (
+    Direction,
     Resolution,
+    ResolutionCounts,
     RolloutTrajectory,
+    bucket_model_counts,
+    inflation_yoy_counts,
+    level_threshold_counts,
+    months_after,
     resolve_ipo_by_date,
     resolve_market,
     trajectories_from_bundle,
 )
-from augur.model.exogenous import ExogenousSamplingRequest, Sampler
+from augur.model.exogenous import (
+    ExogenousSamplingRequest,
+    Sampler,
+    SampledExogenousBundle,
+    anchor_sampled_series_levels,
+    level_keys_in_bundle,
+)
 from augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
-from augur.model.series import IssuerId
+from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +101,23 @@ def kl_bits_market_vs_model(p_market: float, p_model: float) -> float:
     return max(0.0, total)
 
 
+def kl_bits_categorical(p_market: list[float], p_model: list[float]) -> float:
+    """`D_KL(market ‖ model)` in bits for two categorical (multinomial) forecasts.
+
+    The bucket-family generalization of `kl_bits_market_vs_model`: the live per-bucket
+    market prices (normalized to a categorical) are the reference, the model's per-bucket
+    rollout shares the candidate. Model probabilities are clamped off 0 (an empty model
+    bucket would otherwise send the divergence to +inf); the `0·log0 = 0` convention
+    handles empty market buckets. Both lists must be normalized and same-length.
+    """
+    eps = 1e-6
+    total = 0.0
+    for pm, qm in zip(p_market, p_model, strict=True):
+        if pm > 0.0:
+            total += pm * math.log2(pm / max(eps, qm))
+    return max(0.0, total)
+
+
 class AugurContext(BaseModel):
     """A related (NOT equal) augur signal surfaced next to a market that isn't scored."""
 
@@ -98,6 +135,9 @@ class CleanRow(BaseModel):
     question: str
     url: str
     platform: str
+    # Which model channel scored this market: a PE issuer id, or a level-series wire id
+    # ("sp500", "inflation"). `= None` keeps it optional on the exported wire schema.
+    channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
     ci95: tuple[float, float]
@@ -127,6 +167,35 @@ class SurfacedRow(BaseModel):
     volume_unit: str | None = None
 
 
+class CategoricalBucket(BaseModel):
+    """One bucket of a scored categorical family: its live (normalized) market share vs the model's."""
+
+    label: str
+    market_id: str
+    low: float | None = None
+    high: float | None = None
+    p_market: float
+    p_model: float | None = None  # None when the family's `at_date` is beyond the sampled horizon
+
+
+class CategoricalRow(BaseModel):
+    """A mutually-exclusive bucket family scored as one multinomial `D_KL(market ‖ model)`.
+
+    `p_model` per bucket and `kl_bits` are None when the family's series isn't emitted by the
+    preset (unmodeled) or its `at_date` exceeds the horizon; the live per-bucket prices still
+    surface so the view shows the market even when augur can't score it.
+    """
+
+    family_id: str
+    question: str
+    platform: str
+    channel: str
+    at_date: date
+    n_resolved: int  # rollouts falling in some bucket at `at_date` (0 when unscored)
+    kl_bits: float | None = None
+    buckets: list[CategoricalBucket]
+
+
 class CalibrationResult(BaseModel):
     issuer: str
     as_of: date
@@ -134,6 +203,7 @@ class CalibrationResult(BaseModel):
     rollout_count: int
     clean: list[CleanRow]
     surfaced: list[SurfacedRow]
+    categorical: list[CategoricalRow] = Field(default_factory=list)
 
 
 class MonthBand(BaseModel):
@@ -152,28 +222,152 @@ class MarkFan(BaseModel):
     months: list[MonthBand]
 
 
-def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], live: Market) -> CleanRow:
+def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, channel: str | None) -> CleanRow:
     p_market = live.require_probability()
-    counts = Counter(
-        resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
-    )
-    yes, no, unresolved = counts[Resolution.YES], counts[Resolution.NO], counts[Resolution.UNRESOLVED]
-    n = yes + no
-    p_model = yes / n if n else None
+    p_model = counts.p_model
     return CleanRow(
         market_id=market.market_id,
         question=market.question,
         url=live.url,
         platform=market.platform,
+        channel=channel,
         p_market=p_market,
         p_model=p_model,
-        ci95=wilson_interval(yes, n),
-        n_resolved=n,
-        unresolved=unresolved,
+        ci95=wilson_interval(counts.yes, counts.n_resolved),
+        n_resolved=counts.n_resolved,
+        unresolved=counts.unresolved,
         kl_bits=kl_bits_market_vs_model(p_market, p_model) if p_model is not None else None,
         volume=live.volume,
         volume_unit=live.volume_unit,
     )
+
+
+class _Unmodeled:
+    """Sentinel: a macro market binds a level series this preset does not emit."""
+
+
+def _exact_market_counts(
+    market: ExactMarket,
+    *,
+    trajectories: list[RolloutTrajectory],
+    level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
+    as_of: date,
+    horizon_months: int,
+) -> tuple[ResolutionCounts, str | None] | _Unmodeled:
+    """Per-rollout tally + channel tag for one exact market.
+
+    PE event kinds read the issuer trajectories (per-rollout loop); macro kinds
+    read the anchored level matrix (vectorized). Returns `_Unmodeled` when a macro
+    market's series isn't emitted by the active preset so the caller can surface it.
+    """
+    if market.mapping_kind not in LEVEL_MAPPING_KINDS:
+        counts = ResolutionCounts.from_resolutions(
+            resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
+        )
+        return counts, None
+    params = market.mapping_params
+    series = str(params["series"])
+    matrix = level_paths.get(parse_level_series_key(series))
+    if matrix is None:
+        return _Unmodeled()
+    at_month = months_after(as_of, date.fromisoformat(str(params["at_date"])))
+    direction = Direction(str(params["direction"]))
+    threshold = float(params["threshold"])  # type: ignore[arg-type]
+    if market.mapping_kind == "inflation_yoy":
+        counts = inflation_yoy_counts(
+            matrix, threshold=threshold, direction=direction, at_month=at_month, horizon_months=horizon_months
+        )
+    else:  # level_at_date
+        counts = level_threshold_counts(
+            matrix, threshold=threshold, direction=direction, at_month=at_month, horizon_months=horizon_months
+        )
+    return counts, series
+
+
+def _categorical_row(
+    family: BucketFamily,
+    *,
+    level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
+    live_prices: list[float],
+    as_of: date,
+    horizon_months: int,
+) -> CategoricalRow:
+    """Score a bucket family as one multinomial `D_KL(market ‖ model)`.
+
+    `live_prices` are the per-bucket YES probabilities (same order as
+    `family.buckets`); they're normalized into the market categorical. The model
+    categorical is the per-bucket rollout share at `at_date`; both `p_model` and
+    `kl_bits` are None when the series is unmodeled or `at_date` is beyond the horizon.
+    """
+    total = sum(live_prices)
+    p_market = [price / total for price in live_prices] if total > 0 else [0.0 for _ in live_prices]
+    matrix = level_paths.get(parse_level_series_key(str(family.series)))
+    model_counts = (
+        None
+        if matrix is None
+        else bucket_model_counts(
+            matrix,
+            lows=[b.low for b in family.buckets],
+            highs=[b.high for b in family.buckets],
+            at_month=months_after(as_of, family.at_date),
+            horizon_months=horizon_months,
+        )
+    )
+    n_resolved = int(model_counts.sum()) if model_counts is not None else 0
+    p_model = [int(c) / n_resolved for c in model_counts] if model_counts is not None and n_resolved else None
+    kl_bits = kl_bits_categorical(p_market, p_model) if p_model is not None else None
+    buckets = [
+        CategoricalBucket(
+            label=member.label,
+            market_id=member.market_id,
+            low=member.low,
+            high=member.high,
+            p_market=p_market[i],
+            p_model=p_model[i] if p_model is not None else None,
+        )
+        for i, member in enumerate(family.buckets)
+    ]
+    return CategoricalRow(
+        family_id=family.family_id,
+        question=family.question,
+        platform=family.platform,
+        channel=str(family.series),
+        at_date=family.at_date,
+        n_resolved=n_resolved,
+        kl_bits=kl_bits,
+        buckets=buckets,
+    )
+
+
+def build_anchored_level_paths(
+    sampled: SampledExogenousBundle,
+    *,
+    anchors: Mapping[str, float],
+    requested_wire_ids: set[str],
+    rollout_count: int,
+    horizon_months: int,
+) -> dict[LevelSeriesKey, npt.NDArray[np.float64]]:
+    """Extract the catalog's macro series as anchored `(rollout, month)` matrices.
+
+    Only series the preset actually emits are returned (others are left out so the
+    caller surfaces those markets as unmodeled). Each emitted series is rescaled so
+    every rollout's month-0 value matches its catalog spot anchor — required for any
+    threshold against a real index to be meaningful. A referenced+emitted series with
+    no anchor is a catalog error and raises.
+    """
+    emitted = level_keys_in_bundle(sampled)
+    keys = {parse_level_series_key(wire) for wire in requested_wire_ids} & emitted
+    anchor_map: dict[LevelSeriesKey, float] = {}
+    for key in keys:
+        if key.wire_id not in anchors:
+            raise ValueError(
+                f"catalog scores level series {key.wire_id!r} but metadata.anchors has no spot value for it"
+            )
+        anchor_map[key] = anchors[key.wire_id]
+    anchored = anchor_sampled_series_levels(sampled, level_series_anchors=anchor_map) if anchor_map else sampled
+    return {
+        key: anchored.level_matrix(key, rollout_count=rollout_count, horizon_months=horizon_months) for key in keys
+    }
 
 
 def _augur_context(market: SurfacedMarket, trajectories: list[RolloutTrajectory]) -> AugurContext | None:
@@ -255,6 +449,22 @@ def sample_private_equity_bundle(
     return model.sample(request).private_equity
 
 
+def _unmodeled_row(market: ExactMarket, live: Market) -> SurfacedRow:
+    """Surface a macro market whose level series the active preset does not emit."""
+    series = str(market.mapping_params["series"])
+    return SurfacedRow(
+        market_id=market.market_id,
+        question=market.question,
+        url=live.url,
+        platform=market.platform,
+        mappability="unmodeled",
+        p_market=live.require_probability(),
+        reason=f"level series {series!r} is not emitted by this model preset",
+        volume=live.volume,
+        volume_unit=live.volume_unit,
+    )
+
+
 def run_calibration(
     model: Sampler,
     catalog: MarketCatalog,
@@ -264,14 +474,18 @@ def run_calibration(
     rollout_seeds: tuple[int, ...],
     price_clients: Mapping[Platform, PriceClient],
     bundle: PrivateEquityBundle | None = None,
+    level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]] | None = None,
 ) -> CalibrationResult:
     """Score an exogenous model's rollouts against a curated prediction-market catalog.
 
-    Samples `model` for `issuer` over `horizon_months`, resolves every `exact`
-    market apples-to-apples, and surfaces the rest. Each market's `p_market` is fetched
-    LIVE per market via the platform-appropriate client from `price_clients`
-    (a real client by default, whose TTL cache absorbs the repeated reads of rapid
-    auto-refreshes; tests inject hermetic clients).
+    Samples `model`'s PE bundle for `issuer` over `horizon_months`, resolves every PE
+    `exact` market apples-to-apples, and surfaces the rest. When `level_paths` is given
+    (anchored `(rollout, month)` matrices per `LevelSeriesKey`, from
+    `build_anchored_level_paths`), macro `exact` markets and `bucket_families` are scored
+    against the whole model's level channels too — a market binding an unmodeled series
+    surfaces as `unmodeled` rather than failing. Each market's `p_market` is fetched LIVE
+    per market via the platform-appropriate client from `price_clients` (a real client by
+    default, whose TTL cache absorbs rapid auto-refreshes; tests inject hermetic clients).
 
     Pass a pre-sampled `bundle` (from `sample_private_equity_bundle` with the same
     issuer/horizon/seeds) to reuse one rollout for both scoring and a `mark_fan`; when
@@ -279,6 +493,7 @@ def run_calibration(
     """
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
+    paths = dict(level_paths) if level_paths is not None else {}
     if bundle is None:
         bundle = sample_private_equity_bundle(
             model, issuer=issuer, horizon_months=horizon_months, rollout_seeds=rollout_seeds
@@ -289,33 +504,54 @@ def run_calibration(
         )
     )
 
-    def _live(market: ExactMarket | SurfacedMarket) -> Market | None:
+    def _live(market_id: str, platform: Platform) -> Market | None:
         # A single broken catalog row (bad market_id) or a transient API hiccup must not 500
         # the entire calibration endpoint -- log + drop just that row instead.
         try:
-            return price_clients[market.platform].get_market(market.market_id)
+            return price_clients[platform].get_market(market_id)
         except _LIVE_FETCH_ERRORS:
-            logger.warning(
-                "dropping calibration row: %s market %r failed to fetch",
-                market.platform,
-                market.market_id,
-                exc_info=True,
-            )
+            logger.warning("dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True)
             return None
+
+    clean: list[CleanRow] = []
+    surfaced: list[SurfacedRow] = []
+    for market in catalog.exact_markets():
+        live = _live(market.market_id, market.platform)
+        if live is None:
+            continue
+        outcome = _exact_market_counts(
+            market, trajectories=trajectories, level_paths=paths, as_of=as_of, horizon_months=horizon_months
+        )
+        if isinstance(outcome, _Unmodeled):
+            surfaced.append(_unmodeled_row(market, live))
+        else:
+            counts, channel = outcome
+            clean.append(_clean_row(market, counts, live, channel=channel))
+    for market in catalog.surfaced_markets():
+        if (live := _live(market.market_id, market.platform)) is not None:
+            surfaced.append(_surfaced_row(market, trajectories, live))
+
+    categorical: list[CategoricalRow] = []
+    for family in catalog.bucket_families:
+        prices = [_live(member.market_id, family.platform) for member in family.buckets]
+        if any(live is None for live in prices):
+            continue  # a bucket failed to fetch -> can't form a categorical; drop the whole family
+        categorical.append(
+            _categorical_row(
+                family,
+                level_paths=paths,
+                live_prices=[live.require_probability() for live in prices if live is not None],
+                as_of=as_of,
+                horizon_months=horizon_months,
+            )
+        )
 
     return CalibrationResult(
         issuer=issuer,
         as_of=as_of,
         horizon_months=horizon_months,
         rollout_count=rollout_count,
-        clean=[
-            _clean_row(market, trajectories, live)
-            for market in catalog.exact_markets()
-            if (live := _live(market)) is not None
-        ],
-        surfaced=[
-            _surfaced_row(market, trajectories, live)
-            for market in catalog.surfaced_markets()
-            if (live := _live(market)) is not None
-        ],
+        clean=clean,
+        surfaced=surfaced,
+        categorical=categorical,
     )

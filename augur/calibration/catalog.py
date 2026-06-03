@@ -104,6 +104,12 @@ class CatalogMetadata(BaseModel):
 
     as_of: date
     augur_model_as_of: date | None = None
+    # Live spot value of each macro level series at `model_anchor_date`, keyed by the
+    # series wire id ("sp500", "inflation"). Macro markets are scored against the
+    # sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
+    # meaningless unless month 0 of the path is today's real index level. Refreshed
+    # alongside the catalog (data, not model).
+    anchors: dict[str, float] = Field(default_factory=dict)
 
     @property
     def model_anchor_date(self) -> date:
@@ -177,12 +183,60 @@ class UnmappableMarket(_MarketBase):
 SurfacedMarket = CorrelateMarket | UnmappableMarket
 MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(discriminator="mappability")]
 
+# Macro `mapping_kind`s resolved against a level-series `(rollout, month)` matrix rather than the
+# PE bundle. Their `mapping_params` carry a `series` wire id ("sp500", "inflation"). Event PE kinds
+# (`ipo_by_date`, `pre_ipo_failure`, `valuation_by_date`) read the issuer trajectory instead.
+LEVEL_MAPPING_KINDS = frozenset({"level_at_date", "inflation_yoy"})
+
+
+# ---------------------------------------------------------------------------
+# Categorical (multinomial) bucket families
+# ---------------------------------------------------------------------------
+
+
+class BucketMember(BaseModel):
+    """One mutually-exclusive bucket of a categorical family: a half-open `[low, high)` interval.
+
+    `low=None` is an open lower end (`-inf`, the platform's "below X" bucket);
+    `high=None` is an open upper end (`+inf`, the "above X" bucket). `market_id`
+    is the platform-native id of the bucket's own binary market (each bucket is a
+    separately-priced market on the platform).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_id: str
+    label: str
+    low: float | None = None
+    high: float | None = None
+
+
+class BucketFamily(BaseModel):
+    """A family of mutually-exclusive buckets over one level series at a single date.
+
+    Scored as a categorical: each bucket's live binary price is normalized into a
+    market categorical, the model categorical is the fraction of rollouts landing
+    in each bucket at `at_date`, and the family carries one multinomial
+    `D_KL(market ‖ model)`. The buckets should tile the line; the engine does not
+    require it but uncovered rollouts are simply uncounted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str
+    question: str
+    platform: Platform
+    series: str  # level-series wire id ("sp500", "inflation")
+    at_date: date
+    buckets: list[BucketMember] = Field(min_length=2)
+
 
 class MarketCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metadata: CatalogMetadata
     markets: list[MarketSpec]
+    bucket_families: list[BucketFamily] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> MarketCatalog:
@@ -195,3 +249,11 @@ class MarketCatalog(BaseModel):
     def surfaced_markets(self) -> list[SurfacedMarket]:
         """Markets shown with their price + reason but never scored (correlate / unmappable)."""
         return [market for market in self.markets if not isinstance(market, ExactMarket)]
+
+    def referenced_level_series(self) -> set[str]:
+        """Wire ids of every level series any macro market / bucket family scores against."""
+        series = {str(family.series) for family in self.bucket_families}
+        for market in self.exact_markets():
+            if market.mapping_kind in LEVEL_MAPPING_KINDS:
+                series.add(str(market.mapping_params["series"]))
+        return series

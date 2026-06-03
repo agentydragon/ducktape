@@ -9,8 +9,12 @@ import numpy.typing as npt
 import pytest_bazel
 
 from augur.calibration.resolvers import (
+    Direction,
     Resolution,
     RolloutTrajectory,
+    bucket_model_counts,
+    inflation_yoy_counts,
+    level_threshold_counts,
     resolve_ipo_by_date,
     resolve_market,
     resolve_pre_ipo_failure,
@@ -111,6 +115,46 @@ def test_resolve_market_dispatch_valuation_by_date() -> None:
         _traj(horizon=120), mapping_kind="valuation_by_date", params={"threshold_usd": 1e12, "by_date": "2027-01-01"}
     )
     assert off is Resolution.UNRESOLVED
+
+
+def test_level_threshold_counts_point_in_time() -> None:
+    # 4 rollouts, S&P at month 7 = [7000, 7600, 8000, 5000]; threshold 7500 ABOVE -> 2 YES.
+    matrix = np.zeros((4, 13), dtype=np.float64)
+    matrix[:, 7] = [7000.0, 7600.0, 8000.0, 5000.0]
+    above = level_threshold_counts(matrix, threshold=7500.0, direction=Direction.ABOVE, at_month=7, horizon_months=12)
+    assert (above.yes, above.no, above.unresolved) == (2, 2, 0)
+    assert above.p_model == 0.5
+    # BELOW is the exact complement.
+    below = level_threshold_counts(matrix, threshold=7500.0, direction=Direction.BELOW, at_month=7, horizon_months=12)
+    assert (below.yes, below.no) == (2, 2)
+    # at_month past the simulated horizon -> every rollout UNRESOLVED (no p_model).
+    beyond = level_threshold_counts(matrix, threshold=7500.0, direction=Direction.ABOVE, at_month=99, horizon_months=12)
+    assert (beyond.yes, beyond.no, beyond.unresolved) == (0, 0, 4)
+    assert beyond.p_model is None
+
+
+def test_inflation_yoy_counts_window() -> None:
+    # index grows 100 -> 103.5 over 12 months (3.5% YoY) for all rollouts; threshold 3% ABOVE -> all YES.
+    matrix = np.ones((3, 13), dtype=np.float64) * 100.0
+    matrix[:, 12] = 103.5
+    yes = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=12, horizon_months=12)
+    assert (yes.yes, yes.no) == (3, 0)
+    # A trailing window reaching before month 0 (as_of) is not covered by the sample -> UNRESOLVED.
+    early = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=6, horizon_months=12)
+    assert (early.yes, early.no, early.unresolved) == (0, 0, 3)
+
+
+def test_bucket_model_counts_tile() -> None:
+    # value at month 5 = [50, 150, 250, 950]; buckets (-inf,100),[100,900),[900,+inf) -> [1,2,1].
+    matrix = np.zeros((4, 13), dtype=np.float64)
+    matrix[:, 5] = [50.0, 150.0, 250.0, 950.0]
+    counts = bucket_model_counts(
+        matrix, lows=[None, 100.0, 900.0], highs=[100.0, 900.0, None], at_month=5, horizon_months=12
+    )
+    assert counts is not None
+    assert list(counts) == [1, 2, 1]
+    # Beyond the horizon -> unscoreable (None).
+    assert bucket_model_counts(matrix, lows=[None], highs=[None], at_month=99, horizon_months=12) is None
 
 
 def test_resolve_market_refuses_unmodeled_kind() -> None:
