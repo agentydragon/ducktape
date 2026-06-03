@@ -378,6 +378,18 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "profile_rollout",
+    srcs = ["profile_rollout.py"],
+    main_module = "augur.sim.profile_rollout",
+    deps = [
+        ":bench_scenario",
+        ":locations",
+        ":scenario",
+        ":simulate",
+    ],
+)
+
 py_test(
     name = "bench_test",
     size = "medium",
