@@ -4,9 +4,11 @@ agents:
     role: primary_owner
 default_rollout_samples: 8
 max_rollout_samples: 1000000
-# Tests request horizons up to 120 months; capping the always-roll-out-max length here keeps the
-# suite from simulating the full 100-year wire ceiling on every product service test.
-max_horizon_months: 120
+# Cap the always-roll-out-max length so the suite doesn't simulate the full 100-year wire ceiling on
+# every product service test. Must stay >= the largest horizon/lifecycle-event month any test uses
+# (the visual test drives `?h=240` with a property sale at month 120), since the sim always runs to
+# this max before truncating.
+max_horizon_months: 240
 locations:
   - location_id: location_a
     label: Location A

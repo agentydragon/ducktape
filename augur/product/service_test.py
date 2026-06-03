@@ -138,7 +138,7 @@ def scenario_key() -> ScenarioKey:
 
 
 def test_metric_fan_truncates_one_cached_max_horizon_rollout(
-    product: service.ProductService, counting_model: CountingModel
+    product: service.ProductService, counting_model: CountingModel, augur_config: Config
 ) -> None:
     """A shorter requested horizon reuses the single max-horizon simulation and truncates it: the
     shorter fan is an exact prefix of the longer one, terminal is taken at the truncated endpoint,
@@ -157,8 +157,8 @@ def test_metric_fan_truncates_one_cached_max_horizon_rollout(
     short = product.metric_fan(fan_request(2))
     long = product.metric_fan(fan_request(5))
 
-    # One simulation, run at the fixture's server max horizon (120) — not the requested 2 or 5.
-    assert one(counting_model.sample_requests).horizon_months == 120
+    # One simulation, run at the server max horizon — not the requested 2 or 5.
+    assert one(counting_model.sample_requests).horizon_months == augur_config.max_horizon_months
     # horizon h → snapshots 0..h, i.e. h+1 monthly points.
     assert len(set(short.monthly_metric_fan["month_index"])) == 3
     assert len(set(long.monthly_metric_fan["month_index"])) == 6
@@ -172,16 +172,21 @@ def test_metric_fan_truncates_one_cached_max_horizon_rollout(
     assert one(short.terminal_metric_percentiles["value"]) == pytest.approx(short_by_month[2])
 
 
-def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductService) -> None:
+def test_metric_fan_rejects_horizon_above_server_max(
+    product: service.ProductService, augur_config: Config
+) -> None:
     request = MetricFanRequest(
         scenario=ScenarioKey(
-            model_id="current_model", horizon_months=121, monthly_spend_usd=1_000.0, spend_index="none"
+            model_id="current_model",
+            horizon_months=augur_config.max_horizon_months + 1,
+            monthly_spend_usd=1_000.0,
+            spend_index="none",
         ),
         rollout_seeds=(7,),
         metric="net_worth_usd",
         percentiles=(50.0,),
     )
-    with pytest.raises(ValueError, match="exceeds server max 120"):
+    with pytest.raises(ValueError, match=f"exceeds server max {augur_config.max_horizon_months}"):
         product.metric_fan(request)
 
 
