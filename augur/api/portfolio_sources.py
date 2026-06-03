@@ -159,7 +159,6 @@ def _sp500_proxy_holding(
             group.position_id,
             sorted(missing_basis),
         )
-    unit_value_usd = float(group.unit_value_usd)
     return HoldingPositionConfig(
         position_id=group.position_id,
         account_id=group.portfolio_account_id,
@@ -167,16 +166,48 @@ def _sp500_proxy_holding(
         symbol=group.symbol,
         security_kind=group.security_kind,
         value_series=SP500AssetKey(),
-        unit_value_usd=unit_value_usd,
-        lots=(
+        unit_value_usd=float(group.unit_value_usd),
+        lots=_proxy_lots(group, total_value_usd=total_value_usd, total_cost_basis_usd=total_cost_basis_usd),
+    )
+
+
+def _proxy_lots(
+    group: PlaidSp500ProxyGroupConfig, *, total_value_usd: float, total_cost_basis_usd: float
+) -> tuple[HoldingTaxLotConfig, ...]:
+    unit_value_usd = float(group.unit_value_usd)
+    if not group.holding_period_buckets:
+        return (
             HoldingTaxLotConfig(
                 lot_id=f"{group.position_id}_plaid_aggregate",
                 holding_period_months_at_start=int(group.default_holding_period_months_at_start),
                 quantity=total_value_usd / unit_value_usd,
                 cost_basis_usd=total_cost_basis_usd,
             ),
-        ),
-    )
+        )
+    # Distribute the live Plaid aggregate across the calibrated holding-period buckets. Normalize by
+    # the configured fraction sums (validated to ~1.0) so the lot totals still equal the Plaid
+    # snapshot exactly despite rounding in the authored fractions.
+    buckets = group.holding_period_buckets
+    market_value_fraction_sum = sum(bucket.market_value_fraction for bucket in buckets)
+    basis_fractions = [bucket.cost_basis_fraction for bucket in buckets if bucket.cost_basis_fraction is not None]
+    basis_fraction_sum = sum(basis_fractions) if basis_fractions else market_value_fraction_sum
+    lots: list[HoldingTaxLotConfig] = []
+    for bucket in buckets:
+        market_value_weight = bucket.market_value_fraction / market_value_fraction_sum
+        basis_weight = (
+            bucket.cost_basis_fraction / basis_fraction_sum
+            if bucket.cost_basis_fraction is not None
+            else market_value_weight
+        )
+        lots.append(
+            HoldingTaxLotConfig(
+                lot_id=f"{group.position_id}_plaid_{bucket.key}",
+                holding_period_months_at_start=int(bucket.holding_period_months_at_start),
+                quantity=(total_value_usd * market_value_weight) / unit_value_usd,
+                cost_basis_usd=total_cost_basis_usd * basis_weight,
+            )
+        )
+    return tuple(lots)
 
 
 def _holding_value_usd(holding: CurrentHolding) -> float:

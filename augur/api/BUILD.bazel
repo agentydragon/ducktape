@@ -145,6 +145,7 @@ py_test(
         ":portfolio_sources",
         "//augur/product:asset_key",
         "//plaid_utils:read_model",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
