@@ -280,12 +280,30 @@ def _wait_for_scenario_comparison(page: Page) -> None:
     _wait_for_product_chart_geometry(page)
 
 
+def _show_candles(page: Page) -> None:
+    """Switch the rollout chart from fans to candles (the per-checkpoint box-and-whisker view) and
+    wait for all three scenarios' candles to render."""
+    page.locator("[data-product-chart-mode-toggle]").get_by_text("Candles", exact=True).click()
+    page.locator("[data-product-candle-series]").first.wait_for(state="visible", timeout=30_000)
+    page.wait_for_function(
+        '() => new Set([...document.querySelectorAll("[data-product-candle-series]")]'
+        '.map((node) => node.getAttribute("data-product-candle-series"))).size >= 3',
+        timeout=30_000,
+    )
+
+
 VISUAL_CASES = (
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
     VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
+    VisualCase(
+        name="product_scenario_candles",
+        path=_COMPARISON_URL,
+        wait_ready=_wait_for_scenario_comparison,
+        interact=_show_candles,
+    ),
     VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )
 

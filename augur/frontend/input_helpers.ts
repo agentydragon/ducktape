@@ -348,7 +348,7 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 // Per-scenario fan colors. Index 0 is the Base series (the existing single-scenario blue); variants
 // take the rest. Deliberately red-free: red (`FAILED_ROLLOUT_COLOR`) is reserved for failed
 // rollouts, so a red line never reads as a scenario hue. Blue / teal / violet / gold / cyan.
-export const SCENARIO_COLORS = ["#1d4ed8", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"];
+export const SCENARIO_COLORS = ["#2563eb", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"];
 // Base is series 0; variants share the remaining colors.
 export const MAX_VARIANTS = SCENARIO_COLORS.length - 1;
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { NativeSelect } from "@mantine/core";
+import { NativeSelect, SegmentedControl } from "@mantine/core";
 
 import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
@@ -55,9 +55,11 @@ function RolloutResultsPanel({
   eventSelection,
   rolloutError,
 }) {
+  const [chartMode, setChartMode] = useState("fan");
+  const [candleBucketMonths, setCandleBucketMonths] = useState(6);
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
-      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
         <NativeSelect
           aria-label="Metric to plot"
           value={selectedMetric.value}
@@ -65,6 +67,33 @@ function RolloutResultsPanel({
           classNames={{ input: "augur-tabular min-w-[12rem]" }}
           onChange={(event) => onSelectMetric(event.target.value)}
         />
+        <div className="flex items-center gap-2">
+          <SegmentedControl
+            size="xs"
+            aria-label="Chart style"
+            value={chartMode}
+            data={[
+              { value: "fan", label: "Fans" },
+              { value: "candles", label: "Candles" },
+            ]}
+            onChange={setChartMode}
+            data-product-chart-mode-toggle=""
+          />
+          {chartMode === "candles" && (
+            <SegmentedControl
+              size="xs"
+              aria-label="Candle width"
+              value={String(candleBucketMonths)}
+              data={[
+                { value: "1", label: "1mo" },
+                { value: "3", label: "3mo" },
+                { value: "6", label: "6mo" },
+              ]}
+              onChange={(value) => setCandleBucketMonths(Number(value))}
+              data-product-candle-width-toggle=""
+            />
+          )}
+        </div>
       </div>
       <TerminalDistributionHistogram
         summaries={rolloutSummaries}
@@ -90,6 +119,8 @@ function RolloutResultsPanel({
             hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
             onSelectEventMonth={eventSelection.onSelectEventMonth}
             onHoverEventMonth={eventSelection.onHoverEventMonth}
+            mode={chartMode}
+            candleBucketMonths={candleBucketMonths}
           />
           {selectedRolloutLoading && (
             <div

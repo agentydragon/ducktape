@@ -133,6 +133,97 @@ function FanEventMarker({
   );
 }
 
+// Checkpoint rows for the candle view: one every `bucketMonths` months (mapped to the nearest
+// actual row), always including the horizon end. Deduped so a coarse bucket on a short horizon
+// doesn't draw two candles on the same month.
+function buildCandleCheckpoints(rows, maxMonth, bucketMonths) {
+  const targets = [];
+  for (let month = bucketMonths; month <= maxMonth; month += bucketMonths) targets.push(month);
+  if (targets.length === 0 || targets[targets.length - 1] !== maxMonth) targets.push(maxMonth);
+  const seen = new Set();
+  const checkpoints = [];
+  for (const target of targets) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const row of rows) {
+      const dist = Math.abs(row.monthIndex - target);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = row;
+      }
+    }
+    if (best && !seen.has(best.monthIndex)) {
+      seen.add(best.monthIndex);
+      checkpoints.push(best);
+    }
+  }
+  return checkpoints;
+}
+
+// Candle (box-and-whisker) view: at each checkpoint every scenario draws a candle — a thin P5–P95
+// wick, a translucent P25–P75 box, and a median tick — offset side-by-side so scenarios don't
+// overlap. Candles sit at their true x; their width adapts to the bucket spacing and how many
+// scenarios share each checkpoint, so finer buckets / more scenarios render proportionally thinner.
+function CandleLayer({ series, checkpointRows, rowByMonthBySeries, x, y, bucketMonths, maxMonth, plotWidth, pcts }) {
+  const { outerLow, innerLow, median, innerHigh, outerHigh } = pcts;
+  const spacingPx = (bucketMonths / Math.max(1, maxMonth)) * plotWidth;
+  const cw = Math.max(2, Math.min(16, spacingPx / (series.length + 0.5)));
+  const half = cw * 0.4;
+  return (
+    <>
+      {checkpointRows.map((checkpointRow) => {
+        const gx = x(checkpointRow);
+        return (
+          <g key={checkpointRow.monthIndex}>
+            {series.map((entry, seriesIndex) => {
+              const row = rowByMonthBySeries.get(entry.id)?.get(checkpointRow.monthIndex);
+              if (!row) return null;
+              const yLow = y(row.values.get(outerLow));
+              const yQ1 = y(row.values.get(innerLow));
+              const yMid = y(row.values.get(median));
+              const yQ3 = y(row.values.get(innerHigh));
+              const yHigh = y(row.values.get(outerHigh));
+              if (![yLow, yQ1, yMid, yQ3, yHigh].every(Number.isFinite)) return null;
+              const cx = gx + (seriesIndex - (series.length - 1) / 2) * cw;
+              return (
+                <g key={entry.id} data-product-candle-series={entry.id}>
+                  <line
+                    x1={cx}
+                    x2={cx}
+                    y1={yHigh}
+                    y2={yLow}
+                    stroke={entry.color}
+                    strokeWidth={1.4}
+                    opacity={entry.isActive ? 1 : 0.75}
+                  />
+                  <rect
+                    x={cx - half}
+                    y={Math.min(yQ1, yQ3)}
+                    width={half * 2}
+                    height={Math.max(1, Math.abs(yQ1 - yQ3))}
+                    fill={entry.color}
+                    opacity={entry.isActive ? 0.34 : 0.22}
+                    stroke={entry.color}
+                    strokeWidth={1}
+                  />
+                  <line
+                    x1={cx - cw * 0.46}
+                    x2={cx + cw * 0.46}
+                    y1={yMid}
+                    y2={yMid}
+                    stroke={entry.color}
+                    strokeWidth={entry.isActive ? 2.5 : 2}
+                  />
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
 // `series` is one entry per scenario: `{ id, label, color, rows, isActive }` where `rows` is the
 // metric fan (`{ monthIndex, year, values: Map<percentile, value> }[]`). The selected-rollout
 // overlay and event markers always belong to the active scenario (the caller passes its
@@ -151,6 +242,8 @@ export function MetricFanChart({
   onSelectEventMonth,
   onHoverEventMonth,
   metricScale = "linear",
+  mode = "fan",
+  candleBucketMonths = 6,
 }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
   const [hoveredMonth, setHoveredMonth] = useState(null);
@@ -221,6 +314,15 @@ export function MetricFanChart({
   const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
 
+  // Candle view shares the fan's axes + scales; it just renders box-and-whisker candles at
+  // `bucketMonths`-spaced checkpoints instead of continuous bands. The per-rollout overlay, event
+  // markers, and hover tooltip stay fan-only (they're continuous, not per-checkpoint).
+  const candleMode = mode === "candles";
+  const maxMonth = Math.max(...allRows.map((row) => row.monthIndex), 0);
+  const candleCheckpointRows = candleMode
+    ? buildCandleCheckpoints(activeSeries.rows, maxMonth, candleBucketMonths)
+    : [];
+
   const monthBuckets = new Map();
   for (let index = 0; index < selectedEvents.length; index += 1) {
     const event = selectedEvents[index];
@@ -277,7 +379,12 @@ export function MetricFanChart({
   const hoveredRow = hoveredMonth;
 
   return (
-    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue} data-product-scale={metricScale}>
+    <div
+      className="overflow-x-auto p-4"
+      data-product-fan-chart={metric.chartValue}
+      data-product-scale={metricScale}
+      data-product-chart-mode={mode}
+    >
       {!single && (
         <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs" data-product-fan-legend="">
           {series.map((entry) => (
@@ -302,8 +409,8 @@ export function MetricFanChart({
         aria-label={`${metric.label} probability fan chart`}
         height={svgHeight}
         className="w-full"
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
+        onMouseMove={candleMode ? undefined : handleMouseMove}
+        onMouseLeave={candleMode ? undefined : handleMouseLeave}
       >
         <rect x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} fill="transparent" />
         <FanAxes
@@ -317,62 +424,81 @@ export function MetricFanChart({
           maxYear={maxYear}
           metric={metric}
         />
-        {single ? (
-          <>
-            <polygon points={band(activeSeries.rows, outerHigh, outerLow)} fill="#2563eb" opacity="0.14" />
-            <polygon points={band(activeSeries.rows, innerHigh, innerLow)} fill="#2563eb" opacity="0.22" />
-            <polyline points={line(activeSeries.rows, median)} fill="none" stroke="#1d4ed8" strokeWidth="2.75" />
-            <polyline
-              points={line(activeSeries.rows, outerLow)}
-              fill="none"
-              stroke="#1d4ed8"
-              strokeWidth="1"
-              opacity="0.45"
-            />
-            <polyline
-              points={line(activeSeries.rows, outerHigh)}
-              fill="none"
-              stroke="#1d4ed8"
-              strokeWidth="1"
-              opacity="0.45"
-            />
-          </>
-        ) : (
-          <>
-            {orderedSeries.map((entry) => (
-              <React.Fragment key={`bounds-${entry.id}`}>
-                <polyline
-                  points={line(entry.rows, outerLow)}
-                  fill="none"
-                  stroke={entry.color}
-                  strokeWidth={entry.isActive ? 1.25 : 1}
-                  strokeDasharray="4 3"
-                  opacity={entry.isActive ? 0.6 : 0.4}
-                />
-                <polyline
-                  points={line(entry.rows, outerHigh)}
-                  fill="none"
-                  stroke={entry.color}
-                  strokeWidth={entry.isActive ? 1.25 : 1}
-                  strokeDasharray="4 3"
-                  opacity={entry.isActive ? 0.6 : 0.4}
-                />
-              </React.Fragment>
-            ))}
-            {orderedSeries.map((entry) => (
-              <polyline
-                key={`median-${entry.id}`}
-                data-product-fan-series={entry.id}
-                points={line(entry.rows, median)}
-                fill="none"
-                stroke={entry.color}
-                strokeWidth={entry.isActive ? 2.75 : 2}
-                opacity={entry.isActive ? 1 : 0.85}
-              />
-            ))}
-          </>
+        {candleMode && (
+          <CandleLayer
+            series={series}
+            checkpointRows={candleCheckpointRows}
+            rowByMonthBySeries={rowByMonthBySeries}
+            x={x}
+            y={y}
+            bucketMonths={candleBucketMonths}
+            maxMonth={maxMonth}
+            plotWidth={plotWidth}
+            pcts={{ outerLow, innerLow, median, innerHigh, outerHigh }}
+          />
         )}
-        {selectedRows.length > 0 && (
+        {!candleMode &&
+          (single ? (
+            <>
+              <polygon points={band(activeSeries.rows, outerHigh, outerLow)} fill={activeSeries.color} opacity="0.14" />
+              <polygon points={band(activeSeries.rows, innerHigh, innerLow)} fill={activeSeries.color} opacity="0.22" />
+              <polyline
+                points={line(activeSeries.rows, median)}
+                fill="none"
+                stroke={activeSeries.color}
+                strokeWidth="2.75"
+              />
+              <polyline
+                points={line(activeSeries.rows, outerLow)}
+                fill="none"
+                stroke={activeSeries.color}
+                strokeWidth="1"
+                opacity="0.45"
+              />
+              <polyline
+                points={line(activeSeries.rows, outerHigh)}
+                fill="none"
+                stroke={activeSeries.color}
+                strokeWidth="1"
+                opacity="0.45"
+              />
+            </>
+          ) : (
+            <>
+              {orderedSeries.map((entry) => (
+                <React.Fragment key={`bounds-${entry.id}`}>
+                  <polyline
+                    points={line(entry.rows, outerLow)}
+                    fill="none"
+                    stroke={entry.color}
+                    strokeWidth={entry.isActive ? 1.25 : 1}
+                    strokeDasharray="4 3"
+                    opacity={entry.isActive ? 0.6 : 0.4}
+                  />
+                  <polyline
+                    points={line(entry.rows, outerHigh)}
+                    fill="none"
+                    stroke={entry.color}
+                    strokeWidth={entry.isActive ? 1.25 : 1}
+                    strokeDasharray="4 3"
+                    opacity={entry.isActive ? 0.6 : 0.4}
+                  />
+                </React.Fragment>
+              ))}
+              {orderedSeries.map((entry) => (
+                <polyline
+                  key={`median-${entry.id}`}
+                  data-product-fan-series={entry.id}
+                  points={line(entry.rows, median)}
+                  fill="none"
+                  stroke={entry.color}
+                  strokeWidth={entry.isActive ? 2.75 : 2}
+                  opacity={entry.isActive ? 1 : 0.85}
+                />
+              ))}
+            </>
+          ))}
+        {!candleMode && selectedRows.length > 0 && (
           <>
             <polyline
               points={selectedLine}
@@ -393,21 +519,23 @@ export function MetricFanChart({
             />
           </>
         )}
-        {eventMarkers.map((markerProps) => (
-          <FanEventMarker
-            key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
-            {...markerProps}
-            x={x}
-            y={y}
-            top={margin.top}
-            plotHeight={plotHeight}
-            selectedEventMonthIndex={selectedEventMonthIndex}
-            hoveredEventMonthIndex={hoveredEventMonthIndex}
-            onSelectEventMonth={onSelectEventMonth}
-            onHoverEventMonth={onHoverEventMonth}
-          />
-        ))}
-        {hoveredRow &&
+        {!candleMode &&
+          eventMarkers.map((markerProps) => (
+            <FanEventMarker
+              key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
+              {...markerProps}
+              x={x}
+              y={y}
+              top={margin.top}
+              plotHeight={plotHeight}
+              selectedEventMonthIndex={selectedEventMonthIndex}
+              hoveredEventMonthIndex={hoveredEventMonthIndex}
+              onSelectEventMonth={onSelectEventMonth}
+              onHoverEventMonth={onHoverEventMonth}
+            />
+          ))}
+        {!candleMode &&
+          hoveredRow &&
           (() => {
             // Single: the one scenario's percentiles. Multi: each scenario's median at this month.
             const tipLines = single
