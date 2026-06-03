@@ -198,10 +198,15 @@ def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity
     if not authorization:
         # No token: fall back to an Authentik SSO session cookie if one is present.
         # "session" is in scope only when SessionMiddleware is installed (SSO enabled).
-        if "session" in request.scope:
-            user = request.session.get("user")
-            if user:
-                return SessionIdentity(email=user["email"])
+        # Re-check the admin allowlist on every request — sessions are client-side
+        # (signed) cookies, so revoked access must not linger until the cookie expires.
+        if "session" in request.scope and (user := request.session.get("user")):
+            settings = request.app.state.oidc_settings
+            email = user.get("email")
+            if email and settings is not None and settings.is_admin(email):
+                return SessionIdentity(email=email)
+            # Stale or revoked session: drop it and treat the request as anonymous.
+            request.session.pop("user", None)
         return AnonymousIdentity()
 
     parsed = parse_credentials(authorization)

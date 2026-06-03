@@ -77,6 +77,9 @@ async def logout(request: Request) -> RedirectResponse:
 @router.get("/me")
 async def me(request: Request) -> MeResponse:
     user = request.session.get("user")
-    if not user:
+    email = user.get("email") if user else None
+    # Re-validate against the live allowlist (sessions are client-side signed cookies).
+    if not email or not _settings(request).is_admin(email):
+        request.session.pop("user", None)
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return MeResponse(email=user["email"])
+    return MeResponse(email=email)

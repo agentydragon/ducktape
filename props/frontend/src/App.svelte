@@ -32,6 +32,8 @@
   let checking = $state(true);
   let userEmail = $state<string | null>(null);
   let showTokenLogin = $state(false);
+  // False when the backend has no SSO configured (/auth/me 404s) — show the token form directly.
+  let ssoAvailable = $state(true);
   // Disable the other mode when one has input
   const tokenHasInput = $derived(tokenInput.trim().length > 0);
   const credsHasInput = $derived(usernameInput.trim().length > 0 || passwordInput.length > 0);
@@ -87,6 +89,11 @@
         userEmail = data.email;
         needsToken.set(false);
       } else {
+        if (resp.status === 404) {
+          // SSO not configured on the backend: skip the SSO button, show the token form.
+          ssoAvailable = false;
+          showTokenLogin = true;
+        }
         needsToken.set(true);
       }
     } catch {
@@ -158,18 +165,22 @@
   <div class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md dark:shadow-gray-950/50 p-8 max-w-md w-full">
       <h1 class="text-xl font-bold mb-4">Props</h1>
-      <a
-        href="/auth/login"
-        class="block w-full text-center px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
-      >
-        Sign in with Authentik
-      </a>
+      {#if ssoAvailable}
+        <a
+          href="/auth/login"
+          class="block w-full text-center px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
+        >
+          Sign in with Authentik
+        </a>
+      {/if}
       {#if showTokenLogin}
-        <div class="flex items-center gap-2 my-4">
-          <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
-          <span class="text-xs text-gray-400 dark:text-gray-500">or use a token</span>
-          <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
-        </div>
+        {#if ssoAvailable}
+          <div class="flex items-center gap-2 my-4">
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+            <span class="text-xs text-gray-400 dark:text-gray-500">or use a token</span>
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          </div>
+        {/if}
         <form
           onsubmit={(e: SubmitEvent) => {
             e.preventDefault();
