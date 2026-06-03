@@ -291,19 +291,13 @@ export function ScenarioEditor({
   bootstrap,
   portfolio,
   portfolioError,
-  horizonMonths,
-  onSelect,
-  onAddVariant,
-  onDeleteVariant,
-  onRename,
-  onResetBase,
   onSetBaseField,
   onPatchVariant,
   onRevertKeys,
 }) {
   const [open, setOpen] = useState(true);
-  // Per-group + timeline collapse — fold away the rows that don't matter for the comparison at hand
-  // (e.g. mortgage terms, management, the lifecycle timeline). Everything starts expanded.
+  // Per-group collapse — fold away the rows that don't matter for the comparison at hand (e.g.
+  // mortgage terms, management). Everything starts expanded.
   const [collapsed, setCollapsed] = useState(() => new Set());
   const toggleCollapsed = (name) =>
     setCollapsed((previous) => {
@@ -312,54 +306,26 @@ export function ScenarioEditor({
       return next;
     });
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
-  const activeVariant = variants.find((v) => v.id === activeId) ?? null;
-  const activeIndex = Math.max(
-    0,
-    entries.findIndex((entry) => entry.id === activeId)
-  );
-  const activeLabel = entries[activeIndex]?.label ?? base.label;
   const multi = variants.length > 0;
 
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
 
-  const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
-  const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
-  const timelineCollapsed = collapsed.has("Timeline");
-
-  const resetActive = () => {
-    if (activeVariant == null) onResetBase();
-    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
-  };
-
   return (
     <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-editor="">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <ScenarioTabs
-          entries={entries}
-          activeId={activeId}
-          onSelect={onSelect}
-          onAdd={onAddVariant}
-          onDelete={onDeleteVariant}
-          onRename={onRename}
-          canAdd={variants.length < MAX_VARIANTS}
-        />
-        <div className="flex items-center gap-1">
-          {open && (
-            <Button size="xs" variant="subtle" onClick={resetActive}>
-              Reset {activeVariant == null ? "base" : activeLabel}
-            </Button>
-          )}
-          <Button
-            size="xs"
-            variant="default"
-            data-product-editor-toggle=""
-            aria-expanded={open}
-            onClick={() => setOpen((previous) => !previous)}
-          >
-            {open ? "Hide ▴" : "Edit ▾"}
-          </Button>
+        <div className="augur-eyebrow">
+          Scenario comparison{multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
         </div>
+        <Button
+          size="xs"
+          variant="default"
+          data-product-editor-toggle=""
+          aria-expanded={open}
+          onClick={() => setOpen((previous) => !previous)}
+        >
+          {open ? "Hide ▴" : "Edit ▾"}
+        </Button>
       </div>
 
       {open && (
@@ -473,53 +439,106 @@ export function ScenarioEditor({
             />
           </div>
 
-          {activeInput.propertyId != null && (
-            <div className="px-4 py-3" data-product-timeline="">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <button
-                  type="button"
-                  className="augur-eyebrow flex items-center gap-1.5"
-                  aria-expanded={!timelineCollapsed}
-                  data-product-group-toggle="Timeline"
-                  onClick={() => toggleCollapsed("Timeline")}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
-                  >
-                    ▶
-                  </span>
-                  Timeline —{" "}
-                  <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
-                    {activeLabel}
-                  </span>
-                </button>
-                {timelineOverridden && !timelineCollapsed && (
-                  <button
-                    type="button"
-                    className="augur-link text-xs font-semibold"
-                    onClick={() => onRevertKeys(activeVariant.id, ["propertyLifecycleEvents"])}
-                  >
-                    Revert to base
-                  </button>
-                )}
-              </div>
-              {!timelineCollapsed && (
-                <LifecycleEventsEditor
-                  events={activeInput.propertyLifecycleEvents ?? []}
-                  horizonMonths={horizonMonths}
-                  onChange={(events) =>
-                    activeVariant == null
-                      ? onSetBaseField("propertyLifecycleEvents", events)
-                      : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
-                  }
-                />
-              )}
-            </div>
-          )}
-
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
         </>
+      )}
+    </div>
+  );
+}
+
+// The "inspect one scenario" region below the comparison table: the scenario chips (add / rename /
+// delete / select) and the active scenario's lifecycle timeline. The chips choose which scenario the
+// timeline editor and the rollout results below drill into — nothing in the comparison table above
+// depends on the selection (it only highlights the active column).
+export function ScenarioInspector({
+  base,
+  variants,
+  activeId,
+  horizonMonths,
+  onSelect,
+  onAddVariant,
+  onDeleteVariant,
+  onRename,
+  onResetBase,
+  onSetBaseField,
+  onPatchVariant,
+  onRevertKeys,
+}) {
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
+  const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
+  const activeVariant = variants.find((v) => v.id === activeId) ?? null;
+  const activeIndex = Math.max(
+    0,
+    entries.findIndex((entry) => entry.id === activeId)
+  );
+  const activeLabel = entries[activeIndex]?.label ?? base.label;
+  const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
+  const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
+
+  const resetActive = () => {
+    if (activeVariant == null) onResetBase();
+    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
+  };
+
+  return (
+    <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-inspector="">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <ScenarioTabs
+          entries={entries}
+          activeId={activeId}
+          onSelect={onSelect}
+          onAdd={onAddVariant}
+          onDelete={onDeleteVariant}
+          onRename={onRename}
+          canAdd={variants.length < MAX_VARIANTS}
+        />
+        <Button size="xs" variant="subtle" onClick={resetActive}>
+          Reset {activeVariant == null ? "base" : activeLabel}
+        </Button>
+      </div>
+
+      {activeInput.propertyId != null && (
+        <div className="px-4 py-3" data-product-timeline="">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button
+              type="button"
+              className="augur-eyebrow flex items-center gap-1.5"
+              aria-expanded={!timelineCollapsed}
+              onClick={() => setTimelineCollapsed((previous) => !previous)}
+            >
+              <span
+                aria-hidden="true"
+                className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
+              >
+                ▶
+              </span>
+              Timeline —{" "}
+              <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
+                {activeLabel}
+              </span>
+            </button>
+            {timelineOverridden && !timelineCollapsed && (
+              <button
+                type="button"
+                className="augur-link text-xs font-semibold"
+                onClick={() => onRevertKeys(activeVariant.id, ["propertyLifecycleEvents"])}
+              >
+                Revert to base
+              </button>
+            )}
+          </div>
+          {!timelineCollapsed && (
+            <LifecycleEventsEditor
+              events={activeInput.propertyLifecycleEvents ?? []}
+              horizonMonths={horizonMonths}
+              onChange={(events) =>
+                activeVariant == null
+                  ? onSetBaseField("propertyLifecycleEvents", events)
+                  : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
+              }
+            />
+          )}
+        </div>
       )}
     </div>
   );

@@ -9,7 +9,7 @@ import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionHistogram } from "./histogram.tsx";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
-import { ScenarioEditor } from "./scenario_editor.tsx";
+import { ScenarioEditor, ScenarioInspector } from "./scenario_editor.tsx";
 import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header.tsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton.tsx";
 import { useVisibleEventKinds, useEventSelection } from "./hooks.ts";
@@ -454,6 +454,15 @@ export function ProductProjectionWorkspace({
           bootstrap={bootstrap}
           portfolio={portfolio}
           portfolioError={portfolioError}
+          onSetBaseField={setBaseField}
+          onPatchVariant={patchVariantOverrides}
+          onRevertKeys={revertVariantKeys}
+        />
+
+        <ScenarioInspector
+          base={base}
+          variants={variants}
+          activeId={activeId}
           horizonMonths={horizonMonths}
           onSelect={selectEntry}
           onAddVariant={addVariant}
