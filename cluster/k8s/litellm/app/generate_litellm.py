@@ -54,6 +54,11 @@ def _zai_entries() -> Iterator[dict]:
                 "model": f"openai/{model}",
                 "api_base": _ZAI_CODING_BASE,
                 "api_key": "os.environ/ZAI_API_KEY",
+                # z.ai has no /responses endpoint. Without this, LiteLLM forwards
+                # /v1/responses straight to {api_base}/responses (404). This opts
+                # the openai/ provider into LiteLLM's Responses->chat bridge, so
+                # props' OpenAI-Responses proxy lands on z.ai's chat/completions.
+                "use_chat_completions_api": True,
             },
             "model_info": {"mode": "chat", "supports_function_calling": True},
         }

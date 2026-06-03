@@ -113,6 +113,7 @@ model_list:
       model: openai/glm-4.6
       api_base: https://api.z.ai/api/coding/paas/v4
       api_key: os.environ/ZAI_API_KEY
+      use_chat_completions_api: true
     model_info:
       mode: chat
       supports_function_calling: true
