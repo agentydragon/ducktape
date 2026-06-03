@@ -206,16 +206,14 @@ class SampleSanitySpec(FrozenModel):
     @property
     def attempted_private_equity_issuers(self) -> frozenset[IssuerId]:
         """PE issuers this spec bounds, derived from every check carrying an `issuer_id`."""
-
-        return frozenset(
-            check.issuer_id
-            for check in (
-                *self.event_checks,
-                *self.event_kind_observed_checks,
-                *self.private_equity_protocol_checks,
-                *self.private_equity_mark_checks,
-            )
-        )
+        # Accumulate per check-type so mypy sees each concrete `issuer_id`; a single combined
+        # comprehension widens the loop variable to the common `FrozenModel` base, which has none.
+        issuers: set[IssuerId] = set()
+        issuers.update(check.issuer_id for check in self.event_checks)
+        issuers.update(check.issuer_id for check in self.event_kind_observed_checks)
+        issuers.update(check.issuer_id for check in self.private_equity_protocol_checks)
+        issuers.update(check.issuer_id for check in self.private_equity_mark_checks)
+        return frozenset(issuers)
 
 
 @dataclass(frozen=True)
