@@ -3,7 +3,7 @@
   import { onMount, setContext } from "svelte";
   import { Toaster } from "svelte-sonner";
   import { pathname, resolve, parseParams } from "$lib/router";
-  import { captureTokenFromUrl, getToken, setToken, needsToken } from "$lib/stores/token";
+  import { captureTokenFromUrl, getToken, setToken, clearToken, needsToken } from "$lib/stores/token";
   import RunTriggerModal from "$components/RunTriggerModal.svelte";
   import type { Split, ExampleKind } from "$lib/types";
 
@@ -27,6 +27,11 @@
   let tokenInput = $state("");
   let usernameInput = $state("");
   let passwordInput = $state("");
+  // While true, we're still determining auth (probing for an SSO session cookie),
+  // so render neither the login screen nor the app to avoid a flash.
+  let checking = $state(true);
+  let userEmail = $state<string | null>(null);
+  let showTokenLogin = $state(false);
   // Disable the other mode when one has input
   const tokenHasInput = $derived(tokenInput.trim().length > 0);
   const credsHasInput = $derived(usernameInput.trim().length > 0 || passwordInput.length > 0);
@@ -61,11 +66,38 @@
     }
   }
 
-  onMount(() => {
+  async function handleLogout() {
+    clearToken();
+    // Clear the server-side SSO session too (no-op/404 when SSO is disabled).
+    await fetch("/auth/logout", { credentials: "include" }).catch(() => undefined);
+    window.location.href = "/";
+  }
+
+  async function initAuth() {
     captureTokenFromUrl();
-    if (!getToken()) {
+    if (getToken()) {
+      needsToken.set(false);
+      return;
+    }
+    // No stored token: check for a valid Authentik SSO session cookie.
+    try {
+      const resp = await fetch("/auth/me", { credentials: "include" });
+      if (resp.ok) {
+        const data = (await resp.json()) as { email: string };
+        userEmail = data.email;
+        needsToken.set(false);
+      } else {
+        needsToken.set(true);
+      }
+    } catch {
       needsToken.set(true);
     }
+  }
+
+  onMount(() => {
+    initAuth().finally(() => {
+      checking = false;
+    });
   });
 
   // Navigation items
@@ -118,53 +150,78 @@
 
 <Toaster richColors position="top-right" duration={8000} />
 
-{#if $needsToken}
+{#if checking}
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+    <div class="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+  </div>
+{:else if $needsToken}
   <div class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md dark:shadow-gray-950/50 p-8 max-w-md w-full">
-      <h1 class="text-xl font-bold mb-2">Props</h1>
-      <form
-        onsubmit={(e: SubmitEvent) => {
-          e.preventDefault();
-          handleLogin();
-        }}
-        class="flex flex-col gap-3"
+      <h1 class="text-xl font-bold mb-4">Props</h1>
+      <a
+        href="/auth/login"
+        class="block w-full text-center px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700"
       >
-        <div class="flex flex-col gap-2 transition-opacity {tokenHasInput ? 'opacity-40' : ''}">
-          <input
-            type="text"
-            bind:value={usernameInput}
-            placeholder="Username"
-            autocomplete="username"
-            disabled={tokenHasInput}
-            class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-          />
-          <input
-            type="password"
-            bind:value={passwordInput}
-            placeholder="Password"
-            autocomplete="current-password"
-            disabled={tokenHasInput}
-            class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-          />
-        </div>
-        <div class="flex items-center gap-2">
+        Sign in with Authentik
+      </a>
+      {#if showTokenLogin}
+        <div class="flex items-center gap-2 my-4">
           <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
-          <span class="text-xs text-gray-400 dark:text-gray-500">or token</span>
+          <span class="text-xs text-gray-400 dark:text-gray-500">or use a token</span>
           <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
         </div>
-        <div class="transition-opacity {credsHasInput ? 'opacity-40' : ''}">
-          <input
-            type="text"
-            bind:value={tokenInput}
-            placeholder="base64 token"
-            disabled={credsHasInput}
-            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
-          />
-        </div>
-        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
-          Sign in
+        <form
+          onsubmit={(e: SubmitEvent) => {
+            e.preventDefault();
+            handleLogin();
+          }}
+          class="flex flex-col gap-3"
+        >
+          <div class="flex flex-col gap-2 transition-opacity {tokenHasInput ? 'opacity-40' : ''}">
+            <input
+              type="text"
+              bind:value={usernameInput}
+              placeholder="Username"
+              autocomplete="username"
+              disabled={tokenHasInput}
+              class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+            />
+            <input
+              type="password"
+              bind:value={passwordInput}
+              placeholder="Password"
+              autocomplete="current-password"
+              disabled={tokenHasInput}
+              class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+            <span class="text-xs text-gray-400 dark:text-gray-500">or token</span>
+            <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          </div>
+          <div class="transition-opacity {credsHasInput ? 'opacity-40' : ''}">
+            <input
+              type="text"
+              bind:value={tokenInput}
+              placeholder="base64 token"
+              disabled={credsHasInput}
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
+            />
+          </div>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
+            Sign in
+          </button>
+        </form>
+      {:else}
+        <button
+          type="button"
+          onclick={() => (showTokenLogin = true)}
+          class="mt-3 block w-full text-center text-xs text-gray-500 dark:text-gray-400 hover:underline"
+        >
+          Use a token instead
         </button>
-      </form>
+      {/if}
     </div>
   </div>
 {:else}
@@ -190,6 +247,18 @@
             </a>
           {/each}
         </nav>
+        <div class="flex items-center gap-3">
+          {#if userEmail}
+            <span class="text-xs text-gray-500 dark:text-gray-400">{userEmail}</span>
+          {/if}
+          <button
+            type="button"
+            onclick={handleLogout}
+            class="px-3 py-1.5 rounded text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </header>
 

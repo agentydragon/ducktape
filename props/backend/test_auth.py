@@ -10,7 +10,17 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException
 
-from props.backend.auth import AdminRole, AgentRole, AnonymousIdentity, AuthenticatedIdentity, get_caller_db
+from props.backend.auth import (
+    AdminRole,
+    AgentRole,
+    AnonymousIdentity,
+    AuthenticatedIdentity,
+    SessionIdentity,
+    get_caller_db,
+    is_admin_or_evaluator,
+    require_admin_access,
+    require_evaluator_or_admin_access,
+)
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentType
@@ -24,6 +34,25 @@ def test_get_caller_db_admin_returns_admin_db(exhaust_generator):
     gen = get_caller_db(admin_db=admin_db, auth=auth)
     db = exhaust_generator(gen)
     assert db is admin_db
+
+
+def test_get_caller_db_sso_session_returns_admin_db(exhaust_generator):
+    """SSO browser sessions are admin-only: they use the shared admin pool."""
+    admin_db = MagicMock(spec=Database)
+    auth = SessionIdentity(email="agentydragon@gmail.com")
+
+    gen = get_caller_db(admin_db=admin_db, auth=auth)
+    db = exhaust_generator(gen)
+    assert db is admin_db
+
+
+def test_sso_session_passes_admin_and_evaluator_acls():
+    """A SessionIdentity is treated as admin by the ACL helpers."""
+    auth = SessionIdentity(email="agentydragon@gmail.com")
+    assert is_admin_or_evaluator(auth)
+    # These raise HTTPException on denial; not raising means access is allowed.
+    require_admin_access(auth)
+    require_evaluator_or_admin_access(auth)
 
 
 def test_get_caller_db_anonymous_raises_401():

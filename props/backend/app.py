@@ -25,8 +25,19 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
-from props.backend.routes import agent_definitions, ground_truth, llm, model_metadata, registry, runs, stats
+from props.backend.oidc import build_oauth, load_oidc_settings
+from props.backend.routes import (
+    agent_definitions,
+    auth_routes,
+    ground_truth,
+    llm,
+    model_metadata,
+    registry,
+    runs,
+    stats,
+)
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -208,6 +219,26 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Optional Authentik SSO for browser users. When unconfigured (local dev,
+    # tests, docker-compose) the dashboard stays token-only; machine clients
+    # always use the Postgres-credential Bearer/Basic path in auth.py.
+    oidc_settings = load_oidc_settings()
+    app.state.oidc_settings = oidc_settings
+    app.state.oauth = None
+    if oidc_settings is not None:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=oidc_settings.session_secret,
+            session_cookie="props_session",
+            https_only=oidc_settings.cookie_secure,
+            same_site="lax",
+        )
+        app.state.oauth = build_oauth(oidc_settings)
+        app.include_router(auth_routes.router)
+        logger.info("OIDC SSO enabled (issuer=%s)", oidc_settings.issuer)
+    else:
+        logger.info("OIDC SSO not configured; dashboard uses token auth only")
 
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])

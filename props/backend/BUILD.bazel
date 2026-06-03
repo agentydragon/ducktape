@@ -38,12 +38,26 @@ py_library(
 )
 
 py_library(
+    name = "oidc",
+    srcs = ["oidc.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//authlib",
+        "@pypi//httpx",
+        "@pypi//pydantic_settings",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":oidc",
         "//props:config",
         "//props/backend/routes:agent_definitions",
+        "//props/backend/routes:auth_routes",
         "//props/backend/routes:ground_truth",
         "//props/backend/routes:llm",
         "//props/backend/routes:model_metadata",
@@ -62,6 +76,8 @@ py_library(
         "//util:logging",
         "@pypi//asyncpg",
         "@pypi//fastapi",
+        "@pypi//itsdangerous",
+        "@pypi//starlette",
     ],
 )
 
@@ -115,6 +131,16 @@ py_test(
         "//props/db:config",
         "//props/db:database",
         "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_oidc",
+    srcs = ["test_oidc.py"],
+    deps = [
+        ":oidc",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -2,10 +2,13 @@ import createClient from "openapi-fetch";
 import type { paths, components } from "./schema";
 import { getToken, onAuthFailed } from "$lib/stores/token";
 
-// Create typed API client (types from Bazel: //props/frontend/src/lib:schema)
-export const api = createClient<paths>({ baseUrl: "" });
+// Create typed API client (types from Bazel: //props/frontend/src/lib:schema).
+// `credentials: "include"` sends the Authentik SSO session cookie (props_session)
+// so browser users authenticated via /auth/login don't need a token.
+export const api = createClient<paths>({ baseUrl: "", credentials: "include" });
 
-// Attach admin token as Bearer header to every request
+// Attach the admin token as a Bearer header when one is stored (token fallback).
+// Without a token, the session cookie above carries authentication.
 api.use({
   async onRequest({ request }) {
     const token = getToken();
@@ -27,6 +30,7 @@ api.use({
 async function authedFetch<T>(url: string): Promise<T> {
   const token = getToken();
   const resp = await fetch(url, {
+    credentials: "include",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (resp.status === 401) onAuthFailed();

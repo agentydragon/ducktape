@@ -63,6 +63,30 @@ spec:
                 secretKeyRef:
                   name: props-evaluator-credentials
                   key: password
+            # Authentik SSO for browser users (props/backend/oidc.py). The
+            # props-oidc-config secret is created by tf/gitops/sso-providers and
+            # reflected from the authentik namespace into props.
+            - name: PROPS_OIDC_ISSUER
+              value: https://auth.allegedly.works/application/o/props/
+            - name: PROPS_OIDC_PUBLIC_BASE_URL
+              value: https://props.allegedly.works
+            - name: PROPS_OIDC_ADMIN_EMAILS
+              value: agentydragon@gmail.com
+            - name: PROPS_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: props-oidc-config
+                  key: client-id
+            - name: PROPS_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: props-oidc-config
+                  key: client-secret
+            - name: PROPS_OIDC_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: props-oidc-config
+                  key: session-secret
             - name: PROPS_REGISTRY_UPSTREAM_URL
               value: http://forgejo-http.forgejo:3000
             - name: PROPS_REGISTRY_UPSTREAM_USERNAME

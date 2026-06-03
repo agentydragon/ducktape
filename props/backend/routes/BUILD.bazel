@@ -14,6 +14,18 @@ py_library(
 )
 
 py_library(
+    name = "auth_routes",
+    srcs = ["auth_routes.py"],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:oidc",
+        "@pypi//authlib",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "ground_truth",
     srcs = ["ground_truth.py"],
     visibility = ["//props/backend:__subpackages__"],
