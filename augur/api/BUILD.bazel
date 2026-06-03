@@ -81,6 +81,7 @@ py_library(
         ":wire",
         "//augur/budget:schema",
         "//augur/model:provider_config",
+        "//augur/product:wire",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
