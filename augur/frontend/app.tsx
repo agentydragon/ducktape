@@ -33,7 +33,7 @@ import {
 
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
 // its own `?n=` param written by the shell rather than living in either tab's serialized input.
-// Omitted when at the default, mirroring the trailing-default trimming of the product `?s=` state.
+// Omitted when at the default, so a default rollout count leaves no `?n=` in the URL.
 function writeRolloutCountToSearch(value, bootstrap) {
   const params = new URLSearchParams(window.location.search);
   if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");

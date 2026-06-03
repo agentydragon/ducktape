@@ -9,7 +9,6 @@ import {
   makeVariant,
   resolveVariant,
   productInputDefaults,
-  productInputToSearch,
   MAX_VARIANTS,
 } from "./input_helpers.ts";
 
@@ -21,10 +20,9 @@ function baseWith(overrides, label = "Base") {
   return { label, input: { ...productInputDefaults(bootstrap), ...overrides } };
 }
 
-test("a base with no variants encodes as ?s= (not ?scenarios=) and round-trips", () => {
-  const search = scenarioSetToSearch(baseWith({ monthlySpendUsd: 4200 }), [], bootstrap);
-  expect(search).toMatch(/(^|&)s=/);
-  expect(search).not.toContain("scenarios=");
+test("a base with no variants encodes as ?scenarios= and round-trips", () => {
+  const search = scenarioSetToSearch(baseWith({ monthlySpendUsd: 4200 }), []);
+  expect(search).toContain("scenarios=");
 
   const decoded = scenarioSetFromSearch(search, bootstrap);
   expect(decoded.variants).toHaveLength(0);
@@ -32,18 +30,18 @@ test("a base with no variants encodes as ?s= (not ?scenarios=) and round-trips",
   expect(decoded.activeId).toBe("base");
 });
 
-test("a pre-multi ?s= link decodes as a base with no variants (backward compatible)", () => {
-  const legacy = productInputToSearch({ ...productInputDefaults(bootstrap), monthlySpendUsd: 9100 }, bootstrap);
-  const decoded = scenarioSetFromSearch(legacy, bootstrap);
+test("a URL with no ?scenarios= decodes to a default base with no variants", () => {
+  const decoded = scenarioSetFromSearch("", bootstrap);
   expect(decoded.variants).toHaveLength(0);
   expect(decoded.base.label).toBe("Base");
-  expect(decoded.base.input.monthlySpendUsd).toBe(9100);
+  expect(decoded.base.input.monthlySpendUsd).toBe(productInputDefaults(bootstrap).monthlySpendUsd);
+  expect(decoded.activeId).toBe("base");
 });
 
 test("base + variants encode as ?scenarios= and round-trip base input, labels, and overrides", () => {
   const base = baseWith({ monthlyRentUsd: 3000 }, "Rent");
   const variants = [makeVariant("Mortgage", { financingKind: "mortgage", monthlySpendUsd: 5000 })];
-  const search = scenarioSetToSearch(base, variants, bootstrap);
+  const search = scenarioSetToSearch(base, variants);
   expect(search).toContain("scenarios=");
   expect(search).not.toMatch(/(^|&)s=/);
 
@@ -65,8 +63,7 @@ test("base lifecycle events survive a round-trip with regenerated keys", () => {
     propertyId: "p",
     propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
   });
-  // Add a variant so the set serializes through the `?scenarios=` blob (base input in JSON).
-  const decoded = scenarioSetFromSearch(scenarioSetToSearch(base, [makeVariant("V")], bootstrap), bootstrap);
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(base, []), bootstrap);
   const events = decoded.base.input.propertyLifecycleEvents;
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({ kind: "property_sale", month: 120, closingCostPct: 6 });
@@ -80,7 +77,7 @@ test("a variant's lifecycle-event override survives a round-trip with regenerate
     propertyId: "p",
     propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
   });
-  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), [variant], bootstrap), bootstrap);
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), [variant]), bootstrap);
   const events = decoded.variants[0].overrides.propertyLifecycleEvents;
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({ kind: "property_sale", month: 120, closingCostPct: 6 });
@@ -91,7 +88,7 @@ test("decoding caps variants at MAX_VARIANTS (untrusted hand-edited link)", () =
   const variants = Array.from({ length: MAX_VARIANTS + 3 }, (_, index) =>
     makeVariant(`V${index}`, { monthlySpendUsd: 1000 + index })
   );
-  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), variants, bootstrap), bootstrap);
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), variants), bootstrap);
   expect(decoded.variants).toHaveLength(MAX_VARIANTS);
 });
 

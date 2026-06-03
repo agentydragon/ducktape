@@ -52,8 +52,7 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   leasingFeeMonths: 1.0,
   avgTenancyMonths: 24,
   // Mid-horizon lifecycle events for the purchased property. Each row is
-  // `{ kind, month, ...kind-specific }`. Persisted to the URL as a separate `lc` param
-  // (a flat-positional `s=` packing can't represent variable-length structured lists).
+  // `{ kind, month, ...kind-specific }`, carried inside the `?scenarios=` JSON blob.
   propertyLifecycleEvents: [],
 };
 
@@ -64,20 +63,6 @@ export const LIFECYCLE_KINDS = [
   { value: "property_sale", label: "Sell property" },
 ];
 export const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [kind.value, kind]));
-export const LIFECYCLE_URL_KEY = "lc";
-// Single-letter codes for the `?lc=` URL packing.
-export const LIFECYCLE_KIND_CODES = {
-  set_rented_fraction: "r",
-  set_primary_residence: "p",
-  capital_improvement: "c",
-  property_sale: "s",
-};
-export const LIFECYCLE_KIND_FROM_CODE = {
-  r: "set_rented_fraction",
-  p: "set_primary_residence",
-  c: "capital_improvement",
-  s: "property_sale",
-};
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 
@@ -190,193 +175,10 @@ export function metricScaleFromSearch(searchString) {
   return new URLSearchParams(searchString).get("scale") === "log" ? "log" : "linear";
 }
 
-// URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
-// separated string. A version letter prefix gates schema changes; trailing default values are
-// trimmed; enums use one-letter codes. Examples:
-//   ?s=4                                                  → all defaults
-//   ?s=4.120..5000.n..200000.100000.....location_a_property..m.10
-//
-// The ordering, encoding, and code maps live here in INPUT_FIELDS. Adding a new input means
-// appending to INPUT_FIELDS; old URLs continue to decode (missing positions = defaults).
-// Bump SCHEMA_VERSION when a field's semantic encoding changes — old URLs then fall back to
-// defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
-// v2 stores rentalFractionRentedPct as a 0..100 percentage, v3 dropped `rentItOut` so the
-// rental fields are always present and `fractionRentedPct == 0` means "not rented", v4 dropped
-// `rolloutCount` (now the tab-shared `?n=` control) and the trailing `modelId` (now the
-// tab-shared `?x=` control). Dropping the trailing `modelId` slot shifts no other
-// position, so v4 `?s=` strings that never set it decode identically.
-// v5 dropped the leading `horizonMonths` (now the tab-shared `?h=` control); dropping a
-// non-trailing slot shifts the rest, so the bump makes older URLs fall back to defaults rather
-// than misread their positions.
-// v6 dropped the leading `firstSeed` (now the tab-shared `?seed=` control); same positional
-// shift concern as v5.
-const INPUT_SCHEMA_VERSION = "6";
-
-const INPUT_FIELDS = [
-  { key: "monthlySpendUsd", type: "number" },
-  { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
-  // sellOrder is a string of single-char bucket codes; "" is a legitimate value meaning "disable
-  // all auto-sales", so we use a sentinel ("_") in the URL to distinguish "explicitly empty"
-  // from "default" (which the encoder also represents as "").
-  { key: "sellOrder", type: "orderedCodes" },
-  { key: "cashBufferTriggerBelowUsd", type: "number" },
-  { key: "cashBufferSaleUsd", type: "number" },
-  { key: "peLnwFloorUsd", type: "number" },
-  { key: "peIndexFloorToInflation", type: "bool" },
-  { key: "monthlyRentUsd", type: "number" },
-  { key: "rentalLocationId", type: "string" },
-  { key: "propertyId", type: "string" },
-  { key: "livesHere", type: "bool" },
-  { key: "financingKind", type: "enum", codes: { cash: "c", mortgage: "m" } },
-  { key: "downPaymentPct", type: "number" },
-  { key: "mortgageTermMonths", type: "number" },
-  { key: "annualRatePct", type: "number" },
-  { key: "annualInsurancePct", type: "number" },
-  { key: "annualMaintenancePct", type: "number" },
-  { key: "rentalFullPropertyMonthlyUsd", type: "number" },
-  { key: "rentalFractionRentedPct", type: "number" },
-  { key: "rentalVacancyPct", type: "number" },
-  { key: "useRentalManagement", type: "bool" },
-  { key: "managementFeePct", type: "number" },
-  { key: "leasingFeeMonths", type: "number" },
-  { key: "avgTenancyMonths", type: "number" },
-  // Appended after existing positions so older `?s=` URLs continue to decode without shifting
-  // their downstream slots. New optional fields go at the tail.
-  { key: "cashBufferIndexToInflation", type: "bool" },
-  { key: "modelId", type: "string" },
-];
-
-export function encodeInputValue(value, field) {
-  if (value == null) return "";
-  if (field.type === "bool") return value ? "1" : "0";
-  if (field.type === "enum") {
-    const code = field.codes[value];
-    if (code == null) throw new Error(`unknown enum value ${value} for ${field.key}`);
-    return code;
-  }
-  if (field.type === "string") return encodeURIComponent(String(value));
-  if (field.type === "orderedCodes") return value === "" ? "_" : String(value);
-  return String(value);
-}
-
-export function decodeInputValue(rawValue, field, defaultValue) {
-  if (rawValue === "") return defaultValue;
-  if (field.type === "bool") return rawValue === "1";
-  if (field.type === "enum") {
-    for (const [name, code] of Object.entries(field.codes)) {
-      if (code === rawValue) return name;
-    }
-    return defaultValue;
-  }
-  if (field.type === "string") return decodeURIComponent(rawValue);
-  if (field.type === "orderedCodes") return rawValue === "_" ? "" : rawValue;
-  const numeric = Number(rawValue);
-  return Number.isFinite(numeric) ? numeric : defaultValue;
-}
-
-export function productInputToSearch(input, bootstrap) {
-  const defaults = productInputDefaults(bootstrap);
-  const encoded = INPUT_FIELDS.map((field) => {
-    if (input[field.key] === defaults[field.key]) return "";
-    return encodeInputValue(input[field.key], field);
-  });
-  while (encoded.length > 0 && encoded[encoded.length - 1] === "") encoded.pop();
-  const parts =
-    encoded.length === 0 ? [`s=${INPUT_SCHEMA_VERSION}`] : [`s=${INPUT_SCHEMA_VERSION}.${encoded.join(".")}`];
-  const lifecycle = lifecycleEventsToUrl(input.propertyLifecycleEvents);
-  if (lifecycle) parts.push(`${LIFECYCLE_URL_KEY}=${lifecycle}`);
-  return parts.join("&");
-}
-
-export function productInputFromSearch(searchString, bootstrap) {
-  const defaults = productInputDefaults(bootstrap);
-  const params = new URLSearchParams(searchString);
-  const packed = params.get("s");
-  const parsed = { ...defaults };
-  if (packed) {
-    const [version, ...values] = packed.split(".");
-    if (version === INPUT_SCHEMA_VERSION) {
-      values.forEach((rawValue, index) => {
-        if (index >= INPUT_FIELDS.length) return;
-        const field = INPUT_FIELDS[index];
-        parsed[field.key] = decodeInputValue(rawValue, field, defaults[field.key]);
-      });
-    }
-  }
-  parsed.propertyLifecycleEvents = lifecycleEventsFromUrl(params.get(LIFECYCLE_URL_KEY));
-  return parsed;
-}
-
-// `?lc=` packing: each event is `<kind-code><month>:<value>` joined by `~`. Examples:
-//   r24:50  → set rented to 50% at month 24
-//   p12:0  → clear primary-residence assignment at month 12
-//   c12:50000  → $50k capex at month 12
-//   s120:6  → sell at month 120 with 6% closing cost
-export function lifecycleEventsToUrl(events) {
-  if (!Array.isArray(events) || events.length === 0) return "";
-  return events
-    .map((event) => {
-      const code = LIFECYCLE_KIND_CODES[event.kind];
-      if (!code) return "";
-      const month = Number(event.month) || 0;
-      const value = lifecycleEventUrlValue(event);
-      return `${code}${month}:${value}`;
-    })
-    .filter(Boolean)
-    .join("~");
-}
-
-export function lifecycleEventUrlValue(event) {
-  if (event.kind === "set_rented_fraction") return String(Math.round(Number(event.rentedFractionPct) || 0));
-  if (event.kind === "set_primary_residence") return event.livesHere ? "1" : "0";
-  if (event.kind === "capital_improvement") return String(Math.round(Number(event.amountUsd) || 0));
-  if (event.kind === "property_sale") return String(Number(event.closingCostPct) || 0);
-  return "";
-}
-
-export function lifecycleEventsFromUrl(packed) {
-  if (!packed) return [];
-  return packed
-    .split("~")
-    .map((entry) => parseLifecycleEntry(entry))
-    .filter(Boolean);
-}
-
-export function parseLifecycleEntry(entry) {
-  if (!entry || entry.length < 2) return null;
-  const kind = LIFECYCLE_KIND_FROM_CODE[entry[0]];
-  if (!kind) return null;
-  const colonIdx = entry.indexOf(":");
-  if (colonIdx < 0) return null;
-  const month = Number(entry.slice(1, colonIdx));
-  const raw = entry.slice(colonIdx + 1);
-  if (!Number.isFinite(month) || month < 1) return null;
-  const base = { _id: nextLifecycleEventId(), kind, month };
-  if (kind === "set_rented_fraction") {
-    const pct = Number(raw);
-    if (!Number.isFinite(pct)) return null;
-    return { ...base, rentedFractionPct: Math.min(100, Math.max(0, pct)) };
-  }
-  if (kind === "set_primary_residence") {
-    return { ...base, livesHere: raw === "1" };
-  }
-  if (kind === "capital_improvement") {
-    const amount = Number(raw);
-    if (!Number.isFinite(amount) || amount <= 0) return null;
-    return { ...base, amountUsd: amount };
-  }
-  if (kind === "property_sale") {
-    const pct = Number(raw);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
-    return { ...base, closingCostPct: pct };
-  }
-  return null;
-}
-
 // Stable per-event id used as the React key so editing/reordering preserves DOM identity
-// (NumberInput focus state, mid-edit values). The id is purely UI state — `lifecycleEventsToUrl`
-// reads only `kind`/`month`/value fields, so it isn't persisted in the URL. Events parsed back
-// from the URL get a fresh id assigned in `lifecycleEventsFromUrl`.
+// (NumberInput focus state, mid-edit values). The id is purely UI state — `stripLifecycleIds`
+// drops it before the `?scenarios=` blob is serialized, and `regenerateLifecycleIds` mints a fresh
+// one on decode so base and variants never share a (colliding) key.
 let _nextLifecycleEventId = 0;
 export function nextLifecycleEventId() {
   _nextLifecycleEventId += 1;
@@ -606,8 +408,7 @@ function deserializeOverrides(raw) {
 }
 
 // Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
-// base-only set rather than misreading fields (mirrors the `?s=` version gate). v2 = base input +
-// per-variant override diffs.
+// default base-only set rather than misreading fields. v2 = base input + per-variant override diffs.
 const SCENARIO_SET_VERSION = 2;
 
 function decodeScenarioSet(packed, bootstrap) {
@@ -615,7 +416,7 @@ function decodeScenarioSet(packed, bootstrap) {
   try {
     payload = JSON.parse(packed);
   } catch (error) {
-    // A hand-edited / truncated link is external input, not a bug: fall back like `?s=` does.
+    // A hand-edited / truncated link is external input, not a bug: fall back to a default set.
     if (error instanceof SyntaxError) return null;
     throw error;
   }
@@ -636,13 +437,9 @@ function decodeScenarioSet(packed, bootstrap) {
   return { base, variants, activeId: "base" };
 }
 
-// Encode the set to a query string. A base with no variants (a single scenario) keeps the compact,
-// shareable, backward-compatible `?s=`/`?lc=` form; once there are variants it switches to a
-// `?scenarios=` JSON blob (base input + per-variant override diffs).
-export function scenarioSetToSearch(base, variants, bootstrap) {
-  if (variants.length === 0) {
-    return productInputToSearch(base.input, bootstrap);
-  }
+// Encode the set to a single `?scenarios=` JSON param (`v: 2`): the Base full input plus per-variant
+// override diffs. A lone Base (variants: []) uses the same form — one URL format for every set.
+export function scenarioSetToSearch(base, variants) {
   const payload = {
     v: SCENARIO_SET_VERSION,
     base: { label: base.label, input: stripLifecycleIds(base.input) },
@@ -659,9 +456,9 @@ export function scenarioSetFromSearch(searchString, bootstrap) {
     const decoded = decodeScenarioSet(packed, bootstrap);
     if (decoded) return decoded;
   }
-  // Legacy `?s=`/`?lc=` (or malformed `?scenarios=`) → base only, no variants.
+  // No `?scenarios=` (or a malformed/unrecognized blob) → a default Base with no variants.
   return {
-    base: { label: "Base", input: productInputFromSearch(searchString, bootstrap) },
+    base: { label: "Base", input: productInputDefaults(bootstrap) },
     variants: [],
     activeId: "base",
   };

@@ -19,10 +19,10 @@ persisted.
 
 ### URL
 
-- Base, no variants → compact, backward-compatible `?s=`/`?lc=`.
-- Base + variants → `?scenarios=` JSON (`v: 2`): the Base full input plus per-variant **override
-  diffs**. Lifecycle `_id`s are stripped on encode / reminted on decode; variants are capped at
-  `MAX_VARIANTS`. A legacy/unrecognized blob falls back to Base-only.
+- The whole set serializes to a single `?scenarios=` JSON param (`v: 2`): the Base full input plus
+  per-variant **override diffs**. A lone Base (no variants) uses the same form. Lifecycle `_id`s are
+  stripped on encode / reminted on decode; variants are capped at `MAX_VARIANTS`. A
+  malformed/unrecognized blob falls back to a default Base-only set.
 
 ## The table (everything per-scenario)
 

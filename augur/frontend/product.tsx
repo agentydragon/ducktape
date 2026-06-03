@@ -312,11 +312,11 @@ export function ProductProjectionWorkspace({
   useEffect(() => {
     // The active selection is ephemeral UI state, not persisted: the codec always decodes Base as
     // active, so reloading a shared link lands on Base.
-    const params = new URLSearchParams(scenarioSetToSearch(base, variants, bootstrap));
+    const params = new URLSearchParams(scenarioSetToSearch(base, variants));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
     // The shell-owned shared params live outside the scenario set, as do the budget tab's planning
     // params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the product
-    // `?s=`/`?scenarios=` state doesn't drop them when switching away from and back to another tab.
+    // `?scenarios=` state doesn't drop them when switching away from and back to another tab.
     const currentParams = new URLSearchParams(window.location.search);
     for (const key of ["n", "seed", "x", "h", "scale", "fmt", "bhide", "bset"]) {
       const value = currentParams.get(key);
@@ -327,7 +327,7 @@ export function ProductProjectionWorkspace({
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.replaceState(null, "", newUrl);
     }
-  }, [base, variants, bootstrap, currencyDisplay]);
+  }, [base, variants, currencyDisplay]);
 
   useEffect(() => {
     const controller = new AbortController();

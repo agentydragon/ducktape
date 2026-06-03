@@ -20,7 +20,7 @@ overruns the chart height.
    with no undo. Add a confirmation, or split into "Undo last change" + "Reset
    to defaults" as separate actions.
 3. **Share-this-scenario button.** State already round-trips through the URL
-   (`productInputToSearch`), but there's no affordance to copy the link. Add a
+   (`scenarioSetToSearch`), but there's no affordance to copy the link. Add a
    "Copy URL" button next to Reset — this is the natural unit of work for a
    scenario explorer.
 4. **Persisted scenarios + side-by-side.** Saving a scenario into localStorage

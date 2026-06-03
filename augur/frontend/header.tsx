@@ -183,7 +183,7 @@ export function AugurHeader({ rightSlot = null, nav = null }) {
 // -- Tab navigation ------------------------------------------------------------
 //
 // Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
-// (omitted for the default), following the same replaceState pattern as the product `?s=` state.
+// (omitted for the default), following the same replaceState pattern as the product `?scenarios=` state.
 const TABS = [
   { value: "product", label: "Product" },
   { value: "calibration", label: "Calibration" },
