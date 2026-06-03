@@ -454,6 +454,7 @@ export function ProductProjectionWorkspace({
           bootstrap={bootstrap}
           portfolio={portfolio}
           portfolioError={portfolioError}
+          horizonMonths={horizonMonths}
           onSetBaseField={setBaseField}
           onPatchVariant={patchVariantOverrides}
           onRevertKeys={revertVariantKeys}
@@ -463,14 +464,11 @@ export function ProductProjectionWorkspace({
           base={base}
           variants={variants}
           activeId={activeId}
-          horizonMonths={horizonMonths}
           onSelect={selectEntry}
           onAddVariant={addVariant}
           onDeleteVariant={deleteVariant}
           onRename={renameEntry}
           onResetBase={resetBase}
-          onSetBaseField={setBaseField}
-          onPatchVariant={patchVariantOverrides}
           onRevertKeys={revertVariantKeys}
         />
 

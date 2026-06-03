@@ -281,8 +281,9 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
 
 // Full-width scenario editor for the Base + per-variant-overrides model. Every per-scenario knob is
 // a row (Base column + one column per variant); a Base cell edits everywhere, a variant cell
-// overrides individually. The lifecycle timeline (list-shaped) is the active scenario's editor below
-// the table. Sell order is Base-only. The whole thing collapses (chips stay visible) so the
+// overrides individually. The lifecycle timeline (too list-shaped for table cells) is a collapsible
+// per-scenario section below the grid — one editor per owning scenario (Base + variants), with the
+// same inherit/override semantics. Sell order is Base-only. The whole thing collapses so the
 // chart/results below are reachable without scrolling.
 export function ScenarioEditor({
   base,
@@ -291,18 +292,20 @@ export function ScenarioEditor({
   bootstrap,
   portfolio,
   portfolioError,
+  horizonMonths,
   onSetBaseField,
   onPatchVariant,
   onRevertKeys,
 }) {
   const [open, setOpen] = useState(true);
-  // Per-group collapse — fold away the rows that don't matter for the comparison at hand (e.g.
-  // mortgage terms, management). Everything starts expanded.
+  // Per-group + timeline collapse — fold away the rows/sections that don't matter for the comparison
+  // at hand (e.g. mortgage terms, management, the per-scenario timelines). Everything starts expanded.
   const [collapsed, setCollapsed] = useState(() => new Set());
   const toggleCollapsed = (name) =>
     setCollapsed((previous) => {
       const next = new Set(previous);
-      next.has(name) ? next.delete(name) : next.add(name);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
       return next;
     });
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
@@ -310,6 +313,15 @@ export function ScenarioEditor({
 
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
+
+  // One timeline editor per scenario that buys (Base + variants); a variant's events inherit Base
+  // until edited (which creates a `propertyLifecycleEvents` override, revertable). Index into
+  // `entries` keeps the dot color aligned with the chart + column headers.
+  const timelineCollapsed = collapsed.has("Timeline");
+  const timelineEntries = [
+    { id: "base", label: base.label, input: base.input, variant: null },
+    ...variants.map((v) => ({ id: v.id, label: v.label, input: resolveVariant(base.input, v.overrides), variant: v })),
+  ].filter((entry) => entry.input.propertyId != null);
 
   return (
     <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-editor="">
@@ -439,6 +451,66 @@ export function ScenarioEditor({
             />
           </div>
 
+          {timelineEntries.length > 0 && (
+            <div className="px-4 py-3" data-product-timeline="">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                aria-expanded={!timelineCollapsed}
+                data-product-group-toggle="Timeline"
+                onClick={() => toggleCollapsed("Timeline")}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
+                >
+                  ▶
+                </span>
+                Timeline
+              </button>
+              {!timelineCollapsed && (
+                <div className="mt-3 space-y-4">
+                  {timelineEntries.map((entry) => {
+                    const index = entries.findIndex((e) => e.id === entry.id);
+                    const overridden = entry.variant != null && "propertyLifecycleEvents" in entry.variant.overrides;
+                    return (
+                      <div key={entry.id}>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <div className="augur-field-label flex items-center gap-1.5">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: scenarioColor(index) }}
+                              aria-hidden="true"
+                            />
+                            {entry.label}
+                          </div>
+                          {overridden && (
+                            <button
+                              type="button"
+                              className="augur-link text-xs font-semibold"
+                              onClick={() => onRevertKeys(entry.variant.id, ["propertyLifecycleEvents"])}
+                            >
+                              Revert to base
+                            </button>
+                          )}
+                        </div>
+                        <LifecycleEventsEditor
+                          events={entry.input.propertyLifecycleEvents ?? []}
+                          horizonMonths={horizonMonths}
+                          onChange={(events) =>
+                            entry.variant == null
+                              ? onSetBaseField("propertyLifecycleEvents", events)
+                              : onPatchVariant(entry.variant.id, { propertyLifecycleEvents: events })
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
         </>
       )}
@@ -446,34 +518,22 @@ export function ScenarioEditor({
   );
 }
 
-// The "inspect one scenario" region below the comparison table: the scenario chips (add / rename /
-// delete / select) and the active scenario's lifecycle timeline. The chips choose which scenario the
-// timeline editor and the rollout results below drill into — nothing in the comparison table above
-// depends on the selection (it only highlights the active column).
+// The scenario selector below the comparison table: chips (add / rename / delete / select) + Reset.
+// The active chip drives only the rollout results below it (histogram / events / terminal table);
+// per-scenario editing — including each scenario's timeline — lives in the comparison editor above.
 export function ScenarioInspector({
   base,
   variants,
   activeId,
-  horizonMonths,
   onSelect,
   onAddVariant,
   onDeleteVariant,
   onRename,
   onResetBase,
-  onSetBaseField,
-  onPatchVariant,
   onRevertKeys,
 }) {
-  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
   const activeVariant = variants.find((v) => v.id === activeId) ?? null;
-  const activeIndex = Math.max(
-    0,
-    entries.findIndex((entry) => entry.id === activeId)
-  );
-  const activeLabel = entries[activeIndex]?.label ?? base.label;
-  const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
-  const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
 
   const resetActive = () => {
     if (activeVariant == null) onResetBase();
@@ -481,65 +541,22 @@ export function ScenarioInspector({
   };
 
   return (
-    <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-inspector="">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <ScenarioTabs
-          entries={entries}
-          activeId={activeId}
-          onSelect={onSelect}
-          onAdd={onAddVariant}
-          onDelete={onDeleteVariant}
-          onRename={onRename}
-          canAdd={variants.length < MAX_VARIANTS}
-        />
-        <Button size="xs" variant="subtle" onClick={resetActive}>
-          Reset {activeVariant == null ? "base" : activeLabel}
-        </Button>
-      </div>
-
-      {activeInput.propertyId != null && (
-        <div className="px-4 py-3" data-product-timeline="">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              type="button"
-              className="augur-eyebrow flex items-center gap-1.5"
-              aria-expanded={!timelineCollapsed}
-              onClick={() => setTimelineCollapsed((previous) => !previous)}
-            >
-              <span
-                aria-hidden="true"
-                className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
-              >
-                ▶
-              </span>
-              Timeline —{" "}
-              <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
-                {activeLabel}
-              </span>
-            </button>
-            {timelineOverridden && !timelineCollapsed && (
-              <button
-                type="button"
-                className="augur-link text-xs font-semibold"
-                onClick={() => onRevertKeys(activeVariant.id, ["propertyLifecycleEvents"])}
-              >
-                Revert to base
-              </button>
-            )}
-          </div>
-          {!timelineCollapsed && (
-            <LifecycleEventsEditor
-              events={activeInput.propertyLifecycleEvents ?? []}
-              horizonMonths={horizonMonths}
-              onChange={(events) =>
-                activeVariant == null
-                  ? onSetBaseField("propertyLifecycleEvents", events)
-                  : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
-              }
-            />
-          )}
-        </div>
-      )}
+    <div
+      className="augur-card flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+      data-product-scenario-inspector=""
+    >
+      <ScenarioTabs
+        entries={entries}
+        activeId={activeId}
+        onSelect={onSelect}
+        onAdd={onAddVariant}
+        onDelete={onDeleteVariant}
+        onRename={onRename}
+        canAdd={variants.length < MAX_VARIANTS}
+      />
+      <Button size="xs" variant="subtle" onClick={resetActive}>
+        Reset {activeVariant == null ? "base" : activeVariant.label}
+      </Button>
     </div>
   );
 }
