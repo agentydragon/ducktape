@@ -27,30 +27,23 @@ const TERM_DATA = [
 // scenario makes them relevant (the same "union" trick the metric list uses): `owns` once any
 // scenario buys, `mortgage`/`rented`/`managed` once any buys-with-mortgage / rents-it-out / uses an
 // agency. The lifecycle timeline is the one list-shaped knob — it stays a per-active editor below.
-const GROUPS = ["Property", "Spending", "Outside rent", "Cash buffer", "Private equity"];
+// Row groups, in display order. Each is independently collapsible; the finer housing split (Mortgage
+// / Rental income / Management as their own groups) lets you fold away the parts that don't matter
+// for the comparison you're looking at.
+const GROUPS = [
+  "Property",
+  "Mortgage",
+  "Rental income",
+  "Management",
+  "Spending",
+  "Outside rent",
+  "Cash buffer",
+  "Private equity",
+];
 
 const KNOBS = [
   { key: "propertyId", label: "Property to buy", kind: "property", group: "Property" },
   { key: "financingKind", label: "Financing", kind: "financing", group: "Property", needs: "owns" },
-  {
-    key: "downPaymentPct",
-    label: "Down payment",
-    kind: "pct",
-    max: 100,
-    step: 1,
-    group: "Property",
-    needs: "mortgage",
-  },
-  { key: "mortgageTermMonths", label: "Term", kind: "term", group: "Property", needs: "mortgage" },
-  {
-    key: "annualRatePct",
-    label: "Annual rate",
-    kind: "pct",
-    max: 25,
-    step: 0.125,
-    group: "Property",
-    needs: "mortgage",
-  },
   { key: "annualInsurancePct", label: "Insurance", kind: "pct", max: 10, step: 0.05, group: "Property", needs: "owns" },
   {
     key: "annualMaintenancePct",
@@ -62,25 +55,60 @@ const KNOBS = [
     needs: "owns",
   },
   { key: "livesHere", label: "Owner lives here", kind: "bool", group: "Property", needs: "owns" },
-  { key: "rentalFractionRentedPct", label: "Rented", kind: "pct", max: 100, step: 1, group: "Property", needs: "owns" },
-  { key: "rentalVacancyPct", label: "Vacancy", kind: "pct", max: 100, step: 1, group: "Property", needs: "rented" },
+  {
+    key: "downPaymentPct",
+    label: "Down payment",
+    kind: "pct",
+    max: 100,
+    step: 1,
+    group: "Mortgage",
+    needs: "mortgage",
+  },
+  { key: "mortgageTermMonths", label: "Term", kind: "term", group: "Mortgage", needs: "mortgage" },
+  {
+    key: "annualRatePct",
+    label: "Annual rate",
+    kind: "pct",
+    max: 25,
+    step: 0.125,
+    group: "Mortgage",
+    needs: "mortgage",
+  },
+  {
+    key: "rentalFractionRentedPct",
+    label: "Rented",
+    kind: "pct",
+    max: 100,
+    step: 1,
+    group: "Rental income",
+    needs: "owns",
+  },
+  {
+    key: "rentalVacancyPct",
+    label: "Vacancy",
+    kind: "pct",
+    max: 100,
+    step: 1,
+    group: "Rental income",
+    needs: "rented",
+  },
   {
     key: "rentalFullPropertyMonthlyUsd",
     label: "Full-property rent",
     kind: "usd",
     step: 100,
-    group: "Property",
+    group: "Rental income",
     needs: "rented",
   },
-  { key: "useRentalManagement", label: "Use management", kind: "bool", group: "Property", needs: "rented" },
-  { key: "managementFeePct", label: "Mgmt fee", kind: "pct", max: 100, step: 1, group: "Property", needs: "managed" },
+  { key: "useRentalManagement", label: "Use management", kind: "bool", group: "Rental income", needs: "rented" },
+  { key: "managementFeePct", label: "Mgmt fee", kind: "pct", max: 100, step: 1, group: "Management", needs: "managed" },
   {
     key: "leasingFeeMonths",
     label: "Leasing fee",
     kind: "num",
     unit: "mo",
     step: 0.5,
-    group: "Property",
+    group: "Management",
     needs: "managed",
   },
   {
@@ -89,7 +117,7 @@ const KNOBS = [
     kind: "num",
     unit: "mo",
     step: 1,
-    group: "Property",
+    group: "Management",
     needs: "managed",
   },
   { key: "monthlySpendUsd", label: "Monthly spend", kind: "usd", min: 1, step: 100, group: "Spending" },
@@ -221,8 +249,6 @@ function RevertButton({ label, onClick }) {
 
 const TABLE_HEADER =
   "px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
-const GROUP_HEADER =
-  "bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400";
 
 // One variant's cell: editable, bound to the override value when overridden or the inherited Base
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
@@ -276,6 +302,15 @@ export function ScenarioEditor({
   onRevertKeys,
 }) {
   const [open, setOpen] = useState(true);
+  // Per-group + timeline collapse — fold away the rows that don't matter for the comparison at hand
+  // (e.g. mortgage terms, management, the lifecycle timeline). Everything starts expanded.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggleCollapsed = (name) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
   const activeVariant = variants.find((v) => v.id === activeId) ?? null;
   const activeIndex = Math.max(
@@ -290,6 +325,7 @@ export function ScenarioEditor({
 
   const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
   const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
+  const timelineCollapsed = collapsed.has("Timeline");
 
   const resetActive = () => {
     if (activeVariant == null) onResetBase();
@@ -365,46 +401,65 @@ export function ScenarioEditor({
                   {GROUPS.map((group) => {
                     const groupKnobs = visibleKnobs.filter((knob) => knob.group === group);
                     if (groupKnobs.length === 0) return null;
+                    const groupCollapsed = collapsed.has(group);
                     return (
                       <React.Fragment key={group}>
                         <tr>
-                          <th colSpan={1 + entries.length} className={GROUP_HEADER}>
-                            {group}
+                          <th colSpan={1 + entries.length} className="bg-slate-50 p-0 dark:bg-slate-900">
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                              aria-expanded={!groupCollapsed}
+                              data-product-group-toggle={group}
+                              onClick={() => toggleCollapsed(group)}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`text-[8px] transition-transform ${groupCollapsed ? "" : "rotate-90"}`}
+                              >
+                                ▶
+                              </span>
+                              {group}
+                              {groupCollapsed && (
+                                <span className="ml-1 normal-case augur-muted">{groupKnobs.length} rows</span>
+                              )}
+                            </button>
                           </th>
                         </tr>
-                        {groupKnobs.map((knob) => (
-                          <tr key={knob.key} data-product-knob-row={knob.key}>
-                            <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
-                              {knob.label}
-                            </th>
-                            {knobApplies(knob, base.input) ? (
-                              <td className="px-3 py-1.5 align-top">
-                                <div className="min-w-[8rem]">
-                                  <KnobCell
-                                    knob={knob}
-                                    value={base.input[knob.key]}
-                                    ariaLabel={`${knob.label} — Base`}
-                                    bootstrap={bootstrap}
-                                    onChange={(value) => onSetBaseField(knob.key, value)}
-                                  />
-                                </div>
-                              </td>
-                            ) : (
-                              <NaCell />
-                            )}
-                            {variants.map((variant) => (
-                              <VariantKnobCell
-                                key={variant.id}
-                                knob={knob}
-                                variant={variant}
-                                baseInput={base.input}
-                                bootstrap={bootstrap}
-                                onPatchVariant={onPatchVariant}
-                                onRevertKeys={onRevertKeys}
-                              />
-                            ))}
-                          </tr>
-                        ))}
+                        {!groupCollapsed &&
+                          groupKnobs.map((knob) => (
+                            <tr key={knob.key} data-product-knob-row={knob.key}>
+                              <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
+                                {knob.label}
+                              </th>
+                              {knobApplies(knob, base.input) ? (
+                                <td className="px-3 py-1.5 align-top">
+                                  <div className="min-w-[8rem]">
+                                    <KnobCell
+                                      knob={knob}
+                                      value={base.input[knob.key]}
+                                      ariaLabel={`${knob.label} — Base`}
+                                      bootstrap={bootstrap}
+                                      onChange={(value) => onSetBaseField(knob.key, value)}
+                                    />
+                                  </div>
+                                </td>
+                              ) : (
+                                <NaCell />
+                              )}
+                              {variants.map((variant) => (
+                                <VariantKnobCell
+                                  key={variant.id}
+                                  knob={knob}
+                                  variant={variant}
+                                  baseInput={base.input}
+                                  bootstrap={bootstrap}
+                                  onPatchVariant={onPatchVariant}
+                                  onRevertKeys={onRevertKeys}
+                                />
+                              ))}
+                            </tr>
+                          ))}
                       </React.Fragment>
                     );
                   })}
@@ -421,13 +476,25 @@ export function ScenarioEditor({
           {activeInput.propertyId != null && (
             <div className="px-4 py-3" data-product-timeline="">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="augur-eyebrow">
+                <button
+                  type="button"
+                  className="augur-eyebrow flex items-center gap-1.5"
+                  aria-expanded={!timelineCollapsed}
+                  data-product-group-toggle="Timeline"
+                  onClick={() => toggleCollapsed("Timeline")}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
+                  >
+                    ▶
+                  </span>
                   Timeline —{" "}
                   <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
                     {activeLabel}
                   </span>
-                </div>
-                {timelineOverridden && (
+                </button>
+                {timelineOverridden && !timelineCollapsed && (
                   <button
                     type="button"
                     className="augur-link text-xs font-semibold"
@@ -437,15 +504,17 @@ export function ScenarioEditor({
                   </button>
                 )}
               </div>
-              <LifecycleEventsEditor
-                events={activeInput.propertyLifecycleEvents ?? []}
-                horizonMonths={horizonMonths}
-                onChange={(events) =>
-                  activeVariant == null
-                    ? onSetBaseField("propertyLifecycleEvents", events)
-                    : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
-                }
-              />
+              {!timelineCollapsed && (
+                <LifecycleEventsEditor
+                  events={activeInput.propertyLifecycleEvents ?? []}
+                  horizonMonths={horizonMonths}
+                  onChange={(events) =>
+                    activeVariant == null
+                      ? onSetBaseField("propertyLifecycleEvents", events)
+                      : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
+                  }
+                />
+              )}
             </div>
           )}
 
