@@ -42,7 +42,7 @@ spec:
                       - proxmox
       containers:
         - name: litellm
-          image: litellm/litellm:1.82.1
+          image: litellm/litellm:1.86.3
           args: ["--config", "/etc/litellm/config.yaml"]
           ports:
             - name: http
