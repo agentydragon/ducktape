@@ -30,8 +30,9 @@ from augur.calibration.catalog import (
     KalshiRef,
     ManifoldRef,
     MarketCatalog,
+    PolymarketRef,
 )
-from augur.calibration.platform import Platform, PriceClient
+from augur.calibration.platform import Market, Platform, PriceClient
 from augur.calibration.testing import mock_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
@@ -338,6 +339,79 @@ def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) ->
     # D_KL(market ‖ model) = 0.2 log2(0.2/0.25) + 0.5 log2(1) + 0.3 log2(0.3/0.25) ≈ 0.0146 bits.
     assert family.kl_bits is not None
     assert math.isclose(family.kl_bits, 0.0146, abs_tol=1e-3)
+
+
+class _ProbClient:
+    """A minimal PriceClient returning a Market with a fixed (possibly None) probability."""
+
+    def __init__(self, probabilities: dict[str, float | None]) -> None:
+        self._probabilities = probabilities
+
+    def get_market(self, market_id: str) -> Market:
+        return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._probabilities[market_id])
+
+    def close(self) -> None:
+        pass
+
+
+def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
+    """A market the platform prices as None, and a categorical family whose bucket prices sum to
+    zero, are both dropped (logged) rather than 500-ing via require_probability()."""
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        markets=[
+            ExactMarket(
+                question="S&P 500 above 7500 on 2026-12-31? (no live price)",
+                platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
+                outcome_type="BINARY",
+                mapping_kind="level_at_date",
+                mapping_params={"series": "sp500", "threshold": 7500.0, "direction": "above", "at_date": "2026-12-31"},
+            )
+        ],
+        bucket_families=[
+            BucketFamily(
+                family_id="degenerate",
+                question="S&P 500 buckets with no liquidity",
+                platform=Platform.POLYMARKET,
+                series="sp500",
+                at_date=date(2026, 12, 31),
+                buckets=[
+                    BucketMember(market_id="Z-LO", label="<7000", high=7000.0),
+                    BucketMember(market_id="Z-HI", label=">=7000", low=7000.0),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = macro_model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_asset_prices=frozenset({SP500Key()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"sp500": _SP500_ANCHOR},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    clients: dict[Platform, PriceClient] = {Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})}
+    result = run_calibration(
+        macro_model,
+        catalog,
+        issuer=_ISSUER,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+    )
+    assert result.clean == []  # None-priced market dropped, not scored
+    assert result.surfaced == []  # ...and not surfaced either
+    assert result.categorical == []  # degenerate (sum-to-zero) family dropped
 
 
 def test_wilson_interval_edges() -> None:

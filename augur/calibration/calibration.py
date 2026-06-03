@@ -135,8 +135,9 @@ class CleanRow(BaseModel):
     question: str
     url: str
     platform: str
-    # Which model channel scored this market: a PE issuer id, or a level-series wire id
-    # ("sp500", "inflation"). `= None` keeps it optional on the exported wire schema.
+    # The macro level-series wire id this market scored against ("sp500", "inflation"), or None
+    # for PE-event markets (identified by the run's issuer, not per-row). `= None` keeps it
+    # optional on the exported wire schema.
     channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
@@ -300,8 +301,9 @@ def _categorical_row(
     categorical is the per-bucket rollout share at `at_date`; both `p_model` and
     `kl_bits` are None when the series is unmodeled or `at_date` is beyond the horizon.
     """
+    # The caller (`run_calibration`) guarantees a finite total > 0 before getting here.
     total = sum(live_prices)
-    p_market = [price / total for price in live_prices] if total > 0 else [0.0 for _ in live_prices]
+    p_market = [price / total for price in live_prices]
     matrix = level_paths.get(parse_level_series_key(str(family.series)))
     model_counts = (
         None
@@ -506,13 +508,19 @@ def run_calibration(
     )
 
     def _live(market_id: str, platform: Platform) -> Market | None:
-        # A single broken catalog row (bad market_id) or a transient API hiccup must not 500
-        # the entire calibration endpoint -- log + drop just that row instead.
+        # A single broken catalog row (bad market_id), a transient API hiccup, or a market the
+        # platform priced as None (e.g. Kalshi `last_price_dollars: null`) must not 500 the whole
+        # calibration endpoint -- log + drop just that row instead. Dropping None-probability
+        # markets here keeps every downstream `require_probability()` call safe.
         try:
-            return price_clients[platform].get_market(market_id)
+            market = price_clients[platform].get_market(market_id)
         except _LIVE_FETCH_ERRORS:
             logger.warning("dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True)
             return None
+        if market.probability is None:
+            logger.warning("dropping calibration row: %s market %r returned no YES probability", platform, market_id)
+            return None
+        return market
 
     clean: list[CleanRow] = []
     surfaced: list[SurfacedRow] = []
@@ -537,15 +545,19 @@ def run_calibration(
     categorical: list[CategoricalRow] = []
     for family in catalog.bucket_families:
         prices = [_live(member.market_id, family.platform) for member in family.buckets]
+        # A bucket that failed to fetch or had no probability makes the categorical ill-defined.
         if any(live is None for live in prices):
-            continue  # a bucket failed to fetch -> can't form a categorical; drop the whole family
+            logger.warning("dropping categorical family %r: a bucket failed to fetch or had no price", family.family_id)
+            continue
+        live_prices = [live.require_probability() for live in prices if live is not None]
+        total = sum(live_prices)
+        # Degenerate normalizer (all-zero / non-finite prices) can't form a valid categorical.
+        if not math.isfinite(total) or total <= 0.0:
+            logger.warning("dropping categorical family %r: bucket prices sum to %r", family.family_id, total)
+            continue
         categorical.append(
             _categorical_row(
-                family,
-                level_paths=paths,
-                live_prices=[live.require_probability() for live in prices if live is not None],
-                as_of=as_of,
-                horizon_months=horizon_months,
+                family, level_paths=paths, live_prices=live_prices, as_of=as_of, horizon_months=horizon_months
             )
         )
 
