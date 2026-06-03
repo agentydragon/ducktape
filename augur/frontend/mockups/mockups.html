@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Augur scenario UI mockups</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #f1f5f9;
+        color: #1e293b;
+        font-family: "Inter", system-ui, sans-serif;
+        font-size: 13px;
+      }
+      h2 {
+        font-size: 14px;
+        margin: 0;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .between {
+        justify-content: space-between;
+      }
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #64748b;
+        margin: 14px 0 8px;
+      }
+      .hint {
+        color: #94a3b8;
+        font-weight: 400;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .btn {
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #334155;
+        border-radius: 999px;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn.ghost {
+        border-style: dashed;
+        color: #64748b;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #475569;
+        background: #e2e8f0;
+        border-radius: 4px;
+        padding: 1px 5px;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      .dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        margin-right: 7px;
+        vertical-align: middle;
+      }
+
+      /* shared knobs grid */
+      .shared-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px 18px;
+      }
+      .kv {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 6px 0;
+      }
+      .kv label {
+        font-size: 11px;
+        color: #64748b;
+      }
+      .kv span.val {
+        font-weight: 600;
+      }
+      .kv.add {
+        position: relative;
+        justify-content: center;
+      }
+      .menu {
+        position: absolute;
+        top: 30px;
+        left: 0;
+        width: 170px;
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+        padding: 4px;
+        z-index: 5;
+      }
+      .menu-item {
+        padding: 6px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #334155;
+      }
+      .menu-item:hover,
+      .menu-item.hot {
+        background: #eff6ff;
+        color: #1d4ed8;
+      }
+
+      /* override table */
+      table.ov {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 4px;
+      }
+      table.ov th,
+      table.ov td {
+        text-align: left;
+        padding: 7px 10px;
+        border-bottom: 1px solid #eef2f6;
+        font-weight: 400;
+      }
+      table.ov thead th {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #94a3b8;
+        font-weight: 600;
+        background: #f8fafc;
+      }
+      table.ov thead th .x {
+        color: #cbd5e1;
+        margin-left: 6px;
+        cursor: pointer;
+      }
+      table.ov tbody th {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      table.ov input {
+        width: 100%;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 4px 7px;
+        font: inherit;
+        color: #1e293b;
+        background: #fff;
+      }
+      table.ov td.muted {
+        color: #cbd5e1;
+      }
+
+      .charts {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .chartcard {
+        flex: 1 1 460px;
+      }
+      .legend {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        margin: 6px 0 2px;
+      }
+      .legend .item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #475569;
+      }
+      .legend .sw {
+        width: 14px;
+        height: 3px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+      .caption {
+        color: #64748b;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ===================== CHARTS ===================== -->
+    <div class="charts">
+      <section id="mock-chart-lines" class="card chartcard">
+        <h2>Lines — median + P5/P95 (no fills)</h2>
+        <div class="legend" id="legend-lines"></div>
+        <svg id="svg-lines" viewBox="0 0 480 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="caption">
+          Solid = median, dashed = P5 / P95. Overlays cleanly for several scenarios; medians stay dominant.
+        </div>
+      </section>
+
+      <section id="mock-chart-candles" class="card chartcard">
+        <h2>Candles — distribution at yearly checkpoints</h2>
+        <div class="legend" id="legend-candles"></div>
+        <svg id="svg-candles" viewBox="0 0 480 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="caption">
+          Per checkpoint: wick = P5–P95, box = P25–P75, tick = median. Scenarios sit side by side — zero overlap.
+        </div>
+      </section>
+    </div>
+
+    <script>
+      // Synthetic, illustrative data ($M). Lognormal: value = median * exp(z * sigma).
+      const Z = { p5: -1.645, p25: -0.674, p50: 0, p75: 0.674, p95: 1.645 };
+      const SCENARIOS = [
+        {
+          name: "Rent",
+          color: "#2563eb",
+          m: (t) => 1.2 - 0.55 * Math.pow(t / 20, 1.1),
+          s: (t) => 0.1 + 0.34 * Math.sqrt(t / 20),
+        },
+        {
+          name: "Buy (mortgage)",
+          color: "#0d9488",
+          m: (t) => 1.2 + 0.62 * Math.pow(t / 20, 1.2),
+          s: (t) => 0.12 + 0.46 * Math.sqrt(t / 20),
+        },
+        {
+          name: "Buy (cash)",
+          color: "#7c3aed",
+          m: (t) => 1.2 + 0.3 * Math.pow(t / 20, 1.1),
+          s: (t) => 0.09 + 0.3 * Math.sqrt(t / 20),
+        },
+      ];
+      const q = (sc, t, z) => sc.m(t) * Math.exp(z * sc.s(t));
+      const W = 480,
+        H = 300,
+        PAD = { l: 50, r: 14, t: 12, b: 30 };
+
+      function yMaxOver(times) {
+        let mx = 0;
+        for (const sc of SCENARIOS) for (const t of times) mx = Math.max(mx, q(sc, t, Z.p95));
+        return Math.ceil(mx * 1.06 * 2) / 2;
+      }
+      function yGrid(yMax, Y) {
+        let s = "";
+        for (let i = 0; i <= 4; i++) {
+          const v = (yMax * i) / 4,
+            y = Y(v);
+          s += `<line x1="${PAD.l}" x2="${W - PAD.r}" y1="${y}" y2="${y}" stroke="#e8edf3"/>`;
+          s += `<text x="${PAD.l - 6}" y="${y + 3}" text-anchor="end" font-size="10" fill="#94a3b8">$${v.toFixed(1)}M</text>`;
+        }
+        return s;
+      }
+      function legend(elId) {
+        document.getElementById(elId).innerHTML = SCENARIOS.map(
+          (sc) => `<span class="item"><span class="sw" style="background:${sc.color}"></span>${sc.name}</span>`
+        ).join("");
+      }
+
+      function buildLines() {
+        const times = [];
+        for (let t = 0; t <= 20.0001; t += 0.5) times.push(t);
+        const yMax = yMaxOver(times);
+        const X = (t) => PAD.l + (t / 20) * (W - PAD.l - PAD.r);
+        const Y = (v) => H - PAD.b - (v / yMax) * (H - PAD.t - PAD.b);
+        let svg = yGrid(yMax, Y);
+        for (const t of [0, 5, 10, 15, 20])
+          svg += `<text x="${X(t)}" y="${H - PAD.b + 16}" text-anchor="middle" font-size="10" fill="#94a3b8">${t} yr</text>`;
+        const line = (z) => times.map((t) => `${X(t).toFixed(1)},${Y(q(SCENARIOS[0], t, z)).toFixed(1)}`);
+        for (const sc of SCENARIOS) {
+          const pts = (z) => times.map((t) => `${X(t).toFixed(1)},${Y(q(sc, t, z)).toFixed(1)}`).join(" ");
+          svg += `<polyline points="${pts(Z.p5)}" fill="none" stroke="${sc.color}" stroke-width="1.1" stroke-dasharray="4 3" opacity="0.7"/>`;
+          svg += `<polyline points="${pts(Z.p95)}" fill="none" stroke="${sc.color}" stroke-width="1.1" stroke-dasharray="4 3" opacity="0.7"/>`;
+          svg += `<polyline points="${pts(Z.p50)}" fill="none" stroke="${sc.color}" stroke-width="2.4"/>`;
+        }
+        document.getElementById("svg-lines").innerHTML = svg;
+        legend("legend-lines");
+      }
+
+      function buildCandles() {
+        const checkpoints = [4, 8, 12, 16, 20];
+        const yMax = yMaxOver(checkpoints);
+        const Y = (v) => H - PAD.b - (v / yMax) * (H - PAD.t - PAD.b);
+        let svg = yGrid(yMax, Y);
+        const groupW = (W - PAD.l - PAD.r) / checkpoints.length;
+        const cw = Math.min(11, groupW / (SCENARIOS.length + 1));
+        checkpoints.forEach((t, gi) => {
+          const gx = PAD.l + groupW * (gi + 0.5);
+          SCENARIOS.forEach((sc, si) => {
+            const cx = gx + (si - (SCENARIOS.length - 1) / 2) * cw;
+            const p5 = Y(q(sc, t, Z.p5)),
+              p25 = Y(q(sc, t, Z.p25)),
+              p50 = Y(q(sc, t, Z.p50)),
+              p75 = Y(q(sc, t, Z.p75)),
+              p95 = Y(q(sc, t, Z.p95));
+            svg += `<line x1="${cx}" x2="${cx}" y1="${p95.toFixed(1)}" y2="${p5.toFixed(1)}" stroke="${sc.color}" stroke-width="1.2" opacity="0.85"/>`;
+            svg += `<rect x="${(cx - cw * 0.4).toFixed(1)}" y="${p75.toFixed(1)}" width="${(cw * 0.8).toFixed(1)}" height="${Math.max(1, p25 - p75).toFixed(1)}" fill="${sc.color}" opacity="0.28" stroke="${sc.color}" stroke-width="1"/>`;
+            svg += `<line x1="${(cx - cw * 0.46).toFixed(1)}" x2="${(cx + cw * 0.46).toFixed(1)}" y1="${p50.toFixed(1)}" y2="${p50.toFixed(1)}" stroke="${sc.color}" stroke-width="2"/>`;
+          });
+          svg += `<text x="${gx}" y="${H - PAD.b + 16}" text-anchor="middle" font-size="10" fill="#94a3b8">${t} yr</text>`;
+        });
+        document.getElementById("svg-candles").innerHTML = svg;
+        legend("legend-candles");
+      }
+
+      buildLines();
+      buildCandles();
+      window.__mockupsReady = true;
+    </script>
+  </body>
+</html>
