@@ -77,13 +77,13 @@ def catalog() -> MarketCatalog:
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="Issuer collapses or acquired before IPO?",
                 platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
-                mapping=PreIpoFailureMapping(),
+                mapping=PreIpoFailureMapping(issuer=_ISSUER),
             ),
             CorrelateMarket(
                 question="Issuer completes an IPO in 2026 with $1T cap?",
@@ -91,6 +91,7 @@ def catalog() -> MarketCatalog:
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 correlate_of="ipo_by_date",
+                issuer=_ISSUER,
                 correlate_strength="strong",
                 reason="The >=$1T cap conjunct needs a valuation augur does not model.",
             ),
@@ -104,13 +105,14 @@ def price_clients() -> dict[Platform, PriceClient]:
 
 
 def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     return run_calibration(
-        model,
         catalog,
-        issuer=_ISSUER,
         horizon_months=_HORIZON,
-        rollout_seeds=tuple(range(4)),
+        rollout_seeds=seeds,
         price_clients=price_clients,
+        bundle=bundle,
     )
 
 
@@ -118,7 +120,6 @@ def test_clean_rows_score_events(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
     result = _run(model, catalog, price_clients)
-    assert result.issuer == _ISSUER
     assert result.rollout_count == 4
     clean = {row.market_id: row for row in result.clean}
 
@@ -160,28 +161,17 @@ def test_surfaced_row_carries_augur_context(
     assert surfaced.augur_context.p_model == 0.25
 
 
-def test_run_calibration_reuses_supplied_bundle(
+def test_run_calibration_shares_bundle_with_mark_fan(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
-    # Sampling the bundle once and threading it into run_calibration must yield the same
-    # scoring as letting run_calibration sample internally -- the backend reuses one bundle
-    # for both the clean/surfaced scoring and the mark_fan.
+    # One sampled bundle drives both the clean/surfaced scoring and the issuer mark_fan, so
+    # both views come from a single rollout.
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    from_bundle = run_calibration(
-        model,
-        catalog,
-        issuer=_ISSUER,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=price_clients,
-        bundle=bundle,
+    result = run_calibration(
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
-    internal = run_calibration(
-        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients
-    )
-    assert from_bundle == internal
-    # The same bundle also drives the mark_fan, so both views come from one rollout.
+    assert {row.market_id for row in result.clean} == {"AAA", "BBB"}
     fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(50.0,))
     assert fan.months[0].values == {"50.0": 50.0}
 
@@ -265,9 +255,7 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "CPI": 0.20}})
     result = run_calibration(
-        macro_model,
         catalog,
-        issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
         price_clients=clients,
@@ -324,9 +312,7 @@ def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) ->
     # Live bucket prices 0.2/0.5/0.3 (already sum to 1); model month-7 counts [1,2,1] -> [0.25,0.5,0.25].
     clients = mock_price_clients({Platform.KALSHI: {"B-LO": 0.20, "B-MID": 0.50, "B-HI": 0.30}})
     result = run_calibration(
-        macro_model,
         catalog,
-        issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
         price_clients=clients,
@@ -405,9 +391,7 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
     )
     clients: dict[Platform, PriceClient] = {Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})}
     result = run_calibration(
-        macro_model,
         catalog,
-        issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
         price_clients=clients,
@@ -437,20 +421,22 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
                 platform_ref=ManifoldRef(manifold_id="M1"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="IPO before Sep 2026? (Kalshi)",
                 platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 9, 1),
-                mapping=IpoByDateMapping(by_date=date(2026, 9, 1)),
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2026, 9, 1)),
             ),
         ],
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     result = run_calibration(
-        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=tuple(range(4)), price_clients=clients
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
     )
     by_id = {row.market_id: row for row in result.clean}
     assert by_id["M1"].platform == "manifold"

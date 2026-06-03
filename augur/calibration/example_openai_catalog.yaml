@@ -83,7 +83,7 @@ markets:
     close_date: "2027-01-01"
     resolution_deadline: "2027-01-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2027-01-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
     # exact event match. NB the model's IPO hazard is a flat ~7%/yr Bernoulli vs the
     # market's ~0.75 -- the headline calibration gap, computed exactly.
     resolution_criterion_text: |
@@ -98,7 +98,7 @@ markets:
     close_date: "2027-01-01"
     resolution_deadline: "2028-01-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2028-01-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2028-01-01" }
     # exact; with the 2027/2029 siblings this samples the model's IPO survival curve
     # against the market term structure.
     resolution_criterion_text: |
@@ -113,7 +113,7 @@ markets:
     close_date: "2027-01-01"
     resolution_deadline: "2029-01-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2029-01-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2029-01-01" }
     # exact; third point on the IPO survival curve.
     resolution_criterion_text: |
       Part of the @Bayesian openai-ipo-before-{2027,2028,2029} series; same
@@ -127,7 +127,7 @@ markets:
     close_date: "2030-01-01"
     resolution_deadline: "2030-01-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2030-01-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2030-01-01" }
     # exact (within 120-month horizon).
     resolution_criterion_text: ""
     notes: "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended semantics."
@@ -138,7 +138,7 @@ markets:
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-12-31" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
     # exact; criterion ('completes an IPO and begins trading') matches the
     # PUBLIC_MARKET regime.
     resolution_criterion_text: |
@@ -157,7 +157,7 @@ markets:
     close_date: "2026-11-01"
     resolution_deadline: "2026-10-31"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-10-31" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-31" }
     resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2026-10-31)."
 
@@ -167,7 +167,7 @@ markets:
     close_date: "2027-04-01"
     resolution_deadline: "2027-04-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2027-04-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-04-01" }
     resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2027-04-01)."
 
@@ -184,7 +184,7 @@ markets:
     close_date: "2026-09-01"
     resolution_deadline: "2026-09-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-09-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-01" }
     # exact. Kalshi resolves YES if SEC declares S-1 effective OR IPO is priced OR
     # exchange assigns a ticker.
     resolution_criterion_text: |
@@ -200,7 +200,7 @@ markets:
     close_date: "2026-10-01"
     resolution_deadline: "2026-10-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-10-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-01" }
     resolution_criterion_text: |
       If OpenAI confirms an IPO before Oct 1, 2026, then the market resolves to Yes.
       Same IPO confirmation criteria as the series.
@@ -213,7 +213,7 @@ markets:
     close_date: "2026-11-01"
     resolution_deadline: "2026-11-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-11-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-11-01" }
     resolution_criterion_text: |
       If OpenAI confirms an IPO before Nov 1, 2026, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~19K, last_price 0.76."
@@ -225,7 +225,7 @@ markets:
     close_date: "2026-12-01"
     resolution_deadline: "2026-12-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-12-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-01" }
     resolution_criterion_text: |
       If OpenAI confirms an IPO before Dec 1, 2026, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~18K, last_price 0.74."
@@ -237,7 +237,7 @@ markets:
     close_date: "2027-01-01"
     resolution_deadline: "2027-01-01"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2027-01-01" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
     resolution_criterion_text: |
       If OpenAI confirms an IPO before Jan 1, 2027, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~26K, last_price 0.86. Overlaps Manifold 'before 2027' market."
@@ -255,7 +255,7 @@ markets:
     close_date: "2026-06-30"
     resolution_deadline: "2026-06-30"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-06-30" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-06-30" }
     resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~0.9%."
 
@@ -266,7 +266,7 @@ markets:
     close_date: "2026-09-30"
     resolution_deadline: "2026-09-30"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-09-30" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-30" }
     resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~43%."
 
@@ -277,7 +277,7 @@ markets:
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
     mappability: exact
-    mapping: { kind: ipo_by_date, by_date: "2026-12-31" }
+    mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
     resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~70.5%."
 
@@ -297,6 +297,7 @@ markets:
     resolution_deadline: "2027-01-01"
     mappability: correlate
     correlate_of: ipo_by_date
+    issuer: openai
     correlate_strength: strong
     reason: >
       Binary IPO-before-2027 market; overlaps the exact Kalshi monthly series and
@@ -313,6 +314,7 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: correlate
     correlate_of: ipo_by_date
+    issuer: openai
     correlate_strength: strong
     reason: >
       Polymarket binary IPO-before-2027. Same rationale as the Kalshi correlate:
@@ -345,7 +347,7 @@ markets:
     close_date: "2041-01-18"
     resolution_deadline: null
     mappability: exact
-    mapping: { kind: pre_ipo_failure }
+    mapping: { kind: pre_ipo_failure, issuer: openai }
     # near-exact: the sim races these absorbing regimes (collapse ~0.3%/yr +
     # acquisition ~1%/yr vs IPO ~7%/yr). Only the 'files for IPO then withdrawn ->
     # YES' edge is unmodeled (negligible). Many rollouts stay private within 120mo ->
@@ -387,6 +389,7 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: correlate
     correlate_of: ipo_by_date
+    issuer: openai
     correlate_strength: strong
     reason: >
       The IPO-by-2026 leg is exactly modeled (PUBLIC_MARKET_OPEN), but the >=$1T
@@ -410,6 +413,7 @@ markets:
     resolution_deadline: "2027-01-01"
     mappability: correlate
     correlate_of: ipo_by_date
+    issuer: openai
     correlate_strength: strong
     reason: >
       Resolves on a SEC Form S-1 FILING, not a completed IPO. The sim has no filing
@@ -431,6 +435,7 @@ markets:
     resolution_deadline: "2026-12-31"
     mappability: correlate
     correlate_of: ipo_by_date
+    issuer: openai
     correlate_strength: moderate
     reason: >
       Resolution hinges on the going-public MECHANISM (direct listing / SPAC / merger,

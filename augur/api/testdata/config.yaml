@@ -146,10 +146,9 @@ models:
 # still works.
 default_model_id: openai_pe
 calibration_catalog:
-  # Worked example shipped with augur/calibration. `issuer: openai` must match a PE
-  # issuer in the chosen exogenous preset's model (here: the `openai_pe` preset).
+  # Worked example shipped with augur/calibration. The catalog's PE markets name their issuer
+  # (openai), which must match a PE issuer the chosen preset emits (here the `openai_pe` preset).
   catalog_path: ../../calibration/example_openai_catalog.yaml
-  issuer: openai
   label: OpenAI (example Manifold catalog)
 portfolio_sources:
   fixed:

@@ -71,9 +71,11 @@ measures per-market only — no aggregate loss, no fitting.
       pre_ipo_failure / valuation_by_date / level_at_date / inflation_yoy);
       invalid bindings are unrepresentable. Catalogs rewritten atomically
       (example + gaffer); `Direction` moved to `platform.py`.
-- [ ] **Drop `CalibrationCatalogConfig.issuer`.** Catalog markets self-describe
-      their target; the run covers the union of referenced issuers/series.
-      Atomically switch gaffer's config to the new shape.
+- [x] **Drop `CalibrationCatalogConfig.issuer`.** PE mappings now carry their own
+      `issuer`; the run covers the union of referenced issuers (∩ what the preset
+      emits). `run_calibration` is issuer-agnostic, the API returns per-issuer
+      `mark_fans`/`valuation_fans`, and `/api/calibration` reports `issuers`.
+      gaffer's config + catalog switched atomically.
 - [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
       (today's `mark_fan` is PE-only).
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted

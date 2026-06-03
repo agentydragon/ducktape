@@ -26,7 +26,7 @@ def _ipo_market(manifold_id: str, by_date: str) -> ExactMarket:
         platform_ref=ManifoldRef(manifold_id=manifold_id),
         question=f"IPO by {by_date}?",
         outcome_type="BINARY",
-        mapping=IpoByDateMapping(by_date=date.fromisoformat(by_date)),
+        mapping=IpoByDateMapping(issuer="openai", by_date=date.fromisoformat(by_date)),
     )
 
 

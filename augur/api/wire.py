@@ -118,8 +118,10 @@ class CalibrationInfo(ApiModel):
     The frontend's calibration page uses it to label the run and to seed the model/preset
     picker; the catalog itself is fixed (no picker), so this carries no catalog id."""
 
-    label: str = Field(description="Human label for the catalog (falls back to the issuer when unset in config).")
-    issuer: str = Field(description="Private-equity issuer id the catalog scores (e.g. `openai`).")
+    label: str = Field(description="Human label for the catalog (falls back to the scored issuers when unset).")
+    issuers: list[str] = Field(
+        default_factory=list, description="Private-equity issuer ids the catalog scores (e.g. `openai`)."
+    )
 
 
 class CatalogResponse(ApiModel):

@@ -48,7 +48,7 @@ def test_calibration_info_endpoint(client: TestClient) -> None:
     response = client.get("/api/calibration")
     assert response.status_code == 200, response.text
     calibration = response.json()
-    assert calibration["issuer"] == "openai"
+    assert calibration["issuers"] == ["openai"]
     assert calibration["label"] == "OpenAI (example Manifold catalog)"
 
 
@@ -61,9 +61,10 @@ def test_run_calibration(client: TestClient) -> None:
     assert body["preset_id"] == "openai_pe"
 
     result = body["result"]
-    assert result["issuer"] == "openai"
     assert result["horizon_months"] == 24
     assert result["rollout_count"] == 16
+    # PE markets now carry their issuer in `channel`; the example catalog scores `openai`.
+    assert any(row.get("channel") == "openai" for row in result["clean"])
     # The example catalog ships both exact (scored) and surfaced markets.
     assert isinstance(result["clean"], list)
     assert result["clean"]
@@ -91,8 +92,9 @@ def test_run_calibration(client: TestClient) -> None:
     assert family["channel"] == "sp500"
     assert len(family["buckets"]) == 27
 
-    fan = body["mark_fan"]
-    assert fan["issuer"] == "openai"
+    # One mark fan per scored issuer; the example catalog scores `openai`.
+    assert [fan["issuer"] for fan in body["mark_fans"]] == ["openai"]
+    fan = body["mark_fans"][0]
     assert fan["channel"] == "mark_usd_per_unit"
     assert fan["percentiles"] == [5.0, 25.0, 50.0, 75.0, 95.0]
     # One band per month, months 0..horizon inclusive.

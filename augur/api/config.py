@@ -83,11 +83,11 @@ class CalibrationCatalogConfig(ApiModel):
     """The prediction-market catalog the model-only calibration endpoints score.
 
     `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
-    `property_source.properties_path`). `issuer` is the private-equity issuer id the
-    catalog scores; the chosen model preset must include it."""
+    `property_source.properties_path`). The catalog self-describes its targets — each PE market
+    names its issuer, each macro market its series — so the run covers the union of referenced
+    issuers/series (intersected with what the chosen preset can emit)."""
 
     catalog_path: Path
-    issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str | None = None
     sample_sanity_path: Path | None = Field(
         default=None,

@@ -163,26 +163,34 @@ class _MarketBase(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# PE event mappings name the private-equity issuer they score (the catalog self-describes its
+# targets; the run covers the union of referenced issuers).
+_ISSUER_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
+
+
 class IpoByDateMapping(BaseModel):
-    """An IPO / public-listing (PUBLIC_MARKET_OPEN) event occurs by `by_date`."""
+    """An IPO / public-listing (PUBLIC_MARKET_OPEN) event occurs for `issuer` by `by_date`."""
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["ipo_by_date"] = "ipo_by_date"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
     by_date: date
 
 
 class PreIpoFailureMapping(BaseModel):
-    """An absorbing COLLAPSED/ACQUIRED exit is reached before any PUBLIC_MARKET_OPEN."""
+    """An absorbing COLLAPSED/ACQUIRED exit for `issuer` before any PUBLIC_MARKET_OPEN."""
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["pre_ipo_failure"] = "pre_ipo_failure"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
 
 
 class ValuationByDateMapping(BaseModel):
-    """Company valuation `V(m) >= threshold_usd` for some month m <= `by_date` (opt-in M2 channel)."""
+    """`issuer`'s valuation `V(m) >= threshold_usd` for some month m <= `by_date` (opt-in M2 channel)."""
 
     model_config = ConfigDict(extra="forbid")
     kind: Literal["valuation_by_date"] = "valuation_by_date"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
     threshold_usd: float
     by_date: date
 
@@ -233,6 +241,9 @@ class CorrelateMarket(_MarketBase):
     correlate_of: str
     correlate_strength: str | None = None
     reason: str | None = None
+    # The PE issuer whose signal to surface (e.g. for `correlate_of: ipo_by_date`, P(IPO by
+    # deadline) for this issuer). None when the correlate has no per-issuer signal.
+    issuer: str | None = Field(default=None, pattern=_ISSUER_PATTERN)
 
 
 class UnmappableMarket(_MarketBase):
@@ -315,3 +326,9 @@ class MarketCatalog(BaseModel):
             if isinstance(market.mapping, LevelMapping):
                 series.add(market.mapping.series)
         return series
+
+    def referenced_issuers(self) -> set[str]:
+        """Every PE issuer the catalog's exact PE markets score (and correlate signals reference)."""
+        issuers = {market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)}
+        issuers |= {market.issuer for market in self.markets if isinstance(market, CorrelateMarket) and market.issuer}
+        return issuers

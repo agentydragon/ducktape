@@ -43,17 +43,21 @@ def main(argv: list[str] | None = None) -> int:
 
     catalog_config = augur_config.calibration_catalog
     catalog = MarketCatalog.from_yaml(catalog_config.catalog_path)
-    issuer = catalog_config.issuer
-    print(f"catalog: issuer={issuer}, n_markets={len(catalog.markets)}")
 
     provider = augur_config.models[preset_id]
     model = provider.realize_model()
+    emit_issuers = sorted(
+        IssuerId(issuer)
+        for issuer in catalog.referenced_issuers()
+        if IssuerId(issuer) in model.emittable_private_equity_issuers()
+    )
     catalog_level = {parse_level_series_key(wire) for wire in catalog.referenced_level_series()}
     wanted_level = catalog_level & model.emittable_level_keys()
+    print(f"catalog: issuers={[str(i) for i in emit_issuers]}, n_markets={len(catalog.markets)}")
     sampling = ExogenousSamplingRequest(
         horizon_months=args.horizon,
         rollout_seeds=tuple(range(1, args.rollouts + 1)),
-        required_private_equity_issuers=frozenset({IssuerId(issuer)}),
+        required_private_equity_issuers=frozenset(emit_issuers),
         **level_series_request_channels(wanted_level),
     )
     sampled = model.sample(sampling)
@@ -69,9 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     price_clients = build_default_price_clients()
     try:
         result = run_calibration(
-            model,
             catalog,
-            issuer=issuer,
             horizon_months=args.horizon,
             rollout_seeds=sampling.rollout_seeds,
             price_clients=price_clients,
@@ -81,18 +83,6 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         for client in price_clients.values():
             client.close()
-
-    mark_pct = mark_fan(
-        bundle, issuer=issuer, rollout_count=args.rollouts, horizon_months=args.horizon, percentiles=(5.0, 50.0, 95.0)
-    )
-    val_pct = mark_fan(
-        bundle,
-        issuer=issuer,
-        rollout_count=args.rollouts,
-        horizon_months=args.horizon,
-        percentiles=(5.0, 50.0, 95.0),
-        channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
-    )
 
     clean_rows = sorted(result.clean, key=lambda r: -abs(r.kl_bits) if r.kl_bits is not None else 0)
     clean_table = [
@@ -124,37 +114,33 @@ def main(argv: list[str] | None = None) -> int:
         print(tabulate(bucket_rows, headers=["bucket", "p_market", "p_model"]))
 
     fan_months = [0, 6, 12, 24, 60, 120]
-    mark_rows = []
-    for m in fan_months:
-        month = next((b for b in mark_pct.months if b.month_index == m), None)
-        if month is None:
-            continue
-        mark_rows.append(
-            [
-                m,
-                f"${month.values.get('5.0', 0):.0f}",
-                f"${month.values.get('50.0', 0):.0f}",
-                f"${month.values.get('95.0', 0):.0f}",
-            ]
+    for issuer in emit_issuers:
+        mark_pct = mark_fan(
+            bundle, issuer=issuer, rollout_count=args.rollouts, horizon_months=args.horizon, percentiles=(5.0, 50.0, 95.0)
         )
-    print("\nPER-UNIT MARK FAN (p5 / p50 / p95)")
-    print(tabulate(mark_rows, headers=["month", "p5", "p50", "p95"]))
+        mark_rows = [
+            [m, f"${b.values['5.0']:.0f}", f"${b.values['50.0']:.0f}", f"${b.values['95.0']:.0f}"]
+            for m in fan_months
+            if (b := next((b for b in mark_pct.months if b.month_index == m), None)) is not None
+        ]
+        print(f"\nPER-UNIT MARK FAN [{issuer}] (p5 / p50 / p95)")
+        print(tabulate(mark_rows, headers=["month", "p5", "p50", "p95"]))
 
-    val_rows = []
-    for m in fan_months:
-        month = next((b for b in val_pct.months if b.month_index == m), None)
-        if month is None:
-            continue
-        val_rows.append(
-            [
-                m,
-                f"${month.values.get('5.0', 0) / 1e9:.0f}B",
-                f"${month.values.get('50.0', 0) / 1e9:.0f}B",
-                f"${month.values.get('95.0', 0) / 1e9:.0f}B",
-            ]
+        val_pct = mark_fan(
+            bundle,
+            issuer=issuer,
+            rollout_count=args.rollouts,
+            horizon_months=args.horizon,
+            percentiles=(5.0, 50.0, 95.0),
+            channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
         )
-    print("\nCOMPANY VALUATION FAN (p5 / p50 / p95)")
-    print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
+        val_rows = [
+            [m, f"${b.values['5.0'] / 1e9:.0f}B", f"${b.values['50.0'] / 1e9:.0f}B", f"${b.values['95.0'] / 1e9:.0f}B"]
+            for m in fan_months
+            if (b := next((b for b in val_pct.months if b.month_index == m), None)) is not None
+        ]
+        print(f"\nCOMPANY VALUATION FAN [{issuer}] (p5 / p50 / p95)")
+        print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
 
     return 0
 

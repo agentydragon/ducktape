@@ -194,9 +194,7 @@ def test_at_least_one_agent_required() -> None:
             max_rollout_samples=1_000_000,
             models={"current_model": IndependentProviderConfig()},
             default_model_id="current_model",
-            calibration_catalog=CalibrationCatalogConfig(
-                catalog_path=Path("/tmp/catalog.yaml"), issuer="example_issuer"
-            ),
+            calibration_catalog=CalibrationCatalogConfig(catalog_path=Path("/tmp/catalog.yaml")),
         )
 
 
@@ -329,7 +327,7 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(
 
 
 def test_calibration_catalog_sample_sanity_path_defaults_to_none() -> None:
-    catalog = CalibrationCatalogConfig(catalog_path=Path("/tmp/catalog.yaml"), issuer="openai")
+    catalog = CalibrationCatalogConfig(catalog_path=Path("/tmp/catalog.yaml"))
     assert catalog.sample_sanity_path is None
 
 
@@ -345,7 +343,7 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(
             minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 calibration_catalog=CalibrationCatalogConfig(
-                    catalog_path=Path("catalog.yaml"), issuer="openai", sample_sanity_path=Path("sample_sanity.yaml")
+                    catalog_path=Path("catalog.yaml"), sample_sanity_path=Path("sample_sanity.yaml")
                 ),
             )
         ),

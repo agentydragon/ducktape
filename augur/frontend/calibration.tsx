@@ -121,10 +121,12 @@ function CalibrationForm({ catalog }) {
     <aside className="min-w-0">
       <div className="augur-card">
         <div className="grid gap-3 px-4 py-3">
-          <div data-calibration-catalog={catalog.issuer}>
+          <div data-calibration-catalog={(catalog.issuers ?? []).join(",")}>
             <div className="augur-eyebrow">Market catalog</div>
             <div className="mt-1 text-sm font-semibold augur-strong">{catalog.label}</div>
-            <div className="text-xs augur-muted">issuer: {catalog.issuer}</div>
+            {(catalog.issuers ?? []).length > 0 && (
+              <div className="text-xs augur-muted">issuers: {(catalog.issuers ?? []).join(", ")}</div>
+            )}
           </div>
         </div>
       </div>
@@ -425,12 +427,11 @@ function CategoricalPanel({ families }) {
 }
 
 function CalibrationResults({ response, metricScale }) {
-  const { result, markFan, valuationFan } = response;
+  const { result, markFans, valuationFans } = response;
   return (
     <div className="min-w-0 space-y-5">
       <div className="augur-card p-4">
-        <div className="augur-eyebrow">Issuer</div>
-        <div className="mt-2 text-2xl font-semibold augur-tabular">{result.issuer}</div>
+        <div className="augur-eyebrow">Model calibration</div>
         <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
       </div>
 
@@ -447,27 +448,31 @@ function CalibrationResults({ response, metricScale }) {
 
       {result.categorical?.length > 0 && <CategoricalPanel families={result.categorical} />}
 
-      <IssuerFanPanel
-        fan={markFan}
-        metric={MARK_METRIC}
-        title="Issuer per-unit mark"
-        description={`Percentile bands of ${markFan.issuer}'s modelled per-unit mark over the horizon.`}
-        metricScale={metricScale}
-        dataAttribute="data-calibration-mark-fan"
-        emptyLabel="No mark fan data."
-      />
-
-      {valuationFan && (
+      {(markFans ?? []).map((fan) => (
         <IssuerFanPanel
-          fan={valuationFan}
+          key={`mark-${fan.issuer}`}
+          fan={fan}
+          metric={MARK_METRIC}
+          title={`Per-unit mark — ${fan.issuer}`}
+          description={`Percentile bands of ${fan.issuer}'s modelled per-unit mark over the horizon.`}
+          metricScale={metricScale}
+          dataAttribute="data-calibration-mark-fan"
+          emptyLabel="No mark fan data."
+        />
+      ))}
+
+      {(valuationFans ?? []).map((fan) => (
+        <IssuerFanPanel
+          key={`val-${fan.issuer}`}
+          fan={fan}
           metric={VALUATION_METRIC}
-          title="Issuer company valuation"
-          description={`Percentile bands of ${valuationFan.issuer}'s modelled company valuation over the horizon.`}
+          title={`Company valuation — ${fan.issuer}`}
+          description={`Percentile bands of ${fan.issuer}'s modelled company valuation over the horizon.`}
           metricScale={metricScale}
           dataAttribute="data-calibration-valuation-fan"
           emptyLabel="No valuation fan data."
         />
-      )}
+      ))}
 
       {response.sanityBands?.length > 0 && <SanityBandsPanel bands={response.sanityBands} />}
 

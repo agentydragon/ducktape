@@ -75,14 +75,17 @@ class CalibrationRunRequest(ApiModel):
 
 
 class CalibrationRunResponse(ApiModel):
-    """`CalibrationResult` (issuer, clean/surfaced rows) plus issuer fan charts.
+    """`CalibrationResult` (clean/surfaced/categorical rows) plus a per-issuer fan chart for each
+    PE issuer the catalog scores.
 
-    `sanity_bands` carries the deployment's `sample_sanity` reasonableness bands evaluated
+    `mark_fans` / `valuation_fans` carry one `MarkFan` per emitted referenced issuer (each fan
+    names its `issuer`); `valuation_fans` only includes issuers whose opt-in valuation channel is
+    on. `sanity_bands` carries the deployment's `sample_sanity` reasonableness bands evaluated
     against this run's rollouts; empty when the deployment configures no `sample_sanity_path`.
     """
 
     preset_id: str
     result: CalibrationResult
-    mark_fan: MarkFan
-    valuation_fan: MarkFan | None = None
+    mark_fans: list[MarkFan] = Field(default_factory=list)
+    valuation_fans: list[MarkFan] = Field(default_factory=list)
     sanity_bands: list[CalibrationSanityBand] = Field(default_factory=list)

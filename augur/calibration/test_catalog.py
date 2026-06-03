@@ -34,7 +34,7 @@ def catalog() -> MarketCatalog:
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
+                mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
             ),
             CorrelateMarket(
                 question="Issuer reaches $100B revenue in 2028?",
@@ -59,7 +59,7 @@ def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
     assert [m.market_id for m in catalog.surfaced_markets()] == ["BBB", "CCC"]
     (exact,) = catalog.exact_markets()
     assert isinstance(exact, ExactMarket)
-    assert exact.mapping == IpoByDateMapping(by_date=date(2027, 1, 1))
+    assert exact.mapping == IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1))
 
 
 def test_exact_requires_mapping_fields() -> None:
@@ -87,7 +87,7 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
                         "question": "?",
                         "outcome_type": "BINARY",
                         "mappability": "unmappable",
-                        "mapping": {"kind": "ipo_by_date", "by_date": "2027-01-01"},
+                        "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
                     }
                 ],
             }
@@ -110,7 +110,7 @@ def test_platform_ref_discriminated_union() -> None:
         question="Polymarket question?",
         platform_ref=PolymarketRef(polymarket_id="0xabc"),
         outcome_type="BINARY",
-        mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
+        mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
     )
     assert poly_market.platform == Platform.POLYMARKET
     assert poly_market.market_id == "0xabc"
@@ -119,7 +119,7 @@ def test_platform_ref_discriminated_union() -> None:
         question="Kalshi question?",
         platform_ref=KalshiRef(kalshi_id="OPENAI-IPO-2027"),
         outcome_type="BINARY",
-        mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
+        mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
     )
     assert kalshi_market.market_id == "OPENAI-IPO-2027"
 
@@ -135,7 +135,7 @@ def test_flat_yaml_backward_compat() -> None:
                     "question": "IPO before 2027?",
                     "outcome_type": "BINARY",
                     "mappability": "exact",
-                    "mapping": {"kind": "ipo_by_date", "by_date": "2027-01-01"},
+                    "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
                 }
             ],
         }

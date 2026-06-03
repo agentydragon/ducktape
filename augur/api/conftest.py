@@ -141,7 +141,7 @@ def minimal_config(tmp_path: Path) -> MinimalConfig:
             default_model_id="current_model",
             calibration_catalog=calibration_catalog
             if calibration_catalog is not None
-            else CalibrationCatalogConfig(catalog_path=tmp_path / "calibration_catalog.yaml", issuer="example_issuer"),
+            else CalibrationCatalogConfig(catalog_path=tmp_path / "calibration_catalog.yaml"),
             **overrides,
         )
 
@@ -195,7 +195,7 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
             models=models,
             default_model_id="current_model",
             calibration_catalog=CalibrationCatalogConfig(
-                catalog_path=properties_path.parent / "calibration_catalog.yaml", issuer="example_issuer"
+                catalog_path=properties_path.parent / "calibration_catalog.yaml"
             ),
         )
 

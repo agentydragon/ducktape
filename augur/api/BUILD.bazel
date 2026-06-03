@@ -192,6 +192,7 @@ py_library(
         ":config",
         ":local_regulation",
         ":wire",
+        "//augur/calibration:catalog",
         "//augur/product:wire",
         "@pypi//more_itertools",
         "@pypi//pyyaml",

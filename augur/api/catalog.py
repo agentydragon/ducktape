@@ -12,8 +12,9 @@ import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
-from augur.api.config import Config, LocationConfig, PropertyAssetConfig
+from augur.api.config import CalibrationCatalogConfig, Config, LocationConfig, PropertyAssetConfig
 from augur.api.wire import ActorRole, CalibrationInfo, CatalogResponse, Location, Property, SettingsResponse
+from augur.calibration.catalog import MarketCatalog
 from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
@@ -129,7 +130,12 @@ def build_settings(config: Config) -> SettingsResponse:
     )
 
 
-def build_calibration_info(config: Config) -> CalibrationInfo:
-    """The deployment's calibration catalog info (`GET /api/calibration`)."""
-    catalog = config.calibration_catalog
-    return CalibrationInfo(label=catalog.label or catalog.issuer, issuer=catalog.issuer)
+def build_calibration_info(catalog: MarketCatalog | None, catalog_config: CalibrationCatalogConfig) -> CalibrationInfo:
+    """The deployment's calibration catalog info (`GET /api/calibration`).
+
+    Issuers are derived from the parsed catalog (the config no longer names a single issuer);
+    `catalog` is None only when the deployment loaded no calibration catalog.
+    """
+    issuers = sorted(catalog.referenced_issuers()) if catalog is not None else []
+    label = catalog_config.label or (", ".join(issuers) if issuers else "calibration catalog")
+    return CalibrationInfo(label=label, issuers=issuers)

@@ -74,7 +74,7 @@ def _schema_export_config(properties_path: Path, calibration_catalog_path: Path)
         ),
         models={"schema": IndependentProviderConfig()},
         default_model_id="schema",
-        calibration_catalog=CalibrationCatalogConfig(catalog_path=calibration_catalog_path, issuer="schema"),
+        calibration_catalog=CalibrationCatalogConfig(catalog_path=calibration_catalog_path),
     )
 
 

@@ -1,15 +1,16 @@
-"""Compare any augur exogenous model's rollouts against prediction markets.
+"""Compare a whole augur model's rollouts against prediction markets.
 
-``run_calibration`` is a pure library function: it samples a :class:`Sampler`,
-slices its private-equity bundle into per-rollout trajectories, resolves every
-``exact`` catalog market apples-to-apples (``p_model`` + Wilson CI + unresolved
-share vs the LIVE market price), and surfaces the rest (price + reason + an optional
-related augur signal). It returns a typed :class:`CalibrationResult` and does NOT
-print -- a CLI or backend renders it.
+``run_calibration`` is a pure library function over a pre-sampled rollout: the caller
+passes the sampled PE ``bundle`` (covering the catalog's referenced issuers) and the
+anchored ``level_paths``; it slices per-issuer trajectories, resolves every ``exact``
+catalog market apples-to-apples against its own channel (a PE issuer or a level series)
+— ``p_model`` + Wilson CI + unresolved share vs the LIVE market price — surfaces the
+rest, and scores ``bucket_families`` as multinomials. It returns a typed
+:class:`CalibrationResult` and does NOT print -- a CLI or backend renders it.
 
-augur models EVENTS, not company valuation or revenue. Only event-based markets
-(``ipo_by_date``, ``pre_ipo_failure``) are scored; valuation/revenue/etc. markets
-are surfaced, never scored.
+The catalog self-describes its targets (each PE market names its issuer, each macro
+market its series); a market on a channel the preset doesn't emit surfaces as
+``unmodeled`` rather than failing.
 
 ``p_market`` ALWAYS comes from a live prediction-market client injected as a
 ``Mapping[Platform, PriceClient]`` (one client per platform). Tests inject
@@ -21,8 +22,8 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from dataclasses import dataclass
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import date
 
 import httpx
@@ -43,7 +44,6 @@ from augur.calibration.catalog import (
     PeEventMapping,
     PreIpoFailureMapping,
     SurfacedMarket,
-    ValuationByDateMapping,
 )
 from augur.calibration.platform import Market, Platform, PriceClient
 from augur.calibration.resolvers import (
@@ -141,9 +141,8 @@ class CleanRow(BaseModel):
     question: str
     url: str
     platform: str
-    # The macro level-series wire id this market scored against ("sp500", "inflation"), or None
-    # for PE-event markets (identified by the run's issuer, not per-row). `= None` keeps it
-    # optional on the exported wire schema.
+    # The model channel that scored this market: a PE issuer id (for event markets) or a
+    # level-series wire id ("sp500", "inflation"). `= None` keeps it optional on the wire schema.
     channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
@@ -205,7 +204,12 @@ class CategoricalRow(BaseModel):
 
 
 class CalibrationResult(BaseModel):
-    issuer: str
+    """Model-level calibration: every market the catalog scores, across all issuers/channels.
+
+    No single issuer — each scored row carries its own `channel` (a PE issuer id or a level
+    wire id). The mark/valuation fans (per issuer) live on the API response, not here.
+    """
+
     as_of: date
     horizon_months: int
     rollout_count: int
@@ -252,9 +256,9 @@ def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, c
 
 @dataclass(frozen=True)
 class _Unmodeled:
-    """Sentinel: an exact market binds a level series this preset does not emit."""
+    """Sentinel: an exact market binds a channel (level series or PE issuer) this preset doesn't emit."""
 
-    series: str
+    target: str
 
 
 def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
@@ -271,23 +275,26 @@ def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
 def _exact_market_counts(
     market: ExactMarket,
     *,
-    trajectories: list[RolloutTrajectory],
+    trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]],
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
     as_of: date,
     horizon_months: int,
-) -> tuple[ResolutionCounts, str | None] | _Unmodeled:
-    """Per-rollout tally + channel tag for one exact market.
+) -> tuple[ResolutionCounts, str] | _Unmodeled:
+    """Per-rollout tally + channel tag (issuer or level wire id) for one exact market.
 
-    PE event kinds read the issuer trajectories (per-rollout loop); level kinds read
-    the anchored level matrix (vectorized). Returns `_Unmodeled` when a level market's
-    series isn't emitted by the active preset so the caller can surface it.
+    PE event kinds read the market's issuer trajectories (per-rollout loop); level kinds
+    read the anchored level matrix (vectorized). Returns `_Unmodeled` when the bound channel
+    (the issuer's PE bundle or the level series) isn't emitted by the active preset.
     """
     mapping = market.mapping
     if not isinstance(mapping, LevelMapping):
-        return ResolutionCounts.from_resolutions(_resolve_pe(t, mapping) for t in trajectories), None
+        trajectories = trajectories_by_issuer.get(mapping.issuer)
+        if trajectories is None:
+            return _Unmodeled(target=mapping.issuer)
+        return ResolutionCounts.from_resolutions(_resolve_pe(t, mapping) for t in trajectories), mapping.issuer
     matrix = level_paths.get(parse_level_series_key(mapping.series))
     if matrix is None:
-        return _Unmodeled(series=mapping.series)
+        return _Unmodeled(target=mapping.series)
     at_month = months_after(as_of, mapping.at_date)
     if isinstance(mapping, InflationYoyMapping):
         counts = inflation_yoy_counts(
@@ -396,18 +403,23 @@ def build_anchored_level_paths(
     }
 
 
-def _augur_context(market: SurfacedMarket, trajectories: list[RolloutTrajectory]) -> AugurContext | None:
+def _augur_context(
+    market: SurfacedMarket, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]]
+) -> AugurContext | None:
     """The nearest clean augur signal for a surfaced market, where one exists.
 
-    Currently only the IPO-timing correlate: P(PUBLIC_MARKET_OPEN by the deadline)
-    for correlate markets whose `correlate_of` is `ipo_by_date`.
+    Currently only the IPO-timing correlate: P(PUBLIC_MARKET_OPEN by the deadline) for the
+    correlate's `issuer`, when `correlate_of` is `ipo_by_date` and that issuer is emitted.
     """
     if (
         not isinstance(market, CorrelateMarket)
         or market.correlate_of != "ipo_by_date"
         or market.resolution_deadline is None
-        or not trajectories
+        or market.issuer is None
     ):
+        return None
+    trajectories = trajectories_by_issuer.get(market.issuer)
+    if not trajectories:
         return None
     by_month = trajectories[0].month_on_or_before(market.resolution_deadline)
     counts = Counter(resolve_ipo_by_date(t, by_month=by_month) for t in trajectories)
@@ -419,7 +431,9 @@ def _augur_context(market: SurfacedMarket, trajectories: list[RolloutTrajectory]
     )
 
 
-def _surfaced_row(market: SurfacedMarket, trajectories: list[RolloutTrajectory], live: Market) -> SurfacedRow:
+def _surfaced_row(
+    market: SurfacedMarket, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]], live: Market
+) -> SurfacedRow:
     return SurfacedRow(
         market_id=market.market_id,
         question=market.question,
@@ -429,7 +443,7 @@ def _surfaced_row(market: SurfacedMarket, trajectories: list[RolloutTrajectory],
         correlate_of=market.correlate_of if isinstance(market, CorrelateMarket) else None,
         p_market=live.require_probability(),
         reason=" ".join(market.reason.split()) if market.reason else None,
-        augur_context=_augur_context(market, trajectories),
+        augur_context=_augur_context(market, trajectories_by_issuer),
         volume=live.volume,
         volume_unit=live.volume_unit,
     )
@@ -475,8 +489,8 @@ def sample_private_equity_bundle(
     return model.sample(request).private_equity
 
 
-def _unmodeled_row(market: ExactMarket, live: Market, series: str) -> SurfacedRow:
-    """Surface a macro market whose level series the active preset does not emit."""
+def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRow:
+    """Surface an exact market whose bound channel (issuer or level series) the preset doesn't emit."""
     return SurfacedRow(
         market_id=market.market_id,
         question=market.question,
@@ -484,50 +498,45 @@ def _unmodeled_row(market: ExactMarket, live: Market, series: str) -> SurfacedRo
         platform=market.platform,
         mappability="unmodeled",
         p_market=live.require_probability(),
-        reason=f"level series {series!r} is not emitted by this model preset",
+        reason=f"{target!r} is not emitted by this model preset",
         volume=live.volume,
         volume_unit=live.volume_unit,
     )
 
 
 def run_calibration(
-    model: Sampler,
     catalog: MarketCatalog,
     *,
-    issuer: str,
     horizon_months: int,
     rollout_seeds: tuple[int, ...],
     price_clients: Mapping[Platform, PriceClient],
-    bundle: PrivateEquityBundle | None = None,
+    bundle: PrivateEquityBundle,
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]] | None = None,
 ) -> CalibrationResult:
-    """Score an exogenous model's rollouts against a curated prediction-market catalog.
+    """Score a whole-model rollout against a curated prediction-market catalog.
 
-    Samples `model`'s PE bundle for `issuer` over `horizon_months`, resolves every PE
-    `exact` market apples-to-apples, and surfaces the rest. When `level_paths` is given
-    (anchored `(rollout, month)` matrices per `LevelSeriesKey`, from
-    `build_anchored_level_paths`), macro `exact` markets and `bucket_families` are scored
-    against the whole model's level channels too — a market binding an unmodeled series
-    surfaces as `unmodeled` rather than failing. Each market's `p_market` is fetched LIVE
-    per market via the platform-appropriate client from `price_clients` (a real client by
-    default, whose TTL cache absorbs rapid auto-refreshes; tests inject hermetic clients).
-
-    Pass a pre-sampled `bundle` (from `sample_private_equity_bundle` with the same
-    issuer/horizon/seeds) to reuse one rollout for both scoring and a `mark_fan`; when
-    omitted, `model` is sampled here.
+    The catalog self-describes its targets: each PE `exact` market names its issuer, each
+    macro market its level series. `bundle` is the sampled PE bundle (covering the catalog's
+    referenced issuers) and `level_paths` the anchored `(rollout, month)` level matrices (from
+    `build_anchored_level_paths`); a market whose issuer/series the active preset doesn't emit
+    surfaces as `unmodeled` rather than failing. Each market's `p_market` is fetched LIVE per
+    market via the platform-appropriate client from `price_clients` (a real client by default,
+    whose TTL cache absorbs rapid auto-refreshes; tests inject hermetic clients).
     """
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
-    if bundle is None:
-        bundle = sample_private_equity_bundle(
-            model, issuer=issuer, horizon_months=horizon_months, rollout_seeds=rollout_seeds
+    # Per-issuer trajectory slices for every catalog-referenced issuer the bundle actually carries;
+    # markets on an absent issuer surface as `unmodeled`.
+    emitted_issuers = {str(issuer) for issuer in bundle.issuer_ids()}
+    trajectories_by_issuer = {
+        issuer: list(
+            trajectories_from_bundle(
+                bundle, issuer=issuer, rollout_count=rollout_count, horizon_months=horizon_months, as_of=as_of
+            )
         )
-    trajectories = list(
-        trajectories_from_bundle(
-            bundle, issuer=issuer, rollout_count=rollout_count, horizon_months=horizon_months, as_of=as_of
-        )
-    )
+        for issuer in sorted(catalog.referenced_issuers() & emitted_issuers)
+    }
 
     def _live(market_id: str, platform: Platform) -> Market | None:
         # A single broken catalog row (bad market_id), a transient API hiccup, or a market the
@@ -551,15 +560,19 @@ def run_calibration(
         if live is None:
             continue
         outcome = _exact_market_counts(
-            market, trajectories=trajectories, level_paths=paths, as_of=as_of, horizon_months=horizon_months
+            market,
+            trajectories_by_issuer=trajectories_by_issuer,
+            level_paths=paths,
+            as_of=as_of,
+            horizon_months=horizon_months,
         )
         if isinstance(outcome, _Unmodeled):
-            surfaced.append(_unmodeled_row(market, live, outcome.series))
+            surfaced.append(_unmodeled_row(market, live, outcome.target))
         else:
             counts, channel = outcome
             clean.append(_clean_row(market, counts, live, channel=channel))
     surfaced.extend(
-        _surfaced_row(market, trajectories, live)
+        _surfaced_row(market, trajectories_by_issuer, live)
         for market in catalog.surfaced_markets()
         if (live := _live(market.market_id, market.platform)) is not None
     )
@@ -584,7 +597,6 @@ def run_calibration(
         )
 
     return CalibrationResult(
-        issuer=issuer,
         as_of=as_of,
         horizon_months=horizon_months,
         rollout_count=rollout_count,
