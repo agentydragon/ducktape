@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
+import { fmtUsd } from "./lib/format.ts";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
 import {
@@ -158,6 +159,9 @@ function locationOptions(bootstrap) {
 function knobApplies(knob, input) {
   const owns = input.propertyId != null;
   const rented = owns && Number(input.rentalFractionRentedPct) > 0;
+  // Owner-occupancy is moot once the property is fully rented (the wire forces is_primary_residence
+  // off in that case), so don't offer the toggle.
+  if (knob.key === "livesHere" && Number(input.rentalFractionRentedPct) >= 100) return false;
   switch (knob.needs) {
     case "owns":
       return owns;
@@ -170,6 +174,15 @@ function knobApplies(knob, input) {
     default:
       return true;
   }
+}
+
+// Placeholder text for the full-property-rent cell: left blank, it falls back to the property's rent
+// estimate, so "" and "$0" mean different things. Other knobs have no placeholder.
+function cellPlaceholder(knob, input, bootstrap) {
+  if (knob.key !== "rentalFullPropertyMonthlyUsd") return undefined;
+  const property = (bootstrap.properties ?? []).find((entry) => entry.id === input.propertyId);
+  const estimate = Number(property?.rentEstimateUsd);
+  return estimate > 0 ? `${fmtUsd(estimate)} (property default)` : "(required)";
 }
 
 // Placeholder for a cell whose knob doesn't apply to that scenario (e.g. a mortgage rate for a
@@ -187,7 +200,16 @@ function NaCell() {
 // greyed/disabled-looking (Mantine `filled` variant + a fade) so overrides stand out — they stay
 // editable (typing creates an override). `rightSection` tucks the revert ↩ inside the box (a suffix,
 // replacing a select's native chevron while overridden), made clickable via pointer-events.
-function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, rightSection = undefined, onChange }) {
+function KnobCell({
+  knob,
+  value,
+  ariaLabel,
+  bootstrap,
+  muted = false,
+  rightSection = undefined,
+  placeholder = undefined,
+  onChange,
+}) {
   const wrap = (control) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
   const controlProps = {
     ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto", rightSectionWidth: 30 } : {}),
@@ -200,6 +222,7 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, rightSecti
       min={knob.min ?? 0}
       max={knob.max}
       step={knob.step ?? 1}
+      placeholder={placeholder}
       {...extra}
       {...controlProps}
       onChange={onChange}
@@ -260,7 +283,8 @@ const TABLE_HEADER =
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
 // box) only when overridden, dropping the key so the cell re-inherits Base.
 function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, onRevertKeys }) {
-  if (!knobApplies(knob, resolveVariant(baseInput, variant.overrides))) return <NaCell />;
+  const resolved = resolveVariant(baseInput, variant.overrides);
+  if (!knobApplies(knob, resolved)) return <NaCell />;
   const overridden = knob.key in variant.overrides;
   const value = overridden ? variant.overrides[knob.key] : baseInput[knob.key];
   return (
@@ -271,6 +295,7 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
         ariaLabel={`${knob.label} — ${variant.label}`}
         bootstrap={bootstrap}
         muted={!overridden}
+        placeholder={cellPlaceholder(knob, resolved, bootstrap)}
         rightSection={
           overridden ? (
             <RevertButton
@@ -426,6 +451,7 @@ export function ScenarioEditor({
                                       value={base.input[knob.key]}
                                       ariaLabel={`${knob.label} — Base`}
                                       bootstrap={bootstrap}
+                                      placeholder={cellPlaceholder(knob, base.input, bootstrap)}
                                       onChange={(value) => onSetBaseField(knob.key, value)}
                                     />
                                   </div>
