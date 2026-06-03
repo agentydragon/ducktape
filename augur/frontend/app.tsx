@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { MantineProvider } from "@mantine/core";
+import { Notifications } from "@mantine/notifications";
 
 import { fetchAugurCalibrationInfo, fetchAugurCatalog, fetchAugurDeployment, fetchAugurSettings } from "./client.ts";
 
@@ -313,6 +314,7 @@ function ProductProjectionAppShell() {
 export default function AugurApp() {
   return (
     <MantineProvider defaultColorScheme="auto">
+      <Notifications position="top-right" />
       <ProductProjectionAppShell />
     </MantineProvider>
   );

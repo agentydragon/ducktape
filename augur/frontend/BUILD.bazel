@@ -226,6 +226,7 @@ js_library(
         ":scenario_editor",
         ":skeleton",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:format",
@@ -245,6 +246,7 @@ js_library(
         ":product",
         ":skeleton",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
         "//:node_modules/react",
     ],
 )
@@ -320,6 +322,7 @@ tailwindcss_bin.tailwindcss_binary(
     name = "tailwind_cli",
     data = [
         "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
         "//:node_modules/@tailwindcss/cli",
         # `@import "tailwindcss"` in styles.src.css resolves to this package.
         "//:node_modules/tailwindcss",

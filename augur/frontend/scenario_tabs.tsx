@@ -8,7 +8,7 @@ import { scenarioColor } from "./input_helpers.ts";
 // Color is assigned by position (`scenarioColor`, Base = index 0) so it stays put as the active
 // selection moves; the active chip is marked by its ring, not by hue. Base is the baseline every
 // variant inherits from, so it can't be deleted.
-export function ScenarioTabs({ entries, activeId, onSelect, onAdd, onDelete, onRename, canAdd }) {
+export function ScenarioTabs({ entries, activeId, onSelect, onDelete, onRename }) {
   const [editingId, setEditingId] = useState(null);
   return (
     <div className="flex flex-wrap items-center gap-2" data-product-scenario-tabs="">
@@ -82,16 +82,6 @@ export function ScenarioTabs({ entries, activeId, onSelect, onAdd, onDelete, onR
           </div>
         );
       })}
-      {canAdd && (
-        <button
-          type="button"
-          data-product-scenario-add=""
-          className="rounded-full border border-dashed border-slate-300 px-3 py-1 text-sm font-medium text-slate-500 hover:border-slate-400 hover:text-slate-700 dark:border-slate-600 dark:text-slate-400 dark:hover:text-slate-200"
-          onClick={onAdd}
-        >
-          + Add variant
-        </button>
-      )}
     </div>
   );
 }

@@ -50,7 +50,6 @@ const GROUPS = [
 
 const KNOBS = [
   { key: "propertyId", label: "Property to buy", kind: "property", group: "Property" },
-  { key: "financingKind", label: "Financing", kind: "financing", group: "Property", needs: "owns" },
   { key: "annualInsurancePct", label: "Insurance", kind: "pct", max: 10, step: 0.05, group: "Property", needs: "owns" },
   {
     key: "annualMaintenancePct",
@@ -62,6 +61,7 @@ const KNOBS = [
     needs: "owns",
   },
   { key: "livesHere", label: "Owner lives here", kind: "bool", group: "Property", needs: "owns" },
+  { key: "financingKind", label: "Financing", kind: "financing", group: "Property", needs: "owns" },
   {
     key: "downPaymentPct",
     label: "Down payment",
@@ -327,6 +327,7 @@ export function ScenarioEditor({
   onSetBaseField,
   onPatchVariant,
   onRevertKeys,
+  onAddVariant,
 }) {
   const [open, setOpen] = useState(true);
   // Per-group + timeline collapse — fold away the rows/sections that don't matter for the comparison
@@ -362,15 +363,22 @@ export function ScenarioEditor({
         <div className="augur-eyebrow">
           Scenario comparison{multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
         </div>
-        <Button
-          size="xs"
-          variant="default"
-          data-product-editor-toggle=""
-          aria-expanded={open}
-          onClick={() => setOpen((previous) => !previous)}
-        >
-          {open ? "Hide ▴" : "Edit ▾"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {variants.length < MAX_VARIANTS && (
+            <Button size="xs" variant="light" data-product-scenario-add="" onClick={onAddVariant}>
+              + Add variant
+            </Button>
+          )}
+          <Button
+            size="xs"
+            variant="default"
+            data-product-editor-toggle=""
+            aria-expanded={open}
+            onClick={() => setOpen((previous) => !previous)}
+          >
+            {open ? "Hide ▴" : "Edit ▾"}
+          </Button>
+        </div>
       </div>
 
       {open && (
@@ -605,7 +613,6 @@ export function ScenarioInspector({
   variants,
   activeId,
   onSelect,
-  onAddVariant,
   onDeleteVariant,
   onRename,
   onResetBase,
@@ -628,10 +635,8 @@ export function ScenarioInspector({
         entries={entries}
         activeId={activeId}
         onSelect={onSelect}
-        onAdd={onAddVariant}
         onDelete={onDeleteVariant}
         onRename={onRename}
-        canAdd={variants.length < MAX_VARIANTS}
       />
       <Button size="xs" variant="subtle" onClick={resetActive}>
         Reset {activeVariant == null ? "base" : activeVariant.label}
