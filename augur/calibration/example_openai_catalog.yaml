@@ -25,6 +25,9 @@ metadata:
   # biases every macro threshold. (Representative example values.)
   anchors:
     sp500: 5900.0
+    # CPI-U index level (YoY is a ratio, so the exact level is scale-invariant — it just
+    # has to be present and positive for the inflation_yoy market to anchor).
+    inflation: 320.0
 
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output

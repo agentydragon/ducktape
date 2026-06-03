@@ -167,6 +167,11 @@ function CleanTable({ rows }) {
                   <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                     {row.question}
                   </a>
+                  {row.channel && (
+                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide augur-muted dark:bg-slate-800">
+                      {row.channel}
+                    </span>
+                  )}
                   {fmtVolume(row.volume, row.volumeUnit) && (
                     <div
                       className="mt-0.5 text-[11px] font-normal augur-muted augur-tabular"
@@ -358,6 +363,67 @@ function SanityBandsPanel({ bands }) {
   );
 }
 
+// One mutually-exclusive bucket range, e.g. `[7400, 7600)` or open ends `< 4000` / `≥ 9000`.
+function fmtRange(low, high) {
+  if (low == null) return `< ${Number(high).toLocaleString()}`;
+  if (high == null) return `≥ ${Number(low).toLocaleString()}`;
+  return `${Number(low).toLocaleString()}–${Number(high).toLocaleString()}`;
+}
+
+// A Kalshi/Polymarket range family scored as one multinomial D_KL(market ‖ model): the
+// normalized per-bucket market shares vs the model's per-bucket rollout shares at a date.
+function CategoricalPanel({ families }) {
+  return (
+    <section className="augur-panel overflow-hidden" aria-label="Categorical markets" data-calibration-categorical="">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="augur-eyebrow">Categorical markets (multinomial)</div>
+        <div className="mt-1 text-xs augur-muted">
+          Mutually-exclusive range families scored as one multinomial KL = D<sub>KL</sub>(market ‖ model) over the
+          buckets at a single date.
+        </div>
+      </div>
+      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+        {families.map((family) => (
+          <div key={family.familyId} data-calibration-categorical-family={family.familyId} className="px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <PlatformBadge platform={family.platform} />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold augur-strong">{family.question}</div>
+                  <div className="text-[11px] augur-muted">
+                    {family.channel} · {family.atDate}
+                  </div>
+                </div>
+              </div>
+              <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>{fmtBits(family.klBits)}</div>
+            </div>
+            <table className="mt-2 min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <th className="py-1 font-semibold">Bucket</th>
+                  <th className="py-1 text-right font-semibold">Market</th>
+                  <th className="py-1 text-right font-semibold">Model</th>
+                </tr>
+              </thead>
+              <tbody>
+                {family.buckets.map((bucket) => (
+                  <tr key={bucket.marketId} data-calibration-bucket={bucket.marketId}>
+                    <td className="py-1 augur-tabular">{fmtRange(bucket.low, bucket.high)}</td>
+                    <td className="py-1 text-right augur-tabular">{fmtProb(bucket.pMarket)}</td>
+                    <td className="py-1 text-right augur-tabular">
+                      {bucket.pModel == null ? <span className="augur-muted">n/a</span> : fmtProb(bucket.pModel)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CalibrationResults({ response, metricScale }) {
   const { result, markFan, valuationFan } = response;
   return (
@@ -378,6 +444,8 @@ function CalibrationResults({ response, metricScale }) {
         </div>
         <CleanTable rows={result.clean ?? []} />
       </section>
+
+      {result.categorical?.length > 0 && <CategoricalPanel families={result.categorical} />}
 
       <IssuerFanPanel
         fan={markFan}

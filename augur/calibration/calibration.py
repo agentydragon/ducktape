@@ -140,7 +140,8 @@ class CleanRow(BaseModel):
     channel: str | None = None
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
-    ci95: tuple[float, float]
+    # 95% Wilson CI on `p_model`; None (dropped on the wire) when nothing resolved (p_model None).
+    ci95: tuple[float, float] | None = None
     n_resolved: int
     unresolved: int
     kl_bits: float | None = None
@@ -233,7 +234,7 @@ def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, c
         channel=channel,
         p_market=p_market,
         p_model=p_model,
-        ci95=wilson_interval(counts.yes, counts.n_resolved),
+        ci95=wilson_interval(counts.yes, counts.n_resolved) if counts.n_resolved else None,
         n_resolved=counts.n_resolved,
         unresolved=counts.unresolved,
         kl_bits=kl_bits_market_vs_model(p_market, p_model) if p_model is not None else None,

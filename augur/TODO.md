@@ -61,8 +61,8 @@ measures per-market only — no aggregate loss, no fitting.
         needs, intersect with `emittable_level_keys` (surface unmodeled).
   - [x] Seed the example catalog with the initial S&P (Manifold + Kalshi bucket
         family) and CPI (Kalshi) markets.
-  - [ ] Frontend: render categorical bucket families; macro Bernoulli markets
-        flow through the existing clean table.
+  - [x] Frontend: render categorical bucket families; macro Bernoulli markets
+        flow through the existing clean table (with a channel chip).
 - [ ] **Typed `MarketMapping`.** Replace loose `mapping_kind: str` +
       `mapping_params: dict` with a discriminated union (issuer-event / level /
       inflation); make invalid bindings unrepresentable. Atomic catalog rewrite.
