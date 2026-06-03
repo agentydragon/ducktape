@@ -587,6 +587,10 @@ export function ScenarioEditor({
           )}
 
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+
+          <div className="px-4 py-2 text-xs augur-muted" data-product-taxes="">
+            Taxes: Federal + California · single filer
+          </div>
         </>
       )}
     </div>
