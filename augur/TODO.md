@@ -43,39 +43,13 @@ are deleted and the CI prefix-guard is in place.
 
 ## Whole-model calibration
 
-Lift calibration from one PE issuer ("a stock") to the whole augur joint model,
-scoring prediction markets across macro channels too (S&P, inflation, …) as
-marginals. Design + gotchas: <augur/plans/whole_model_calibration.md>. v0
-measures per-market only — no aggregate loss, no fitting.
+Calibration scores prediction markets across the whole augur joint model (per-issuer
+PE events + macro channels like S&P / inflation) as marginals, per market. Design +
+gotchas: <augur/plans/whole_model_calibration.md>. Landed: typed `MarketMapping`,
+vectorized macro/inflation resolvers, multinomial bucket families, anchoring, the
+issuer-agnostic run (catalog self-describes issuers/series), and the frontend.
+Remaining:
 
-- [ ] **Slice 1 — macro markets in the calibration view.**
-  - [x] Vectorized macro resolvers over the `(rollout, month)` channel matrix
-        (no per-rollout object): `level_at_date` (point-in-time threshold),
-        `inflation_yoy` (12-month change), both returning `ResolutionCounts`,
-        with unit tests. Keep `RolloutTrajectory` for the PE path.
-  - [x] Multinomial bucket families: `BucketFamily` catalog type + categorical
-        `D_KL(market ‖ model)` scoring (per-bucket p_market/p_model), with tests.
-  - [x] Anchor macro series to live spot at `as_of` (catalog `anchors`).
-  - [x] Thread macro scoring through `run_calibration` / API `/api/calibration/run`
-        / `calibration_report` CLI: sample the macro level series the catalog
-        needs, intersect with `emittable_level_keys` (surface unmodeled).
-  - [x] Seed the example catalog with the initial S&P (Manifold + Kalshi bucket
-        family) and CPI (Kalshi) markets.
-  - [x] Frontend: render categorical bucket families; macro Bernoulli markets
-        flow through the existing clean table (with a channel chip).
-  - [x] Regenerate the `calibration_page` visual golden (page now shows the macro
-        rows + categorical panel). Regenerated on RBE via `bazelisk --config=rbe`
-        with `UPDATE_GOLDEN=1`; verified deterministic.
-- [x] **Typed `MarketMapping`.** Replaced loose `mapping_kind: str` +
-      `mapping_params: dict` with a discriminated union (ipo_by_date /
-      pre_ipo_failure / valuation_by_date / level_at_date / inflation_yoy);
-      invalid bindings are unrepresentable. Catalogs rewritten atomically
-      (example + gaffer); `Direction` moved to `platform.py`.
-- [x] **Drop `CalibrationCatalogConfig.issuer`.** PE mappings now carry their own
-      `issuer`; the run covers the union of referenced issuers (∩ what the preset
-      emits). `run_calibration` is issuer-agnostic, the API returns per-issuer
-      `mark_fans`/`valuation_fans`, and `/api/calibration` reports `issuers`.
-      gaffer's config + catalog switched atomically.
 - [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
       (today's `mark_fan` is PE-only).
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
