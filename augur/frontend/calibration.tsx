@@ -271,7 +271,18 @@ function SurfacedTable({ rows }) {
   );
 }
 
-function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttribute, emptyLabel }) {
+function IssuerFanPanel({
+  fan,
+  metric,
+  title,
+  description,
+  metricScale,
+  horizonMonths,
+  onChangeHorizonMonths,
+  maxHorizonMonths,
+  dataAttribute,
+  emptyLabel,
+}) {
   const rows = useMemo(() => markFanRows(fan), [fan]);
   const percentiles = fan?.percentiles?.length ? fan.percentiles : FAN_PERCENTILES;
   return (
@@ -285,6 +296,9 @@ function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttr
           series={[{ id: "mark", label: title, color: "#1d4ed8", rows, isActive: true }]}
           metric={metric}
           metricScale={metricScale}
+          horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
+          maxHorizonMonths={maxHorizonMonths}
           percentiles={percentiles}
           selectedRows={[]}
           selectedEvents={[]}
@@ -426,7 +440,7 @@ function CategoricalPanel({ families }) {
   );
 }
 
-function CalibrationResults({ response, metricScale }) {
+function CalibrationResults({ response, metricScale, horizonMonths, onChangeHorizonMonths, maxHorizonMonths }) {
   const { result, markFans, valuationFans } = response;
   return (
     <div className="min-w-0 space-y-5">
@@ -456,6 +470,9 @@ function CalibrationResults({ response, metricScale }) {
           title={`Per-unit mark — ${fan.issuer}`}
           description={`Percentile bands of ${fan.issuer}'s modelled per-unit mark over the horizon.`}
           metricScale={metricScale}
+          horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
+          maxHorizonMonths={maxHorizonMonths}
           dataAttribute="data-calibration-mark-fan"
           emptyLabel="No mark fan data."
         />
@@ -469,6 +486,9 @@ function CalibrationResults({ response, metricScale }) {
           title={`Company valuation — ${fan.issuer}`}
           description={`Percentile bands of ${fan.issuer}'s modelled company valuation over the horizon.`}
           metricScale={metricScale}
+          horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
+          maxHorizonMonths={maxHorizonMonths}
           dataAttribute="data-calibration-valuation-fan"
           emptyLabel="No valuation fan data."
         />
@@ -496,6 +516,7 @@ export function CalibrationWorkspace({
   firstSeed,
   model,
   horizonMonths,
+  onChangeHorizonMonths,
   metricScale,
   sharedControlsSlot,
 }) {
@@ -565,7 +586,13 @@ export function CalibrationWorkspace({
           {runError ? (
             <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
           ) : response ? (
-            <CalibrationResults response={response} metricScale={metricScale} />
+            <CalibrationResults
+              response={response}
+              metricScale={metricScale}
+              horizonMonths={horizonMonths}
+              onChangeHorizonMonths={onChangeHorizonMonths}
+              maxHorizonMonths={bootstrap.maxHorizonMonths}
+            />
           ) : (
             <RolloutResultsSkeleton />
           )}

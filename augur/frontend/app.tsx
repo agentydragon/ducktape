@@ -134,6 +134,7 @@ function CalibrationAppSurface({
           firstSeed={firstSeed}
           model={model}
           horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
           metricScale={metricScale}
           sharedControlsSlot={
             <SharedControls
@@ -143,9 +144,6 @@ function CalibrationAppSurface({
               model={model}
               onChangeModel={onChangeModel}
               models={bootstrap.models}
-              horizonMonths={horizonMonths}
-              onChangeHorizonMonths={onChangeHorizonMonths}
-              maxHorizonMonths={bootstrap.maxHorizonMonths}
               metricScale={metricScale}
               onChangeMetricScale={onChangeMetricScale}
               currencyDisplay={currencyDisplay}

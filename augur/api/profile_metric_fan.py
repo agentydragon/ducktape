@@ -48,6 +48,7 @@ def main() -> int:
         properties_by_id=catalog.properties_by_id,
         models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
+        max_horizon_months=config.max_horizon_months,
     )
     request = MetricFanRequest(
         scenario=ScenarioKey(

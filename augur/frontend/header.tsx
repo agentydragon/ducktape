@@ -1,5 +1,5 @@
 import React from "react";
-import { NativeSelect, NumberInput, SegmentedControl, Text } from "@mantine/core";
+import { NativeSelect, NumberInput, SegmentedControl } from "@mantine/core";
 
 const SCALE_OPTIONS = [
   { value: "linear", label: "Linear" },
@@ -10,12 +10,6 @@ const CURRENCY_DISPLAY_OPTIONS = [
   { value: "exact", label: "Exact" },
   { value: "compact", label: "Compact" },
 ];
-
-// Width for a NumberInput unit chip (e.g. "mo"), matching the sidebar `NumberField` sizing so the
-// control's unit suffix reads the same as the product tab's.
-function unitSectionWidth(section) {
-  return Math.max(34, String(section).length * 8 + 24);
-}
 
 function numberInputOnChange(onChange) {
   return (next) => {
@@ -31,9 +25,6 @@ export function SharedControls({
   model,
   onChangeModel,
   models,
-  horizonMonths,
-  onChangeHorizonMonths,
-  maxHorizonMonths,
   metricScale,
   onChangeMetricScale,
   currencyDisplay,
@@ -43,25 +34,6 @@ export function SharedControls({
 }) {
   const showModelControl = onChangeModel && models.length > 1;
   const rows = [
-    onChangeHorizonMonths && {
-      label: "Horizon",
-      input: (
-        <NumberInput
-          aria-label="Horizon"
-          size="xs"
-          min={1}
-          max={maxHorizonMonths}
-          step={12}
-          value={horizonMonths ?? ""}
-          hideControls
-          rightSection={<Text className="augur-number-section">mo</Text>}
-          rightSectionPointerEvents="none"
-          rightSectionWidth={unitSectionWidth("mo")}
-          classNames={{ input: "augur-tabular w-16 text-right" }}
-          onChange={numberInputOnChange(onChangeHorizonMonths)}
-        />
-      ),
-    },
     onChangeRolloutCount && {
       label: "Rollouts",
       input: (

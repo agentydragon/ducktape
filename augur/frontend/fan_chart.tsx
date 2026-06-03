@@ -249,6 +249,12 @@ export function MetricFanChart({
   metricScale = "linear",
   mode = "fan",
   candleBucketMonths = 6,
+  // Optional: when wired, scrolling the wheel over the plot changes the requested rollout horizon
+  // (the chart's time range). Wheel down lengthens, wheel up shortens. This replaces the old
+  // explicit horizon control; charts without a time axis (e.g. histograms) simply don't pass these.
+  horizonMonths = null,
+  onChangeHorizonMonths = null,
+  maxHorizonMonths = null,
 }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
   const [hoveredMonth, setHoveredMonth] = useState(null);
@@ -263,6 +269,24 @@ export function MetricFanChart({
     ro.observe(svg);
     return () => ro.disconnect();
   }, []);
+
+  // Wheel-to-rescale the time axis. Attached as a non-passive listener so it can `preventDefault`
+  // the page scroll while the pointer is over the chart. Multiplicative steps keep one notch a
+  // constant fraction of the current horizon, so zooming feels even across the whole 1..max range.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !onChangeHorizonMonths || horizonMonths == null || maxHorizonMonths == null) return undefined;
+    const onWheel = (event) => {
+      event.preventDefault();
+      const factor = event.deltaY > 0 ? 1.15 : 1 / 1.15; // wheel down → longer horizon
+      let next = Math.round(horizonMonths * factor);
+      if (next === horizonMonths) next += event.deltaY > 0 ? 1 : -1;
+      next = Math.max(1, Math.min(maxHorizonMonths, next));
+      if (next !== horizonMonths) onChangeHorizonMonths(next);
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [onChangeHorizonMonths, horizonMonths, maxHorizonMonths]);
 
   // Memoized on `series` so the frequent hover re-renders (`setHoveredMonth` on mouse-move) don't
   // rebuild these per-series structures over potentially many rows.

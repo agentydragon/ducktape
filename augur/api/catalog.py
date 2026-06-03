@@ -15,7 +15,6 @@ from pydantic import TypeAdapter
 from augur.api.config import CalibrationCatalogConfig, Config, LocationConfig, PropertyAssetConfig
 from augur.api.wire import ActorRole, CalibrationInfo, CatalogResponse, Location, Property, SettingsResponse
 from augur.calibration.catalog import MarketCatalog
-from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
@@ -123,7 +122,7 @@ def build_settings(config: Config) -> SettingsResponse:
     limits, product-panel starting values, and the model registry."""
     return SettingsResponse(
         max_rollout_samples=config.max_rollout_samples,
-        max_horizon_months=MAX_HORIZON_MONTHS,
+        max_horizon_months=config.max_horizon_months,
         product_input_defaults=config.product_input_defaults,
         models=tuple(sorted(config.models)),
         default_model_id=config.default_model_id,

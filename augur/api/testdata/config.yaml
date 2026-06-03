@@ -4,6 +4,9 @@ agents:
     role: primary_owner
 default_rollout_samples: 8
 max_rollout_samples: 1000000
+# Tests request horizons up to 120 months; capping the always-roll-out-max length here keeps the
+# suite from simulating the full 100-year wire ceiling on every product service test.
+max_horizon_months: 120
 locations:
   - location_id: location_a
     label: Location A

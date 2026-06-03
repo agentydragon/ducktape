@@ -41,6 +41,7 @@ def make_product_service(augur_config: Config, catalog: CatalogResponse) -> Make
             properties_by_id=cat.properties_by_id,
             models={"current_model": model},
             max_rollout_samples=cfg.max_rollout_samples,
+            max_horizon_months=cfg.max_horizon_months,
             max_cache_rollouts=max_cache_rollouts,
         )
 

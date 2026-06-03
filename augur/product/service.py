@@ -3,7 +3,9 @@
 Holds the slice of augur config the product surface needs (portfolio, primary
 agent, initial cash); does not know about properties, locations, or bootstrap.
 The cache stores per-rollout R=1 DenseSimulationResult primitives keyed by
-``(ScenarioKey, seed)``.
+``(ScenarioKey, seed)``, where the key's ``horizon_months`` is normalized to the
+server max horizon: every rollout is simulated once to that max and truncated to
+the per-request horizon, so changing the requested horizon never re-simulates.
 """
 
 from __future__ import annotations
@@ -87,10 +89,13 @@ class ProductService:
         properties_by_id: dict[str, Property],
         models: dict[str, Sampler],
         max_rollout_samples: int,
+        max_horizon_months: int,
         max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:
         if max_cache_rollouts <= 0:
             raise ValueError("max_cache_rollouts must be positive")
+        if max_horizon_months <= 0:
+            raise ValueError("max_horizon_months must be positive")
         if not models:
             raise ValueError("models must contain at least one preset")
         self._portfolio = portfolio
@@ -101,6 +106,7 @@ class ProductService:
         self._properties_by_id = properties_by_id
         self._models = models
         self._max_rollout_samples = int(max_rollout_samples)
+        self._max_horizon_months = int(max_horizon_months)
         self._max_cache_rollouts = int(max_cache_rollouts)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
@@ -131,11 +137,18 @@ class ProductService:
         )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
+        horizon_months = int(request.scenario.horizon_months)
         [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
-        events = rollout_events_from(
-            decoded.cached.dense.decode(),
-            primary_agent_id=self._primary_agent_id,
-            asset_label_by_id=self._asset_label_by_id,
+        # The cached dense result spans the server max horizon; keep only events that fall within the
+        # requested window so the rollout detail matches the truncated monthly metrics.
+        events = tuple(
+            event
+            for event in rollout_events_from(
+                decoded.cached.dense.decode(),
+                primary_agent_id=self._primary_agent_id,
+                asset_label_by_id=self._asset_label_by_id,
+            )
+            if event.month_index < horizon_months
         )
         # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
         # instead of round-tripping through polars.
@@ -164,25 +177,37 @@ class ProductService:
             and scenario_key.property_purchase.property_id not in self._properties_by_id
         ):
             raise ValueError(f"unknown property_id: {scenario_key.property_purchase.property_id!r}")
+        horizon_months = int(scenario_key.horizon_months)
+        if horizon_months > self._max_horizon_months:
+            raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
+        # Every scenario+seed is simulated once at the server max horizon, cached under a horizon-
+        # normalized key, then truncated to the requested horizon below. So scrolling the requested
+        # horizon reuses the cached max-length rollout instead of re-simulating.
+        cache_key = scenario_key.model_copy(update={"horizon_months": self._max_horizon_months})
         cached_by_seed: dict[int, _CachedRollout] = {}
         missing: list[int] = []
         for seed in seeds:
-            entry = self._cache_get(scenario_key, seed)
+            entry = self._cache_get(cache_key, seed)
             if entry is None:
                 missing.append(seed)
             else:
                 cached_by_seed[seed] = entry
         if missing:
-            fresh = self._simulate_missing(scenario_key, tuple(missing))
+            fresh = self._simulate_missing(cache_key, tuple(missing))
             for seed, entry in fresh.items():
                 cached_by_seed[seed] = entry
-                self._cache_put(scenario_key, seed, entry)
+                self._cache_put(cache_key, seed, entry)
         decoded: list[_DecodedRollout] = []
         for seed in seeds:
             cached = cached_by_seed[seed]
-            arrays = monthly_metric_arrays(cached.dense, primary_agent_id=self._primary_agent_id)
+            full_arrays = monthly_metric_arrays(cached.dense, primary_agent_id=self._primary_agent_id)
+            # `month_index` runs 0..H_max; keep months 0..horizon (i.e. the first horizon+1 snapshots).
+            arrays = {name: array[: horizon_months + 1] for name, array in full_arrays.items()}
+            full_failed_month = failed_month_index_for_rollout(cached.dense)
+            # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
+            in_window = full_failed_month is not None and full_failed_month < horizon_months
             terminal = terminal_metrics_from_arrays(
-                arrays, failed_month_index=failed_month_index_for_rollout(cached.dense)
+                arrays, failed_month_index=full_failed_month if in_window else None
             )
             decoded.append(
                 _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, cached=cached)

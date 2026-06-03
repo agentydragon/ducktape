@@ -40,6 +40,9 @@ function RolloutResultsPanel({
   selectedMetric,
   onSelectMetric,
   metricScale,
+  horizonMonths,
+  onChangeHorizonMonths,
+  maxHorizonMonths,
   rolloutSummaries,
   selectedSeed,
   onSelectSeed,
@@ -139,6 +142,9 @@ function RolloutResultsPanel({
             series={chartSeries}
             metric={selectedMetric}
             metricScale={metricScale}
+            horizonMonths={horizonMonths}
+            onChangeHorizonMonths={onChangeHorizonMonths}
+            maxHorizonMonths={maxHorizonMonths}
             percentiles={percentiles}
             selectedRows={selectedRows}
             selectedEvents={selectedEvents}
@@ -500,9 +506,6 @@ export function ProductProjectionWorkspace({
           model={model}
           onChangeModel={onChangeModel}
           models={bootstrap.models}
-          horizonMonths={horizonMonths}
-          onChangeHorizonMonths={onChangeHorizonMonths}
-          maxHorizonMonths={bootstrap.maxHorizonMonths}
           metricScale={metricScale}
           onChangeMetricScale={onChangeMetricScale}
           currencyDisplay={currencyDisplay}
@@ -563,6 +566,9 @@ export function ProductProjectionWorkspace({
             selectedMetric={selectedMetric}
             onSelectMetric={setSelectedMetricValue}
             metricScale={metricScale}
+            horizonMonths={horizonMonths}
+            onChangeHorizonMonths={onChangeHorizonMonths}
+            maxHorizonMonths={bootstrap.maxHorizonMonths}
             rolloutSummaries={rolloutSummaries}
             selectedSeed={selectedSeed}
             onSelectSeed={setSelectedSeed}

@@ -31,6 +31,7 @@ from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmProviderConfig
+from augur.product.wire import MAX_HORIZON_MONTHS
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -138,6 +139,18 @@ class Config(ApiModel):
     #   setting it).
     default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
+    max_horizon_months: PositiveInt = Field(
+        default=MAX_HORIZON_MONTHS,
+        le=MAX_HORIZON_MONTHS,
+        description=(
+            "Server-side maximum rollout length in months. Every scenario+seed is simulated once to "
+            "this horizon (then cached) and the response is truncated to the per-request "
+            "`horizon_months`. The frontend's time-axis charts scroll the requested horizon up to "
+            "this ceiling, so there is no separate horizon input. Larger values make the first load "
+            "of each scenario proportionally heavier; cached truncations are free. Defaults to (and "
+            "may not exceed) the wire's absolute cap."
+        ),
+    )
     # User-overridable starting values for the product input panel. Optional per-field; the
     # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
     # (e.g. `gaffer-private`) can bias the UI without code changes.

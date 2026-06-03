@@ -104,6 +104,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         properties_by_id=catalog.properties_by_id,
         models=config.models,
         max_rollout_samples=augur_config.max_rollout_samples,
+        max_horizon_months=augur_config.max_horizon_months,
     )
 
     app = FastAPI(title="Augur scenario API")

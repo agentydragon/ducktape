@@ -71,16 +71,16 @@ def _wait_for_product_chart_geometry(page: Page) -> None:
         """
         () => {
           const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
-          const horizonInput = document.querySelector("input[aria-label='Horizon']");
-          if (!chart || !horizonInput) return false;
-          // The header's Horizon NumberInput renders a " mo" suffix; keep only the digits.
-          const horizonMonths = Number(String(horizonInput.value || "").replace(/[^0-9]/g, ""));
-          if (!Number.isFinite(horizonMonths) || horizonMonths <= 0) return false;
-          const expectedFinalYear = `${Math.max(1, Math.ceil(horizonMonths / 12))} yr`;
-          const finalYearTick = Array.from(chart.querySelectorAll("text")).find(
-            (node) => node.textContent.trim() === expectedFinalYear
+          if (!chart) return false;
+          // Horizon is now driven by the wheel/`?h=`, not an input. Use the chart's own rightmost
+          // "N yr" tick as the final-year marker whose geometry must have settled within bounds.
+          const yearTicks = Array.from(chart.querySelectorAll("text")).filter((node) =>
+            /^\\d+ yr$/.test(node.textContent.trim())
           );
-          if (!finalYearTick) return false;
+          if (yearTicks.length === 0) return false;
+          const finalYearTick = yearTicks.reduce((a, b) =>
+            parseInt(a.textContent, 10) >= parseInt(b.textContent, 10) ? a : b
+          );
           const tickBox = finalYearTick.getBoundingClientRect();
           const chartBox = chart.getBoundingClientRect();
           return (
