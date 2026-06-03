@@ -63,14 +63,9 @@ measures per-market only — no aggregate loss, no fitting.
         family) and CPI (Kalshi) markets.
   - [x] Frontend: render categorical bucket families; macro Bernoulli markets
         flow through the existing clean table (with a channel chip).
-  - [ ] Regenerate the `calibration_page` visual golden — the page now shows the
-        macro rows + categorical panel, so `//augur:visual_test[calibration_page]`
-        needs a fresh golden. RBE recipe (once bbr git-sync works on this branch):
-        `bbr test //augur:visual_test --test_filter=calibration_page
-        --test_env=UPDATE_GOLDEN=1 --nocache_test_results`, then download
-        `calibration_page.png` from undeclared outputs into
-        `augur/frontend/__screenshots__/`. (Blocked here: bbr's runner can't apply
-        this branch's pre-existing binary patch vs origin/devel.)
+  - [x] Regenerate the `calibration_page` visual golden (page now shows the macro
+        rows + categorical panel). Regenerated on RBE via `bazelisk --config=rbe`
+        with `UPDATE_GOLDEN=1`; verified deterministic.
 - [ ] **Typed `MarketMapping`.** Replace loose `mapping_kind: str` +
       `mapping_params: dict` with a discriminated union (issuer-event / level /
       inflation); make invalid bindings unrepresentable. Atomic catalog rewrite.
