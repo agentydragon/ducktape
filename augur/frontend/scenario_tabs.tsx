@@ -17,7 +17,12 @@ export function ScenarioTabs({ entries, activeId, onSelect, onAdd, onDelete, onR
         const isActive = entry.id === activeId;
         const isEditing = editingId === entry.id;
         const isBase = entry.id === "base";
-        const commitEdit = () => setEditingId(null);
+        // A blank label renders empty everywhere and the URL codec substitutes a default on
+        // reload/share, so normalize an all-whitespace name to a non-empty fallback on commit.
+        const commitEdit = () => {
+          if (entry.label.trim() === "") onRename(entry.id, isBase ? "Base" : `Variant ${index}`);
+          setEditingId(null);
+        };
         return (
           <div
             key={entry.id}

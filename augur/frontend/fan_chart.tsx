@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
 import {
@@ -166,6 +166,20 @@ export function MetricFanChart({
     return () => ro.disconnect();
   }, []);
 
+  // Memoized on `series` so the frequent hover re-renders (`setHoveredMonth` on mouse-move) don't
+  // rebuild these per-series structures over potentially many rows.
+  // Inactive scenarios render first so the active scenario's band + median sit on top.
+  const orderedSeries = useMemo(
+    () => [...series.filter((entry) => !entry.isActive), ...series.filter((entry) => entry.isActive)],
+    [series]
+  );
+  // Per-scenario month→row lookup for the comparison tooltip (each scenario's median at the hovered month).
+  const rowByMonthBySeries = useMemo(() => {
+    const map = new Map();
+    for (const entry of series) map.set(entry.id, new Map(entry.rows.map((row) => [row.monthIndex, row])));
+    return map;
+  }, [series]);
+
   // A lone scenario renders exactly like the pre-comparison chart: outer + inner band, median, and
   // P5/P95 edge lines, all in blue. Two or more switch to one P5–P95 band + median per scenario,
   // each in its own color, dropping the inner band and edge lines so the overlay stays readable.
@@ -206,14 +220,6 @@ export function MetricFanChart({
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
   const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
-
-  // Inactive scenarios render first so the active scenario's band + median sit on top.
-  const orderedSeries = [...series.filter((entry) => !entry.isActive), ...series.filter((entry) => entry.isActive)];
-  // Per-scenario month→row lookup for the comparison tooltip (each scenario's median at the hovered month).
-  const rowByMonthBySeries = new Map();
-  for (const entry of series) {
-    rowByMonthBySeries.set(entry.id, new Map(entry.rows.map((row) => [row.monthIndex, row])));
-  }
 
   const monthBuckets = new Map();
   for (let index = 0; index < selectedEvents.length; index += 1) {
