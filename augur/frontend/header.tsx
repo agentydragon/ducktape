@@ -179,3 +179,92 @@ export function AugurHeader({ rightSlot = null, nav = null }) {
     </header>
   );
 }
+
+// -- Tab navigation ------------------------------------------------------------
+//
+// Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
+// (omitted for the default), following the same replaceState pattern as the product `?s=` state.
+const TABS = [
+  { value: "product", label: "Product" },
+  { value: "calibration", label: "Calibration" },
+  { value: "budget", label: "Budget" },
+];
+const TAB_VALUES = new Set(TABS.map((tab) => tab.value));
+const DEFAULT_TAB = "product";
+
+export function tabFromSearch(searchString) {
+  const requested = new URLSearchParams(searchString).get("tab");
+  return requested && TAB_VALUES.has(requested) ? requested : DEFAULT_TAB;
+}
+
+export function writeTabToSearch(tab) {
+  const params = new URLSearchParams(window.location.search);
+  if (tab === DEFAULT_TAB) params.delete("tab");
+  else params.set("tab", tab);
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+export function AugurTabBar({ tab, onSelectTab }) {
+  return (
+    <nav className="flex items-center gap-1" aria-label="Augur views" data-augur-tab-bar="">
+      {TABS.map((entry) => (
+        <button
+          key={entry.value}
+          type="button"
+          className="augur-view-tab"
+          data-active={tab === entry.value ? "" : undefined}
+          aria-current={tab === entry.value ? "page" : undefined}
+          data-augur-tab={entry.value}
+          onClick={() => onSelectTab(entry.value)}
+        >
+          {entry.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+// -- Deployment status chip (header rightSlot) ---------------------------------
+
+function shortCommit(commit) {
+  if (!commit) return null;
+  return commit.slice(0, 12);
+}
+
+function DeploymentCommitItem({ label, image }) {
+  const commit = shortCommit(image?.sourceCommit);
+  if (!commit) return null;
+  const className = "mono font-semibold text-slate-700 dark:text-slate-200";
+  const title = image?.imageTag ? `${label}: ${image.imageTag}` : label;
+  return (
+    <span className="whitespace-nowrap" title={title}>
+      {label}{" "}
+      {image.sourceCommitUrl ? (
+        <a className={`${className} augur-link`} href={image.sourceCommitUrl}>
+          {commit}
+        </a>
+      ) : (
+        <span className={className}>{commit}</span>
+      )}
+    </span>
+  );
+}
+
+export function DeploymentCommitSummary({ deployment }) {
+  const apiCommit = deployment?.api?.sourceCommit ?? null;
+  const frontendCommit = deployment?.frontend?.sourceCommit ?? null;
+  if (!apiCommit && !frontendCommit) return null;
+  if (apiCommit && frontendCommit && apiCommit === frontendCommit) {
+    return <DeploymentCommitItem label="Deployed" image={deployment.api} />;
+  }
+  return (
+    <>
+      <DeploymentCommitItem label="API" image={deployment?.api} />
+      <DeploymentCommitItem label="UI" image={deployment?.frontend} />
+    </>
+  );
+}

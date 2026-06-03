@@ -211,11 +211,9 @@ js_library(
 )
 
 js_library(
-    name = "app",
-    srcs = ["app.tsx"],
+    name = "product",
+    srcs = ["product.tsx"],
     deps = [
-        ":budget",
-        ":calibration",
         ":client",
         ":data_helpers",
         ":events_panel",
@@ -229,7 +227,25 @@ js_library(
         ":skeleton",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
+        "//augur/frontend/lib:chart",
         "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    deps = [
+        ":budget",
+        ":calibration",
+        ":client",
+        ":header",
+        ":hooks",
+        ":input_helpers",
+        ":product",
+        ":skeleton",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
     ],
 )
 
@@ -280,6 +296,7 @@ filegroup(
         "input_helpers.ts",
         "main.tsx",
         "metric_table.tsx",
+        "product.tsx",
         "sanity_bands.ts",
         "scenario_editor.tsx",
         "scenario_tabs.tsx",
