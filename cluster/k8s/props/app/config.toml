@@ -16,6 +16,13 @@ PGDATABASE = "eval_results"
 url = "http://ollama.ollama.svc.cluster.local:11434/v1"
 api_key_env = "OLLAMA_API_KEY"
 
+# In-cluster LiteLLM. props speaks the OpenAI Responses API ({url}/responses);
+# LiteLLM bridges that to the upstream's chat/completions (e.g. z.ai's GLM,
+# which has no native Responses API). Auth = LiteLLM master key.
+[upstreams.litellm]
+url = "http://litellm.litellm.svc.cluster.local:4000/v1"
+api_key_env = "LITELLM_API_KEY"
+
 [[models]]
 name = "gpt-oss-20b-128k"
 upstream = "ollama"
@@ -26,3 +33,15 @@ output_usd_per_1m_tokens = 0
 context_window_tokens = 131072
 max_output_tokens = 131072
 max_parallel_agents = 3
+
+# z.ai GLM-4.6 via LiteLLM (api.z.ai coding plan). Pricing = z.ai list rates.
+[[models]]
+name = "glm-4.6"
+upstream = "litellm"
+upstream_model = "glm-4.6"
+input_usd_per_1m_tokens = 0.39
+cached_input_usd_per_1m_tokens = 0.39
+output_usd_per_1m_tokens = 1.74
+context_window_tokens = 200000
+max_output_tokens = 131072
+max_parallel_agents = 2

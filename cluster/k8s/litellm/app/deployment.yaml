@@ -50,6 +50,12 @@ spec:
                 secretKeyRef:
                   name: litellm-master-key
                   key: api-key
+            # z.ai (GLM) key for the z.ai upstream models in proxy-config.yaml.
+            - name: ZAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-zai-key
+                  key: ZAI_API_KEY
           # TODO: Re-enable langfuse-api-keys envFrom when Langfuse is unsuspended
           # (suspended 2026-03-31, see cluster/docs/plan.md).
           livenessProbe:

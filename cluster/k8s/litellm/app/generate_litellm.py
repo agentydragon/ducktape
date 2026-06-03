@@ -38,6 +38,26 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
     ("gemma4:31b-it-q8_0", [("128k", None)]),
 ]
 
+# z.ai (GLM) models served via the Coding Plan endpoint. The key comes from the
+# ZAI_API_KEY env var (litellm-zai-key secret). These speak OpenAI chat/completions;
+# LiteLLM bridges its /responses endpoint to chat so props' OpenAI-Responses proxy
+# (props/backend/routes/llm.py) can route to them.
+_ZAI_CODING_BASE = "https://api.z.ai/api/coding/paas/v4"
+_ZAI_MODELS: list[str] = ["glm-4.6"]
+
+
+def _zai_entries() -> Iterator[dict]:
+    for model in _ZAI_MODELS:
+        yield {
+            "model_name": model,
+            "litellm_params": {
+                "model": f"openai/{model}",
+                "api_base": _ZAI_CODING_BASE,
+                "api_key": "os.environ/ZAI_API_KEY",
+            },
+            "model_info": {"mode": "chat", "supports_function_calling": True},
+        }
+
 
 def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iterator[dict]:
     name_base = tag.replace(":", "-")
@@ -66,6 +86,7 @@ def generate() -> str:
     model_list: list[dict] = []
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
+    model_list.extend(_zai_entries())
 
     # Master key is injected as LITELLM_MASTER_KEY env var in the Deployment;
     # not repeated here.

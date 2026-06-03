@@ -58,6 +58,12 @@ spec:
                 secretKeyRef:
                   name: litellm-master-key
                   key: api-key
+            # Auth for the in-cluster LiteLLM upstream (config.toml [upstreams.litellm]).
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
             - name: PROPS_EVALUATOR_PASSWORD
               valueFrom:
                 secretKeyRef:
