@@ -74,21 +74,6 @@ def state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndar
     return months, rollouts, slots
 
 
-def active_state_axes(active: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """`(month, rollout, slot)` index arrays for the True positions of a `(h1, r, s)` active
-    grid, in row-major order.
-
-    The sparse counterpart to `state_axes` + a boolean mask: decoders whose state is mostly
-    inactive (tax liabilities, properties, debts — slots that only switch on partway through
-    the horizon) should gather active positions directly via `np.nonzero` instead of
-    materializing three full-grid index arrays and then masking. For a 100-year horizon the
-    full grid is `snapshots × slots × R` (≫100 M cells); this avoids building it.
-    """
-
-    months, rollouts, slots = np.nonzero(active)
-    return months, rollouts, slots
-
-
 def state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) -> pl.DataFrame:
     """Build a state-history frame from pre-built numpy column arrays. State-history specs
     don't carry `month_index` in their schema (the cross-section is one month wide); decode

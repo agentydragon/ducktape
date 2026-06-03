@@ -10,7 +10,6 @@ import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
-    active_state_axes,
     codes_to_strings,
     frame_from_columns,
     r_first_view,
@@ -70,21 +69,44 @@ def decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -
 
 
 def decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = r_first_view(buffers.state.tax_liability_state)  # (H+1, r, s)
-    active = r_first_view(buffers.state.tax_liability_active_state)
-    months, rollouts, slots = active_state_axes(active)
+    """Outstanding year-tax-liability balances, one row per balance-change event.
+
+    Replaces the old per-month dense snapshot: each row is the post-change balance at the month
+    the liability accrued or was settled (`month_index` on the snapshot timeline). The balance
+    is piecewise-constant between changes, so these events fully describe the trajectory."""
     profile_per_slot = plan.tax_liabilities.profile_index.astype(np.int64)
     link_per_slot = plan.tax_liabilities.link_index.astype(np.int64)
+    year_end_per_slot = plan.tax_liabilities.year_end_month.astype(np.int64)
     agent_per_profile = codes_to_strings(plan, plan.tax.profile_agent)
     juris_per_link = codes_to_strings(plan, plan.tax.link_jurisdiction)
+
+    month_blocks: list[np.ndarray] = []
+    rollout_blocks: list[np.ndarray] = []
+    slot_blocks: list[np.ndarray] = []
+    amount_blocks: list[np.ndarray] = []
+    for change in buffers.tax_liability_changes.changes:
+        local_slot, rollout = np.nonzero(change.active)  # indices into (k, R)
+        if local_slot.size == 0:
+            continue
+        slots = change.slots[local_slot]
+        month_blocks.append(np.full(slots.shape, change.snapshot_month, dtype=np.int64))
+        rollout_blocks.append(rollout.astype(np.int64))
+        slot_blocks.append(slots)
+        amount_blocks.append(change.amount[local_slot, rollout])
+
+    empty = np.array([], dtype=np.int64)
+    months = np.concatenate(month_blocks) if month_blocks else empty
+    rollouts = np.concatenate(rollout_blocks) if rollout_blocks else empty
+    slots = np.concatenate(slot_blocks) if slot_blocks else empty
+    amounts = np.concatenate(amount_blocks) if amount_blocks else np.array([], dtype=np.float64)
     return state_history_frame_from_columns(
         {
             "rollout_index": rollouts,
             "month_index": months,
             "agent_id": agent_per_profile[profile_per_slot[slots]],
             "jurisdiction_id": juris_per_link[link_per_slot[slots]],
-            "tax_year_end_month": plan.tax_liabilities.year_end_month.astype(np.int64)[slots],
-            "amount_owed_usd": state[months, rollouts, slots],
+            "tax_year_end_month": year_end_per_slot[slots],
+            "amount_owed_usd": amounts,
         },
         TAX_LIABILITIES_FRAME,
     )

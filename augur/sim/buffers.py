@@ -15,7 +15,7 @@ sides of the encoder/decoder pair need to share it as a stable data interface.""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -39,8 +39,6 @@ class StateHistoryBuffers:
     ordinary_state: NDArray[np.float64]
     capital_gain_active_state: NDArray[np.bool_]
     capital_gain_state: NDArray[np.float64]
-    tax_liability_active_state: NDArray[np.bool_]
-    tax_liability_state: NDArray[np.float64]
     property_active_state: NDArray[np.bool_]
     property_basis_state: NDArray[np.float64]
     property_ownership_state: NDArray[np.float64]
@@ -81,15 +79,6 @@ class StateHistoryBuffers:
             self.capital_gain_state,
             shape=(s, plan.capital_gain_agent_count, 2, r),
             dtype=np.float64,
-        )
-        _expect_array(
-            "tax_liability_active_state",
-            self.tax_liability_active_state,
-            shape=(s, plan.tax_liability_count, r),
-            dtype=np.bool_,
-        )
-        _expect_array(
-            "tax_liability_state", self.tax_liability_state, shape=(s, plan.tax_liability_count, r), dtype=np.float64
         )
         _expect_array(
             "property_active_state", self.property_active_state, shape=(s, plan.property_count, r), dtype=np.bool_
@@ -556,6 +545,44 @@ class ObligationEventBuffers:
 
 
 @dataclass
+class TaxLiabilityChange:
+    """One year-tax-liability balance-change event, captured at the month it occurred.
+
+    `slots` indexes `plan.tax_liabilities`; `amount[k, r]` is the post-change balance and
+    `active[k, r]` whether the liability exists for rollout `r` (failed rollouts never accrue
+    one). Decode emits one output row per active `(slot, rollout)`.
+    """
+
+    snapshot_month: int
+    slots: NDArray[np.int64]
+    amount: NDArray[np.float64]
+    active: NDArray[np.bool_]
+
+
+@dataclass
+class TaxLiabilityChangeLog:
+    """Sparse replacement for the old dense `(snapshot, year_slots, R)` tax-liability state
+    history (which was O(horizon² × R) since year-slots grow with the horizon). Year-end
+    accrual and each settlement append one change; the per-month outstanding balance is
+    piecewise-constant between changes, so the change list reconstructs the output frame."""
+
+    changes: list[TaxLiabilityChange] = field(default_factory=list)
+
+    def record(self, *, snapshot_month: int, slots: np.ndarray, amount: np.ndarray, active: np.ndarray) -> None:
+        """Record the post-change balance of `slots` (read from the current-state arrays)."""
+        if slots.size == 0:
+            return
+        self.changes.append(
+            TaxLiabilityChange(
+                snapshot_month=snapshot_month,
+                slots=slots.astype(np.int64, copy=True),
+                amount=amount[slots, :].copy(),
+                active=active[slots, :].copy(),
+            )
+        )
+
+
+@dataclass
 class SimulationBuffers:
     state: StateHistoryBuffers
     transfers: TransferEventBuffers
@@ -566,6 +593,7 @@ class SimulationBuffers:
     obligations: ObligationEventBuffers
     primary_residence: PrimaryResidenceEventBuffers
     lifecycle: LifecycleEventBuffers
+    tax_liability_changes: TaxLiabilityChangeLog
 
     def validate(self, plan: CompiledSimulation) -> None:
         slot_plan = plan.slot_plan

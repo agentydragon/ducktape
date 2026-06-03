@@ -16,6 +16,7 @@ from augur.sim.buffers import (
     SimulationBuffers,
     StateHistoryBuffers,
     TaxEventBuffers,
+    TaxLiabilityChangeLog,
     TransferEventBuffers,
 )
 from augur.sim.codec.plan import DenseSimulationResult
@@ -108,8 +109,8 @@ def _snapshot_current_state(state: StateHistoryBuffers, current: CurrentStateBuf
     state.ordinary_state[snapshot_index] = current.ordinary_ytd
     state.capital_gain_active_state[snapshot_index] = current.capital_gain_active
     state.capital_gain_state[snapshot_index] = current.capital_gain_ytd
-    state.tax_liability_active_state[snapshot_index] = current.tax_liability_active
-    state.tax_liability_state[snapshot_index] = current.tax_liability_amount
+    # Tax liabilities are not snapshotted here: their per-month balance is piecewise-constant
+    # and captured sparsely in buffers.tax_liability_changes (accrual + settlement events).
     state.property_active_state[snapshot_index] = current.property_active
     state.property_basis_state[snapshot_index] = current.property_basis
     state.property_ownership_state[snapshot_index] = current.property_ownership
@@ -194,8 +195,6 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             capital_gain_active_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.bool_),
             capital_gain_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.float64),
             # tax_liability_*_state[S, T, R]
-            tax_liability_active_state=np.zeros((s, p.tax_liability_count, r), dtype=np.bool_),
-            tax_liability_state=np.zeros((s, p.tax_liability_count, r), dtype=np.float64),
             # property_*_state[S, P, R]
             property_active_state=np.zeros((s, p.property_count, r), dtype=np.bool_),
             property_basis_state=np.zeros((s, p.property_count, r), dtype=np.float64),
@@ -324,6 +323,7 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             ),
             sale_long_term_gain=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
         ),
+        tax_liability_changes=TaxLiabilityChangeLog(),
     )
     buffers.validate(plan)
     return buffers

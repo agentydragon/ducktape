@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.sim.buffers import SimulationBuffers
+from augur.sim.buffers import SimulationBuffers, TaxLiabilityChange, TaxLiabilityChangeLog
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import ExternalSeriesContext
 
@@ -37,6 +37,7 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
         obligations=_take_dc(dense.buffers.obligations, rollout_index, axis=-1),
         primary_residence=_take_dc(dense.buffers.primary_residence, rollout_index, axis=-1),
         lifecycle=_take_dc(dense.buffers.lifecycle, rollout_index, axis=-1),
+        tax_liability_changes=_slice_tax_liability_changes(dense.buffers.tax_liability_changes, rollout_index),
     )
     external_series = ExternalSeriesContext(
         series_values=(
@@ -58,6 +59,21 @@ def _slice_pe_bundle(pe: PrivateEquityBundle, *, rollout_index: int) -> PrivateE
         rollout_index=pl.lit(0, dtype=pl.Int64)
     )
     return PrivateEquityBundle(frame=sliced)
+
+
+def _slice_tax_liability_changes(log: TaxLiabilityChangeLog, rollout_index: int) -> TaxLiabilityChangeLog:
+    """Restrict each tax-liability change block to one rollout (keeping the slot axis)."""
+    return TaxLiabilityChangeLog(
+        changes=[
+            TaxLiabilityChange(
+                snapshot_month=change.snapshot_month,
+                slots=change.slots.copy(),
+                amount=change.amount[:, rollout_index : rollout_index + 1].copy(),
+                active=change.active[:, rollout_index : rollout_index + 1].copy(),
+            )
+            for change in log.changes
+        ]
+    )
 
 
 def _take_dc[T](obj: T, rollout_index: int, *, axis: int) -> T:

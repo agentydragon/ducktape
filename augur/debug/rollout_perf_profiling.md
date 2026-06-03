@@ -175,6 +175,26 @@ The remaining walls are two O(horizon² × R) eager allocations, **not** the per
 Both are deeper changes (they touch the `SimulationRun` contract / state-history storage)
 and are deliberately left as follow-ups to the boundary fixes above.
 
+## Results after the second pass (event-based tax liabilities)
+
+Intervention #2 landed: the dense `(snapshots, year-slots, R)` tax-liability state history
+is replaced by a sparse balance-change log (one event at year-end accrual + one per
+settlement), and the `tax_liabilities` output frame is now those change events. The
+piecewise-constant per-month balance is fully described by the changes, so every existing
+consumer (all in tests, querying the change-months) is unchanged.
+
+This removed both the 17.9 GiB dense buffer _and_ the largest decode frame (tax-liability
+rows accumulated to tens of millions over 100 years), so the full pipeline now fits:
+
+| rollouts | dense-only (compute)       | full `simulate()` (with decode)            |
+| -------- | -------------------------- | ------------------------------------------ |
+| 1000     | 2.8 GB                     | 3.6 GB / 7.4 s ✅ (was OOM)                |
+| 2000     | —                          | 7.1 GB / 14.4 s ✅ (was OOM)               |
+| 10000    | 7.7 GB / 57 s ✅ (was OOM) | (other per-month frames still O(months×R)) |
+
+Remaining lever for full `simulate()` at 10000 is lazy/opt-in decode (#5): the other
+state-history frames (cash, lots, …) are still materialized eagerly at O(months × R).
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**

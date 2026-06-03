@@ -933,6 +933,17 @@ def _apply_tax_accruals(
     # links above. Reset so next year's recapture from a separate sale starts fresh.
     current.recapture_section_1250_ytd[:, active_rollout] = 0.0
 
+    # Record this year's accrued liabilities as a balance-change event (sparse replacement for
+    # the old per-month dense tax-liability state history). snapshot_month = month + 1 to match
+    # the snapshot timeline the codec reports as month_index.
+    created_slots = np.flatnonzero(plan.tax_liabilities.year_end_month == month)
+    buffers.tax_liability_changes.record(
+        snapshot_month=month + 1,
+        slots=created_slots,
+        amount=current.tax_liability_amount,
+        active=current.tax_liability_active,
+    )
+
 
 def _apply_brackets(
     amount: npt.NDArray[np.float64], *, upper: np.ndarray, rate: np.ndarray, count: int
@@ -1433,6 +1444,17 @@ def _apply_tax_settlements(
                 year_end_month=int(year_end_month),
                 settlement_amount=tax_settlement_candidate[profile],
                 active=year_active,
+            )
+            # Record the post-settlement balance of this (profile, year) as a change event.
+            settled_slots = np.flatnonzero(
+                (plan.tax_liabilities.profile_index == profile)
+                & (plan.tax_liabilities.year_end_month == int(year_end_month))
+            )
+            buffers.tax_liability_changes.record(
+                snapshot_month=month + 1,
+                slots=settled_slots,
+                amount=current.tax_liability_amount,
+                active=current.tax_liability_active,
             )
 
 
