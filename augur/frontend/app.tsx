@@ -25,15 +25,16 @@ import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } f
 import { CurrencyDisplayProvider, useVisibleEventKinds, useEventSelection } from "./hooks.ts";
 import {
   METRIC_OPTIONS,
-  MAX_SCENARIOS,
+  MAX_VARIANTS,
   productInputDefaults,
   productMetricFanRequest,
   scenarioSetToSearch,
   scenarioSetFromSearch,
-  makeScenarioEntry,
-  defaultScenarioLabel,
+  makeVariant,
+  resolveVariant,
+  housingOverrideFromBase,
+  defaultVariantLabel,
   scenarioColor,
-  nextLifecycleEventId,
   rolloutCountFromSearch,
   rolloutCountDefault,
   clampRolloutCount,
@@ -348,21 +349,37 @@ function ProductProjectionWorkspace({
   const eventSelection = useEventSelection();
   const visibleEventKinds = useVisibleEventKinds();
 
-  const { scenarios, activeId } = scenarioSet;
+  const { base, variants, activeId } = scenarioSet;
+  // The chart's scenario set: the always-present Base (series 0) plus each variant resolved against
+  // it (`{ ...base, ...overrides }`). Variants inherit every knob they don't override, so editing a
+  // Base knob propagates to inheriting variants for free. The resolved list is exactly the
+  // `{ id, label, input }[]` shape every downstream consumer (requests, fans, comparison table,
+  // chips) already expects, so the base+overrides model stays contained to the editor + this memo.
+  const chartScenarios = useMemo(
+    () => [
+      { id: "base", label: base.label, input: base.input },
+      ...variants.map((variant) => ({
+        id: variant.id,
+        label: variant.label,
+        input: resolveVariant(base.input, variant.overrides),
+      })),
+    ],
+    [base, variants]
+  );
   // Metric list is the union across scenarios: a metric stays offered as long as *some* scenario
   // surfaces it (e.g. "Property value" once any scenario buys), so a comparison never hides a column.
   const visibleMetrics = useMemo(() => {
     const visibleValues = new Set();
-    for (const entry of scenarios)
+    for (const entry of chartScenarios)
       for (const metric of visibleMetricOptions(entry.input)) visibleValues.add(metric.value);
     return METRIC_OPTIONS.filter((metric) => visibleValues.has(metric.value));
-  }, [scenarios]);
+  }, [chartScenarios]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
 
   const requestEntries = useMemo(
     () =>
-      scenarios.map((entry) => ({
+      chartScenarios.map((entry) => ({
         id: entry.id,
         request: productMetricFanRequest(entry.input, bootstrap, selectedMetric, {
           rolloutCount,
@@ -371,24 +388,25 @@ function ProductProjectionWorkspace({
           horizonMonths,
         }),
       })),
-    [scenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
+    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
   const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
   const activeResult = resultsById.get(activeId) ?? null;
   const runError = errorsById.get(activeId) ?? null;
 
-  // One overlay series per scenario; color is by position so it stays put as the active selection
-  // moves. The active scenario also drives the histogram, selected-rollout overlay, and events.
+  // One overlay series per scenario; Base is series 0 (blue), variants follow. Color is by position
+  // so it stays put as the active selection moves. The active scenario also drives the histogram,
+  // selected-rollout overlay, and events.
   const fanSeries = useMemo(
     () =>
-      scenarios.map((entry, index) => ({
+      chartScenarios.map((entry, index) => ({
         id: entry.id,
         label: entry.label,
         color: scenarioColor(index),
         rows: metricFanRows(resultsById.get(entry.id)),
         isActive: entry.id === activeId,
       })),
-    [scenarios, resultsById, activeId]
+    [chartScenarios, resultsById, activeId]
   );
 
   const scenarioCacheKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
@@ -408,57 +426,71 @@ function ProductProjectionWorkspace({
   const terminalP50 = terminalPercentileValue(activeResult, 50);
   const selectedRolloutLoading = selectedSeed != null && activeResult != null && !selectedDetail && !rolloutError;
 
-  const setAllScenarios = (key, value) =>
+  // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
+  // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
+  // variant's `overrides` only. ----------------------------------------------------------------
+  const updateBaseInput = (patch) =>
     setScenarioSet((previous) => ({
       ...previous,
-      scenarios: previous.scenarios.map((entry) => ({ ...entry, input: { ...entry.input, [key]: value } })),
+      base: { ...previous.base, input: { ...previous.base.input, ...patch } },
     }));
-  const updateScenarioInput = (id, patch) =>
+  const setBaseField = (key, value) => updateBaseInput({ [key]: value });
+  const resetBase = () =>
+    setScenarioSet((previous) => ({ ...previous, base: { ...previous.base, input: productInputDefaults(bootstrap) } }));
+  const selectEntry = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
+  const renameEntry = (id, label) =>
+    setScenarioSet((previous) =>
+      id === "base"
+        ? { ...previous, base: { ...previous.base, label } }
+        : { ...previous, variants: previous.variants.map((v) => (v.id === id ? { ...v, label } : v)) }
+    );
+  // Merge a partial-override patch into one variant's `overrides` (scalar cells + the variant
+  // housing panel). Overridden keys win over the inherited base values.
+  const patchVariantOverrides = (id, patch) =>
     setScenarioSet((previous) => ({
       ...previous,
-      scenarios: previous.scenarios.map((entry) =>
-        entry.id === id ? { ...entry, input: { ...entry.input, ...patch } } : entry
+      variants: previous.variants.map((v) => (v.id === id ? { ...v, overrides: { ...v.overrides, ...patch } } : v)),
+    }));
+  // Drop override keys so the variant re-inherits the base value(s): a scalar cell's "revert" or the
+  // whole housing cluster's "revert to base".
+  const revertVariantKeys = (id, keys) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      variants: previous.variants.map((v) => {
+        if (v.id !== id) return v;
+        const overrides = { ...v.overrides };
+        for (const key of keys) delete overrides[key];
+        return { ...v, overrides };
+      }),
+    }));
+  // Pin the housing cluster on a variant by copying the base's housing as a unit; later base housing
+  // edits no longer reach it until reverted.
+  const overrideHousing = (id) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      variants: previous.variants.map((v) =>
+        v.id === id ? { ...v, overrides: { ...v.overrides, ...housingOverrideFromBase(previous.base.input) } } : v
       ),
     }));
-  const resetActiveScenario = () =>
+  const addVariant = () =>
+    setScenarioSet((previous) => {
+      if (previous.variants.length >= MAX_VARIANTS) return previous;
+      // A fresh variant overrides nothing: it starts identical to Base, then the user overrides the
+      // knobs that differ (rent vs. buy, a higher spend, …).
+      const variant = makeVariant(defaultVariantLabel(previous.variants.length));
+      return { ...previous, variants: [...previous.variants, variant], activeId: variant.id };
+    });
+  const deleteVariant = (id) =>
     setScenarioSet((previous) => ({
       ...previous,
-      scenarios: previous.scenarios.map((entry) =>
-        entry.id === previous.activeId ? { ...entry, input: productInputDefaults(bootstrap) } : entry
-      ),
+      variants: previous.variants.filter((v) => v.id !== id),
+      activeId: previous.activeId === id ? "base" : previous.activeId,
     }));
-  const selectScenario = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
-  const renameScenario = (id, label) =>
-    setScenarioSet((previous) => ({
-      ...previous,
-      scenarios: previous.scenarios.map((entry) => (entry.id === id ? { ...entry, label } : entry)),
-    }));
-  const addScenario = () =>
-    setScenarioSet((previous) => {
-      if (previous.scenarios.length >= MAX_SCENARIOS) return previous;
-      const source = previous.scenarios.find((entry) => entry.id === previous.activeId) ?? previous.scenarios[0];
-      // Duplicate the active scenario's inputs; lifecycle events get fresh React keys so the copy
-      // and the original never share a key.
-      const clonedInput = {
-        ...source.input,
-        propertyLifecycleEvents: source.input.propertyLifecycleEvents.map((event) => ({
-          ...event,
-          _id: nextLifecycleEventId(),
-        })),
-      };
-      const entry = makeScenarioEntry(clonedInput, defaultScenarioLabel(previous.scenarios.length));
-      return { scenarios: [...previous.scenarios, entry], activeId: entry.id };
-    });
-  const deleteScenario = (id) =>
-    setScenarioSet((previous) => {
-      if (previous.scenarios.length <= 1) return previous;
-      const scenarios = previous.scenarios.filter((entry) => entry.id !== id);
-      const nextActiveId = previous.activeId === id ? scenarios[0].id : previous.activeId;
-      return { scenarios, activeId: nextActiveId };
-    });
 
   useEffect(() => {
-    const params = new URLSearchParams(scenarioSetToSearch(scenarios, activeId, bootstrap));
+    // The active selection is ephemeral UI state, not persisted: the codec always decodes Base as
+    // active, so reloading a shared link lands on Base.
+    const params = new URLSearchParams(scenarioSetToSearch(base, variants, bootstrap));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
     // The shell-owned shared params live outside the scenario set, as do the budget tab's planning
     // params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the product
@@ -473,7 +505,7 @@ function ProductProjectionWorkspace({
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.replaceState(null, "", newUrl);
     }
-  }, [scenarios, activeId, bootstrap, currencyDisplay]);
+  }, [base, variants, bootstrap, currencyDisplay]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -492,14 +524,14 @@ function ProductProjectionWorkspace({
 
   // Drop cached fans/errors for scenarios that no longer exist (deleted from the set).
   useEffect(() => {
-    const ids = new Set(scenarios.map((entry) => entry.id));
+    const ids = new Set(chartScenarios.map((entry) => entry.id));
     const prune = (previous) => {
       const next = new Map([...previous].filter(([id]) => ids.has(id)));
       return next.size === previous.size ? previous : next;
     };
     setResultsById(prune);
     setErrorsById(prune);
-  }, [scenarios]);
+  }, [chartScenarios]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -594,19 +626,23 @@ function ProductProjectionWorkspace({
         />
 
         <ScenarioEditor
-          scenarios={scenarios}
+          base={base}
+          variants={variants}
           activeId={activeId}
           bootstrap={bootstrap}
           portfolio={portfolio}
           portfolioError={portfolioError}
           horizonMonths={horizonMonths}
-          onSelect={selectScenario}
-          onAdd={addScenario}
-          onDelete={deleteScenario}
-          onRename={renameScenario}
-          onResetActive={resetActiveScenario}
-          onSetAll={setAllScenarios}
-          onUpdateScenario={updateScenarioInput}
+          onSelect={selectEntry}
+          onAddVariant={addVariant}
+          onDeleteVariant={deleteVariant}
+          onRename={renameEntry}
+          onResetBase={resetBase}
+          onSetBaseField={setBaseField}
+          onSetBasePatch={updateBaseInput}
+          onPatchVariant={patchVariantOverrides}
+          onRevertKeys={revertVariantKeys}
+          onOverrideHousing={overrideHousing}
         />
 
         {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
@@ -642,7 +678,7 @@ function ProductProjectionWorkspace({
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
             percentiles={activeRequest.percentiles}
-            scenarios={scenarios}
+            scenarios={chartScenarios}
             resultsById={resultsById}
             activeId={activeId}
             selectedRows={selectedRows}

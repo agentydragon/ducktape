@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Button, Menu } from "@mantine/core";
+import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
-import { scenarioColor } from "./input_helpers.ts";
+import { scenarioColor, resolveVariant, HOUSING_KEYS, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
 import { PropertyPurchasePanel, SellOrderControl, ProductPortfolioPanel } from "./forms.tsx";
 
@@ -10,11 +10,10 @@ const INDEX_DATA = [
   { value: "none", label: "None" },
 ];
 
-// Scalar knobs that are shared-by-default but overridable per scenario (see plans/scenario_editor.md).
-// A knob is rendered shared when every scenario agrees (and it isn't pinned); otherwise it gets a
-// per-scenario override column. The housing cluster + lifecycle events are NOT here — they're edited
-// per scenario in the Property & timeline panel below. Liquidity/sell-order is shared-only.
-// Display groups so related knobs stay together; a flat flow split e.g. the cash-buffer trio.
+// Scalar knobs edited in the comparison spreadsheet (rows = knobs, columns = Base + variants). The
+// housing cluster (`HOUSING_KEYS`) + lifecycle events are too rich for cells, so they're edited in
+// the per-entity Property & timeline panel below; sell order is Base-only. Grouped so related knobs
+// stay together (a flat flow split e.g. the cash-buffer trio).
 const SCALAR_GROUPS = ["Spending", "Outside rent", "Cash buffer", "Private equity"];
 
 const SCALAR_KNOBS = [
@@ -29,15 +28,27 @@ const SCALAR_KNOBS = [
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
 
-function KnobField({ knob, value, label, bootstrap, onChange }) {
+// Compact, label-less control for a spreadsheet cell. The row + column headers already name the knob
+// and the scenario, so the input itself carries only an `aria-label`. `muted` dims a value the
+// variant inherits from Base (vs. one it overrides).
+function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }) {
+  const wrap = (control) => <div className={muted ? "opacity-60" : undefined}>{control}</div>;
   if (knob.kind === "usd") {
-    return <NumberField label={label} value={value} min={knob.min} step={knob.step} prefix="$" onChange={onChange} />;
+    return wrap(
+      <NumberField
+        aria-label={ariaLabel}
+        value={value}
+        min={knob.min}
+        step={knob.step}
+        prefix="$"
+        onChange={onChange}
+      />
+    );
   }
   if (knob.kind === "index") {
-    return (
+    return wrap(
       <NativeSelectField
-        label={label}
-        aria-label={label}
+        aria-label={ariaLabel}
         value={value}
         data={INDEX_DATA}
         onChange={(event) => onChange(event.target.value === "none" ? "none" : "inflation")}
@@ -45,10 +56,9 @@ function KnobField({ knob, value, label, bootstrap, onChange }) {
     );
   }
   if (knob.kind === "boolIndex") {
-    return (
+    return wrap(
       <NativeSelectField
-        label={label}
-        aria-label={label}
+        aria-label={ariaLabel}
         value={value ? "inflation" : "none"}
         data={INDEX_DATA}
         onChange={(event) => onChange(event.target.value === "inflation")}
@@ -56,10 +66,9 @@ function KnobField({ knob, value, label, bootstrap, onChange }) {
     );
   }
   // location
-  return (
+  return wrap(
     <NativeSelectField
-      label={label}
-      aria-label={label}
+      aria-label={ariaLabel}
       value={value ?? ""}
       data={[
         { value: "", label: "(default)" },
@@ -70,66 +79,191 @@ function KnobField({ knob, value, label, bootstrap, onChange }) {
   );
 }
 
-// Full-width scenario editor. Most knobs are edited once (shared → applies to every scenario); any
-// scalar can be split into a per-scenario override. Housing + lifecycle events are edited per
-// scenario for the active scenario (switch with the chips). Data model is unchanged: each scenario
-// keeps a full input; "shared vs overridden" is computed here.
+const TABLE_HEADER =
+  "px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
+
+// One variant's cell for a scalar knob: editable, bound to the override value when overridden or the
+// inherited Base value otherwise (editing an inherited cell creates the override). A revert control
+// appears only when the cell overrides, dropping the key so it re-inherits Base.
+function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, onRevertKeys }) {
+  const overridden = knob.key in variant.overrides;
+  const value = overridden ? variant.overrides[knob.key] : baseInput[knob.key];
+  return (
+    <td className="px-3 py-1.5 align-top">
+      <div className="flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <KnobCell
+            knob={knob}
+            value={value}
+            ariaLabel={`${knob.label} — ${variant.label}`}
+            bootstrap={bootstrap}
+            muted={!overridden}
+            onChange={(next) => onPatchVariant(variant.id, { [knob.key]: next })}
+          />
+        </div>
+        <button
+          type="button"
+          className={`text-xs leading-none ${overridden ? "augur-link" : "invisible"}`}
+          aria-label={`Revert ${knob.label} for ${variant.label} to base`}
+          title="Revert to base"
+          disabled={!overridden}
+          onClick={() => onRevertKeys(variant.id, [knob.key])}
+        >
+          ↩
+        </button>
+      </div>
+    </td>
+  );
+}
+
+// One-line description of an entity's housing for the inherited-housing summary.
+function HousingSummary({ input, bootstrap }) {
+  const property = (bootstrap.properties ?? []).find((entry) => entry.id === input.propertyId);
+  if (!property) return <>No property purchase (renting).</>;
+  const financing = input.financingKind === "mortgage" ? "mortgage" : "cash";
+  const rented = Number(input.rentalFractionRentedPct) > 0 ? ` · ${input.rentalFractionRentedPct}% rented` : "";
+  const events = input.propertyLifecycleEvents?.length ?? 0;
+  const timeline = events > 0 ? ` · ${events} timeline event${events === 1 ? "" : "s"}` : "";
+  return (
+    <>
+      {property.address || property.id} · {financing}
+      {rented}
+      {timeline}
+    </>
+  );
+}
+
+// Housing & timeline for the active entity. Base edits propagate to inheriting variants; a variant
+// either inherits Base housing (summary + "Override housing") or pins its own cluster (full panel +
+// "Revert to base"). Housing is overridden as a unit so a variant never half-inherits a property.
+function HousingSection({
+  base,
+  activeVariant,
+  activeColor,
+  bootstrap,
+  horizonMonths,
+  onSetBasePatch,
+  onPatchVariant,
+  onRevertKeys,
+  onOverrideHousing,
+}) {
+  if (activeVariant == null) {
+    return (
+      <div>
+        <div className="px-4 pt-3 augur-eyebrow">Housing &amp; timeline — Base</div>
+        <PropertyPurchasePanel
+          bootstrap={bootstrap}
+          input={base.input}
+          onChange={onSetBasePatch}
+          horizonMonths={horizonMonths}
+        />
+      </div>
+    );
+  }
+  const overridden = HOUSING_KEYS.some((key) => key in activeVariant.overrides);
+  if (!overridden) {
+    return (
+      <div className="px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="augur-eyebrow">
+            Housing &amp; timeline —{" "}
+            <span className="font-semibold" style={{ color: activeColor }}>
+              {activeVariant.label}
+            </span>
+          </div>
+          <Button size="xs" variant="default" onClick={() => onOverrideHousing(activeVariant.id)}>
+            Override housing
+          </Button>
+        </div>
+        <div className="mt-2 text-xs augur-muted">
+          Inherits Base: <HousingSummary input={base.input} bootstrap={bootstrap} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
+        <div className="augur-eyebrow">
+          Housing &amp; timeline —{" "}
+          <span className="font-semibold" style={{ color: activeColor }}>
+            {activeVariant.label}
+          </span>{" "}
+          <span className="augur-muted">(overrides Base)</span>
+        </div>
+        <button
+          type="button"
+          className="augur-link text-xs font-semibold"
+          onClick={() => onRevertKeys(activeVariant.id, HOUSING_KEYS)}
+        >
+          Revert to base housing
+        </button>
+      </div>
+      <PropertyPurchasePanel
+        bootstrap={bootstrap}
+        input={resolveVariant(base.input, activeVariant.overrides)}
+        onChange={(patch) => onPatchVariant(activeVariant.id, patch)}
+        horizonMonths={horizonMonths}
+      />
+    </div>
+  );
+}
+
+// Full-width scenario editor for the Base + per-variant-overrides model. The spreadsheet edits the
+// scalar knobs (Base column + one column per variant; Base edits propagate to inheriting variants,
+// variant cells override individually). The Property & timeline panel below edits the active
+// entity's housing cluster. Sell order is Base-only. The whole thing collapses (chips stay visible)
+// so the chart/results below are reachable without scrolling.
 export function ScenarioEditor({
-  scenarios,
+  base,
+  variants,
   activeId,
   bootstrap,
   portfolio,
   portfolioError,
   horizonMonths,
   onSelect,
-  onAdd,
-  onDelete,
+  onAddVariant,
+  onDeleteVariant,
   onRename,
-  onResetActive,
-  onSetAll,
-  onUpdateScenario,
+  onResetBase,
+  onSetBaseField,
+  onSetBasePatch,
+  onPatchVariant,
+  onRevertKeys,
+  onOverrideHousing,
 }) {
-  // Knobs the user chose to override even though the scenarios currently agree. A knob that already
-  // differs is always an override column regardless of this set.
-  const [pinned, setPinned] = useState(() => new Set());
-  // The editor is tall (it carries the full property + portfolio panels); let it collapse to a
-  // compact bar (chips stay visible) so the chart/results below are reachable without scrolling.
   const [open, setOpen] = useState(true);
+  const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
+  const activeVariant = variants.find((v) => v.id === activeId) ?? null;
   const activeIndex = Math.max(
     0,
-    scenarios.findIndex((entry) => entry.id === activeId)
+    entries.findIndex((entry) => entry.id === activeId)
   );
-  const active = scenarios[activeIndex] ?? scenarios[0];
-  const multi = scenarios.length > 1;
-  const differs = (key) => !scenarios.every((entry) => entry.input[key] === scenarios[0].input[key]);
-  const isOverride = (key) => differs(key) || pinned.has(key);
-  const sharedKnobs = SCALAR_KNOBS.filter((knob) => !isOverride(knob.key));
-  const overrideKnobs = SCALAR_KNOBS.filter((knob) => isOverride(knob.key));
-  const pin = (key) => setPinned((previous) => new Set(previous).add(key));
-  const makeShared = (key) => {
-    onSetAll(key, active.input[key]); // collapse divergence onto the active scenario's value
-    setPinned((previous) => {
-      const next = new Set(previous);
-      next.delete(key);
-      return next;
-    });
+  const activeLabel = entries[activeIndex]?.label ?? base.label;
+  const multi = variants.length > 0;
+
+  const resetActive = () => {
+    if (activeVariant == null) onResetBase();
+    else onRevertKeys(activeVariant.id, Object.keys(activeVariant.overrides));
   };
 
   return (
     <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-editor="">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <ScenarioTabs
-          scenarios={scenarios}
+          entries={entries}
           activeId={activeId}
           onSelect={onSelect}
-          onAdd={onAdd}
-          onDelete={onDelete}
+          onAdd={onAddVariant}
+          onDelete={onDeleteVariant}
           onRename={onRename}
+          canAdd={variants.length < MAX_VARIANTS}
         />
         <div className="flex items-center gap-1">
           {open && (
-            <Button size="xs" variant="subtle" onClick={onResetActive}>
-              Reset {multi ? active.label : "scenario"}
+            <Button size="xs" variant="subtle" onClick={resetActive}>
+              Reset {activeVariant == null ? "base" : activeLabel}
             </Button>
           )}
           <Button
@@ -147,114 +281,101 @@ export function ScenarioEditor({
       {open && (
         <>
           <div className="px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="augur-eyebrow">Spending &amp; funding{multi ? " — shared across all scenarios" : ""}</div>
-              {multi && sharedKnobs.length > 0 && (
-                <Menu shadow="md" position="bottom-end">
-                  <Menu.Target>
-                    <Button size="xs" variant="default" data-product-add-override="">
-                      + Override a setting
-                    </Button>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    {sharedKnobs.map((knob) => (
-                      <Menu.Item key={knob.key} onClick={() => pin(knob.key)}>
-                        {knob.label}
-                      </Menu.Item>
-                    ))}
-                  </Menu.Dropdown>
-                </Menu>
-              )}
-            </div>
-            <div className="mt-3 space-y-3">
-              {SCALAR_GROUPS.map((group) => {
-                const groupKnobs = sharedKnobs.filter((knob) => knob.group === group);
-                if (groupKnobs.length === 0) return null;
-                return (
-                  <div key={group}>
-                    <div className="augur-field-label mb-1">{group}</div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {groupKnobs.map((knob) => (
-                        <KnobField
-                          key={knob.key}
-                          knob={knob}
-                          value={active.input[knob.key]}
-                          label={knob.label}
-                          bootstrap={bootstrap}
-                          onChange={(value) => onSetAll(knob.key, value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <SellOrderControl
-              sellOrder={active.input.sellOrder}
-              portfolio={portfolio}
-              onChange={(sellOrder) => onSetAll("sellOrder", sellOrder)}
-            />
-          </div>
-
-          {overrideKnobs.length > 0 && (
-            <div className="px-4 py-3">
-              <div className="augur-eyebrow">Per-scenario overrides</div>
-              <div className="mt-3 grid gap-4">
-                {overrideKnobs.map((knob) => (
-                  <div key={knob.key} data-product-override-knob={knob.key}>
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <div className="augur-field-label">{knob.label}</div>
-                      <button
-                        type="button"
-                        className="augur-link text-xs font-semibold"
-                        onClick={() => makeShared(knob.key)}
-                      >
-                        Make shared
-                      </button>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {scenarios.map((entry, index) => (
-                        <div key={entry.id} className="flex items-end gap-2">
+            <div className="augur-eyebrow">Spending &amp; funding</div>
+            {multi && (
+              <div className="mt-1 text-xs augur-muted">
+                Edit a Base cell to change it everywhere; edit a variant cell to override just that variant (↩ reverts
+                it to Base).
+              </div>
+            )}
+            <div className="mt-3 overflow-x-auto" data-product-scenario-table="">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Setting
+                    </th>
+                    {entries.map((entry, index) => (
+                      <th key={entry.id} className={TABLE_HEADER} data-product-scenario-col={entry.id}>
+                        <span className="inline-flex items-center justify-end gap-1.5">
                           <span
-                            className="mb-2 h-3 w-3 shrink-0 rounded-full"
+                            className="h-2.5 w-2.5 rounded-full"
                             style={{ backgroundColor: scenarioColor(index) }}
                             aria-hidden="true"
                           />
-                          <div className="min-w-0 flex-1">
-                            <KnobField
+                          <span
+                            className={entry.id === activeId ? "font-semibold text-slate-700 dark:text-slate-200" : ""}
+                          >
+                            {entry.label}
+                          </span>
+                        </span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {SCALAR_GROUPS.map((group) => (
+                    <React.Fragment key={group}>
+                      <tr>
+                        <th
+                          colSpan={1 + entries.length}
+                          className="bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400"
+                        >
+                          {group}
+                        </th>
+                      </tr>
+                      {SCALAR_KNOBS.filter((knob) => knob.group === group).map((knob) => (
+                        <tr key={knob.key} data-product-knob-row={knob.key}>
+                          <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
+                            {knob.label}
+                          </th>
+                          <td className="px-3 py-1.5 align-top">
+                            <div className="min-w-[8rem]">
+                              <KnobCell
+                                knob={knob}
+                                value={base.input[knob.key]}
+                                ariaLabel={`${knob.label} — Base`}
+                                bootstrap={bootstrap}
+                                onChange={(value) => onSetBaseField(knob.key, value)}
+                              />
+                            </div>
+                          </td>
+                          {variants.map((variant) => (
+                            <VariantKnobCell
+                              key={variant.id}
                               knob={knob}
-                              value={entry.input[knob.key]}
-                              label={entry.label}
+                              variant={variant}
+                              baseInput={base.input}
                               bootstrap={bootstrap}
-                              onChange={(value) => onUpdateScenario(entry.id, { [knob.key]: value })}
+                              onPatchVariant={onPatchVariant}
+                              onRevertKeys={onRevertKeys}
                             />
-                          </div>
-                        </div>
+                          ))}
+                        </tr>
                       ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-
-          <div>
-            {multi && (
-              <div className="px-4 pt-3 text-xs augur-muted">
-                Housing &amp; timeline apply to{" "}
-                <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
-                  {active.label}
-                </span>{" "}
-                — switch scenarios with the chips above.
-              </div>
-            )}
-            <PropertyPurchasePanel
-              bootstrap={bootstrap}
-              input={active.input}
-              onChange={(patch) => onUpdateScenario(activeId, patch)}
-              horizonMonths={horizonMonths}
+            <SellOrderControl
+              sellOrder={base.input.sellOrder}
+              portfolio={portfolio}
+              onChange={(sellOrder) => onSetBaseField("sellOrder", sellOrder)}
             />
           </div>
+
+          <HousingSection
+            base={base}
+            activeVariant={activeVariant}
+            activeColor={scenarioColor(activeIndex)}
+            bootstrap={bootstrap}
+            horizonMonths={horizonMonths}
+            onSetBasePatch={onSetBasePatch}
+            onPatchVariant={onPatchVariant}
+            onRevertKeys={onRevertKeys}
+            onOverrideHousing={onOverrideHousing}
+          />
 
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
         </>

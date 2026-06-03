@@ -1,4 +1,4 @@
-// Unit tests for the scenario-set URL codec (multi-scenario comparison). Runs under vitest;
+// Unit tests for the scenario-set URL codec (Base + per-variant overrides). Runs under vitest;
 // see //augur/frontend:input_helpers_test.
 
 import { test, expect } from "vitest";
@@ -6,84 +6,121 @@ import { test, expect } from "vitest";
 import {
   scenarioSetToSearch,
   scenarioSetFromSearch,
-  makeScenarioEntry,
+  makeVariant,
+  resolveVariant,
+  housingOverrideFromBase,
   productInputDefaults,
   productInputToSearch,
+  MAX_VARIANTS,
 } from "./input_helpers.ts";
 
 // `productInputDefaults` only reads `productInputDefaults` (deployment overrides) and
 // `locations[0]?.id`; an empty bootstrap exercises the pure hard-coded defaults.
 const bootstrap = { productInputDefaults: {}, locations: [] };
 
-function entry(overrides, label) {
-  return makeScenarioEntry({ ...productInputDefaults(bootstrap), ...overrides }, label);
+function baseWith(overrides, label = "Base") {
+  return { label, input: { ...productInputDefaults(bootstrap), ...overrides } };
 }
 
-test("a single scenario encodes as ?s= (not ?scenarios=) and round-trips", () => {
-  const only = entry({ monthlySpendUsd: 4200 }, "Scenario 1");
-  const search = scenarioSetToSearch([only], only.id, bootstrap);
+test("a base with no variants encodes as ?s= (not ?scenarios=) and round-trips", () => {
+  const search = scenarioSetToSearch(baseWith({ monthlySpendUsd: 4200 }), [], bootstrap);
   expect(search).toMatch(/(^|&)s=/);
   expect(search).not.toContain("scenarios=");
 
   const decoded = scenarioSetFromSearch(search, bootstrap);
-  expect(decoded.scenarios).toHaveLength(1);
-  expect(decoded.scenarios[0].input.monthlySpendUsd).toBe(4200);
-  expect(decoded.activeId).toBe(decoded.scenarios[0].id);
+  expect(decoded.variants).toHaveLength(0);
+  expect(decoded.base.input.monthlySpendUsd).toBe(4200);
+  expect(decoded.activeId).toBe("base");
 });
 
-test("a pre-multi ?s= link decodes as a 1-element set (backward compatible)", () => {
+test("a pre-multi ?s= link decodes as a base with no variants (backward compatible)", () => {
   const legacy = productInputToSearch({ ...productInputDefaults(bootstrap), monthlySpendUsd: 9100 }, bootstrap);
   const decoded = scenarioSetFromSearch(legacy, bootstrap);
-  expect(decoded.scenarios).toHaveLength(1);
-  expect(decoded.scenarios[0].input.monthlySpendUsd).toBe(9100);
+  expect(decoded.variants).toHaveLength(0);
+  expect(decoded.base.label).toBe("Base");
+  expect(decoded.base.input.monthlySpendUsd).toBe(9100);
 });
 
-test("two scenarios encode as ?scenarios= and round-trip inputs, labels, and active selection", () => {
-  const rent = entry({ monthlyRentUsd: 3000, monthlySpendUsd: 5000 }, "Rent");
-  const buy = entry({ financingKind: "mortgage", monthlySpendUsd: 5000 }, "Mortgage");
-  const search = scenarioSetToSearch([rent, buy], buy.id, bootstrap);
+test("base + variants encode as ?scenarios= and round-trip base input, labels, and overrides", () => {
+  const base = baseWith({ monthlyRentUsd: 3000 }, "Rent");
+  const variants = [makeVariant("Mortgage", { financingKind: "mortgage", monthlySpendUsd: 5000 })];
+  const search = scenarioSetToSearch(base, variants, bootstrap);
   expect(search).toContain("scenarios=");
   expect(search).not.toMatch(/(^|&)s=/);
 
   const decoded = scenarioSetFromSearch(search, bootstrap);
-  expect(decoded.scenarios).toHaveLength(2);
-  expect(decoded.scenarios.map((s) => s.label)).toEqual(["Rent", "Mortgage"]);
-  expect(decoded.scenarios[0].input.monthlyRentUsd).toBe(3000);
-  expect(decoded.scenarios[1].input.financingKind).toBe("mortgage");
-  // Active was the second scenario; the decoded active id points at the second entry.
-  expect(decoded.activeId).toBe(decoded.scenarios[1].id);
+  expect(decoded.base.label).toBe("Rent");
+  expect(decoded.base.input.monthlyRentUsd).toBe(3000);
+  expect(decoded.variants).toHaveLength(1);
+  expect(decoded.variants[0].label).toBe("Mortgage");
+  expect(decoded.variants[0].overrides).toMatchObject({ financingKind: "mortgage", monthlySpendUsd: 5000 });
+  // The variant inherits the base's rent (not overridden) and applies only its own overrides.
+  const resolved = resolveVariant(decoded.base.input, decoded.variants[0].overrides);
+  expect(resolved.monthlyRentUsd).toBe(3000);
+  expect(resolved.financingKind).toBe("mortgage");
+  expect(decoded.activeId).toBe("base");
 });
 
-test("lifecycle events survive a multi-scenario round-trip with regenerated keys", () => {
-  const withLifecycle = entry(
-    {
-      propertyId: "p",
-      propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
-    },
-    "Sell at 10y"
-  );
-  const other = entry({}, "Hold");
-  const decoded = scenarioSetFromSearch(
-    scenarioSetToSearch([withLifecycle, other], withLifecycle.id, bootstrap),
-    bootstrap
-  );
-  const events = decoded.scenarios[0].input.propertyLifecycleEvents;
+test("base lifecycle events survive a round-trip with regenerated keys", () => {
+  const base = baseWith({
+    propertyId: "p",
+    propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
+  });
+  // Add a variant so the set serializes through the `?scenarios=` blob (base input in JSON).
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(base, [makeVariant("V")], bootstrap), bootstrap);
+  const events = decoded.base.input.propertyLifecycleEvents;
   expect(events).toHaveLength(1);
   expect(events[0]).toMatchObject({ kind: "property_sale", month: 120, closingCostPct: 6 });
-  // The UI-only React key is reminted on decode so sibling scenarios never collide.
+  // The UI-only React key is reminted on decode so base and variants never collide.
   expect(events[0]._id).not.toBe("lc-orig");
   expect(typeof events[0]._id).toBe("string");
 });
 
-test("a malformed ?scenarios= blob falls back to a single default scenario", () => {
-  const decoded = scenarioSetFromSearch("scenarios=not-json", bootstrap);
-  expect(decoded.scenarios).toHaveLength(1);
-  expect(decoded.scenarios[0].input.monthlySpendUsd).toBe(productInputDefaults(bootstrap).monthlySpendUsd);
+test("a variant's lifecycle-event override survives a round-trip with regenerated keys", () => {
+  const variant = makeVariant("Sell at 10y", {
+    propertyId: "p",
+    propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 120, closingCostPct: 6 }],
+  });
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), [variant], bootstrap), bootstrap);
+  const events = decoded.variants[0].overrides.propertyLifecycleEvents;
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ kind: "property_sale", month: 120, closingCostPct: 6 });
+  expect(events[0]._id).not.toBe("lc-orig");
 });
 
-test("an unrecognized ?scenarios= version falls back to a single default scenario", () => {
+test("decoding caps variants at MAX_VARIANTS (untrusted hand-edited link)", () => {
+  const variants = Array.from({ length: MAX_VARIANTS + 3 }, (_, index) =>
+    makeVariant(`V${index}`, { monthlySpendUsd: 1000 + index })
+  );
+  const decoded = scenarioSetFromSearch(scenarioSetToSearch(baseWith({}), variants, bootstrap), bootstrap);
+  expect(decoded.variants).toHaveLength(MAX_VARIANTS);
+});
+
+test("a malformed ?scenarios= blob falls back to a base with no variants", () => {
+  const decoded = scenarioSetFromSearch("scenarios=not-json", bootstrap);
+  expect(decoded.variants).toHaveLength(0);
+  expect(decoded.base.input.monthlySpendUsd).toBe(productInputDefaults(bootstrap).monthlySpendUsd);
+});
+
+test("an unrecognized ?scenarios= version falls back to a base with no variants", () => {
   const params = new URLSearchParams();
-  params.set("scenarios", JSON.stringify({ v: 999, active: 0, scenarios: [{ label: "x", input: {} }] }));
+  params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
   const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
-  expect(decoded.scenarios).toHaveLength(1);
+  expect(decoded.variants).toHaveLength(0);
+});
+
+test("housingOverrideFromBase copies the housing cluster (not other knobs) with fresh lifecycle keys", () => {
+  const baseInput = {
+    ...productInputDefaults(bootstrap),
+    propertyId: "p",
+    financingKind: "mortgage",
+    monthlySpendUsd: 1234, // not a housing knob — must NOT be carried into the override
+    propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 60, closingCostPct: 6 }],
+  };
+  const overrides = housingOverrideFromBase(baseInput);
+  expect(overrides.propertyId).toBe("p");
+  expect(overrides.financingKind).toBe("mortgage");
+  expect(overrides).not.toHaveProperty("monthlySpendUsd");
+  expect(overrides.propertyLifecycleEvents[0]).toMatchObject({ kind: "property_sale", month: 60 });
+  expect(overrides.propertyLifecycleEvents[0]._id).not.toBe("lc-orig");
 });

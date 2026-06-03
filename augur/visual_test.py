@@ -205,19 +205,19 @@ def _wait_for_calibration_page(page: Page) -> None:
 # events. Schema version 6 (the v6 bump moved `firstSeed` out of `?s=` into `?seed=`).
 _PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
 
-# Two-scenario "rent vs. buy" comparison. Each scenario's `input` overrides only the fields that
-# differ from the product defaults (the codec merges the rest over `productInputDefaults`); the
-# whole set rides the URL-encoded `?scenarios=` param. The fixture property `location_a_property`
-# backs the mortgage scenario.
+# Two-scenario "rent vs. buy" comparison in the base+overrides codec (v2): the Base scenario "Rent"
+# sets only the fields that differ from the product defaults (the codec merges the rest over
+# `productInputDefaults`), and the "Buy (mortgage)" variant carries just the housing overrides it
+# layers on top of Base. The whole set rides the URL-encoded `?scenarios=` param; the fixture
+# property `location_a_property` backs the mortgage variant.
 _COMPARISON_SCENARIOS = {
-    "v": 1,
-    "active": 0,
-    "scenarios": [
-        {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
+    "v": 2,
+    "base": {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
+    "variants": [
         {
             "label": "Buy (mortgage)",
-            "input": {"propertyId": "location_a_property", "financingKind": "mortgage", "livesHere": True},
-        },
+            "overrides": {"propertyId": "location_a_property", "financingKind": "mortgage", "livesHere": True},
+        }
     ],
 }
 _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})

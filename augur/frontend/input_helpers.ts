@@ -545,53 +545,101 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 // stable as the active selection changes; the active scenario is distinguished by line weight,
 // not by hue.
 
-// Per-scenario fan colors, indexed by position. Index 0 is the existing single-scenario blue so
-// a lone scenario renders byte-identically to the pre-comparison chart. Deliberately red-free:
-// red (`FAILED_ROLLOUT_COLOR`) is reserved for failed rollouts, so a red line never reads as a
-// scenario hue. Blue / teal / violet / gold / cyan.
+// Per-scenario fan colors. Index 0 is the Base series (the existing single-scenario blue); variants
+// take the rest. Deliberately red-free: red (`FAILED_ROLLOUT_COLOR`) is reserved for failed
+// rollouts, so a red line never reads as a scenario hue. Blue / teal / violet / gold / cyan.
 export const SCENARIO_COLORS = ["#1d4ed8", "#0d9488", "#7c3aed", "#ca8a04", "#0e7490"];
-export const MAX_SCENARIOS = SCENARIO_COLORS.length;
+// Base is series 0; variants share the remaining colors.
+export const MAX_VARIANTS = SCENARIO_COLORS.length - 1;
 
 export function scenarioColor(index) {
   const count = SCENARIO_COLORS.length;
   return SCENARIO_COLORS[((index % count) + count) % count];
 }
 
-export function defaultScenarioLabel(index) {
-  return `Scenario ${index + 1}`;
+export function defaultVariantLabel(index) {
+  return `Variant ${index + 1}`;
 }
 
-let _nextScenarioId = 0;
-// Stable per-entry id used as the React key and the active-scenario handle. Purely UI state — the
-// URL encodes scenarios positionally, so ids are minted fresh on every decode.
-export function nextScenarioId() {
-  _nextScenarioId += 1;
-  return `scn-${_nextScenarioId}`;
+// Housing knobs are overridden per variant as a unit (the whole property / rental / lifecycle
+// cluster, edited in the Property & timeline panel) — not individually in the scalar spreadsheet.
+export const HOUSING_KEYS = [
+  "propertyId",
+  "financingKind",
+  "downPaymentPct",
+  "mortgageTermMonths",
+  "annualRatePct",
+  "annualInsurancePct",
+  "annualMaintenancePct",
+  "livesHere",
+  "rentalFullPropertyMonthlyUsd",
+  "rentalFractionRentedPct",
+  "rentalVacancyPct",
+  "useRentalManagement",
+  "managementFeePct",
+  "leasingFeeMonths",
+  "avgTenancyMonths",
+  "propertyLifecycleEvents",
+];
+
+let _nextVariantId = 0;
+// Stable per-variant id used as the React key + the active-selection handle. UI-only — the URL
+// encodes variants positionally, so ids are minted fresh on every decode.
+export function nextVariantId() {
+  _nextVariantId += 1;
+  return `var-${_nextVariantId}`;
 }
 
-export function makeScenarioEntry(input, label) {
-  return { id: nextScenarioId(), label, input };
+export function makeVariant(label, overrides = {}) {
+  return { id: nextVariantId(), label, overrides };
 }
 
-// Lifecycle-event `_id`s are UI-only React keys; drop them from the persisted form so two
-// scenarios that share a lifecycle plan don't also share (colliding) keys after a decode.
-function serializeScenarioInput(input) {
-  const events = Array.isArray(input.propertyLifecycleEvents) ? input.propertyLifecycleEvents : [];
-  return { ...input, propertyLifecycleEvents: events.map(({ _id, ...rest }) => rest) };
+// A variant resolves against the base: its overrides win on the keys it sets.
+export function resolveVariant(baseInput, overrides) {
+  return { ...baseInput, ...overrides };
 }
 
-function deserializeScenarioInput(raw, defaults) {
+function regenerateLifecycleIds(events) {
+  return Array.isArray(events) ? events.map((event) => ({ ...event, _id: nextLifecycleEventId() })) : [];
+}
+
+// Seed a variant's housing override from the base: copy the whole housing cluster as a unit
+// (`HOUSING_KEYS`) with fresh lifecycle-event React keys so the variant's events don't share keys
+// with the base's. Editing housing on a variant pins the cluster, so base housing edits no longer
+// propagate to it; reverting drops these keys and the variant re-inherits the base cluster.
+export function housingOverrideFromBase(baseInput) {
+  const overrides = Object.fromEntries(HOUSING_KEYS.map((key) => [key, baseInput[key]]));
+  overrides.propertyLifecycleEvents = regenerateLifecycleIds(baseInput.propertyLifecycleEvents);
+  return overrides;
+}
+
+// Lifecycle-event `_id`s are UI-only React keys; drop them from anything we persist so two scenarios
+// that share a lifecycle plan don't also share (colliding) keys after a decode.
+function stripLifecycleIds(obj) {
+  if (!obj || !("propertyLifecycleEvents" in obj)) return obj;
+  const events = Array.isArray(obj.propertyLifecycleEvents) ? obj.propertyLifecycleEvents : [];
+  return { ...obj, propertyLifecycleEvents: events.map(({ _id, ...rest }) => rest) };
+}
+
+function deserializeBaseInput(raw, defaults) {
   const merged = { ...defaults, ...(raw && typeof raw === "object" ? raw : {}) };
-  // Regenerate lifecycle `_id`s so keys are unique across the freshly-decoded set.
-  merged.propertyLifecycleEvents = Array.isArray(raw?.propertyLifecycleEvents)
-    ? raw.propertyLifecycleEvents.map((event) => ({ ...event, _id: nextLifecycleEventId() }))
-    : [];
+  merged.propertyLifecycleEvents = regenerateLifecycleIds(raw?.propertyLifecycleEvents);
   return merged;
 }
 
+function deserializeOverrides(raw) {
+  if (!raw || typeof raw !== "object") return {};
+  const overrides = { ...raw };
+  if ("propertyLifecycleEvents" in overrides) {
+    overrides.propertyLifecycleEvents = regenerateLifecycleIds(raw.propertyLifecycleEvents);
+  }
+  return overrides;
+}
+
 // Bump when the `?scenarios=` payload shape changes; an unrecognized version falls back to a
-// single default scenario rather than misreading fields (mirrors the `?s=` version gate).
-const SCENARIO_SET_VERSION = 1;
+// base-only set rather than misreading fields (mirrors the `?s=` version gate). v2 = base input +
+// per-variant override diffs.
+const SCENARIO_SET_VERSION = 2;
 
 function decodeScenarioSet(packed, bootstrap) {
   let payload;
@@ -602,39 +650,36 @@ function decodeScenarioSet(packed, bootstrap) {
     if (error instanceof SyntaxError) return null;
     throw error;
   }
-  if (payload?.v !== SCENARIO_SET_VERSION || !Array.isArray(payload.scenarios) || payload.scenarios.length === 0) {
-    return null;
-  }
+  if (payload?.v !== SCENARIO_SET_VERSION || !payload.base) return null;
   const defaults = productInputDefaults(bootstrap);
-  const scenarios = payload.scenarios.slice(0, MAX_SCENARIOS).map((raw, index) => {
-    const label = typeof raw?.label === "string" && raw.label !== "" ? raw.label : defaultScenarioLabel(index);
-    return makeScenarioEntry(deserializeScenarioInput(raw?.input, defaults), label);
-  });
-  const activeIndex = Number.isInteger(payload.active)
-    ? Math.max(0, Math.min(scenarios.length - 1, payload.active))
-    : 0;
-  return { scenarios, activeId: scenarios[activeIndex].id };
+  const base = {
+    label: typeof payload.base.label === "string" && payload.base.label !== "" ? payload.base.label : "Base",
+    input: deserializeBaseInput(payload.base.input, defaults),
+  };
+  const variants = (Array.isArray(payload.variants) ? payload.variants : [])
+    .slice(0, MAX_VARIANTS)
+    .map((raw, index) =>
+      makeVariant(
+        typeof raw?.label === "string" && raw.label !== "" ? raw.label : defaultVariantLabel(index),
+        deserializeOverrides(raw?.overrides)
+      )
+    );
+  return { base, variants, activeId: "base" };
 }
 
-// Encode the whole set to a query string. A single scenario keeps the compact, shareable, and
-// backward-compatible `?s=`/`?lc=` form; two or more switch to a `?scenarios=` JSON blob (robust
-// to arbitrary labels and value types, at the cost of a longer URL).
-export function scenarioSetToSearch(scenarios, activeId, bootstrap) {
-  if (scenarios.length <= 1) {
-    return productInputToSearch(scenarios[0].input, bootstrap);
+// Encode the set to a query string. A base with no variants (a single scenario) keeps the compact,
+// shareable, backward-compatible `?s=`/`?lc=` form; once there are variants it switches to a
+// `?scenarios=` JSON blob (base input + per-variant override diffs).
+export function scenarioSetToSearch(base, variants, bootstrap) {
+  if (variants.length === 0) {
+    return productInputToSearch(base.input, bootstrap);
   }
-  const activeIndex = Math.max(
-    0,
-    scenarios.findIndex((entry) => entry.id === activeId)
-  );
   const payload = {
     v: SCENARIO_SET_VERSION,
-    active: activeIndex,
-    scenarios: scenarios.map((entry) => ({ label: entry.label, input: serializeScenarioInput(entry.input) })),
+    base: { label: base.label, input: stripLifecycleIds(base.input) },
+    variants: variants.map((variant) => ({ label: variant.label, overrides: stripLifecycleIds(variant.overrides) })),
   };
   const params = new URLSearchParams();
-  // `set` percent-encodes the JSON value, so the returned string has no raw `&`/`=` to confuse
-  // the shell's `new URLSearchParams(...)` re-parse.
   params.set("scenarios", JSON.stringify(payload));
   return params.toString();
 }
@@ -645,7 +690,10 @@ export function scenarioSetFromSearch(searchString, bootstrap) {
     const decoded = decodeScenarioSet(packed, bootstrap);
     if (decoded) return decoded;
   }
-  // Any pre-multi link (or a malformed `?scenarios=`) decodes as a 1-element set.
-  const entry = makeScenarioEntry(productInputFromSearch(searchString, bootstrap), defaultScenarioLabel(0));
-  return { scenarios: [entry], activeId: entry.id };
+  // Legacy `?s=`/`?lc=` (or malformed `?scenarios=`) → base only, no variants.
+  return {
+    base: { label: "Base", input: productInputFromSearch(searchString, bootstrap) },
+    variants: [],
+    activeId: "base",
+  };
 }

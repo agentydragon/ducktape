@@ -8,7 +8,7 @@ function numberFieldSectionWidth(section) {
 }
 
 export function NumberField({
-  label,
+  label = undefined,
   value,
   onChange,
   min = 0,
