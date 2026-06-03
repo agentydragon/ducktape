@@ -205,35 +205,57 @@ def _wait_for_calibration_page(page: Page) -> None:
 # events. Schema version 6 (the v6 bump moved `firstSeed` out of `?s=` into `?seed=`).
 _PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
 
-# Two-scenario "rent vs. buy" comparison in the base+overrides codec (v2): the Base scenario "Rent"
-# sets only the fields that differ from the product defaults (the codec merges the rest over
-# `productInputDefaults`), and the "Buy (mortgage)" variant carries just the housing overrides it
-# layers on top of Base. The whole set rides the URL-encoded `?scenarios=` param; the fixture
-# property `location_a_property` backs the mortgage variant.
+# Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v2). The Base
+# scenario "Rent" sets only the fields that differ from the product defaults (the codec merges the
+# rest over `productInputDefaults`); each variant buys a different fixture property and stops paying
+# outside rent. So the editor spreadsheet shows three columns with a per-scenario "Property to buy"
+# row (none / Location A / Location B) and an overridden "Monthly rent" row ($3,000 / $0 / $0) — a
+# mix of Base, inherited (muted), and overridden (bold + ↩) cells. The whole set rides the
+# URL-encoded `?scenarios=` param.
 _COMPARISON_SCENARIOS = {
     "v": 2,
     "base": {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
     "variants": [
         {
-            "label": "Buy (mortgage)",
-            "overrides": {"propertyId": "location_a_property", "financingKind": "mortgage", "livesHere": True},
-        }
+            "label": "Buy A",
+            "overrides": {
+                "propertyId": "location_a_property",
+                "financingKind": "mortgage",
+                "livesHere": True,
+                "monthlyRentUsd": 0,
+            },
+        },
+        {
+            "label": "Buy B",
+            "overrides": {
+                "propertyId": "location_b_property",
+                "financingKind": "mortgage",
+                "livesHere": True,
+                "monthlyRentUsd": 0,
+            },
+        },
     ],
 }
 _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})
 
 
 def _wait_for_scenario_comparison(page: Page) -> None:
-    """Wait for the multi-scenario overlay: the scenario bar, two scenario fans + legend, and the
-    per-scenario comparison table."""
+    """Wait for the multi-scenario overlay: the scenario bar, the editor spreadsheet with a Base +
+    two variant columns (and the per-scenario "Property to buy" row), three scenario fans + legend,
+    and the per-scenario comparison table."""
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
-    # Both scenario fans have drawn their median lines.
-    page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 2', timeout=30_000)
+    # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the
+    # per-scenario property row.
+    page.locator("[data-product-scenario-table]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-knob-row='propertyId']").wait_for(state="visible", timeout=30_000)
+    page.wait_for_function('() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000)
+    # All three scenario fans have drawn their median lines.
+    page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)

@@ -25,6 +25,7 @@ import {
   housingOverrideFromBase,
   defaultVariantLabel,
   scenarioColor,
+  HOUSING_KEYS,
 } from "./input_helpers.ts";
 import {
   metricFanRows,
@@ -304,6 +305,20 @@ export function ProductProjectionWorkspace({
         v.id === id ? { ...v, overrides: { ...v.overrides, ...housingOverrideFromBase(previous.base.input) } } : v
       ),
     }));
+  // Switch a variant's property from the editor's "Property to buy" row. Housing is overridden as a
+  // unit, so the first property pick on an inheriting variant seeds its whole housing cluster from
+  // Base (then swaps in the chosen property); later picks just swap the property within the override.
+  const setVariantProperty = (id, propertyId) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      variants: previous.variants.map((v) => {
+        if (v.id !== id) return v;
+        const seed = HOUSING_KEYS.some((key) => key in v.overrides)
+          ? v.overrides
+          : housingOverrideFromBase(previous.base.input);
+        return { ...v, overrides: { ...seed, propertyId } };
+      }),
+    }));
   const addVariant = () =>
     setScenarioSet((previous) => {
       if (previous.variants.length >= MAX_VARIANTS) return previous;
@@ -475,6 +490,7 @@ export function ProductProjectionWorkspace({
           onPatchVariant={patchVariantOverrides}
           onRevertKeys={revertVariantKeys}
           onOverrideHousing={overrideHousing}
+          onSetVariantProperty={setVariantProperty}
         />
 
         {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}

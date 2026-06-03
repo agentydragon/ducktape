@@ -3,7 +3,7 @@ import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
 import { scenarioColor, resolveVariant, HOUSING_KEYS, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
-import { PropertyPurchasePanel, SellOrderControl, ProductPortfolioPanel } from "./forms.tsx";
+import { PropertyPurchasePanel, SellOrderControl, ProductPortfolioPanel, propertyLabel } from "./forms.tsx";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -65,6 +65,20 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
       />
     );
   }
+  if (knob.kind === "property") {
+    const properties = bootstrap.properties ?? [];
+    return wrap(
+      <NativeSelectField
+        aria-label={ariaLabel}
+        value={value ?? ""}
+        data={[
+          { value: "", label: properties.length === 0 ? "(no properties)" : "(no purchase)" },
+          ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
+        ]}
+        onChange={(event) => onChange(event.target.value || null)}
+      />
+    );
+  }
   // location
   return wrap(
     <NativeSelectField
@@ -116,6 +130,41 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
   );
 }
 
+// One variant's "Property to buy" cell. Housing is overridden as a unit, so this cell tracks the
+// whole housing override: it shows the variant's property when housing is overridden (with ↩ to
+// re-inherit the entire cluster) or the inherited Base property (muted) otherwise. Picking a
+// property seeds the variant's housing from Base via `onSetVariantProperty`.
+function PropertyVariantCell({ variant, baseInput, bootstrap, onSetVariantProperty, onRevertKeys }) {
+  const overridden = HOUSING_KEYS.some((key) => key in variant.overrides);
+  const value = overridden ? variant.overrides.propertyId : baseInput.propertyId;
+  return (
+    <td className="px-3 py-1.5 align-top">
+      <div className="flex items-center gap-1">
+        <div className="min-w-0 flex-1">
+          <KnobCell
+            knob={{ kind: "property" }}
+            value={value}
+            ariaLabel={`Property to buy — ${variant.label}`}
+            bootstrap={bootstrap}
+            muted={!overridden}
+            onChange={(next) => onSetVariantProperty(variant.id, next)}
+          />
+        </div>
+        <button
+          type="button"
+          className={`text-xs leading-none ${overridden ? "augur-link" : "invisible"}`}
+          aria-label={`Revert housing for ${variant.label} to base`}
+          title="Revert housing to base"
+          disabled={!overridden}
+          onClick={() => onRevertKeys(variant.id, HOUSING_KEYS)}
+        >
+          ↩
+        </button>
+      </div>
+    </td>
+  );
+}
+
 // One-line description of an entity's housing for the inherited-housing summary.
 function HousingSummary({ input, bootstrap }) {
   const property = (bootstrap.properties ?? []).find((entry) => entry.id === input.propertyId);
@@ -154,6 +203,7 @@ function HousingSection({
         <PropertyPurchasePanel
           bootstrap={bootstrap}
           input={base.input}
+          showPropertySelect={false}
           onChange={onSetBasePatch}
           horizonMonths={horizonMonths}
         />
@@ -202,6 +252,7 @@ function HousingSection({
       <PropertyPurchasePanel
         bootstrap={bootstrap}
         input={resolveVariant(base.input, activeVariant.overrides)}
+        showPropertySelect={false}
         onChange={(patch) => onPatchVariant(activeVariant.id, patch)}
         horizonMonths={horizonMonths}
       />
@@ -232,6 +283,7 @@ export function ScenarioEditor({
   onPatchVariant,
   onRevertKeys,
   onOverrideHousing,
+  onSetVariantProperty,
 }) {
   const [open, setOpen] = useState(true);
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
@@ -281,11 +333,11 @@ export function ScenarioEditor({
       {open && (
         <>
           <div className="px-4 py-3">
-            <div className="augur-eyebrow">Spending &amp; funding</div>
+            <div className="augur-eyebrow">Scenario settings</div>
             {multi && (
               <div className="mt-1 text-xs augur-muted">
                 Edit a Base cell to change it everywhere; edit a variant cell to override just that variant (↩ reverts
-                it to Base).
+                it to Base). Pick a different property per scenario in the first row.
               </div>
             )}
             <div className="mt-3 overflow-x-auto" data-product-scenario-table="">
@@ -314,6 +366,40 @@ export function ScenarioEditor({
                   </tr>
                 </thead>
                 <tbody>
+                  <tr>
+                    <th
+                      colSpan={1 + entries.length}
+                      className="bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400"
+                    >
+                      Property
+                    </th>
+                  </tr>
+                  <tr data-product-knob-row="propertyId">
+                    <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
+                      Property to buy
+                    </th>
+                    <td className="px-3 py-1.5 align-top">
+                      <div className="min-w-[8rem]">
+                        <KnobCell
+                          knob={{ kind: "property" }}
+                          value={base.input.propertyId}
+                          ariaLabel="Property to buy — Base"
+                          bootstrap={bootstrap}
+                          onChange={(value) => onSetBaseField("propertyId", value)}
+                        />
+                      </div>
+                    </td>
+                    {variants.map((variant) => (
+                      <PropertyVariantCell
+                        key={variant.id}
+                        variant={variant}
+                        baseInput={base.input}
+                        bootstrap={bootstrap}
+                        onSetVariantProperty={onSetVariantProperty}
+                        onRevertKeys={onRevertKeys}
+                      />
+                    ))}
+                  </tr>
                   {SCALAR_GROUPS.map((group) => (
                     <React.Fragment key={group}>
                       <tr>

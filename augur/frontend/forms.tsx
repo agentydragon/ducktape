@@ -25,14 +25,17 @@ function isEventPostSale(event, saleMonth) {
   return event.month === saleMonth && event.kind !== "property_sale";
 }
 
-function propertyLabel(property) {
+export function propertyLabel(property) {
   const sqft = Number(property.sqft);
   const head = property.address || property.id;
   const meta = `${fmtUsd(property.priceUsd)}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
   return `${head} — ${meta}`;
 }
 
-export function PropertyPurchasePanel({ bootstrap, input, onChange, horizonMonths }) {
+// `showPropertySelect=false` drops the in-panel property dropdown: the scenario editor picks the
+// property per scenario in its spreadsheet ("Property to buy" row), so the panel only shows the
+// financing / rental / timeline detail for whichever property that scenario resolves to.
+export function PropertyPurchasePanel({ bootstrap, input, onChange, horizonMonths, showPropertySelect = true }) {
   const properties = bootstrap.properties ?? [];
   const selected = properties.find((property) => property.id === input.propertyId) ?? null;
   const mortgageActive = input.propertyId != null && input.financingKind === "mortgage";
@@ -44,14 +47,19 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange, horizonMonth
     <div className="px-4 py-3" data-product-property-panel="">
       <div className="augur-eyebrow">Property purchase</div>
       <div className="mt-3 grid gap-3">
-        <NativeSelect
-          aria-label="Property to purchase"
-          value={input.propertyId ?? ""}
-          disabled={properties.length === 0}
-          data={propertyOptions}
-          classNames={{ input: "augur-tabular" }}
-          onChange={(event) => onChange({ propertyId: event.target.value || null })}
-        />
+        {showPropertySelect && (
+          <NativeSelect
+            aria-label="Property to purchase"
+            value={input.propertyId ?? ""}
+            disabled={properties.length === 0}
+            data={propertyOptions}
+            classNames={{ input: "augur-tabular" }}
+            onChange={(event) => onChange({ propertyId: event.target.value || null })}
+          />
+        )}
+        {!showPropertySelect && input.propertyId == null && (
+          <div className="text-xs augur-muted">No property purchased — pick one in the table above.</div>
+        )}
         {selected && (
           <>
             <div className="text-xs augur-muted">

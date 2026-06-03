@@ -65,11 +65,15 @@ together (Spending / Outside rent / Cash buffer / Private equity).
 
 ### Per-entity housing cluster (overridden per variant as a unit)
 
-Edited in the **Property & timeline** panel for the active entity (`PropertyPurchasePanel` +
-`RentalPanel` + `LifecycleEventsEditor`). Base housing edits propagate to inheriting variants. A
-variant either **inherits** Base housing (one-line summary + "Override housing", which copies the
-whole cluster from Base with fresh lifecycle keys) or **overrides** it (full panel + "Revert to base
-housing"). Rent-vs-buy _is_ a housing override.
+The **property** is surfaced as a per-scenario **"Property to buy" row** at the top of the
+spreadsheet (each column has its own property select), so which property a scenario buys is
+switchable directly in the table. Picking a property for a variant seeds its housing override from
+Base (housing is still overridden as a unit); the row's ↩ reverts the whole cluster back to
+inheriting. The rest of the cluster (financing / rates / rental / lifecycle) is edited in the
+**Property & timeline** panel for the active entity (`PropertyPurchasePanel` with its in-panel
+property select hidden + `RentalPanel` + `LifecycleEventsEditor`): a variant either **inherits** Base
+housing (summary + "Override housing") or **overrides** it (full panel + "Revert to base housing").
+Rent-vs-buy _is_ a housing override.
 
 | Knob                                                                        |                            |
 | --------------------------------------------------------------------------- | -------------------------- |
