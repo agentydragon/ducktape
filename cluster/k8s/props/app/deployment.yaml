@@ -93,6 +93,17 @@ spec:
             limits:
               cpu: 1000m
               memory: 1Gi
+          # Startup work (alembic migrations + specimen sync + executor build)
+          # runs in a background task on the event loop; meanwhile /health
+          # responds immediately so kubelet doesn't kill the pod. /readyz
+          # only flips to 200 once that background task completes.
+          # startupProbe gives 10min for the slow path before liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /health
@@ -101,7 +112,7 @@ spec:
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 10
