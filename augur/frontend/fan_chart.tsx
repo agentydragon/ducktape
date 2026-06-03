@@ -167,8 +167,13 @@ function buildCandleCheckpoints(rows, maxMonth, bucketMonths) {
 function CandleLayer({ series, checkpointRows, rowByMonthBySeries, x, y, bucketMonths, maxMonth, plotWidth, pcts }) {
   const { outerLow, innerLow, median, innerHigh, outerHigh } = pcts;
   const spacingPx = (bucketMonths / Math.max(1, maxMonth)) * plotWidth;
-  const cw = Math.max(2, Math.min(16, spacingPx / (series.length + 0.5)));
+  // One scenario's candle width: capped at 16px and never wider than its share of the checkpoint
+  // spacing, so candle groups never overlap. No lower floor — extreme density (e.g. 1mo buckets over
+  // a 20y horizon) yields hairline candles rather than overlapping ones, and the wick stroke shrinks
+  // with the candle so adjacent wicks don't merge either.
+  const cw = Math.min(16, spacingPx / (series.length + 0.5));
   const half = cw * 0.4;
+  const wickWidth = Math.min(1.4, cw);
   return (
     <>
       {checkpointRows.map((checkpointRow) => {
@@ -193,7 +198,7 @@ function CandleLayer({ series, checkpointRows, rowByMonthBySeries, x, y, bucketM
                     y1={yHigh}
                     y2={yLow}
                     stroke={entry.color}
-                    strokeWidth={1.4}
+                    strokeWidth={wickWidth}
                     opacity={entry.isActive ? 1 : 0.75}
                   />
                   <rect
