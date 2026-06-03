@@ -140,6 +140,19 @@ js_library(
 )
 
 js_library(
+    name = "scenario_editor",
+    srcs = ["scenario_editor.tsx"],
+    deps = [
+        ":forms",
+        ":input_helpers",
+        ":scenario_tabs",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//augur/frontend/lib:controls",
+    ],
+)
+
+js_library(
     name = "forms",
     srcs = ["forms.tsx"],
     deps = [
@@ -207,13 +220,12 @@ js_library(
         ":data_helpers",
         ":events_panel",
         ":fan_chart",
-        ":forms",
         ":header",
         ":histogram",
         ":hooks",
         ":input_helpers",
         ":metric_table",
-        ":scenario_tabs",
+        ":scenario_editor",
         ":skeleton",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
@@ -269,6 +281,7 @@ filegroup(
         "main.tsx",
         "metric_table.tsx",
         "sanity_bands.ts",
+        "scenario_editor.tsx",
         "scenario_tabs.tsx",
         "skeleton.tsx",
         "//augur/frontend/lib:casing",

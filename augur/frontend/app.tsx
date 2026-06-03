@@ -17,8 +17,7 @@ import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionHistogram } from "./histogram.tsx";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
-import { ScenarioTabs } from "./scenario_tabs.tsx";
-import { ProductScenarioForm } from "./forms.tsx";
+import { ScenarioEditor } from "./scenario_editor.tsx";
 import { CalibrationWorkspace } from "./calibration.tsx";
 import { BudgetWorkspace } from "./budget.tsx";
 import { AugurHeader, SharedControls } from "./header.tsx";
@@ -350,8 +349,6 @@ function ProductProjectionWorkspace({
   const visibleEventKinds = useVisibleEventKinds();
 
   const { scenarios, activeId } = scenarioSet;
-  const activeScenario = scenarios.find((entry) => entry.id === activeId) ?? scenarios[0];
-  const input = activeScenario.input;
   // Metric list is the union across scenarios: a metric stays offered as long as *some* scenario
   // surfaces it (e.g. "Property value" once any scenario buys), so a comparison never hides a column.
   const visibleMetrics = useMemo(() => {
@@ -411,11 +408,16 @@ function ProductProjectionWorkspace({
   const terminalP50 = terminalPercentileValue(activeResult, 50);
   const selectedRolloutLoading = selectedSeed != null && activeResult != null && !selectedDetail && !rolloutError;
 
-  const updateInput = (patch) =>
+  const setAllScenarios = (key, value) =>
+    setScenarioSet((previous) => ({
+      ...previous,
+      scenarios: previous.scenarios.map((entry) => ({ ...entry, input: { ...entry.input, [key]: value } })),
+    }));
+  const updateScenarioInput = (id, patch) =>
     setScenarioSet((previous) => ({
       ...previous,
       scenarios: previous.scenarios.map((entry) =>
-        entry.id === previous.activeId ? { ...entry, input: { ...entry.input, ...patch } } : entry
+        entry.id === id ? { ...entry, input: { ...entry.input, ...patch } } : entry
       ),
     }));
   const resetActiveScenario = () =>
@@ -570,98 +572,89 @@ function ProductProjectionWorkspace({
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
 
-      <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-5">
-          <ScenarioTabs
-            scenarios={scenarios}
-            activeId={activeId}
-            onSelect={selectScenario}
-            onAdd={addScenario}
-            onDelete={deleteScenario}
-            onRename={renameScenario}
-          />
-        </div>
-        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          <div className="min-w-0 space-y-5">
-            <SharedControls
-              rolloutCount={rolloutCount}
-              onChangeRolloutCount={onChangeRolloutCount}
-              maxRolloutCount={bootstrap.maxRolloutSamples}
-              firstSeed={firstSeed}
-              onChangeFirstSeed={onChangeFirstSeed}
-              model={model}
-              onChangeModel={onChangeModel}
-              models={bootstrap.models}
-              horizonMonths={horizonMonths}
-              onChangeHorizonMonths={onChangeHorizonMonths}
-              maxHorizonMonths={bootstrap.maxHorizonMonths}
-              metricScale={metricScale}
-              onChangeMetricScale={onChangeMetricScale}
-              currencyDisplay={currencyDisplay}
-              onChangeCurrencyDisplay={onChangeCurrencyDisplay}
-              settingsOpen={settingsOpen}
-              onChangeSettingsOpen={onChangeSettingsOpen}
-            />
-            <ProductScenarioForm
-              input={input}
-              bootstrap={bootstrap}
-              portfolio={portfolio}
-              portfolioError={portfolioError}
-              onChange={updateInput}
-              onReset={resetActiveScenario}
-              horizonMonths={horizonMonths}
-            />
-          </div>
+      <main className="space-y-5 px-4 py-6 sm:px-6 lg:px-8">
+        <SharedControls
+          rolloutCount={rolloutCount}
+          onChangeRolloutCount={onChangeRolloutCount}
+          maxRolloutCount={bootstrap.maxRolloutSamples}
+          firstSeed={firstSeed}
+          onChangeFirstSeed={onChangeFirstSeed}
+          model={model}
+          onChangeModel={onChangeModel}
+          models={bootstrap.models}
+          horizonMonths={horizonMonths}
+          onChangeHorizonMonths={onChangeHorizonMonths}
+          maxHorizonMonths={bootstrap.maxHorizonMonths}
+          metricScale={metricScale}
+          onChangeMetricScale={onChangeMetricScale}
+          currencyDisplay={currencyDisplay}
+          onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+          settingsOpen={settingsOpen}
+          onChangeSettingsOpen={onChangeSettingsOpen}
+        />
 
-          <div className="min-w-0 space-y-5">
-            {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
+        <ScenarioEditor
+          scenarios={scenarios}
+          activeId={activeId}
+          bootstrap={bootstrap}
+          portfolio={portfolio}
+          portfolioError={portfolioError}
+          horizonMonths={horizonMonths}
+          onSelect={selectScenario}
+          onAdd={addScenario}
+          onDelete={deleteScenario}
+          onRename={renameScenario}
+          onResetActive={resetActiveScenario}
+          onSetAll={setAllScenarios}
+          onUpdateScenario={updateScenarioInput}
+        />
 
-            {activeResult ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="augur-card p-4">
-                  <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
-                  <div className="mt-2 text-2xl font-semibold augur-tabular">
-                    {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
-                  </div>
-                </div>
-                <div className="augur-card p-4">
-                  <div className="augur-eyebrow">Failed rollouts</div>
-                  <div className="mt-2 text-2xl font-semibold augur-tabular">
-                    {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutSeeds.length)}
-                  </div>
-                </div>
+        {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
+
+        {activeResult ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="augur-card p-4">
+              <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
+              <div className="mt-2 text-2xl font-semibold augur-tabular">
+                {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
               </div>
-            ) : (
-              <StatCardsSkeleton />
-            )}
-
-            {activeResult ? (
-              <RolloutResultsPanel
-                visibleMetrics={visibleMetrics}
-                selectedMetric={selectedMetric}
-                onSelectMetric={setSelectedMetricValue}
-                metricScale={metricScale}
-                rolloutSummaries={rolloutSummaries}
-                selectedSeed={selectedSeed}
-                onSelectSeed={setSelectedSeed}
-                selectedRolloutLoading={selectedRolloutLoading}
-                fanSeries={fanSeries}
-                percentiles={activeRequest.percentiles}
-                scenarios={scenarios}
-                resultsById={resultsById}
-                activeId={activeId}
-                selectedRows={selectedRows}
-                selectedEvents={selectedEvents}
-                selectedSummary={selectedSummary}
-                visibleEventKinds={visibleEventKinds}
-                eventSelection={eventSelection}
-                rolloutError={rolloutError}
-              />
-            ) : (
-              <RolloutResultsSkeleton />
-            )}
+            </div>
+            <div className="augur-card p-4">
+              <div className="augur-eyebrow">Failed rollouts</div>
+              <div className="mt-2 text-2xl font-semibold augur-tabular">
+                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutSeeds.length)}
+              </div>
+            </div>
           </div>
-        </section>
+        ) : (
+          <StatCardsSkeleton />
+        )}
+
+        {activeResult ? (
+          <RolloutResultsPanel
+            visibleMetrics={visibleMetrics}
+            selectedMetric={selectedMetric}
+            onSelectMetric={setSelectedMetricValue}
+            metricScale={metricScale}
+            rolloutSummaries={rolloutSummaries}
+            selectedSeed={selectedSeed}
+            onSelectSeed={setSelectedSeed}
+            selectedRolloutLoading={selectedRolloutLoading}
+            fanSeries={fanSeries}
+            percentiles={activeRequest.percentiles}
+            scenarios={scenarios}
+            resultsById={resultsById}
+            activeId={activeId}
+            selectedRows={selectedRows}
+            selectedEvents={selectedEvents}
+            selectedSummary={selectedSummary}
+            visibleEventKinds={visibleEventKinds}
+            eventSelection={eventSelection}
+            rolloutError={rolloutError}
+          />
+        ) : (
+          <RolloutResultsSkeleton />
+        )}
       </main>
     </div>
   );
