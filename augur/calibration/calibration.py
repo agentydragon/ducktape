@@ -55,8 +55,8 @@ from augur.calibration.resolvers import (
 )
 from augur.model.exogenous import (
     ExogenousSamplingRequest,
-    Sampler,
     SampledExogenousBundle,
+    Sampler,
     anchor_sampled_series_levels,
     level_keys_in_bundle,
 )
@@ -528,9 +528,11 @@ def run_calibration(
         else:
             counts, channel = outcome
             clean.append(_clean_row(market, counts, live, channel=channel))
-    for market in catalog.surfaced_markets():
-        if (live := _live(market.market_id, market.platform)) is not None:
-            surfaced.append(_surfaced_row(market, trajectories, live))
+    surfaced.extend(
+        _surfaced_row(market, trajectories, live)
+        for market in catalog.surfaced_markets()
+        if (live := _live(market.market_id, market.platform)) is not None
+    )
 
     categorical: list[CategoricalRow] = []
     for family in catalog.bucket_families:
