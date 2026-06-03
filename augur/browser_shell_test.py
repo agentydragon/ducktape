@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
@@ -24,7 +26,26 @@ pytest_plugins = ("util.playwright",)
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 
-_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
+# A single Base scenario that buys the fixture property `location_a_property` (so the recurring
+# property-expense events — tax, insurance, maintenance — fire) plus three mid-horizon lifecycle
+# events. Encoded in the `?scenarios=` base+overrides codec (v2); the horizon rides the tab-shared
+# `?h=` control and every other knob inherits `productInputDefaults`.
+_PROPERTY_LIFECYCLE_SCENARIOS = {
+    "v": 2,
+    "base": {
+        "label": "Base",
+        "input": {
+            "propertyId": "location_a_property",
+            "propertyLifecycleEvents": [
+                {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
+                {"kind": "capital_improvement", "month": 60, "amountUsd": 50000},
+                {"kind": "property_sale", "month": 120, "closingCostPct": 6},
+            ],
+        },
+    },
+    "variants": [],
+}
+_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode({"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240"})
 
 
 @pytest.fixture
