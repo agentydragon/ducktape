@@ -17,6 +17,7 @@ py_library(
     name = "resolvers",
     srcs = ["resolvers.py"],
     deps = [
+        ":platform",
         "//augur:dates",
         "//augur/model:private_equity_bundle",
         "//augur/model:series",
@@ -144,6 +145,7 @@ py_test(
     name = "test_resolvers",
     srcs = ["test_resolvers.py"],
     deps = [
+        ":platform",
         ":resolvers",
         "//:conftest",
         "//augur/model:series",

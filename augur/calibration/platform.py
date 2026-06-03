@@ -20,6 +20,19 @@ class Platform(StrEnum):
     KALSHI = "kalshi"
 
 
+class Direction(StrEnum):
+    """Which side of a threshold resolves a market YES.
+
+    `ABOVE` is `value >= threshold`; `BELOW` is `value < threshold`. The two are exact
+    complements, so a YES/NO threshold and a half-open `[low, high)` bucket family tile the
+    line without gaps or overlap. Lives here (the neutral platform-types module) so both the
+    catalog schema and the resolvers can reference it without a dependency cycle.
+    """
+
+    ABOVE = "above"
+    BELOW = "below"
+
+
 @dataclass(frozen=True)
 class Market:
     """Platform-agnostic snapshot of a prediction market's current state.

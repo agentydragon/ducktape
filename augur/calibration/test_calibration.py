@@ -27,12 +27,16 @@ from augur.calibration.catalog import (
     BucketMember,
     CorrelateMarket,
     ExactMarket,
+    InflationYoyMapping,
+    IpoByDateMapping,
     KalshiRef,
+    LevelAtDateMapping,
     ManifoldRef,
     MarketCatalog,
     PolymarketRef,
+    PreIpoFailureMapping,
 )
-from augur.calibration.platform import Market, Platform, PriceClient
+from augur.calibration.platform import Direction, Market, Platform, PriceClient
 from augur.calibration.testing import mock_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
@@ -73,15 +77,13 @@ def catalog() -> MarketCatalog:
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2027-01-01"},
+                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="Issuer collapses or acquired before IPO?",
                 platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
-                mapping_kind="pre_ipo_failure",
-                mapping_params={"before_event": "PUBLIC_MARKET_OPEN"},
+                mapping=PreIpoFailureMapping(),
             ),
             CorrelateMarket(
                 question="Issuer completes an IPO in 2026 with $1T cap?",
@@ -231,15 +233,17 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
                 platform_ref=ManifoldRef(manifold_id="SPX"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
-                mapping_kind="level_at_date",
-                mapping_params={"series": "sp500", "threshold": 7500.0, "direction": "above", "at_date": "2026-12-31"},
+                mapping=LevelAtDateMapping(
+                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
             ),
             ExactMarket(
                 question="CPI YoY above 3% (year ending 2026-12)?",
                 platform_ref=ManifoldRef(manifold_id="CPI"),
                 outcome_type="BINARY",
-                mapping_kind="inflation_yoy",
-                mapping_params={"series": "inflation", "threshold": 0.03, "direction": "above", "at_date": "2026-12-31"},
+                mapping=InflationYoyMapping(
+                    series="inflation", threshold=0.03, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
             ),
         ],
     )
@@ -364,8 +368,9 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
                 question="S&P 500 above 7500 on 2026-12-31? (no live price)",
                 platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
                 outcome_type="BINARY",
-                mapping_kind="level_at_date",
-                mapping_params={"series": "sp500", "threshold": 7500.0, "direction": "above", "at_date": "2026-12-31"},
+                mapping=LevelAtDateMapping(
+                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
             )
         ],
         bucket_families=[
@@ -432,16 +437,14 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
                 platform_ref=ManifoldRef(manifold_id="M1"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2027-01-01"},
+                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="IPO before Sep 2026? (Kalshi)",
                 platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 9, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2026-09-01"},
+                mapping=IpoByDateMapping(by_date=date(2026, 9, 1)),
             ),
         ],
     )

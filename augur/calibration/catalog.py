@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from augur.calibration.platform import Platform
+from augur.calibration.platform import Direction, Platform
 
 
 class Mappability(StrEnum):
@@ -155,12 +155,75 @@ class _MarketBase(BaseModel):
         raise AssertionError("unreachable")
 
 
+# ---------------------------------------------------------------------------
+# Market mapping: a discriminated union binding an `exact` market to the augur
+# quantity that scores it. Each variant carries exactly its own fields (a PE event
+# kind never has a `series`, a level kind never has a `threshold_usd`), so invalid
+# bindings are unrepresentable. `kind` is the discriminator.
+# ---------------------------------------------------------------------------
+
+
+class IpoByDateMapping(BaseModel):
+    """An IPO / public-listing (PUBLIC_MARKET_OPEN) event occurs by `by_date`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["ipo_by_date"] = "ipo_by_date"
+    by_date: date
+
+
+class PreIpoFailureMapping(BaseModel):
+    """An absorbing COLLAPSED/ACQUIRED exit is reached before any PUBLIC_MARKET_OPEN."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["pre_ipo_failure"] = "pre_ipo_failure"
+
+
+class ValuationByDateMapping(BaseModel):
+    """Company valuation `V(m) >= threshold_usd` for some month m <= `by_date` (opt-in M2 channel)."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["valuation_by_date"] = "valuation_by_date"
+    threshold_usd: float
+    by_date: date
+
+
+class LevelAtDateMapping(BaseModel):
+    """A point-in-time threshold on a level series: `value(at_date) {direction} threshold`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["level_at_date"] = "level_at_date"
+    series: str  # level-series wire id ("sp500", "inflation")
+    threshold: float
+    direction: Direction
+    at_date: date
+
+
+class InflationYoyMapping(BaseModel):
+    """Trailing year-over-year change of an index series: `yoy(at_date) {direction} threshold`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["inflation_yoy"] = "inflation_yoy"
+    series: str  # level-series wire id ("inflation")
+    threshold: float  # a fraction, e.g. 0.03 for 3%
+    direction: Direction
+    at_date: date
+    window_months: int = 12
+
+
+# PE event mappings read a per-issuer trajectory; level mappings read a level-series matrix.
+PeEventMapping = IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping
+LevelMapping = LevelAtDateMapping | InflationYoyMapping
+MarketMapping = Annotated[
+    IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping | LevelAtDateMapping | InflationYoyMapping,
+    Field(discriminator="kind"),
+]
+
+
 class ExactMarket(_MarketBase):
     """A market augur scores apples-to-apples from per-rollout output."""
 
     mappability: Literal[Mappability.EXACT] = Mappability.EXACT
-    mapping_kind: str
-    mapping_params: dict[str, object]
+    mapping: MarketMapping
 
 
 class CorrelateMarket(_MarketBase):
@@ -182,11 +245,6 @@ class UnmappableMarket(_MarketBase):
 # Surfaced markets (shown with their live price + reason, never scored) are the non-exact variants.
 SurfacedMarket = CorrelateMarket | UnmappableMarket
 MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(discriminator="mappability")]
-
-# Macro `mapping_kind`s resolved against a level-series `(rollout, month)` matrix rather than the
-# PE bundle. Their `mapping_params` carry a `series` wire id ("sp500", "inflation"). Event PE kinds
-# (`ipo_by_date`, `pre_ipo_failure`, `valuation_by_date`) read the issuer trajectory instead.
-LEVEL_MAPPING_KINDS = frozenset({"level_at_date", "inflation_yoy"})
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +312,6 @@ class MarketCatalog(BaseModel):
         """Wire ids of every level series any macro market / bucket family scores against."""
         series = {str(family.series) for family in self.bucket_families}
         for market in self.exact_markets():
-            if market.mapping_kind in LEVEL_MAPPING_KINDS:
-                series.add(str(market.mapping_params["series"]))
+            if isinstance(market.mapping, LevelMapping):
+                series.add(market.mapping.series)
         return series

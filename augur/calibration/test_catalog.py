@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from augur.calibration.catalog import (
     CorrelateMarket,
     ExactMarket,
+    IpoByDateMapping,
     KalshiRef,
     ManifoldRef,
     Mappability,
@@ -33,8 +34,7 @@ def catalog() -> MarketCatalog:
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2027-01-01"},
+                mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
             ),
             CorrelateMarket(
                 question="Issuer reaches $100B revenue in 2028?",
@@ -59,11 +59,11 @@ def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
     assert [m.market_id for m in catalog.surfaced_markets()] == ["BBB", "CCC"]
     (exact,) = catalog.exact_markets()
     assert isinstance(exact, ExactMarket)
-    assert exact.mapping_params == {"by_date": "2027-01-01"}
+    assert exact.mapping == IpoByDateMapping(by_date=date(2027, 1, 1))
 
 
 def test_exact_requires_mapping_fields() -> None:
-    """The EXACT variant cannot be constructed without mapping_kind + mapping_params."""
+    """The EXACT variant cannot be constructed without a typed `mapping`."""
     with pytest.raises(ValidationError):
         ExactMarket(question="?", platform_ref=ManifoldRef(manifold_id="D"), outcome_type="BINARY")  # type: ignore[call-arg]
 
@@ -75,7 +75,7 @@ def test_correlate_requires_correlate_of() -> None:
 
 
 def test_invalid_cross_field_state_is_unrepresentable() -> None:
-    """A `mapping_kind` on an unmappable market is rejected by `extra="forbid"`: the field
+    """A `mapping` on an unmappable market is rejected by `extra="forbid"`: the field
     does not exist on that variant, so the nonsensical combination cannot be built."""
     with pytest.raises(ValidationError):
         MarketCatalog.model_validate(
@@ -87,7 +87,7 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
                         "question": "?",
                         "outcome_type": "BINARY",
                         "mappability": "unmappable",
-                        "mapping_kind": "ipo_by_date",
+                        "mapping": {"kind": "ipo_by_date", "by_date": "2027-01-01"},
                     }
                 ],
             }
@@ -110,8 +110,7 @@ def test_platform_ref_discriminated_union() -> None:
         question="Polymarket question?",
         platform_ref=PolymarketRef(polymarket_id="0xabc"),
         outcome_type="BINARY",
-        mapping_kind="ipo_by_date",
-        mapping_params={"by_date": "2027-01-01"},
+        mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
     )
     assert poly_market.platform == Platform.POLYMARKET
     assert poly_market.market_id == "0xabc"
@@ -120,8 +119,7 @@ def test_platform_ref_discriminated_union() -> None:
         question="Kalshi question?",
         platform_ref=KalshiRef(kalshi_id="OPENAI-IPO-2027"),
         outcome_type="BINARY",
-        mapping_kind="ipo_by_date",
-        mapping_params={"by_date": "2027-01-01"},
+        mapping=IpoByDateMapping(by_date=date(2027, 1, 1)),
     )
     assert kalshi_market.market_id == "OPENAI-IPO-2027"
 
@@ -137,8 +135,7 @@ def test_flat_yaml_backward_compat() -> None:
                     "question": "IPO before 2027?",
                     "outcome_type": "BINARY",
                     "mappability": "exact",
-                    "mapping_kind": "ipo_by_date",
-                    "mapping_params": {"by_date": "2027-01-01"},
+                    "mapping": {"kind": "ipo_by_date", "by_date": "2027-01-01"},
                 }
             ],
         }
@@ -152,8 +149,8 @@ def test_shipped_example_catalog_parses() -> None:
     assert {type(m) for m in catalog.markets} == {ExactMarket, CorrelateMarket, UnmappableMarket}
     assert catalog.exact_markets()  # at least one scored market
     assert catalog.surfaced_markets()  # and at least one surfaced market
-    # Every exact market is resolver-ready (the variant guarantees the fields exist and are typed).
-    assert all(isinstance(m, ExactMarket) and m.mapping_kind for m in catalog.exact_markets())
+    # Every exact market is resolver-ready (the variant guarantees a typed `mapping`).
+    assert all(isinstance(m, ExactMarket) and m.mapping for m in catalog.exact_markets())
     assert all(m.mappability in set(Mappability) for m in catalog.markets)
 
 

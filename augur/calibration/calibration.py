@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
+from dataclasses import dataclass
 from collections.abc import Mapping
 from datetime import date
 
@@ -32,16 +33,20 @@ from pydantic import BaseModel, Field
 from statsmodels.stats.proportion import proportion_confint
 
 from augur.calibration.catalog import (
-    LEVEL_MAPPING_KINDS,
     BucketFamily,
     CorrelateMarket,
     ExactMarket,
+    InflationYoyMapping,
+    IpoByDateMapping,
+    LevelMapping,
     MarketCatalog,
+    PeEventMapping,
+    PreIpoFailureMapping,
     SurfacedMarket,
+    ValuationByDateMapping,
 )
 from augur.calibration.platform import Market, Platform, PriceClient
 from augur.calibration.resolvers import (
-    Direction,
     Resolution,
     ResolutionCounts,
     RolloutTrajectory,
@@ -50,7 +55,8 @@ from augur.calibration.resolvers import (
     level_threshold_counts,
     months_after,
     resolve_ipo_by_date,
-    resolve_market,
+    resolve_pre_ipo_failure,
+    resolve_valuation_by_date,
     trajectories_from_bundle,
 )
 from augur.model.exogenous import (
@@ -244,8 +250,22 @@ def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, c
     )
 
 
+@dataclass(frozen=True)
 class _Unmodeled:
-    """Sentinel: a macro market binds a level series this preset does not emit."""
+    """Sentinel: an exact market binds a level series this preset does not emit."""
+
+    series: str
+
+
+def _resolve_pe(traj: RolloutTrajectory, mapping: PeEventMapping) -> Resolution:
+    """Resolve a PE-event market against one rollout's issuer trajectory."""
+    if isinstance(mapping, IpoByDateMapping):
+        return resolve_ipo_by_date(traj, by_month=traj.month_on_or_before(mapping.by_date))
+    if isinstance(mapping, PreIpoFailureMapping):
+        return resolve_pre_ipo_failure(traj)
+    return resolve_valuation_by_date(
+        traj, threshold_usd=mapping.threshold_usd, by_month=traj.month_on_or_before(mapping.by_date)
+    )
 
 
 def _exact_market_counts(
@@ -258,32 +278,35 @@ def _exact_market_counts(
 ) -> tuple[ResolutionCounts, str | None] | _Unmodeled:
     """Per-rollout tally + channel tag for one exact market.
 
-    PE event kinds read the issuer trajectories (per-rollout loop); macro kinds
-    read the anchored level matrix (vectorized). Returns `_Unmodeled` when a macro
-    market's series isn't emitted by the active preset so the caller can surface it.
+    PE event kinds read the issuer trajectories (per-rollout loop); level kinds read
+    the anchored level matrix (vectorized). Returns `_Unmodeled` when a level market's
+    series isn't emitted by the active preset so the caller can surface it.
     """
-    if market.mapping_kind not in LEVEL_MAPPING_KINDS:
-        counts = ResolutionCounts.from_resolutions(
-            resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
-        )
-        return counts, None
-    params = market.mapping_params
-    series = str(params["series"])
-    matrix = level_paths.get(parse_level_series_key(series))
+    mapping = market.mapping
+    if not isinstance(mapping, LevelMapping):
+        return ResolutionCounts.from_resolutions(_resolve_pe(t, mapping) for t in trajectories), None
+    matrix = level_paths.get(parse_level_series_key(mapping.series))
     if matrix is None:
-        return _Unmodeled()
-    at_month = months_after(as_of, date.fromisoformat(str(params["at_date"])))
-    direction = Direction(str(params["direction"]))
-    threshold = float(params["threshold"])  # type: ignore[arg-type]
-    if market.mapping_kind == "inflation_yoy":
+        return _Unmodeled(series=mapping.series)
+    at_month = months_after(as_of, mapping.at_date)
+    if isinstance(mapping, InflationYoyMapping):
         counts = inflation_yoy_counts(
-            matrix, threshold=threshold, direction=direction, at_month=at_month, horizon_months=horizon_months
+            matrix,
+            threshold=mapping.threshold,
+            direction=mapping.direction,
+            at_month=at_month,
+            horizon_months=horizon_months,
+            window_months=mapping.window_months,
         )
-    else:  # level_at_date
+    else:
         counts = level_threshold_counts(
-            matrix, threshold=threshold, direction=direction, at_month=at_month, horizon_months=horizon_months
+            matrix,
+            threshold=mapping.threshold,
+            direction=mapping.direction,
+            at_month=at_month,
+            horizon_months=horizon_months,
         )
-    return counts, series
+    return counts, mapping.series
 
 
 def _categorical_row(
@@ -452,9 +475,8 @@ def sample_private_equity_bundle(
     return model.sample(request).private_equity
 
 
-def _unmodeled_row(market: ExactMarket, live: Market) -> SurfacedRow:
+def _unmodeled_row(market: ExactMarket, live: Market, series: str) -> SurfacedRow:
     """Surface a macro market whose level series the active preset does not emit."""
-    series = str(market.mapping_params["series"])
     return SurfacedRow(
         market_id=market.market_id,
         question=market.question,
@@ -532,7 +554,7 @@ def run_calibration(
             market, trajectories=trajectories, level_paths=paths, as_of=as_of, horizon_months=horizon_months
         )
         if isinstance(outcome, _Unmodeled):
-            surfaced.append(_unmodeled_row(market, live))
+            surfaced.append(_unmodeled_row(market, live, outcome.series))
         else:
             counts, channel = outcome
             clean.append(_clean_row(market, counts, live, channel=channel))

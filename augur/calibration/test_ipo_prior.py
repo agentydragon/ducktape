@@ -9,11 +9,12 @@ exercise the drop logic, and the result is round-tripped through the M1 model va
 from __future__ import annotations
 
 import itertools
+from datetime import date
 
 import pytest
 import pytest_bazel
 
-from augur.calibration.catalog import ExactMarket, ManifoldRef, MarketCatalog
+from augur.calibration.catalog import ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
 from augur.calibration.ipo_prior import derive_public_market_anchors
 from augur.calibration.manifold import ManifoldClient
 from augur.calibration.testing import mock_manifold_client
@@ -25,8 +26,7 @@ def _ipo_market(manifold_id: str, by_date: str) -> ExactMarket:
         platform_ref=ManifoldRef(manifold_id=manifold_id),
         question=f"IPO by {by_date}?",
         outcome_type="BINARY",
-        mapping_kind="ipo_by_date",
-        mapping_params={"by_date": by_date},
+        mapping=IpoByDateMapping(by_date=date.fromisoformat(by_date)),
     )
 
 

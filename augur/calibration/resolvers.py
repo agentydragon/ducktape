@@ -30,11 +30,12 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
-from enum import Enum, StrEnum
+from enum import Enum
 
 import numpy as np
 import numpy.typing as npt
 
+from augur.calibration.platform import Direction
 from augur.dates import months_between
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -126,42 +127,6 @@ def resolve_valuation_by_date(traj: RolloutTrajectory, *, threshold_usd: float, 
     if by_month <= horizon:
         return Resolution.NO  # whole window simulated, threshold never reached
     return Resolution.UNRESOLVED  # deadline beyond the simulated horizon, not yet reached
-
-
-def resolve_market(traj: RolloutTrajectory, *, mapping_kind: str, params: dict[str, object]) -> Resolution:
-    """Dispatch a cleanly-mappable (`exact`) catalog entry to its resolver.
-
-    Event-based kinds (`ipo_by_date`, `pre_ipo_failure`) are always handled.
-    `valuation_by_date` is handled too but only resolves YES/NO for issuers with
-    the opt-in M2 valuation channel (UNRESOLVED otherwise). Revenue and other
-    unmodeled quantities must be surfaced, not resolved here.
-    """
-    match mapping_kind:
-        case "ipo_by_date":
-            return resolve_ipo_by_date(
-                traj, by_month=traj.month_on_or_before(date.fromisoformat(str(params["by_date"])))
-            )
-        case "pre_ipo_failure":
-            return resolve_pre_ipo_failure(traj)
-        case "valuation_by_date":
-            return resolve_valuation_by_date(
-                traj,
-                threshold_usd=float(params["threshold_usd"]),  # type: ignore[arg-type]
-                by_month=traj.month_on_or_before(date.fromisoformat(str(params["by_date"]))),
-            )
-    raise ValueError(f"mapping_kind {mapping_kind!r} is not cleanly resolvable against augur (surface it instead)")
-
-
-class Direction(StrEnum):
-    """Which side of a threshold resolves a market YES.
-
-    `ABOVE` is `value >= threshold`; `BELOW` is `value < threshold`. The two are
-    exact complements, so a YES/NO threshold and a half-open `[low, high)` bucket
-    family tile the line without gaps or overlap.
-    """
-
-    ABOVE = "above"
-    BELOW = "below"
 
 
 @dataclass(frozen=True)

@@ -19,12 +19,11 @@ from __future__ import annotations
 
 import argparse
 import logging
-from datetime import date
 from pathlib import Path
 
 import yaml
 
-from augur.calibration.catalog import MarketCatalog
+from augur.calibration.catalog import IpoByDateMapping, MarketCatalog
 from augur.calibration.manifold import ManifoldClient
 from augur.calibration.resolvers import months_after
 from augur.model.private_equity_risk import PublicMarketCdfAnchor
@@ -52,9 +51,9 @@ def derive_public_market_anchors(
     # month -> highest live prob seen at that month (de-dups duplicate deadlines).
     prob_by_month: dict[int, float] = {}
     for market in catalog.exact_markets():
-        if market.mapping_kind != "ipo_by_date":
+        if not isinstance(market.mapping, IpoByDateMapping):
             continue
-        by_date = date.fromisoformat(str(market.mapping_params["by_date"]))
+        by_date = market.mapping.by_date
         month = months_after(anchor_date, by_date)
         if month < 1:
             logger.info(

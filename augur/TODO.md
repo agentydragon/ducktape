@@ -66,9 +66,11 @@ measures per-market only — no aggregate loss, no fitting.
   - [x] Regenerate the `calibration_page` visual golden (page now shows the macro
         rows + categorical panel). Regenerated on RBE via `bazelisk --config=rbe`
         with `UPDATE_GOLDEN=1`; verified deterministic.
-- [ ] **Typed `MarketMapping`.** Replace loose `mapping_kind: str` +
-      `mapping_params: dict` with a discriminated union (issuer-event / level /
-      inflation); make invalid bindings unrepresentable. Atomic catalog rewrite.
+- [x] **Typed `MarketMapping`.** Replaced loose `mapping_kind: str` +
+      `mapping_params: dict` with a discriminated union (ipo_by_date /
+      pre_ipo_failure / valuation_by_date / level_at_date / inflation_yoy);
+      invalid bindings are unrepresentable. Catalogs rewritten atomically
+      (example + gaffer); `Direction` moved to `platform.py`.
 - [ ] **Drop `CalibrationCatalogConfig.issuer`.** Catalog markets self-describe
       their target; the run covers the union of referenced issuers/series.
       Atomically switch gaffer's config to the new shape.

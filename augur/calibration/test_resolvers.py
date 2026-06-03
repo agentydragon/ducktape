@@ -8,15 +8,14 @@ import numpy as np
 import numpy.typing as npt
 import pytest_bazel
 
+from augur.calibration.platform import Direction
 from augur.calibration.resolvers import (
-    Direction,
     Resolution,
     RolloutTrajectory,
     bucket_model_counts,
     inflation_yoy_counts,
     level_threshold_counts,
     resolve_ipo_by_date,
-    resolve_market,
     resolve_pre_ipo_failure,
     resolve_valuation_by_date,
 )
@@ -93,30 +92,6 @@ def test_month_on_or_before() -> None:
     assert traj.month_on_or_before(date(2030, 1, 1)) == 43
 
 
-def test_resolve_market_dispatch() -> None:
-    traj = _traj(horizon=120, events={7: PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN})
-    assert resolve_market(traj, mapping_kind="ipo_by_date", params={"by_date": "2027-01-01"}) is Resolution.YES
-    assert resolve_market(traj, mapping_kind="ipo_by_date", params={"by_date": "2026-09-01"}) is Resolution.NO
-
-
-def test_resolve_market_dispatch_valuation_by_date() -> None:
-    # by_date 2027-01-01 is month 7 from AS_OF; V crosses 1e12 at month 4 here.
-    valuation = np.full(121, 1e11, dtype=np.float64)
-    valuation[4:] = 1.5e12
-    traj = _traj(horizon=120, valuation=valuation)
-    yes = resolve_market(
-        traj, mapping_kind="valuation_by_date", params={"threshold_usd": 1e12, "by_date": "2027-01-01"}
-    )
-    assert yes is Resolution.YES
-    no = resolve_market(traj, mapping_kind="valuation_by_date", params={"threshold_usd": 1e12, "by_date": "2026-08-01"})
-    assert no is Resolution.NO  # 2026-08-01 is month 2; the threshold crossing is at month 4
-    # No valuation channel -> the otherwise-scoreable kind is UNRESOLVED, never an error.
-    off = resolve_market(
-        _traj(horizon=120), mapping_kind="valuation_by_date", params={"threshold_usd": 1e12, "by_date": "2027-01-01"}
-    )
-    assert off is Resolution.UNRESOLVED
-
-
 def test_level_threshold_counts_point_in_time() -> None:
     # 4 rollouts, S&P at month 7 = [7000, 7600, 8000, 5000]; threshold 7500 ABOVE -> 2 YES.
     matrix = np.zeros((4, 13), dtype=np.float64)
@@ -155,17 +130,6 @@ def test_bucket_model_counts_tile() -> None:
     assert list(counts) == [1, 2, 1]
     # Beyond the horizon -> unscoreable (None).
     assert bucket_model_counts(matrix, lows=[None], highs=[None], at_month=99, horizon_months=12) is None
-
-
-def test_resolve_market_refuses_unmodeled_kind() -> None:
-    """`valuation_threshold` is not a recognized mapping kind (revenue/other unmodeled
-    quantities likewise); such markets must be surfaced, not silently scored."""
-    traj = _traj()
-    try:
-        resolve_market(traj, mapping_kind="valuation_threshold", params={"threshold_usd": 1e12})
-    except ValueError:
-        return
-    raise AssertionError("expected ValueError for a non-cleanly-resolvable mapping_kind")
 
 
 if __name__ == "__main__":
