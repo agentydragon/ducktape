@@ -35,14 +35,14 @@ from augur.budget.wire import (
     BudgetTransactionsRequest,
     BudgetTransactionsResponse,
 )
-from augur.calibration.calibration import mark_fan, run_calibration
+from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
 from augur.calibration.platform import Platform, PriceClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
-from augur.model.series import IssuerId, LevelSeriesKey
+from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -184,14 +184,25 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         unmodeled_pe: frozenset[IssuerId] = frozenset()
         if spec is not None:
             spec_modeled_level, spec_modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
+        # The macro markets / bucket families the catalog scores need their level series sampled too.
+        # Request only the ones the preset can emit; markets on the rest surface as `unmodeled`.
+        catalog_level = {parse_level_series_key(wire) for wire in loaded.catalog.referenced_level_series()}
+        wanted_level = spec_modeled_level | (catalog_level & model.emittable_level_keys())
         sampling_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
             required_private_equity_issuers=frozenset({IssuerId(issuer)}) | spec_modeled_pe,
-            **level_series_request_channels(spec_modeled_level),
+            **level_series_request_channels(wanted_level),
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity
+        level_paths = build_anchored_level_paths(
+            sampled,
+            anchors=loaded.catalog.metadata.anchors,
+            requested_wire_ids=loaded.catalog.referenced_level_series(),
+            rollout_count=request.rollouts,
+            horizon_months=request.horizon_months,
+        )
         result = run_calibration(
             model,
             loaded.catalog,
@@ -200,6 +211,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             rollout_seeds=rollout_seeds,
             price_clients=config.price_clients,
             bundle=bundle,
+            level_paths=level_paths,
         )
         fan = mark_fan(
             bundle,

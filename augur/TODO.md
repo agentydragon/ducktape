@@ -49,17 +49,17 @@ marginals. Design + gotchas: <augur/plans/whole_model_calibration.md>. v0
 measures per-market only — no aggregate loss, no fitting.
 
 - [ ] **Slice 1 — macro markets in the calibration view.**
-  - [ ] Vectorized macro resolvers over the `(rollout, month)` channel matrix
+  - [x] Vectorized macro resolvers over the `(rollout, month)` channel matrix
         (no per-rollout object): `level_at_date` (point-in-time threshold),
         `inflation_yoy` (12-month change), both returning `ResolutionCounts`,
         with unit tests. Keep `RolloutTrajectory` for the PE path.
-  - [ ] Multinomial bucket families: `BucketFamily` catalog type + categorical
+  - [x] Multinomial bucket families: `BucketFamily` catalog type + categorical
         `D_KL(market ‖ model)` scoring (per-bucket p_market/p_model), with tests.
-  - [ ] Anchor macro series to live spot at `as_of` (catalog `anchors`).
-  - [ ] Thread macro scoring through `run_calibration` / API `/api/calibration/run`
+  - [x] Anchor macro series to live spot at `as_of` (catalog `anchors`).
+  - [x] Thread macro scoring through `run_calibration` / API `/api/calibration/run`
         / `calibration_report` CLI: sample the macro level series the catalog
         needs, intersect with `emittable_level_keys` (surface unmodeled).
-  - [ ] Seed the example catalog with the initial S&P (Manifold + Kalshi bucket
+  - [x] Seed the example catalog with the initial S&P (Manifold + Kalshi bucket
         family) and CPI (Kalshi) markets.
   - [ ] Frontend: render categorical bucket families; macro Bernoulli markets
         flow through the existing clean table.

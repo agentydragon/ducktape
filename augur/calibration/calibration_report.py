@@ -20,12 +20,12 @@ from pathlib import Path
 from tabulate import tabulate
 
 from augur.api.config import load_augur_config
-from augur.calibration.calibration import mark_fan, run_calibration
+from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
-from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from augur.model.series import IssuerId
+from augur.model.series import IssuerId, parse_level_series_key
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,13 +48,23 @@ def main(argv: list[str] | None = None) -> int:
 
     provider = augur_config.models[preset_id]
     model = provider.realize_model()
+    catalog_level = {parse_level_series_key(wire) for wire in catalog.referenced_level_series()}
+    wanted_level = catalog_level & model.emittable_level_keys()
     sampling = ExogenousSamplingRequest(
         horizon_months=args.horizon,
         rollout_seeds=tuple(range(1, args.rollouts + 1)),
         required_private_equity_issuers=frozenset({IssuerId(issuer)}),
+        **level_series_request_channels(wanted_level),
     )
     sampled = model.sample(sampling)
     bundle = sampled.private_equity
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors=catalog.metadata.anchors,
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=args.rollouts,
+        horizon_months=args.horizon,
+    )
 
     price_clients = build_default_price_clients()
     try:
@@ -66,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             rollout_seeds=sampling.rollout_seeds,
             price_clients=price_clients,
             bundle=bundle,
+            level_paths=level_paths,
         )
     finally:
         for client in price_clients.values():
@@ -98,9 +109,19 @@ def main(argv: list[str] | None = None) -> int:
     print("\nSCORED MARKETS (sorted by |KL|, loudest first)")
     print(tabulate(clean_table, headers=["p_model", "p_market", "KL_bits", "platform", "market_id", "question"]))
 
-    surfaced_table = [[f"{r.p_market:.3f}", r.platform, r.market_id, r.question[:60]] for r in result.surfaced]
+    surfaced_table = [
+        [f"{r.p_market:.3f}", r.platform, r.mappability, r.market_id, r.question[:60]] for r in result.surfaced
+    ]
     print("\nSURFACED MARKETS (not scored, context only)")
-    print(tabulate(surfaced_table, headers=["p_market", "platform", "market_id", "question"]))
+    print(tabulate(surfaced_table, headers=["p_market", "platform", "mappability", "market_id", "question"]))
+
+    for fam in result.categorical:
+        kl = f"{fam.kl_bits:+.4f} bits" if fam.kl_bits is not None else "n/a"
+        print(f"\nCATEGORICAL {fam.family_id} [{fam.platform}] {fam.channel} @ {fam.at_date}  multinomial KL={kl}")
+        bucket_rows = [
+            [b.label, f"{b.p_market:.3f}", f"{b.p_model:.3f}" if b.p_model is not None else "n/a"] for b in fam.buckets
+        ]
+        print(tabulate(bucket_rows, headers=["bucket", "p_market", "p_model"]))
 
     fan_months = [0, 6, 12, 24, 60, 120]
     mark_rows = []

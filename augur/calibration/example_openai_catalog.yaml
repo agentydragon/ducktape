@@ -19,6 +19,13 @@ metadata:
   augur_model_as_of: "2026-05-27"
   augur_sim_horizon_months: 120 # from as_of -> ~2036-05; later-resolving markets flagged
 
+  # Live spot of each macro level series at model_anchor_date, keyed by wire id. Macro markets
+  # are scored against the sampled path ANCHORED to this spot (month 0 == spot). REFRESH these to
+  # the real ^GSPC close / CPI-U index at model_anchor_date alongside the catalog; a stale anchor
+  # biases every macro threshold. (Representative example values.)
+  anchors:
+    sp500: 5900.0
+
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output
   #              (mapping_kind + mapping_params).
@@ -533,3 +540,73 @@ markets:
     # not computable; no governance state in the sim.
     resolution_criterion_text: ""
     notes: "Empty description; classified from title."
+
+  # ============================================================================
+  # EXACT -- macro level markets (whole-model calibration). Scored against the
+  # model's sp500 / inflation LEVEL channels, not the OpenAI PE bundle, anchored
+  # to metadata.anchors. See augur/plans/whole_model_calibration.md.
+  # ============================================================================
+  - manifold_id: hISQySnLnu
+    question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"
+    outcome_type: BINARY
+    close_date: "2027-01-01"
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping_kind: level_at_date
+    mapping_params: { series: sp500, threshold: 7500, direction: above, at_date: "2026-12-31" }
+    resolution_criterion_text: "YES if the S&P 500 index closes above 7,500 on the last trading day of 2026."
+    notes: "Point-in-time threshold on the sp500 channel; p_model = share of rollouts with anchored sp500 >= 7500 at 2026-12-31."
+
+  # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
+  # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date straddles
+  # as_of and resolves UNRESOLVED until a pre-as_of CPI anchor lands (plan gotcha). Kept as a
+  # worked macro example; scores once `at_date >= model_anchor_date + 12mo`.
+  - platform: kalshi
+    kalshi_id: KXCPIYOY-26JUL-T3.0
+    question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
+    outcome_type: BINARY
+    resolution_deadline: "2026-08-15"
+    mappability: exact
+    mapping_kind: inflation_yoy
+    mapping_params: { series: inflation, threshold: 0.03, direction: above, at_date: "2026-07-31" }
+    resolution_criterion_text: "YES if YoY CPI-U (all items) for the year ending July 2026 exceeds 3.0%."
+    notes: "Trailing-12mo window straddles as_of -> UNRESOLVED until pre-as_of CPI anchoring (see plan gotchas)."
+
+# Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series
+# at a single date, scored as one multinomial D_KL(market ‖ model).
+bucket_families:
+  # Kalshi S&P 500 year-end range market (KXINXY): tiling [low, high) buckets on the sp500
+  # close at 2026-12-31. Each bucket is a separately-priced Kalshi binary market.
+  - family_id: sp500_eoy_2026
+    question: "S&P 500 closing level on 2026-12-31 (Kalshi KXINXY range)"
+    platform: kalshi
+    series: sp500
+    at_date: "2026-12-31"
+    buckets:
+      - { market_id: KXINXY-26DEC31H1600-T4000, label: "3,999.99 or below", low: null, high: 4000 }
+      - { market_id: KXINXY-26DEC31H1600-B4100, label: "4,000 to 4,199.99", low: 4000, high: 4200 }
+      - { market_id: KXINXY-26DEC31H1600-B4300, label: "4,200 to 4,399.99", low: 4200, high: 4400 }
+      - { market_id: KXINXY-26DEC31H1600-B4500, label: "4,400 to 4,599.99", low: 4400, high: 4600 }
+      - { market_id: KXINXY-26DEC31H1600-B4700, label: "4,600 to 4,799.99", low: 4600, high: 4800 }
+      - { market_id: KXINXY-26DEC31H1600-B4900, label: "4,800 to 4,999.99", low: 4800, high: 5000 }
+      - { market_id: KXINXY-26DEC31H1600-B5100, label: "5,000 to 5,199.99", low: 5000, high: 5200 }
+      - { market_id: KXINXY-26DEC31H1600-B5300, label: "5,200 to 5,399.99", low: 5200, high: 5400 }
+      - { market_id: KXINXY-26DEC31H1600-B5500, label: "5,400 to 5,599.99", low: 5400, high: 5600 }
+      - { market_id: KXINXY-26DEC31H1600-B5700, label: "5,600 to 5,799.99", low: 5600, high: 5800 }
+      - { market_id: KXINXY-26DEC31H1600-B5900, label: "5,800 to 5,999.99", low: 5800, high: 6000 }
+      - { market_id: KXINXY-26DEC31H1600-B6100, label: "6,000 to 6,199.99", low: 6000, high: 6200 }
+      - { market_id: KXINXY-26DEC31H1600-B6300, label: "6,200 to 6,399.99", low: 6200, high: 6400 }
+      - { market_id: KXINXY-26DEC31H1600-B6500, label: "6,400 to 6,599.99", low: 6400, high: 6600 }
+      - { market_id: KXINXY-26DEC31H1600-B6700, label: "6,600 to 6,799.99", low: 6600, high: 6800 }
+      - { market_id: KXINXY-26DEC31H1600-B6900, label: "6,800 to 6,999.99", low: 6800, high: 7000 }
+      - { market_id: KXINXY-26DEC31H1600-B7100, label: "7,000 to 7,199.99", low: 7000, high: 7200 }
+      - { market_id: KXINXY-26DEC31H1600-B7300, label: "7,200 to 7,399.99", low: 7200, high: 7400 }
+      - { market_id: KXINXY-26DEC31H1600-B7500, label: "7,400 to 7,599.99", low: 7400, high: 7600 }
+      - { market_id: KXINXY-26DEC31H1600-B7700, label: "7,600 to 7,799.99", low: 7600, high: 7800 }
+      - { market_id: KXINXY-26DEC31H1600-B7900, label: "7,800 to 7,999.99", low: 7800, high: 8000 }
+      - { market_id: KXINXY-26DEC31H1600-B8100, label: "8,000 to 8,199.99", low: 8000, high: 8200 }
+      - { market_id: KXINXY-26DEC31H1600-B8300, label: "8,200 to 8,399.99", low: 8200, high: 8400 }
+      - { market_id: KXINXY-26DEC31H1600-B8500, label: "8,400 to 8,599.99", low: 8400, high: 8600 }
+      - { market_id: KXINXY-26DEC31H1600-B8700, label: "8,600 to 8,799.99", low: 8600, high: 8800 }
+      - { market_id: KXINXY-26DEC31H1600-B8900, label: "8,800 to 9,000", low: 8800, high: 9000 }
+      - { market_id: KXINXY-26DEC31H1600-T9000, label: "9,000.01 or above", low: 9000, high: null }
