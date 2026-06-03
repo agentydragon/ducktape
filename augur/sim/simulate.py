@@ -8,6 +8,8 @@ DataFrames for API and product projection code.
 
 from __future__ import annotations
 
+import polars as pl
+
 from augur.sim.codec.plan import DenseSimulationResult, SimulationRun
 from augur.sim.engine import simulate_with_external_series_dense_result
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
@@ -56,16 +58,29 @@ def _validate_series_indexed_amounts(
 ) -> None:
     """Validate path-indexed amount schedules before compiling dense arrays."""
 
+    uses = [
+        (label, amount, months)
+        for label, amount, months in _series_indexed_amount_uses(scenario)
+        if isinstance(amount, SeriesIndexedAmount) and months
+    ]
+    if not uses:
+        # No path-indexed amounts → nothing references the external series here. Skip building
+        # the per-(series, month, rollout) lookup entirely; at a 100-year, many-rollout horizon
+        # that dict is millions of entries built from a Python row loop, all for nothing.
+        return
+
+    # Only the referenced series matter; filtering first keeps the lookup small even when the
+    # external frame carries many unrelated series (asset prices, etc.).
+    needed_wire_ids = {amount.series.wire_id for _, amount, _ in uses}
+    relevant = external_series.series_values.filter(pl.col("series_id").is_in(list(needed_wire_ids)))
     series_levels: dict[tuple[str, int, int], float | None] = {}
-    for row in external_series.series_values.iter_rows(named=True):
+    for row in relevant.iter_rows(named=True):
         value = row["value"]
         series_levels[(str(row["series_id"]), int(row["month_index"]), int(row["rollout_index"]))] = (
             None if value is None else float(value)
         )
 
-    for label, amount, months in _series_indexed_amount_uses(scenario):
-        if not isinstance(amount, SeriesIndexedAmount) or not months:
-            continue
+    for label, amount, months in uses:
         before_base = [month for month in months if month < amount.base_month_index]
         if before_base:
             raise ValueError(

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import polars as pl
 
 from augur.model.series import LevelSeriesKey, try_parse_level_series_key
 from augur.product.asset_key import asset_price_key, asset_price_key_or_none
@@ -72,17 +73,26 @@ def external_values_cube(
     horizon_months: int,
 ) -> np.ndarray:
     values = np.full((len(series_index_by_id), rollout_count, horizon_months + 1), np.nan, dtype=np.float64)
-    if external_series.series_values.is_empty():
+    frame = external_series.series_values
+    if frame.is_empty():
         return values
     # The external frame is still keyed by series_id wire strings; bridge to the typed index
-    # once via wire_id (removed when the frame itself goes typed).
+    # once via wire_id (removed when the frame itself goes typed). Vectorized scatter: map
+    # series_id → compiled index columnwise, then a single fancy-index assignment, instead of
+    # a Python loop over every (rollout, month, series) row (millions at a 100-year horizon).
     index_by_wire_id = {key.wire_id: index for key, index in series_index_by_id.items()}
-    for row in external_series.series_values.iter_rows(named=True):
-        series_index = index_by_wire_id.get(str(row["series_id"]))
-        if series_index is None:
-            continue
-        rollout_index = int(row["rollout_index"])
-        month_index = int(row["month_index"])
-        if 0 <= rollout_index < rollout_count and 0 <= month_index <= horizon_months:
-            values[series_index, rollout_index, month_index] = float(row["value"])
+    series_index = (
+        frame.get_column("series_id").replace_strict(index_by_wire_id, default=-1, return_dtype=pl.Int64).to_numpy()
+    )
+    rollout_index = frame.get_column("rollout_index").to_numpy()
+    month_index = frame.get_column("month_index").to_numpy()
+    value = frame.get_column("value").to_numpy()
+    keep = (
+        (series_index >= 0)
+        & (rollout_index >= 0)
+        & (rollout_index < rollout_count)
+        & (month_index >= 0)
+        & (month_index <= horizon_months)
+    )
+    values[series_index[keep], rollout_index[keep], month_index[keep]] = value[keep]
     return values

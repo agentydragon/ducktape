@@ -173,6 +173,7 @@ py_library(
         ":engine",
         ":external_series",
         ":scenario",
+        "@pypi//polars",
     ],
 )
 
@@ -384,6 +385,7 @@ py_binary(
     main_module = "augur.sim.profile_rollout",
     deps = [
         ":bench_scenario",
+        ":external_series",
         ":locations",
         ":scenario",
         ":simulate",

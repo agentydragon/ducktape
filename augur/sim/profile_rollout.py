@@ -24,6 +24,7 @@ import pstats
 import time
 
 from augur.sim.bench_scenario import build_bench_scenario
+from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
@@ -35,7 +36,7 @@ from augur.sim.scenario import (
     Scenario,
     ScheduledPropertyPurchase,
 )
-from augur.sim.simulate import simulate
+from augur.sim.simulate import simulate, simulate_dense_with_external_series
 
 PROFILE_LOCATION_ID = "sf"
 
@@ -107,25 +108,44 @@ def main() -> None:
     parser.add_argument("--sort", choices=["cumulative", "tottime"], default="cumulative")
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
+    parser.add_argument(
+        "--dense-only",
+        action="store_true",
+        help="run the dense engine (compile + month loop) and skip the Polars decode, to isolate "
+        "pure rollout-compute cost/memory from the encode boundary",
+    )
     args = parser.parse_args()
 
     scenario, locations = build_profile_scenario(horizon_months=args.horizon_months)
 
-    # Warm-up tiny run to pay one-time import / JIT-ish costs outside the timed region.
-    simulate(scenario, rollout_count=2, locations=locations)
+    def run(rollout_count: int) -> None:
+        if args.dense_only:
+            external_series = materialize_external_series(
+                scenario.external_series,
+                rollout_seeds=tuple(range(rollout_count)),
+                horizon_months=int(scenario.horizon_months),
+            )
+            simulate_dense_with_external_series(
+                scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
+            )
+        else:
+            simulate(scenario, rollout_count=rollout_count, locations=locations)
 
-    print(f"rollouts={args.rollouts} horizon_months={args.horizon_months}")
+    # Warm-up tiny run to pay one-time import / JIT-ish costs outside the timed region.
+    run(2)
+
+    print(f"rollouts={args.rollouts} horizon_months={args.horizon_months} dense_only={args.dense_only}")
 
     if args.no_profile:
         t0 = time.perf_counter()
-        simulate(scenario, rollout_count=args.rollouts, locations=locations)
+        run(args.rollouts)
         print(f"wall_clock_sec={time.perf_counter() - t0:.3f}")
         return
 
     profiler = cProfile.Profile()
     t0 = time.perf_counter()
     profiler.enable()
-    simulate(scenario, rollout_count=args.rollouts, locations=locations)
+    run(args.rollouts)
     profiler.disable()
     elapsed = time.perf_counter() - t0
     print(f"wall_clock_sec={elapsed:.3f}")

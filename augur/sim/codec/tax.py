@@ -10,6 +10,7 @@ import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
+    active_state_axes,
     codes_to_strings,
     frame_from_columns,
     r_first_view,
@@ -71,21 +72,19 @@ def decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -
 def decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     state = r_first_view(buffers.state.tax_liability_state)  # (H+1, r, s)
     active = r_first_view(buffers.state.tax_liability_active_state)
-    h1, r, s = state.shape
-    months, rollouts, slots = state_axes(h1, r, s)
-    mask = active.reshape(-1)
+    months, rollouts, slots = active_state_axes(active)
     profile_per_slot = plan.tax_liabilities.profile_index.astype(np.int64)
     link_per_slot = plan.tax_liabilities.link_index.astype(np.int64)
     agent_per_profile = codes_to_strings(plan, plan.tax.profile_agent)
     juris_per_link = codes_to_strings(plan, plan.tax.link_jurisdiction)
     return state_history_frame_from_columns(
         {
-            "rollout_index": rollouts[mask],
-            "month_index": months[mask],
-            "agent_id": agent_per_profile[profile_per_slot[slots[mask]]],
-            "jurisdiction_id": juris_per_link[link_per_slot[slots[mask]]],
-            "tax_year_end_month": plan.tax_liabilities.year_end_month.astype(np.int64)[slots[mask]],
-            "amount_owed_usd": state.reshape(-1)[mask],
+            "rollout_index": rollouts,
+            "month_index": months,
+            "agent_id": agent_per_profile[profile_per_slot[slots]],
+            "jurisdiction_id": juris_per_link[link_per_slot[slots]],
+            "tax_year_end_month": plan.tax_liabilities.year_end_month.astype(np.int64)[slots],
+            "amount_owed_usd": state[months, rollouts, slots],
         },
         TAX_LIABILITIES_FRAME,
     )

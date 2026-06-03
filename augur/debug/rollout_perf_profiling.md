@@ -126,6 +126,56 @@ At 1200 mo that grid is `1201 × 200 × 500 = 120 M` elements, and
     bandwidth where precision allows. Also reuse scratch in `_amount_values`/FIFO
     (each `np.full(rollout_count, …)` allocates per call) to cut allocator churn.
 
+## Results after the first optimization pass
+
+Three boundary fixes landed (rollout math untouched — it was never the problem):
+
+1. **Sparse-active `decode_tax_liabilities`** — gather active `(month, rollout, slot)`
+   triples via `np.nonzero` instead of building three full-grid int64 index arrays
+   (`state_axes`) and masking. Removes the ~2.9 GB transient index allocation.
+2. **Vectorized `external_values_cube`** — columnar `series_id → index` map + a single
+   fancy-index scatter, replacing a Python `iter_rows()` loop over every
+   `(rollout, month, series)` row.
+3. **Short-circuited `_validate_series_indexed_amounts`** — returns immediately when no
+   `SeriesIndexedAmount` is in use (the common case), and filters to referenced series
+   otherwise, instead of unconditionally building a millions-of-entries dict from
+   `iter_rows()`.
+
+500 rollouts × 1200 months: **26.9 s → 18.1 s** (function calls 5.9 M → 484 K). The two
+compile-time `iter_rows` hotspots are gone; `decode_tax_liabilities` is now dominated by
+Polars `new_str` building the `agent_id`/`jurisdiction_id` string columns over the
+(still large) active-row set.
+
+### Where the memory actually goes (the 1000–10000 rollout wall)
+
+A `--dense-only` profiler mode (compile + month loop, **no** Polars decode) isolates pure
+rollout compute from the encode boundary:
+
+| rollouts | dense-only (compute) | full `simulate()` (with decode) |
+| -------- | -------------------- | ------------------------------- |
+| 1000     | 2.8 GB / 3.2 s ✅    | OOM (decode frames)             |
+| 4000     | 11 GB / 11 s ✅      | OOM                             |
+| 10000    | OOM ❌               | OOM                             |
+
+So the rollout compute itself is cheap and parallel — 1000 rollouts in 3.2 s / 2.8 GB.
+The remaining walls are two O(horizon² × R) eager allocations, **not** the per-cell state:
+
+- **Dense `tax_liability_state` buffer** `(snapshots, years×links, R)`. At 1000 rollouts
+  that's `1201 × 200 × 1000 × 8 B = 1.9 GB`; at 10000 the dense-only run dies allocating
+  exactly `17.9 GiB for an array with shape (1201, 200, 10000)`. Every snapshot stores
+  all 200 per-year liability slots even though each liability only exists ~12 months —
+  quadratic in horizon. This is intervention #2 and is the next lever: store tax
+  liabilities as events (set at year-end, cleared at settlement), not a dense
+  per-snapshot grid. (`tax_liability_active_state` + the decoded long frame have the same
+  shape problem.)
+- **Eager full decode** of every state-history frame (intervention #5). `simulate()`
+  materializes ~15 Polars long frames up front; for large fan-out this is tens of GB.
+  Making decode lazy/opt-in (the `DenseSimulationResult` already exists) lets summary
+  callers reduce on the dense arrays and never build the long frames.
+
+Both are deeper changes (they touch the `SimulationRun` contract / state-history storage)
+and are deliberately left as follow-ups to the boundary fixes above.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**
