@@ -346,6 +346,10 @@ def hermetic_prices() -> dict[Platform, dict[str, float]]:
     by_platform: dict[Platform, dict[str, float]] = {}
     for index, market in enumerate(catalog.markets):
         by_platform.setdefault(market.platform, {})[market.market_id] = 0.3 + 0.4 * (index % 3) / 2
+    # Bucket families live outside `markets`; price each member so the categorical auto-run resolves.
+    for family in catalog.bucket_families:
+        for index, member in enumerate(family.buckets):
+            by_platform.setdefault(family.platform, {})[member.market_id] = 0.2 + 0.6 * (index % 4) / 3
     return by_platform
 
 
