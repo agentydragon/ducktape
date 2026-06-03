@@ -11,6 +11,7 @@ import { TerminalDistributionHistogram } from "./histogram.tsx";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
 import { ScenarioEditor, ScenarioInspector } from "./scenario_editor.tsx";
+import { ScenarioBadge } from "./scenario_tabs.tsx";
 import { AugurHeader, SharedControls, AugurTabBar, DeploymentCommitSummary } from "./header.tsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton } from "./skeleton.tsx";
 import { useVisibleEventKinds, useEventSelection } from "./hooks.ts";
@@ -57,17 +58,46 @@ function RolloutResultsPanel({
 }) {
   const [chartMode, setChartMode] = useState("fan");
   const [candleBucketMonths, setCandleBucketMonths] = useState(6);
+  // "Focus" collapses the overlay to just the active scenario, which the chart then renders as a
+  // full single-scenario fan (inner+outer bands, edge lines) — the pre-comparison view, on demand,
+  // for reading one variant's timeline without the other scenarios' noise. Only the fan/candle chart
+  // overlays every scenario; the histogram, selected rollout, and tables already scope to active.
+  const [focusActive, setFocusActive] = useState(false);
+  const multipleScenarios = scenarios.length > 1;
+  const activeScenario = fanSeries.find((entry) => entry.isActive) ?? fanSeries[0];
+  const chartSeries = focusActive && multipleScenarios ? fanSeries.filter((entry) => entry.isActive) : fanSeries;
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <NativeSelect
-          aria-label="Metric to plot"
-          value={selectedMetric.value}
-          data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
-          classNames={{ input: "augur-tabular min-w-[12rem]" }}
-          onChange={(event) => onSelectMetric(event.target.value)}
-        />
+        <div className="flex items-center gap-3">
+          <NativeSelect
+            aria-label="Metric to plot"
+            value={selectedMetric.value}
+            data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
+            classNames={{ input: "augur-tabular min-w-[12rem]" }}
+            onChange={(event) => onSelectMetric(event.target.value)}
+          />
+          {multipleScenarios && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="augur-eyebrow">Active</span>
+              <ScenarioBadge label={activeScenario.label} color={activeScenario.color} />
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
+          {multipleScenarios && (
+            <SegmentedControl
+              size="xs"
+              aria-label="Scenario focus"
+              value={focusActive ? "focus" : "compare"}
+              data={[
+                { value: "compare", label: "Compare" },
+                { value: "focus", label: "Focus" },
+              ]}
+              onChange={(value) => setFocusActive(value === "focus")}
+              data-product-scenario-focus-toggle=""
+            />
+          )}
           <SegmentedControl
             size="xs"
             aria-label="Chart style"
@@ -106,7 +136,7 @@ function RolloutResultsPanel({
       {fanSeries.some((entry) => entry.rows.length > 0) ? (
         <div className="relative">
           <MetricFanChart
-            series={fanSeries}
+            series={chartSeries}
             metric={selectedMetric}
             metricScale={metricScale}
             percentiles={percentiles}
@@ -155,6 +185,7 @@ function RolloutResultsPanel({
         <SelectedRolloutEventsPanel
           events={selectedEvents}
           selectedSummary={selectedSummary}
+          activeScenario={multipleScenarios ? activeScenario : null}
           loading={selectedRolloutLoading}
           selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
           hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}

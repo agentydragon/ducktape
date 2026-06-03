@@ -292,6 +292,17 @@ def _show_candles(page: Page) -> None:
     )
 
 
+def _focus_active_scenario(page: Page) -> None:
+    """Collapse the multi-scenario overlay to just the active scenario via the Compare/Focus toggle,
+    then select a rollout. Focus renders the active variant as a full single-scenario fan (the
+    pre-comparison view), so the multi-scenario legend disappears; with a rollout selected, the
+    events panel below carries the active-scenario badge that names which variant the timeline is."""
+    page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-scenario-focus-toggle]").get_by_text("Focus", exact=True).click()
+    page.locator("[data-product-fan-legend]").wait_for(state="detached", timeout=30_000)
+    _select_first_rollout(page)
+
+
 VISUAL_CASES = (
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
@@ -303,6 +314,12 @@ VISUAL_CASES = (
         path=_COMPARISON_URL,
         wait_ready=_wait_for_scenario_comparison,
         interact=_show_candles,
+    ),
+    VisualCase(
+        name="product_scenario_focus",
+        path=_COMPARISON_URL,
+        wait_ready=_wait_for_scenario_comparison,
+        interact=_focus_active_scenario,
     ),
     VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )

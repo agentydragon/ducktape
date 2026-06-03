@@ -120,8 +120,12 @@ export function TerminalScenarioComparison({ scenarios, resultsById, metrics, ac
               {columns.map((column) => (
                 <th
                   key={column.scenario.id}
-                  className={TABLE_NUMERIC_HEADER}
+                  className={`${TABLE_NUMERIC_HEADER}${column.isActive ? " bg-slate-100/80 dark:bg-slate-800/60" : ""}`}
+                  // Underline the active column in its own scenario color so it reads as the entity
+                  // the histogram / selected-rollout / events panels below are all scoped to.
+                  style={column.isActive ? { borderBottom: `2px solid ${column.color}` } : undefined}
                   data-product-scenario-comparison-col={column.scenario.id}
+                  data-active={column.isActive ? "" : undefined}
                 >
                   <span className="inline-flex items-center justify-end gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: column.color }} />
@@ -144,7 +148,11 @@ export function TerminalScenarioComparison({ scenarios, resultsById, metrics, ac
                     terminalMetricValue(summary.terminalMetrics, metric)
                   );
                   return (
-                    <td key={column.scenario.id} className={TABLE_NUMERIC_CELL}>
+                    <td
+                      key={column.scenario.id}
+                      className={`${TABLE_NUMERIC_CELL}${column.isActive ? " bg-slate-100/60 dark:bg-slate-800/40" : ""}`}
+                      data-active={column.isActive ? "" : undefined}
+                    >
                       <div className="font-semibold">
                         {fmtMetricValue(metric.chartValue, quantile(values, 50), currencyDisplay)}
                       </div>

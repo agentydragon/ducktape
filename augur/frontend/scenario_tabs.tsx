@@ -1,6 +1,19 @@
 import React, { useState } from "react";
 import { scenarioColor } from "./input_helpers.ts";
 
+// The active scenario's visual identity (position color + name), reused by every panel that scopes
+// to the active scenario (histogram, selected-rollout overlay, events, terminal table) so they all
+// announce *which* variant they're showing — not just the chip selector. Color matches the chip and
+// chart legend (`scenarioColor`, by position), so the badge reads as the same entity everywhere.
+export function ScenarioBadge({ label, color, className }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${className ?? ""}`} data-product-active-scenario-badge="">
+      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+      <span className="font-medium">{label}</span>
+    </span>
+  );
+}
+
 // Chip selector for the Base + variant set. Clicking a chip makes that entry active — the rollout
 // histogram, selected-rollout overlay, events, and the detailed terminal table all scope to it,
 // while the fan chart overlays Base + every variant at once. Double-click a label to rename it

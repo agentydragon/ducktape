@@ -87,6 +87,7 @@ js_library(
     srcs = ["events_panel.tsx"],
     deps = [
         ":data_helpers",
+        ":scenario_tabs",
         "//:node_modules/react",
         "//augur/frontend/lib:format",
     ],
@@ -226,6 +227,7 @@ js_library(
         ":input_helpers",
         ":metric_table",
         ":scenario_editor",
+        ":scenario_tabs",
         ":skeleton",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { fmtNumber } from "./lib/format.ts";
 import { fmtMetricValue } from "./lib/chart.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
+import { ScenarioBadge } from "./scenario_tabs.tsx";
 import {
   ROLLOUT_EVENT_COLORS,
   ROLLOUT_EVENT_KIND_ORDER,
@@ -17,6 +18,7 @@ import {
 export function SelectedRolloutEventsPanel({
   events,
   selectedSummary,
+  activeScenario,
   loading,
   selectedEventMonthIndex,
   hoveredEventMonthIndex,
@@ -44,7 +46,10 @@ export function SelectedRolloutEventsPanel({
     <div className="border-t border-slate-200 dark:border-slate-700">
       <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="augur-eyebrow">Selected rollout events</div>
+          <div className="flex items-center gap-2">
+            <span className="augur-eyebrow">Selected rollout events</span>
+            {activeScenario && <ScenarioBadge label={activeScenario.label} color={activeScenario.color} />}
+          </div>
           <div className="mt-1 text-xs augur-muted">Seed {selectedSummary.seed}</div>
         </div>
         <div className="text-xs font-semibold augur-tabular augur-muted">
