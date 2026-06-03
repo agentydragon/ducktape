@@ -32,6 +32,51 @@ export function propertyLabel(property) {
   return `${head} — ${meta}`;
 }
 
+// Read-only context for a selected property: a neighborhood · beds/baths · HOA summary, the photo
+// thumbnail (links to the listing image), the source-listing link, and free-form notes. Only the
+// fields the deployment actually provides render (public fixtures carry none of the rich ones).
+export function PropertyDetails({ property }) {
+  if (!property) return null;
+  const summary = [
+    property.neighborhood,
+    `${fmtNumber(property.beds)} bd / ${fmtNumber(property.baths)} ba`,
+    Number(property.hoaMonthlyUsd) > 0 ? `HOA ${fmtUsd(property.hoaMonthlyUsd)}/mo` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="grid gap-2">
+      <div className="text-xs augur-muted">{summary}</div>
+      {property.imageUrl && (
+        <a
+          href={property.imageUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group inline-block overflow-hidden rounded border border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+          aria-label={`Open property image for ${property.address || property.id}`}
+        >
+          <img
+            src={property.imageUrl}
+            alt={property.address || property.id}
+            className="h-24 w-40 object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+          />
+        </a>
+      )}
+      {property.sourceUrl && (
+        <a
+          href={property.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
+        >
+          Source listing ↗
+        </a>
+      )}
+      {property.notes && <div className="text-xs augur-muted whitespace-pre-line">{property.notes}</div>}
+    </div>
+  );
+}
+
 // `showPropertySelect=false` drops the in-panel property dropdown: the scenario editor picks the
 // property per scenario in its spreadsheet ("Property to buy" row), so the panel only shows the
 // financing / rental / timeline detail for whichever property that scenario resolves to.

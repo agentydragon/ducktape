@@ -3,7 +3,13 @@ import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
-import { SellOrderControl, ProductPortfolioPanel, LifecycleEventsEditor, propertyLabel } from "./forms.tsx";
+import {
+  SellOrderControl,
+  ProductPortfolioPanel,
+  LifecycleEventsEditor,
+  PropertyDetails,
+  propertyLabel,
+} from "./forms.tsx";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -314,11 +320,13 @@ export function ScenarioEditor({
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
 
-  // One timeline editor per scenario that buys (Base + variants); a variant's events inherit Base
-  // until edited (which creates a `propertyLifecycleEvents` override, revertable). Index into
-  // `entries` keeps the dot color aligned with the chart + column headers.
+  // Scenarios that buy a property get, below the grid, a property-details card + a lifecycle timeline
+  // (both blob/list-shaped, so they don't fit table cells) — each its own collapsible group. A
+  // variant's events inherit Base until edited (creating a revertable `propertyLifecycleEvents`
+  // override). The index into `entries` keeps the dot color aligned with the chart + column headers.
+  const propertyDetailsCollapsed = collapsed.has("Property details");
   const timelineCollapsed = collapsed.has("Timeline");
-  const timelineEntries = [
+  const owningScenarios = [
     { id: "base", label: base.label, input: base.input, variant: null },
     ...variants.map((v) => ({ id: v.id, label: v.label, input: resolveVariant(base.input, v.overrides), variant: v })),
   ].filter((entry) => entry.input.propertyId != null);
@@ -451,7 +459,48 @@ export function ScenarioEditor({
             />
           </div>
 
-          {timelineEntries.length > 0 && (
+          {owningScenarios.length > 0 && (
+            <div className="px-4 py-3" data-product-property-details="">
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                aria-expanded={!propertyDetailsCollapsed}
+                data-product-group-toggle="Property details"
+                onClick={() => toggleCollapsed("Property details")}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`text-[8px] transition-transform ${propertyDetailsCollapsed ? "" : "rotate-90"}`}
+                >
+                  ▶
+                </span>
+                Property details
+              </button>
+              {!propertyDetailsCollapsed && (
+                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {owningScenarios.map((entry) => {
+                    const index = entries.findIndex((e) => e.id === entry.id);
+                    const property = (bootstrap.properties ?? []).find((p) => p.id === entry.input.propertyId);
+                    return (
+                      <div key={entry.id}>
+                        <div className="augur-field-label mb-1 flex items-center gap-1.5">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: scenarioColor(index) }}
+                            aria-hidden="true"
+                          />
+                          {entry.label}
+                        </div>
+                        <PropertyDetails property={property} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {owningScenarios.length > 0 && (
             <div className="px-4 py-3" data-product-timeline="">
               <button
                 type="button"
@@ -470,7 +519,7 @@ export function ScenarioEditor({
               </button>
               {!timelineCollapsed && (
                 <div className="mt-3 space-y-4">
-                  {timelineEntries.map((entry) => {
+                  {owningScenarios.map((entry) => {
                     const index = entries.findIndex((e) => e.id === entry.id);
                     const overridden = entry.variant != null && "propertyLifecycleEvents" in entry.variant.overrides;
                     return (
