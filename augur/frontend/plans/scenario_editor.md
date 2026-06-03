@@ -1,113 +1,73 @@
 # Scenario editor — per-knob plan
 
-A **full-width** scenario editor (not the sidebar form) that compares a **Base** scenario against
-per-variant **overrides**. Most knobs are edited once on Base (edit → propagates to every variant
-that doesn't override it); any scalar can be **overridden** per variant, and the housing cluster is
-overridden per variant **as a unit**. A few knobs stay **global** (app shell). Lifecycle events are
-kept (Base or per-variant). Charts: **lines** first; **candles** later (month/quarter/half/year
-granularity picker).
+A **full-width** comparison editor over a **Base** scenario and per-variant **overrides**. Every
+per-scenario knob is a **table row** (columns = Base + variants), edited in place: a Base cell edits
+it everywhere, a variant cell inherits Base (rendered greyed) until overridden (then white, with an
+inline ↩ to revert). The one list-shaped knob — the lifecycle **timeline** — is the active
+scenario's editor below the table. A few knobs stay **global** (app shell). Charts: **lines** first;
+**candles** later (month/quarter/half/year granularity picker).
 
 ## Data model (base + overrides)
 
 `{ base: { label, input: ProductInput }, variants: [{ id, label, overrides: Partial<ProductInput> }] }`.
 A variant resolves to `{ ...base.input, ...overrides }` — it inherits every knob it doesn't
-override. **Base is a charted series** (series 0, blue); variants follow in the remaining colors.
-Editing a Base knob updates every inheriting variant for free; a variant only diverges on the keys
-in its `overrides`. The active selection (Base or a variant) is ephemeral UI state — it scopes the
-histogram, selected-rollout overlay, events, and the detailed terminal table, and is not persisted.
+override. **Base is a charted series** (series 0, blue); variants follow. Editing a Base knob updates
+every inheriting variant for free; a variant only diverges on the keys in its `overrides`. The active
+selection (Base or a variant) is ephemeral UI state — it scopes the timeline editor, the rollout
+histogram, the selected-rollout overlay, events, and the detailed terminal table; it is not
+persisted.
 
 ### URL
 
-- Base, no variants → compact, shareable, backward-compatible `?s=`/`?lc=` (a single scenario reads
-  exactly like the pre-comparison product link).
+- Base, no variants → compact, backward-compatible `?s=`/`?lc=`.
 - Base + variants → `?scenarios=` JSON (`v: 2`): the Base full input plus per-variant **override
-  diffs** (not full inputs). Lifecycle `_id`s are stripped on encode and reminted on decode so
-  siblings never share React keys. Variants are capped at `MAX_VARIANTS` on decode.
-- A legacy/unrecognized `?scenarios=` blob (or malformed JSON) falls back to Base-only, reading any
-  `?s=` present — same version gate as the single-scenario codec.
+  diffs**. Lifecycle `_id`s are stripped on encode / reminted on decode; variants are capped at
+  `MAX_VARIANTS`. A legacy/unrecognized blob falls back to Base-only.
 
-## Disposition of every current knob
+## The table (everything per-scenario)
 
-### Global (app-shell `SharedControls`; one value for the whole set)
+Rows = knobs, grouped (Property / Spending / Outside rent / Cash buffer / Private equity); columns =
+Base + each variant. Each cell is the right widget for its knob: `$` number, `%` number, `mo`
+number, inflation/none select, Yes/No select, Cash/Mortgage select, 30/15-yr select, property
+select, location select. Owning rows only appear when some scenario makes them relevant (the same
+"union" trick the metric list uses):
 
-| Knob                  | URL      | Notes                                          |
-| --------------------- | -------- | ---------------------------------------------- |
-| Horizon months        | `?h`     | stays global                                   |
-| Rollout count         | `?n`     | stays global                                   |
-| First seed            | `?seed`  | stays global (shared seeds = apples-to-apples) |
-| Exogenous model       | `?x`     | stays global                                   |
-| Chart scale (lin/log) | `?scale` | display-only                                   |
-| Currency display      | `?fmt`   | display-only                                   |
+| `needs`    | Row shows when some scenario…         | Rows                                                            |
+| ---------- | ------------------------------------- | --------------------------------------------------------------- |
+| (none)     | always                                | Property to buy, all Spending / Outside-rent / Cash-buffer / PE |
+| `owns`     | has a property                        | Financing, Insurance, Maintenance, Owner-lives-here, Rented %   |
+| `mortgage` | buys with a mortgage                  | Down payment, Term, Annual rate                                 |
+| `rented`   | rents the property out (fraction > 0) | Vacancy %, Full-property rent, Use management                   |
+| `managed`  | uses a management agency              | Mgmt fee, Leasing fee, Avg tenancy                              |
 
-### Base-or-override scalars (editor spreadsheet: Base column + one column per variant)
+A variant cell renders **inherited** (greyed/`filled`, showing Base's value) or **overridden** (white,
+with an inline ↩ to revert). Editing an inherited cell creates the override; ↩ drops the key so it
+re-inherits Base. There is no housing "unit" — every knob (property, financing, rental, …) overrides
+individually, exactly like the scalars.
 
-A variant cell shows the inherited Base value (muted) until edited; editing it creates the override
-(bold) and a ↩ revert appears to drop it back to inheriting Base. Grouped so related knobs stay
-together (Spending / Outside rent / Cash buffer / Private equity).
+## Below the table
 
-| Knob                         | Widget         |
-| ---------------------------- | -------------- |
-| Monthly spend                | $ number       |
-| Spend index (inflation/none) | select         |
-| Monthly rent (outside rent)  | $ number       |
-| Rent location                | select         |
-| Cash-buffer trigger-below    | $ number       |
-| Cash-buffer sell amount      | $ number       |
-| Cash-buffer index            | inflation/none |
-| PE LNW floor                 | $ number       |
-| PE floor index               | inflation/none |
+- **Timeline** (lifecycle events) — the active scenario's editor (a variable-length event list can't
+  live in a cell). Shown when the active scenario owns a property; for a variant it carries its own
+  override with a "Revert to base" affordance.
+- **Sell order** — Base-only (the reorderable liquidity list, inherited by all variants).
+- **Initial portfolio** — read-only, global (deployment config).
 
-### Base-only (one value; inherited by all variants, not an override column)
+## Global (app-shell `SharedControls`)
 
-| Knob                   | Widget                               |
-| ---------------------- | ------------------------------------ |
-| Liquidity / sell order | the reorderable sell-preference list |
+Horizon (`?h`), rollout count (`?n`), first seed (`?seed`), exogenous model (`?x`), chart scale
+(`?scale`), currency display (`?fmt`) — one value for the whole set.
 
-### Per-entity housing cluster (overridden per variant as a unit)
+## Active selection
 
-The **property** is surfaced as a per-scenario **"Property to buy" row** at the top of the
-spreadsheet (each column has its own property select), so which property a scenario buys is
-switchable directly in the table. Picking a property for a variant seeds its housing override from
-Base (housing is still overridden as a unit); the row's ↩ reverts the whole cluster back to
-inheriting. The rest of the cluster (financing / rates / rental / lifecycle) is edited in the
-**Property & timeline** panel for the active entity (`PropertyPurchasePanel` with its in-panel
-property select hidden + `RentalPanel` + `LifecycleEventsEditor`): a variant either **inherits** Base
-housing (summary + "Override housing") or **overrides** it (full panel + "Revert to base housing").
-Rent-vs-buy _is_ a housing override.
-
-| Knob                                                                        |                            |
-| --------------------------------------------------------------------------- | -------------------------- |
-| Property to buy                                                             | select                     |
-| Financing (cash/mortgage)                                                   | select                     |
-| Down payment %, term, annual rate                                           | mortgage-only              |
-| Insurance %, maintenance %                                                  | numbers                    |
-| Owner lives here                                                            | checkbox                   |
-| Rented fraction %, vacancy %, full-property rent                            | rental                     |
-| Use management agency; fee %, leasing fee mo, avg tenancy                   | management                 |
-| **Lifecycle events** (set rented %, set primary, capital improvement, sale) | per-entity timeline editor |
-
-### Read-only / informational (unchanged)
-
-| Item                               |                                       |
-| ---------------------------------- | ------------------------------------- |
-| Initial portfolio table            | read-only, global (deployment config) |
-| Taxes blurb (federal + CA, single) | static text                           |
-
-## Editability guarantee
-
-Every currently-editable knob stays editable: scalars on **Base** and as a **per-variant override**;
-sell order on Base; the housing cluster + events on Base and per-variant. Nothing is dropped.
+The scenario chips manage the set (add / rename / delete → the table columns) and pick the **active**
+scenario, which drives the timeline editor + the rollout results below (histogram, selected-rollout
+overlay, events, terminal table). The fan chart overlays Base + every variant at once regardless.
 
 ## Charts
 
 - **Lines** (shipped): Base + each variant draw a solid median + dashed P5/P95, one color each,
-  **red-free palette** (red stays reserved for failed rollouts). No filled bands in multi-scenario
-  mode. A lone Base renders exactly like the pre-comparison chart (filled bands, blue).
-- **Candles** (later): grouped per checkpoint, with a **granularity** picker (month / quarter / half
-  / year). Needs the existing percentiles only (no backend change).
-
-## Layout
-
-Full-width: scenario chips (Base + variants, the active one ringed) + the scalar spreadsheet + the
-active entity's Property & timeline panel, results below. The editor is **collapsible** (chips stay
-visible) so the chart is reachable without scrolling past it.
+  red-free palette (red is reserved for failed rollouts). A lone Base renders byte-identically to the
+  pre-comparison chart (filled bands).
+- **Candles** (later): grouped per checkpoint with a granularity picker (month / quarter / half /
+  year). Needs the existing percentiles only (no backend change).
