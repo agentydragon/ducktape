@@ -7,9 +7,9 @@ Builds a "nontrivial knob config" on top of the spike-1 bench scenario:
     amortization), property-tax carrying cost, and a mortgage-interest
     deduction policy.
 
-Runs `simulate(...)` under cProfile and prints the hottest call sites by
-both cumulative and total (self) time, plus a per-phase wall-clock
-breakdown of the month loop.
+Runs `simulate(...)` (or just the dense engine, with `--dense-only`) under
+cProfile and prints the hottest call sites by cumulative and/or total (self)
+time (see `--sort`).
 
 Invoke locally:
   bazelisk run //augur/sim:profile_rollout -- --rollouts 4000 --horizon-months 1200
@@ -75,15 +75,9 @@ def build_profile_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, 
             "agents": [*base.agents, *extra_agents],
             "initial_cash": [*base.initial_cash, *extra_cash],
             "scheduled_property_purchases": [purchase],
-            "initial_primary_residences": [
-                PrimaryResidenceAssignment(agent_id="alice", property_id="home")
-            ],
+            "initial_primary_residences": [PrimaryResidenceAssignment(agent_id="alice", property_id="home")],
             "property_tax_policies": [
-                PropertyTaxPolicy(
-                    property_id="home",
-                    owner_agent_id="alice",
-                    tax_authority_agent_id="irs",
-                )
+                PropertyTaxPolicy(property_id="home", owner_agent_id="alice", tax_authority_agent_id="irs")
             ],
             "mortgage_interest_deduction_policies": [
                 MortgageInterestDeductionPolicy(liability_id="alice_mortgage", owner_agent_id="alice")
@@ -105,7 +99,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="augur rollout profiler")
     parser.add_argument("--rollouts", type=int, default=4000)
     parser.add_argument("--horizon-months", type=int, default=1200)
-    parser.add_argument("--sort", choices=["cumulative", "tottime"], default="cumulative")
+    parser.add_argument("--sort", choices=["cumulative", "tottime", "both"], default="both")
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
     parser.add_argument(
@@ -150,7 +144,8 @@ def main() -> None:
     elapsed = time.perf_counter() - t0
     print(f"wall_clock_sec={elapsed:.3f}")
 
-    for sort_key in ("cumulative", "tottime"):
+    sort_keys = ("cumulative", "tottime") if args.sort == "both" else (args.sort,)
+    for sort_key in sort_keys:
         stream = io.StringIO()
         stats = pstats.Stats(profiler, stream=stream).sort_stats(sort_key)
         stats.print_stats(args.top)

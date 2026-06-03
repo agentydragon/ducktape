@@ -28,23 +28,23 @@ OOM-kills the process beyond ~500–1000 rollouts at a 100-year horizon on a
 15 GB box.
 
 So the user's hypothesis ("we're doing a lot serially instead of in parallel")
-is only half right: the *temporal* axis is serial (correct, and inherent), but
-the *rollout* axis is already SIMD-vectorized in NumPy — it is not the
+is only half right: the _temporal_ axis is serial (correct, and inherent), but
+the _rollout_ axis is already SIMD-vectorized in NumPy — it is not the
 bottleneck. The bottleneck is encode/decode and compile-time ingestion.
 
 ## Measured breakdown
 
 500 rollouts × 1200 months, 26.9 s wall (cProfile, single core):
 
-| Stage                                     | Time    | %    |
-| ----------------------------------------- | ------- | ---- |
-| `decode_run` (dense arrays → Polars)      | 15.6 s  | 58%  |
-| ↳ `decode_tax_liabilities`                | 11.4 s  | 42%  |
-| ↳ other decoders (state history, events)  | ~4.2 s  | 16%  |
-| `external_values_cube` (compile)          | 4.3 s   | 16%  |
-| `_validate_series_indexed_amounts`        | 4.1 s   | 15%  |
-| dense month loop (`_run_month_step`×1200) | 1.9 s   | 7%   |
-| buffer alloc + snapshot + misc            | ~1.0 s  | 4%   |
+| Stage                                     | Time   | %   |
+| ----------------------------------------- | ------ | --- |
+| `decode_run` (dense arrays → Polars)      | 15.6 s | 58% |
+| ↳ `decode_tax_liabilities`                | 11.4 s | 42% |
+| ↳ other decoders (state history, events)  | ~4.2 s | 16% |
+| `external_values_cube` (compile)          | 4.3 s  | 16% |
+| `_validate_series_indexed_amounts`        | 4.1 s  | 15% |
+| dense month loop (`_run_month_step`×1200) | 1.9 s  | 7%  |
+| buffer alloc + snapshot + misc            | ~1.0 s | 4%  |
 
 Top `tottime` offenders: `{built-in method new_str}` 6.66 s (string-column
 materialization), `decode_tax_liabilities` 5.03 s, `DataFrame.iter_rows` 3.84 s
@@ -58,7 +58,7 @@ Wall clock at 500 rollouts, varying horizon: 240 mo → 2.7 s, 600 mo → 8.8 s,
 `(snapshots × liability_slots × R)` and `liability_slots` grows with the number
 of tax years (`compile_tax_liability_slots`: one slot per link per year-end).
 At 1200 mo that grid is `1201 × 200 × 500 = 120 M` elements, and
-`decode_tax_liabilities` builds three int64 index arrays over the *full* grid
+`decode_tax_liabilities` builds three int64 index arrays over the _full_ grid
 (`state_axes`) before masking → ~4 GB transient for one decoder, ×R OOM beyond
 ~1000 rollouts.
 
@@ -68,7 +68,7 @@ At 1200 mo that grid is `1201 × 200 × 500 = 120 M` elements, and
    `state_axes(snapshots, R, slots)` over the full grid, then masks. Instead get
    the active triples first (`np.argwhere(active)` / `np.nonzero`) and gather
    only those — the pattern `decode_tax_accruals`/`decode_capital_gains` already
-   use. Kills ~11 s *and* the OOM. Apply to every full-grid
+   use. Kills ~11 s _and_ the OOM. Apply to every full-grid
    `state_history_frame_from_columns` decoder (tax_liabilities, property_state,
    liabilities). Biggest single win.
 
@@ -98,18 +98,17 @@ At 1200 mo that grid is `1201 × 200 × 500 = 120 M` elements, and
 
 6. **Decimate state snapshots.** `_snapshot_current_state` copies ~25 arrays
    every month (0.83 s + all the memory decode then walks). If consumers only
-   need year-end / terminal values, snapshot at those indices instead of all
-   1201. Cuts both snapshot cost and downstream decode volume.
+   need year-end / terminal values, snapshot at those indices instead of all 1201. Cuts both snapshot cost and downstream decode volume.
 
 7. **Drop `~current.failed` boolean-mask fancy-indexing in the hot phases.**
    `current.cash[slot, active_rollout] -= amount[active_rollout]` does a
-   gather+scatter copy *every* slot *every* month even when no rollout has failed
+   gather+scatter copy _every_ slot _every_ month even when no rollout has failed
    (the common case). Fast-path `if not current.failed.any():` to operate on the
    full contiguous slice; only fall back to masked writes once failures exist.
 
 8. **Hoist month-invariant per-slot Python loops.** Transfers/obligations do
    `for slot in range(...)` per month re-reading `plan.transfers.cause[month,
-   slot]`. For recurring transfers the active-slot set is largely static —
+slot]`. For recurring transfers the active-slot set is largely static —
    precompute per-month active slots at compile time, or fold the whole transfer
    step into a segment-sum/matmul into `cash` keyed by from/to slot. Turns
    O(months × slots) Python into O(months) NumPy.
@@ -181,5 +180,5 @@ and are deliberately left as follow-ups to the boundary fixes above.
 Rollouts are independent, so beyond the above the R axis can be **chunked**
 (e.g. batches of 2000) and run per-chunk — trivially parallel across
 processes/cores/nodes, and it bounds peak memory. But chunking is only worth it
-*after* interventions 1–6: today the eager full-grid decode, not the rollout
+_after_ interventions 1–6: today the eager full-grid decode, not the rollout
 math, is what caps you at ~500 rollouts × 1200 months in 15 GB.
