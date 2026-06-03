@@ -6,7 +6,7 @@ the BuildBuddy invocation's undeclared outputs:
     bbr test //augur/frontend:mockups_render --nocache_test_results
     INV=$(cat ~/.cache/bbr/last_invocation_id)
     bbapi artifact list "$INV"
-    bbapi artifact download "$INV" mock-scenario-table.png -o augur/frontend/mockups/mock-scenario-table.png
+    bbapi artifact download "$INV" mock-chart-lines.png -o augur/frontend/mockups/mock-chart-lines.png
 
 Rendered copies are committed next to `mockups.html` so they show up in the PR without running the
 test; regenerate them with the commands above whenever the mockups change. The render is
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Playwright
 
 _FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z (matches the visual goldens).
-_SECTIONS = ("mock-scenario-table", "mock-chart-lines", "mock-chart-candles")
+_SECTIONS = ("mock-chart-lines", "mock-chart-candles")
 
 
 def test_render_mockups(playwright_sync: Playwright) -> None:
