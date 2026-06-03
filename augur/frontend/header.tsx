@@ -151,12 +151,12 @@ export function SharedControls({
           Simulation settings
         </span>
       </summary>
-      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 border-t border-slate-200 px-4 py-3 text-xs augur-muted dark:border-slate-700">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-slate-200 px-4 py-3 text-xs augur-muted dark:border-slate-700">
         {rows.map(({ label, input }) => (
-          <React.Fragment key={label}>
+          <div key={label} className="inline-flex items-center gap-2">
             <span className="augur-eyebrow whitespace-nowrap">{label}</span>
             {input}
-          </React.Fragment>
+          </div>
         ))}
       </div>
     </details>

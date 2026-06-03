@@ -68,13 +68,13 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange, horizonMonth
                 href={selected.imageUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group block overflow-hidden rounded border border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
+                className="group inline-block overflow-hidden rounded border border-slate-300 bg-slate-100 dark:border-slate-700 dark:bg-slate-900"
                 aria-label={`Open property image for ${selected.address || selected.id}`}
               >
                 <img
                   src={selected.imageUrl}
                   alt={selected.address || selected.id}
-                  className="aspect-[16/10] w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                  className="h-24 w-40 object-cover transition-transform duration-200 group-hover:scale-[1.02]"
                 />
               </a>
             )}

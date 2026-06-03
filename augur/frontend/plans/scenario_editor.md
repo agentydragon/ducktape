@@ -84,5 +84,36 @@ Nothing is dropped.
 
 ## Layout
 
-Full-width: scenario chips + shared/override table + the active scenario's Property & timeline panel
-on top (full width), results (chart + comparison table + rollout detail) below.
+Full-width: scenario chips + shared/override fields + the active scenario's Property & timeline
+panel on top (full width), results below. The editor is **collapsible** (chips stay visible) so the
+chart is reachable without scrolling past it. Shared scalars are **grouped** (Spending / Outside
+rent / Cash buffer / Private equity) so related knobs stay together.
+
+## Shipped vs. target: base + per-variant overrides
+
+**Shipped** (current editor): each scenario stores a full `ProductInput`; "shared vs override" is
+_computed_ — a scalar is shared when every scenario agrees (edit-once writes to all), an override
+when it differs (or is pinned). Housing + lifecycle events are edited per active scenario (chips).
+
+**Gap**: this isn't an explicit base model. When a knob has diverged there's no single place to
+change it for everyone without clobbering the intentional overrides ("Make shared" forces all to one
+value), and per-scenario housing reads as "every scenario edits everything".
+
+**Target** — explicit **Base** + per-variant **overrides**:
+
+- Data: `{ base: ProductInput, variants: [{ id, label, overrides: Partial<ProductInput> }] }`; a
+  variant resolves to `{ ...base, ...overrides }`. URL: base (full) + per-variant diffs; old
+  `?scenarios=` full-input arrays decode by taking the first as base and the rest as diffs (a
+  1-element set → base only).
+- Editing **Base** propagates to every variant that doesn't override that knob; overriders keep
+  their value — the "edit a parameter in everything" the current UI lacks.
+- UI = **spreadsheet for scalars + per-variant detail for housing**:
+  - Scalars: one knob×scenario table (grouped rows) with a **Base** column + one column per variant;
+    a variant cell shows the inherited Base value (muted) + "override", or its own value (bold) +
+    "revert to base". (The mockup's table, made explicit.)
+  - Housing (property / financing / rental / events): too rich for cells — Base housing edited in a
+    Base "Property & timeline" panel; a variant "Override housing" gets its own panel. Rent-vs-buy
+    _is_ a housing override.
+- Open choices: (1) Base as a non-charted defaults config vs. designating one variant as the base;
+  (2) confirm spreadsheet-for-scalars + chip-for-housing (vs. one giant spreadsheet with flattened
+  housing).
