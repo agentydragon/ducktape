@@ -153,7 +153,6 @@ export function ProductProjectionWorkspace({
   rolloutCount,
   onChangeRolloutCount,
   firstSeed,
-  onChangeFirstSeed,
   model,
   onChangeModel,
   horizonMonths,
@@ -320,7 +319,7 @@ export function ProductProjectionWorkspace({
     // params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the product
     // `?scenarios=` state doesn't drop them when switching away from and back to another tab.
     const currentParams = new URLSearchParams(window.location.search);
-    for (const key of ["n", "seed", "x", "h", "scale", "fmt", "bhide", "bset"]) {
+    for (const key of ["n", "x", "h", "scale", "fmt", "bhide", "bset"]) {
       const value = currentParams.get(key);
       if (value != null) params.set(key, value);
     }
@@ -436,8 +435,6 @@ export function ProductProjectionWorkspace({
           rolloutCount={rolloutCount}
           onChangeRolloutCount={onChangeRolloutCount}
           maxRolloutCount={bootstrap.maxRolloutSamples}
-          firstSeed={firstSeed}
-          onChangeFirstSeed={onChangeFirstSeed}
           model={model}
           onChangeModel={onChangeModel}
           models={bootstrap.models}

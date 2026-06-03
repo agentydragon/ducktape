@@ -21,9 +21,7 @@ import {
   rolloutCountFromSearch,
   rolloutCountDefault,
   clampRolloutCount,
-  firstSeedFromSearch,
   firstSeedDefault,
-  clampFirstSeed,
   modelFromSearch,
   defaultModel,
   horizonMonthsFromSearch,
@@ -39,17 +37,6 @@ function writeRolloutCountToSearch(value, bootstrap) {
   const params = new URLSearchParams(window.location.search);
   if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");
   else params.set("n", String(value));
-  const search = params.toString();
-  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
-  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
-    window.history.replaceState(null, "", newUrl);
-  }
-}
-
-function writeFirstSeedToSearch(value, bootstrap) {
-  const params = new URLSearchParams(window.location.search);
-  if (value == null || value === firstSeedDefault(bootstrap)) params.delete("seed");
-  else params.set("seed", String(value));
   const search = params.toString();
   const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
   if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -120,7 +107,6 @@ function CalibrationAppSurface({
   rolloutCount,
   onChangeRolloutCount,
   firstSeed,
-  onChangeFirstSeed,
   model,
   onChangeModel,
   horizonMonths,
@@ -154,8 +140,6 @@ function CalibrationAppSurface({
               rolloutCount={rolloutCount}
               onChangeRolloutCount={onChangeRolloutCount}
               maxRolloutCount={bootstrap.maxRolloutSamples}
-              firstSeed={firstSeed}
-              onChangeFirstSeed={onChangeFirstSeed}
               model={model}
               onChangeModel={onChangeModel}
               models={bootstrap.models}
@@ -182,7 +166,8 @@ function CalibrationAppSurface({
 function LoadedAppShell({ bootstrap, deployment }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
   const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
-  const [firstSeed, setFirstSeed] = useState(() => firstSeedFromSearch(window.location.search, bootstrap));
+  // First seed is a fixed default (no UI control) so runs stay reproducible.
+  const firstSeed = firstSeedDefault(bootstrap);
   const [model, setModel] = useState(() => modelFromSearch(window.location.search, bootstrap));
   const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
@@ -198,12 +183,6 @@ function LoadedAppShell({ bootstrap, deployment }) {
     const next = value == null ? value : clampRolloutCount(value, bootstrap);
     setRolloutCount(next);
     writeRolloutCountToSearch(next, bootstrap);
-  };
-
-  const onChangeFirstSeed = (value) => {
-    const next = value == null ? value : clampFirstSeed(value);
-    setFirstSeed(next);
-    writeFirstSeedToSearch(next, bootstrap);
   };
 
   const onChangeModel = (value) => {
@@ -240,7 +219,6 @@ function LoadedAppShell({ bootstrap, deployment }) {
     rolloutCount,
     onChangeRolloutCount,
     firstSeed,
-    onChangeFirstSeed,
     model,
     onChangeModel,
     horizonMonths,

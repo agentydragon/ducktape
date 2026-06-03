@@ -28,8 +28,6 @@ export function SharedControls({
   rolloutCount,
   onChangeRolloutCount,
   maxRolloutCount,
-  firstSeed,
-  onChangeFirstSeed,
   model,
   onChangeModel,
   models,
@@ -78,23 +76,6 @@ export function SharedControls({
           thousandSeparator=","
           classNames={{ input: "augur-tabular w-16 text-right" }}
           onChange={numberInputOnChange(onChangeRolloutCount)}
-        />
-      ),
-    },
-    onChangeFirstSeed && {
-      label: "Seed",
-      input: (
-        <NumberInput
-          aria-label="First seed"
-          size="xs"
-          min={0}
-          max={2 ** 31 - 1}
-          step={1}
-          value={firstSeed ?? ""}
-          hideControls
-          thousandSeparator=","
-          classNames={{ input: "augur-tabular w-16 text-right" }}
-          onChange={numberInputOnChange(onChangeFirstSeed)}
         />
       ),
     },
@@ -151,9 +132,9 @@ export function SharedControls({
           Simulation settings
         </span>
       </summary>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-slate-200 px-4 py-3 text-xs augur-muted dark:border-slate-700">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-200 px-4 py-2 text-xs augur-muted dark:border-slate-700">
         {rows.map(({ label, input }) => (
-          <div key={label} className="inline-flex items-center gap-2">
+          <div key={label} className="inline-flex items-center gap-1.5">
             <span className="augur-eyebrow whitespace-nowrap">{label}</span>
             {input}
           </div>

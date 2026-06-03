@@ -50,8 +50,7 @@ overruns the chart height.
    1 landed LNW floor, Management fee, Leasing fee, Avg tenancy, Closing cost.
    Reverted as noise on Fraction rented / Vacancy / Trigger below / Sell amount
    — when label + suffix already conveys it, the description just bulks the
-   sidebar. Still candidate: anything in Sampling that grows beyond `Rollouts` /
-   `First seed`.
+   sidebar. Still candidate: anything in Sampling that grows beyond `Rollouts`.
 9. **Shorthand entry on currency inputs.** `"1.4k"` / `"850k"` / `"1.2m"`
    parsing for monthly spend and amounts. Mantine's `NumberInput` supports a
    `parser` prop.

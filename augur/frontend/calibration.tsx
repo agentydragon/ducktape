@@ -432,8 +432,8 @@ export function CalibrationWorkspace({
   const [runError, setRunError] = useState(null);
 
   // The calibration run is fully determined by tab-shared shell controls: exogenous model (`?x=`),
-  // rollout count (`?n=`), first seed (`?seed=`), and horizon (`?h=`). Memoizing keeps the auto-run
-  // effect from re-firing on unrelated re-renders (it keys on this request).
+  // rollout count (`?n=`), and horizon (`?h=`), plus the fixed first seed. Memoizing keeps the
+  // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const seed = clampFirstSeed(firstSeed);
   const horizon = clampHorizonMonths(horizonMonths, bootstrap);

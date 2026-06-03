@@ -17,7 +17,7 @@ export const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
 export const DEFAULT_ROLLOUT_COUNT = 500;
-export const DEFAULT_FIRST_SEED = 1301;
+export const DEFAULT_FIRST_SEED = 1;
 
 export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
@@ -66,15 +66,19 @@ export const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [k
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 
+// Ordered as distinct buckets first, then the sums that aggregate them: the liquid buckets
+// (public-equity holdings, private equity, cash) feed Liquid net worth; the property buckets
+// (value, mortgage, home equity) plus liquid net worth feed Net worth. Cash shortfall is a
+// diagnostic, kept last. This order drives the metric picker and both terminal tables.
 export const METRIC_OPTIONS = [
-  { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
   { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Holdings value" },
   { value: "private_equity_value_usd", chartValue: "privateEquityValueUsd", label: "Private equity value" },
+  { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
+  { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
   { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },
   { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
   { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
-  { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
-  { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
+  { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
   { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },
 ];
 
@@ -117,8 +121,9 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
   return Number.isFinite(numeric) ? clampRolloutCount(numeric, bootstrap) : rolloutCountDefault(bootstrap);
 }
 
-// Tab-shared first rollout seed. Product projections and calibration runs both consume the same
-// seed sequence start, so the shell owns it and persists it to `?seed=`.
+// First rollout seed. Product projections and calibration runs consume the same seed-sequence
+// start; it's a fixed default (no longer user-tunable) so identical seeds reproduce identical
+// sampled exogenous paths across runs.
 export function firstSeedDefault(bootstrap) {
   const override = bootstrap.productInputDefaults?.firstSeed;
   return clampFirstSeed(override ?? DEFAULT_FIRST_SEED);
@@ -126,13 +131,6 @@ export function firstSeedDefault(bootstrap) {
 
 export function clampFirstSeed(value) {
   return clampInteger(value, 0, 2 ** 31 - 1);
-}
-
-export function firstSeedFromSearch(searchString, bootstrap) {
-  const raw = new URLSearchParams(searchString).get("seed");
-  if (raw == null) return firstSeedDefault(bootstrap);
-  const numeric = Number(raw);
-  return Number.isFinite(numeric) ? clampFirstSeed(numeric) : firstSeedDefault(bootstrap);
 }
 
 // Tab-shared exogenous model preset. Like the rollout count, the app shell owns the live value
@@ -322,9 +320,9 @@ export function productRolloutSeeds(bootstrap, rolloutCount, firstSeed) {
   return Array.from({ length: count }, (_, index) => start + index);
 }
 
-// The tab-shared controls (rollout count, first seed, exogenous model, horizon) are passed in
-// `shared` rather than read from `input`, since the app shell owns them
-// (see `?n=`/`?seed=`/`?x=`/`?h=`).
+// The tab-shared controls (rollout count, exogenous model, horizon — plus the fixed first seed) are
+// passed in `shared` rather than read from `input`, since the app shell owns them
+// (see `?n=`/`?x=`/`?h=`).
 export function productMetricFanRequest(input, bootstrap, metric, shared) {
   const { rolloutCount, firstSeed, model, horizonMonths } = shared;
   return {
