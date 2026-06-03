@@ -118,16 +118,34 @@ function locationOptions(bootstrap) {
   ];
 }
 
-// Whether some scenario in the resolved set makes a `needs` group relevant.
-function relevanceOf(inputs) {
-  const owns = inputs.filter((input) => input.propertyId != null);
-  const rented = owns.filter((input) => Number(input.rentalFractionRentedPct) > 0);
-  return {
-    owns: owns.length > 0,
-    mortgage: owns.some((input) => input.financingKind === "mortgage"),
-    rented: rented.length > 0,
-    managed: rented.some((input) => input.useRentalManagement),
-  };
+// Whether a knob applies to a single resolved scenario. Gates both the row (shown when it applies
+// to some scenario) and each cell (a non-applying scenario shows "—" instead of an inert input — so
+// the mortgage rows render inputs only for the scenarios that actually buy with a mortgage, etc.).
+function knobApplies(knob, input) {
+  const owns = input.propertyId != null;
+  const rented = owns && Number(input.rentalFractionRentedPct) > 0;
+  switch (knob.needs) {
+    case "owns":
+      return owns;
+    case "mortgage":
+      return owns && input.financingKind === "mortgage";
+    case "rented":
+      return rented;
+    case "managed":
+      return rented && input.useRentalManagement;
+    default:
+      return true;
+  }
+}
+
+// Placeholder for a cell whose knob doesn't apply to that scenario (e.g. a mortgage rate for a
+// renting / all-cash scenario).
+function NaCell() {
+  return (
+    <td className="px-3 py-1.5 text-center align-middle augur-muted" aria-label="not applicable">
+      —
+    </td>
+  );
 }
 
 // Compact, label-less control for a spreadsheet cell. The row + column headers already name the knob
@@ -210,6 +228,7 @@ const GROUP_HEADER =
 // value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
 // box) only when overridden, dropping the key so the cell re-inherits Base.
 function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, onRevertKeys }) {
+  if (!knobApplies(knob, resolveVariant(baseInput, variant.overrides))) return <NaCell />;
   const overridden = knob.key in variant.overrides;
   const value = overridden ? variant.overrides[knob.key] : baseInput[knob.key];
   return (
@@ -267,8 +286,7 @@ export function ScenarioEditor({
   const multi = variants.length > 0;
 
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
-  const relevance = relevanceOf(resolvedInputs);
-  const visibleKnobs = KNOBS.filter((knob) => knob.needs == null || relevance[knob.needs]);
+  const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
 
   const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
   const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
@@ -359,17 +377,21 @@ export function ScenarioEditor({
                             <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
                               {knob.label}
                             </th>
-                            <td className="px-3 py-1.5 align-top">
-                              <div className="min-w-[8rem]">
-                                <KnobCell
-                                  knob={knob}
-                                  value={base.input[knob.key]}
-                                  ariaLabel={`${knob.label} — Base`}
-                                  bootstrap={bootstrap}
-                                  onChange={(value) => onSetBaseField(knob.key, value)}
-                                />
-                              </div>
-                            </td>
+                            {knobApplies(knob, base.input) ? (
+                              <td className="px-3 py-1.5 align-top">
+                                <div className="min-w-[8rem]">
+                                  <KnobCell
+                                    knob={knob}
+                                    value={base.input[knob.key]}
+                                    ariaLabel={`${knob.label} — Base`}
+                                    bootstrap={bootstrap}
+                                    onChange={(value) => onSetBaseField(knob.key, value)}
+                                  />
+                                </div>
+                              </td>
+                            ) : (
+                              <NaCell />
+                            )}
                             {variants.map((variant) => (
                               <VariantKnobCell
                                 key={variant.id}
