@@ -45,6 +45,13 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
     h1, r, p = active.shape
     months, rollouts, props = state_axes(h1, r, p)
     mask = active.reshape(-1)
+    # The mask + (month, rollout, property) axes are in R-first order, so the per-property
+    # state buffers must be viewed R-first too before flattening — the raw buffers are
+    # (snapshot, property, rollout). Flattening them raw and applying the R-first mask
+    # cross-assigns stake values between properties once property_count > 1.
+    ownership = r_first_view(buffers.state.property_ownership_state)
+    contribution = r_first_view(buffers.state.property_contribution_state)
+    equity = r_first_view(buffers.state.property_equity_state)
     property_ids = codes_to_strings(plan, plan.properties.id)
     buyer_ids = codes_to_strings(plan, plan.properties.buyer_agent)
     return state_history_frame_from_columns(
@@ -53,9 +60,9 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "agent_id": buyer_ids[props[mask]],
-            "ownership_pct": buffers.state.property_ownership_state.reshape(-1)[mask],
-            "contribution_used_usd": buffers.state.property_contribution_state.reshape(-1)[mask],
-            "equity_ledger_usd": buffers.state.property_equity_state.reshape(-1)[mask],
+            "ownership_pct": ownership.reshape(-1)[mask],
+            "contribution_used_usd": contribution.reshape(-1)[mask],
+            "equity_ledger_usd": equity.reshape(-1)[mask],
         },
         PROPERTY_STAKE_FRAME,
     )

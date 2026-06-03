@@ -343,6 +343,21 @@ py_test(
 )
 
 py_test(
+    name = "test_property_stakes_e2e",
+    size = "small",
+    srcs = ["test_property_stakes_e2e.py"],
+    deps = [
+        ":conftest",
+        ":locations",
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "projections_test",
     size = "medium",
     srcs = ["projections_test.py"],
