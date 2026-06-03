@@ -8,7 +8,6 @@ import {
   scenarioSetFromSearch,
   makeVariant,
   resolveVariant,
-  housingOverrideFromBase,
   productInputDefaults,
   productInputToSearch,
   MAX_VARIANTS,
@@ -107,20 +106,4 @@ test("an unrecognized ?scenarios= version falls back to a base with no variants"
   params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
   const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
   expect(decoded.variants).toHaveLength(0);
-});
-
-test("housingOverrideFromBase copies the housing cluster (not other knobs) with fresh lifecycle keys", () => {
-  const baseInput = {
-    ...productInputDefaults(bootstrap),
-    propertyId: "p",
-    financingKind: "mortgage",
-    monthlySpendUsd: 1234, // not a housing knob — must NOT be carried into the override
-    propertyLifecycleEvents: [{ _id: "lc-orig", kind: "property_sale", month: 60, closingCostPct: 6 }],
-  };
-  const overrides = housingOverrideFromBase(baseInput);
-  expect(overrides.propertyId).toBe("p");
-  expect(overrides.financingKind).toBe("mortgage");
-  expect(overrides).not.toHaveProperty("monthlySpendUsd");
-  expect(overrides.propertyLifecycleEvents[0]).toMatchObject({ kind: "property_sale", month: 60 });
-  expect(overrides.propertyLifecycleEvents[0]._id).not.toBe("lc-orig");
 });

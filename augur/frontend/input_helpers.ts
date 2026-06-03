@@ -561,27 +561,6 @@ export function defaultVariantLabel(index) {
   return `Variant ${index + 1}`;
 }
 
-// Housing knobs are overridden per variant as a unit (the whole property / rental / lifecycle
-// cluster, edited in the Property & timeline panel) — not individually in the scalar spreadsheet.
-export const HOUSING_KEYS = [
-  "propertyId",
-  "financingKind",
-  "downPaymentPct",
-  "mortgageTermMonths",
-  "annualRatePct",
-  "annualInsurancePct",
-  "annualMaintenancePct",
-  "livesHere",
-  "rentalFullPropertyMonthlyUsd",
-  "rentalFractionRentedPct",
-  "rentalVacancyPct",
-  "useRentalManagement",
-  "managementFeePct",
-  "leasingFeeMonths",
-  "avgTenancyMonths",
-  "propertyLifecycleEvents",
-];
-
 let _nextVariantId = 0;
 // Stable per-variant id used as the React key + the active-selection handle. UI-only — the URL
 // encodes variants positionally, so ids are minted fresh on every decode.
@@ -601,16 +580,6 @@ export function resolveVariant(baseInput, overrides) {
 
 function regenerateLifecycleIds(events) {
   return Array.isArray(events) ? events.map((event) => ({ ...event, _id: nextLifecycleEventId() })) : [];
-}
-
-// Seed a variant's housing override from the base: copy the whole housing cluster as a unit
-// (`HOUSING_KEYS`) with fresh lifecycle-event React keys so the variant's events don't share keys
-// with the base's. Editing housing on a variant pins the cluster, so base housing edits no longer
-// propagate to it; reverting drops these keys and the variant re-inherits the base cluster.
-export function housingOverrideFromBase(baseInput) {
-  const overrides = Object.fromEntries(HOUSING_KEYS.map((key) => [key, baseInput[key]]));
-  overrides.propertyLifecycleEvents = regenerateLifecycleIds(baseInput.propertyLifecycleEvents);
-  return overrides;
 }
 
 // Lifecycle-event `_id`s are UI-only React keys; drop them from anything we persist so two scenarios

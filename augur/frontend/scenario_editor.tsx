@@ -1,120 +1,198 @@
 import React, { useState } from "react";
 import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
-import { scenarioColor, resolveVariant, HOUSING_KEYS, MAX_VARIANTS } from "./input_helpers.ts";
+import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
-import { PropertyPurchasePanel, SellOrderControl, ProductPortfolioPanel, propertyLabel } from "./forms.tsx";
+import { SellOrderControl, ProductPortfolioPanel, LifecycleEventsEditor, propertyLabel } from "./forms.tsx";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
   { value: "none", label: "None" },
 ];
+const YES_NO = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+];
+const FINANCING_DATA = [
+  { value: "cash", label: "Cash" },
+  { value: "mortgage", label: "Mortgage" },
+];
+const TERM_DATA = [
+  { value: "360", label: "30 yr" },
+  { value: "180", label: "15 yr" },
+];
 
-// Scalar knobs edited in the comparison spreadsheet (rows = knobs, columns = Base + variants). The
-// housing cluster (`HOUSING_KEYS`) + lifecycle events are too rich for cells, so they're edited in
-// the per-entity Property & timeline panel below; sell order is Base-only. Grouped so related knobs
-// stay together (a flat flow split e.g. the cash-buffer trio).
-const SCALAR_GROUPS = ["Spending", "Outside rent", "Cash buffer", "Private equity"];
+// Every per-scenario knob is a spreadsheet row (rows = knobs, columns = Base + variants), edited in
+// place and individually overridable per variant. Owning knobs (`needs`) only appear once some
+// scenario makes them relevant (the same "union" trick the metric list uses): `owns` once any
+// scenario buys, `mortgage`/`rented`/`managed` once any buys-with-mortgage / rents-it-out / uses an
+// agency. The lifecycle timeline is the one list-shaped knob — it stays a per-active editor below.
+const GROUPS = ["Property", "Spending", "Outside rent", "Cash buffer", "Private equity"];
 
-const SCALAR_KNOBS = [
+const KNOBS = [
+  { key: "propertyId", label: "Property to buy", kind: "property", group: "Property" },
+  { key: "financingKind", label: "Financing", kind: "financing", group: "Property", needs: "owns" },
+  {
+    key: "downPaymentPct",
+    label: "Down payment",
+    kind: "pct",
+    max: 100,
+    step: 1,
+    group: "Property",
+    needs: "mortgage",
+  },
+  { key: "mortgageTermMonths", label: "Term", kind: "term", group: "Property", needs: "mortgage" },
+  {
+    key: "annualRatePct",
+    label: "Annual rate",
+    kind: "pct",
+    max: 25,
+    step: 0.125,
+    group: "Property",
+    needs: "mortgage",
+  },
+  { key: "annualInsurancePct", label: "Insurance", kind: "pct", max: 10, step: 0.05, group: "Property", needs: "owns" },
+  {
+    key: "annualMaintenancePct",
+    label: "Maintenance",
+    kind: "pct",
+    max: 10,
+    step: 0.1,
+    group: "Property",
+    needs: "owns",
+  },
+  { key: "livesHere", label: "Owner lives here", kind: "bool", group: "Property", needs: "owns" },
+  { key: "rentalFractionRentedPct", label: "Rented", kind: "pct", max: 100, step: 1, group: "Property", needs: "owns" },
+  { key: "rentalVacancyPct", label: "Vacancy", kind: "pct", max: 100, step: 1, group: "Property", needs: "rented" },
+  {
+    key: "rentalFullPropertyMonthlyUsd",
+    label: "Full-property rent",
+    kind: "usd",
+    step: 100,
+    group: "Property",
+    needs: "rented",
+  },
+  { key: "useRentalManagement", label: "Use management", kind: "bool", group: "Property", needs: "rented" },
+  { key: "managementFeePct", label: "Mgmt fee", kind: "pct", max: 100, step: 1, group: "Property", needs: "managed" },
+  {
+    key: "leasingFeeMonths",
+    label: "Leasing fee",
+    kind: "num",
+    unit: "mo",
+    step: 0.5,
+    group: "Property",
+    needs: "managed",
+  },
+  {
+    key: "avgTenancyMonths",
+    label: "Avg tenancy",
+    kind: "num",
+    unit: "mo",
+    step: 1,
+    group: "Property",
+    needs: "managed",
+  },
   { key: "monthlySpendUsd", label: "Monthly spend", kind: "usd", min: 1, step: 100, group: "Spending" },
   { key: "spendIndex", label: "Spend index", kind: "index", group: "Spending" },
-  { key: "monthlyRentUsd", label: "Monthly rent", kind: "usd", min: 0, step: 100, group: "Outside rent" },
+  { key: "monthlyRentUsd", label: "Monthly rent", kind: "usd", step: 100, group: "Outside rent" },
   { key: "rentalLocationId", label: "Rent location", kind: "location", group: "Outside rent" },
-  { key: "cashBufferTriggerBelowUsd", label: "Trigger below", kind: "usd", min: 0, step: 1000, group: "Cash buffer" },
-  { key: "cashBufferSaleUsd", label: "Sell amount", kind: "usd", min: 0, step: 1000, group: "Cash buffer" },
+  { key: "cashBufferTriggerBelowUsd", label: "Trigger below", kind: "usd", step: 1000, group: "Cash buffer" },
+  { key: "cashBufferSaleUsd", label: "Sell amount", kind: "usd", step: 1000, group: "Cash buffer" },
   { key: "cashBufferIndexToInflation", label: "Buffer index", kind: "boolIndex", group: "Cash buffer" },
-  { key: "peLnwFloorUsd", label: "PE LNW floor", kind: "usd", min: 0, step: 10000, group: "Private equity" },
+  { key: "peLnwFloorUsd", label: "PE LNW floor", kind: "usd", step: 10000, group: "Private equity" },
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
 
+function propertyOptions(bootstrap) {
+  const properties = bootstrap.properties ?? [];
+  return [
+    { value: "", label: properties.length === 0 ? "(no properties)" : "(no purchase)" },
+    ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
+  ];
+}
+
+function locationOptions(bootstrap) {
+  return [
+    { value: "", label: "(default)" },
+    ...bootstrap.locations.map((location) => ({ value: location.id, label: location.label })),
+  ];
+}
+
+// Whether some scenario in the resolved set makes a `needs` group relevant.
+function relevanceOf(inputs) {
+  const owns = inputs.filter((input) => input.propertyId != null);
+  const rented = owns.filter((input) => Number(input.rentalFractionRentedPct) > 0);
+  return {
+    owns: owns.length > 0,
+    mortgage: owns.some((input) => input.financingKind === "mortgage"),
+    rented: rented.length > 0,
+    managed: rented.some((input) => input.useRentalManagement),
+  };
+}
+
 // Compact, label-less control for a spreadsheet cell. The row + column headers already name the knob
-// and the scenario, so the input itself carries only an `aria-label`. `muted` dims a value the
-// variant inherits from Base (vs. one it overrides); `rightSection` tucks a revert affordance inside
-// the box (like a unit suffix), so an overridden cell carries its own ↩.
+// and the scenario, so the input carries only an `aria-label`. `muted` renders inherited cells
+// greyed/disabled-looking (Mantine `filled` variant + a fade) so overrides stand out — they stay
+// editable (typing creates an override). `rightSection` tucks the revert ↩ inside the box (a suffix,
+// replacing a select's native chevron while overridden), made clickable via pointer-events.
 function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, rightSection = undefined, onChange }) {
-  // Inherited (non-overridden) cells render greyed/disabled-looking (Mantine `filled` variant + a
-  // slight fade) so overrides stand out, while staying editable — typing creates an override.
   const wrap = (control) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
-  // Spread onto the control: the revert button as a right section (overriding a select's native
-  // chevron, made clickable via pointer-events) + a filled/greyed look for inherited cells.
   const controlProps = {
     ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto", rightSectionWidth: 30 } : {}),
     ...(muted ? { variant: "filled" } : {}),
   };
-  if (knob.kind === "usd") {
-    return wrap(
-      <NumberField
-        aria-label={ariaLabel}
-        value={value}
-        min={knob.min}
-        step={knob.step}
-        prefix="$"
-        {...controlProps}
-        onChange={onChange}
-      />
-    );
-  }
-  if (knob.kind === "index") {
-    return wrap(
-      <NativeSelectField
-        aria-label={ariaLabel}
-        value={value}
-        data={INDEX_DATA}
-        {...controlProps}
-        onChange={(event) => onChange(event.target.value === "none" ? "none" : "inflation")}
-      />
-    );
-  }
-  if (knob.kind === "boolIndex") {
-    return wrap(
-      <NativeSelectField
-        aria-label={ariaLabel}
-        value={value ? "inflation" : "none"}
-        data={INDEX_DATA}
-        {...controlProps}
-        onChange={(event) => onChange(event.target.value === "inflation")}
-      />
-    );
-  }
-  if (knob.kind === "property") {
-    const properties = bootstrap.properties ?? [];
-    return wrap(
-      <NativeSelectField
-        aria-label={ariaLabel}
-        value={value ?? ""}
-        data={[
-          { value: "", label: properties.length === 0 ? "(no properties)" : "(no purchase)" },
-          ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
-        ]}
-        {...controlProps}
-        onChange={(event) => onChange(event.target.value || null)}
-      />
-    );
-  }
-  // location
-  return wrap(
-    <NativeSelectField
+  const number = (extra) => (
+    <NumberField
       aria-label={ariaLabel}
-      value={value ?? ""}
-      data={[
-        { value: "", label: "(default)" },
-        ...bootstrap.locations.map((location) => ({ value: location.id, label: location.label })),
-      ]}
+      value={value}
+      min={knob.min ?? 0}
+      max={knob.max}
+      step={knob.step ?? 1}
+      {...extra}
       {...controlProps}
-      onChange={(event) => onChange(event.target.value || null)}
+      onChange={onChange}
     />
   );
+  const select = (data, current, decode) => (
+    <NativeSelectField
+      aria-label={ariaLabel}
+      value={current}
+      data={data}
+      {...controlProps}
+      onChange={(event) => onChange(decode(event.target.value))}
+    />
+  );
+  switch (knob.kind) {
+    case "usd":
+      return wrap(number({ prefix: "$" }));
+    case "pct":
+      return wrap(number({ suffix: "%" }));
+    case "num":
+      return wrap(number({ suffix: knob.unit }));
+    case "index":
+      return wrap(select(INDEX_DATA, value, (next) => (next === "none" ? "none" : "inflation")));
+    case "boolIndex":
+      return wrap(select(INDEX_DATA, value ? "inflation" : "none", (next) => next === "inflation"));
+    case "bool":
+      return wrap(select(YES_NO, value ? "yes" : "no", (next) => next === "yes"));
+    case "financing":
+      return wrap(select(FINANCING_DATA, value, (next) => (next === "mortgage" ? "mortgage" : "cash")));
+    case "term":
+      return wrap(select(TERM_DATA, String(value), (next) => (Number(next) === 180 ? 180 : 360)));
+    case "property":
+      return wrap(select(propertyOptions(bootstrap), value ?? "", (next) => next || null));
+    default: // location
+      return wrap(select(locationOptions(bootstrap), value ?? "", (next) => next || null));
+  }
 }
 
-// Revert-to-base affordance rendered inside a cell's input as a right section (suffix). Only shown on
-// overridden cells; clicking drops the override so the cell re-inherits Base.
-function RevertButton({ label, title = "Revert to base", onClick }) {
+// Revert-to-base affordance rendered inside an overridden cell's input as a right section (suffix).
+function RevertButton({ label, onClick }) {
   return (
     <button
       type="button"
       aria-label={label}
-      title={title}
+      title="Revert to base"
       onClick={onClick}
       className="augur-link text-sm leading-none"
     >
@@ -125,10 +203,12 @@ function RevertButton({ label, title = "Revert to base", onClick }) {
 
 const TABLE_HEADER =
   "px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
+const GROUP_HEADER =
+  "bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400";
 
-// One variant's cell for a scalar knob: editable, bound to the override value when overridden or the
-// inherited Base value otherwise (editing an inherited cell creates the override). A revert control
-// appears only when the cell overrides, dropping the key so it re-inherits Base.
+// One variant's cell: editable, bound to the override value when overridden or the inherited Base
+// value otherwise (editing an inherited cell creates the override). The revert ↩ appears (inside the
+// box) only when overridden, dropping the key so the cell re-inherits Base.
 function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, onRevertKeys }) {
   const overridden = knob.key in variant.overrides;
   const value = overridden ? variant.overrides[knob.key] : baseInput[knob.key];
@@ -154,136 +234,11 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
   );
 }
 
-// One variant's "Property to buy" cell. Housing is overridden as a unit, so this cell tracks the
-// whole housing override: it shows the variant's property when housing is overridden (with ↩ to
-// re-inherit the entire cluster) or the inherited Base property (muted) otherwise. Picking a
-// property seeds the variant's housing from Base via `onSetVariantProperty`.
-function PropertyVariantCell({ variant, baseInput, bootstrap, onSetVariantProperty, onRevertKeys }) {
-  const overridden = HOUSING_KEYS.some((key) => key in variant.overrides);
-  const value = overridden ? variant.overrides.propertyId : baseInput.propertyId;
-  return (
-    <td className="px-3 py-1.5 align-top">
-      <KnobCell
-        knob={{ kind: "property" }}
-        value={value}
-        ariaLabel={`Property to buy — ${variant.label}`}
-        bootstrap={bootstrap}
-        muted={!overridden}
-        rightSection={
-          overridden ? (
-            <RevertButton
-              label={`Revert housing for ${variant.label} to base`}
-              title="Revert housing to base"
-              onClick={() => onRevertKeys(variant.id, HOUSING_KEYS)}
-            />
-          ) : undefined
-        }
-        onChange={(next) => onSetVariantProperty(variant.id, next)}
-      />
-    </td>
-  );
-}
-
-// One-line description of an entity's housing for the inherited-housing summary.
-function HousingSummary({ input, bootstrap }) {
-  const property = (bootstrap.properties ?? []).find((entry) => entry.id === input.propertyId);
-  if (!property) return <>No property purchase (renting).</>;
-  const financing = input.financingKind === "mortgage" ? "mortgage" : "cash";
-  const rented = Number(input.rentalFractionRentedPct) > 0 ? ` · ${input.rentalFractionRentedPct}% rented` : "";
-  const events = input.propertyLifecycleEvents?.length ?? 0;
-  const timeline = events > 0 ? ` · ${events} timeline event${events === 1 ? "" : "s"}` : "";
-  return (
-    <>
-      {property.address || property.id} · {financing}
-      {rented}
-      {timeline}
-    </>
-  );
-}
-
-// Housing & timeline for the active entity. Base edits propagate to inheriting variants; a variant
-// either inherits Base housing (summary + "Override housing") or pins its own cluster (full panel +
-// "Revert to base"). Housing is overridden as a unit so a variant never half-inherits a property.
-function HousingSection({
-  base,
-  activeVariant,
-  activeColor,
-  bootstrap,
-  horizonMonths,
-  onSetBasePatch,
-  onPatchVariant,
-  onRevertKeys,
-  onOverrideHousing,
-}) {
-  if (activeVariant == null) {
-    return (
-      <div>
-        <div className="px-4 pt-3 augur-eyebrow">Housing &amp; timeline — Base</div>
-        <PropertyPurchasePanel
-          bootstrap={bootstrap}
-          input={base.input}
-          showPropertySelect={false}
-          onChange={onSetBasePatch}
-          horizonMonths={horizonMonths}
-        />
-      </div>
-    );
-  }
-  const overridden = HOUSING_KEYS.some((key) => key in activeVariant.overrides);
-  if (!overridden) {
-    return (
-      <div className="px-4 py-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="augur-eyebrow">
-            Housing &amp; timeline —{" "}
-            <span className="font-semibold" style={{ color: activeColor }}>
-              {activeVariant.label}
-            </span>
-          </div>
-          <Button size="xs" variant="default" onClick={() => onOverrideHousing(activeVariant.id)}>
-            Override housing
-          </Button>
-        </div>
-        <div className="mt-2 text-xs augur-muted">
-          Inherits Base: <HousingSummary input={base.input} bootstrap={bootstrap} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
-        <div className="augur-eyebrow">
-          Housing &amp; timeline —{" "}
-          <span className="font-semibold" style={{ color: activeColor }}>
-            {activeVariant.label}
-          </span>{" "}
-          <span className="augur-muted">(overrides Base)</span>
-        </div>
-        <button
-          type="button"
-          className="augur-link text-xs font-semibold"
-          onClick={() => onRevertKeys(activeVariant.id, HOUSING_KEYS)}
-        >
-          Revert to base housing
-        </button>
-      </div>
-      <PropertyPurchasePanel
-        bootstrap={bootstrap}
-        input={resolveVariant(base.input, activeVariant.overrides)}
-        showPropertySelect={false}
-        onChange={(patch) => onPatchVariant(activeVariant.id, patch)}
-        horizonMonths={horizonMonths}
-      />
-    </div>
-  );
-}
-
-// Full-width scenario editor for the Base + per-variant-overrides model. The spreadsheet edits the
-// scalar knobs (Base column + one column per variant; Base edits propagate to inheriting variants,
-// variant cells override individually). The Property & timeline panel below edits the active
-// entity's housing cluster. Sell order is Base-only. The whole thing collapses (chips stay visible)
-// so the chart/results below are reachable without scrolling.
+// Full-width scenario editor for the Base + per-variant-overrides model. Every per-scenario knob is
+// a row (Base column + one column per variant); a Base cell edits everywhere, a variant cell
+// overrides individually. The lifecycle timeline (list-shaped) is the active scenario's editor below
+// the table. Sell order is Base-only. The whole thing collapses (chips stay visible) so the
+// chart/results below are reachable without scrolling.
 export function ScenarioEditor({
   base,
   variants,
@@ -298,11 +253,8 @@ export function ScenarioEditor({
   onRename,
   onResetBase,
   onSetBaseField,
-  onSetBasePatch,
   onPatchVariant,
   onRevertKeys,
-  onOverrideHousing,
-  onSetVariantProperty,
 }) {
   const [open, setOpen] = useState(true);
   const entries = [{ id: "base", label: base.label }, ...variants.map((v) => ({ id: v.id, label: v.label }))];
@@ -313,6 +265,13 @@ export function ScenarioEditor({
   );
   const activeLabel = entries[activeIndex]?.label ?? base.label;
   const multi = variants.length > 0;
+
+  const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
+  const relevance = relevanceOf(resolvedInputs);
+  const visibleKnobs = KNOBS.filter((knob) => knob.needs == null || relevance[knob.needs]);
+
+  const activeInput = activeVariant == null ? base.input : resolveVariant(base.input, activeVariant.overrides);
+  const timelineOverridden = activeVariant != null && "propertyLifecycleEvents" in activeVariant.overrides;
 
   const resetActive = () => {
     if (activeVariant == null) onResetBase();
@@ -352,14 +311,14 @@ export function ScenarioEditor({
       {open && (
         <>
           <div className="px-4 py-3">
-            <div className="augur-eyebrow">Scenario settings</div>
             {multi && (
-              <div className="mt-1 text-xs augur-muted">
-                Edit a Base cell to change it everywhere; edit a variant cell to override just that variant (↩ reverts
-                it to Base). Pick a different property per scenario in the first row.
+              <div className="mb-3 text-xs augur-muted">
+                Edit a Base cell to change it everywhere; edit a variant cell to override just that variant (its ↩
+                reverts it to Base). Variants can differ on any row — what each scenario buys, how it finances,
+                spending.
               </div>
             )}
-            <div className="mt-3 overflow-x-auto" data-product-scenario-table="">
+            <div className="overflow-x-auto" data-product-scenario-table="">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-slate-700">
@@ -385,81 +344,48 @@ export function ScenarioEditor({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <th
-                      colSpan={1 + entries.length}
-                      className="bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400"
-                    >
-                      Property
-                    </th>
-                  </tr>
-                  <tr data-product-knob-row="propertyId">
-                    <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
-                      Property to buy
-                    </th>
-                    <td className="px-3 py-1.5 align-top">
-                      <div className="min-w-[8rem]">
-                        <KnobCell
-                          knob={{ kind: "property" }}
-                          value={base.input.propertyId}
-                          ariaLabel="Property to buy — Base"
-                          bootstrap={bootstrap}
-                          onChange={(value) => onSetBaseField("propertyId", value)}
-                        />
-                      </div>
-                    </td>
-                    {variants.map((variant) => (
-                      <PropertyVariantCell
-                        key={variant.id}
-                        variant={variant}
-                        baseInput={base.input}
-                        bootstrap={bootstrap}
-                        onSetVariantProperty={onSetVariantProperty}
-                        onRevertKeys={onRevertKeys}
-                      />
-                    ))}
-                  </tr>
-                  {SCALAR_GROUPS.map((group) => (
-                    <React.Fragment key={group}>
-                      <tr>
-                        <th
-                          colSpan={1 + entries.length}
-                          className="bg-slate-50 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400"
-                        >
-                          {group}
-                        </th>
-                      </tr>
-                      {SCALAR_KNOBS.filter((knob) => knob.group === group).map((knob) => (
-                        <tr key={knob.key} data-product-knob-row={knob.key}>
-                          <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
-                            {knob.label}
+                  {GROUPS.map((group) => {
+                    const groupKnobs = visibleKnobs.filter((knob) => knob.group === group);
+                    if (groupKnobs.length === 0) return null;
+                    return (
+                      <React.Fragment key={group}>
+                        <tr>
+                          <th colSpan={1 + entries.length} className={GROUP_HEADER}>
+                            {group}
                           </th>
-                          <td className="px-3 py-1.5 align-top">
-                            <div className="min-w-[8rem]">
-                              <KnobCell
-                                knob={knob}
-                                value={base.input[knob.key]}
-                                ariaLabel={`${knob.label} — Base`}
-                                bootstrap={bootstrap}
-                                onChange={(value) => onSetBaseField(knob.key, value)}
-                              />
-                            </div>
-                          </td>
-                          {variants.map((variant) => (
-                            <VariantKnobCell
-                              key={variant.id}
-                              knob={knob}
-                              variant={variant}
-                              baseInput={base.input}
-                              bootstrap={bootstrap}
-                              onPatchVariant={onPatchVariant}
-                              onRevertKeys={onRevertKeys}
-                            />
-                          ))}
                         </tr>
-                      ))}
-                    </React.Fragment>
-                  ))}
+                        {groupKnobs.map((knob) => (
+                          <tr key={knob.key} data-product-knob-row={knob.key}>
+                            <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">
+                              {knob.label}
+                            </th>
+                            <td className="px-3 py-1.5 align-top">
+                              <div className="min-w-[8rem]">
+                                <KnobCell
+                                  knob={knob}
+                                  value={base.input[knob.key]}
+                                  ariaLabel={`${knob.label} — Base`}
+                                  bootstrap={bootstrap}
+                                  onChange={(value) => onSetBaseField(knob.key, value)}
+                                />
+                              </div>
+                            </td>
+                            {variants.map((variant) => (
+                              <VariantKnobCell
+                                key={variant.id}
+                                knob={knob}
+                                variant={variant}
+                                baseInput={base.input}
+                                bootstrap={bootstrap}
+                                onPatchVariant={onPatchVariant}
+                                onRevertKeys={onRevertKeys}
+                              />
+                            ))}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -470,17 +396,36 @@ export function ScenarioEditor({
             />
           </div>
 
-          <HousingSection
-            base={base}
-            activeVariant={activeVariant}
-            activeColor={scenarioColor(activeIndex)}
-            bootstrap={bootstrap}
-            horizonMonths={horizonMonths}
-            onSetBasePatch={onSetBasePatch}
-            onPatchVariant={onPatchVariant}
-            onRevertKeys={onRevertKeys}
-            onOverrideHousing={onOverrideHousing}
-          />
+          {activeInput.propertyId != null && (
+            <div className="px-4 py-3" data-product-timeline="">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="augur-eyebrow">
+                  Timeline —{" "}
+                  <span className="font-semibold" style={{ color: scenarioColor(activeIndex) }}>
+                    {activeLabel}
+                  </span>
+                </div>
+                {timelineOverridden && (
+                  <button
+                    type="button"
+                    className="augur-link text-xs font-semibold"
+                    onClick={() => onRevertKeys(activeVariant.id, ["propertyLifecycleEvents"])}
+                  >
+                    Revert to base
+                  </button>
+                )}
+              </div>
+              <LifecycleEventsEditor
+                events={activeInput.propertyLifecycleEvents ?? []}
+                horizonMonths={horizonMonths}
+                onChange={(events) =>
+                  activeVariant == null
+                    ? onSetBaseField("propertyLifecycleEvents", events)
+                    : onPatchVariant(activeVariant.id, { propertyLifecycleEvents: events })
+                }
+              />
+            </div>
+          )}
 
           <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
         </>
