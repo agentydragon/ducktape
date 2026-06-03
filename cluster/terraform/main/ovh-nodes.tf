@@ -298,7 +298,10 @@ locals {
           image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
         }
         files = local.cp_auth_files
-        # Topology labels set explicitly — no CCM for OVH bare metal.
+        # Topology labels set explicitly. The installed talos-CCM only populates
+        # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
+        # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
+        # CCM transformation matches on `region=hil` set here.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -381,6 +384,54 @@ locals {
     ]
   }
 
+  # Kubelet --cloud-provider=external opt-in. The installed talos-CCM
+  # (k8s/talos-cloud-controller-manager, configured with `publicIPDiscovery: true` for
+  # `region=hil`) only acts on nodes whose kubelet was started with
+  # `--cloud-provider=external` — that's the flag that makes kubelet apply the
+  # `node.cloudprovider.kubernetes.io/uninitialized:NoSchedule` taint at first
+  # registration, which is the CCM's input signal. Without it, the CCM short-circuits
+  # ("is kubelet has args: --cloud-provider=external on the node?" in its log) and
+  # Node.spec.providerID + status.addresses[ExternalIP] stay empty — which is why
+  # tf/gitops/dns-records hard-codes IPs by hand. See cluster/docs/plan.md
+  # "Autopopulate tf/gitops/dns-records IP lists" for the motivating goal.
+  #
+  # Kept Kimsufi-only deliberately: Proxmox nodes share `common_machine_base.kubelet`
+  # but their `region=proxmox` doesn't match the CCM transformation's `region=hil`
+  # selector, so flipping the flag there would leave them stuck with the
+  # uninitialized taint and no CCM to clear it.
+  #
+  # MIGRATION NOTE: kubelet only adds the uninitialized taint at first node
+  # registration, not on a flag-flip kubelet restart. Existing nodes that were
+  # already registered before the flag landed need a one-time
+  #
+  #   kubectl taint nodes <node> node.cloudprovider.kubernetes.io/uninitialized=:NoSchedule
+  #
+  # after the kubelet restarts with the flag. The CCM then populates providerID +
+  # ExternalIP and removes the taint, and the node is in steady state.
+  # Fresh-bootstrapped nodes (post-flag install) get this for free.
+  kimsufi_cloud_provider_external_enabled_nodes = toset([
+    "kimsufi_cp0",
+    "kimsufi_worker0",
+    "kimsufi_worker1",
+    "ks_game_worker0",
+    "ks_game_worker1",
+  ])
+
+  kimsufi_cloud_provider_external_patches = {
+    for k in concat(keys(local.active_kimsufi_servers), keys(local.active_kimsufi_cp_servers)) :
+    k => contains(local.kimsufi_cloud_provider_external_enabled_nodes, k) ? [
+      yamlencode({
+        machine = {
+          kubelet = {
+            extraArgs = {
+              "cloud-provider" = "external"
+            }
+          }
+        }
+      }),
+    ] : []
+  }
+
   kimsufi_cp_machine_config_patches = {
     for k, v in local.kimsufi_cp_servers :
     k => yamlencode({
@@ -389,7 +440,10 @@ locals {
           image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
         }
         files = local.cp_auth_files
-        # Topology labels set explicitly — no CCM for OVH bare metal.
+        # Topology labels set explicitly. The installed talos-CCM only populates
+        # ExternalIP / providerID when `--cloud-provider=external` is in the kubelet
+        # extraArgs (see `kimsufi_cloud_provider_external_enabled_nodes` below); the
+        # CCM transformation matches on `region=hil` set here.
         nodeLabels = {
           "topology.kubernetes.io/region" = "hil"
           "topology.kubernetes.io/zone"   = v.zone
@@ -424,6 +478,7 @@ data "talos_machine_configuration" "kimsufi" {
     ],
     local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
+    local.kimsufi_cloud_provider_external_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }
@@ -543,6 +598,7 @@ data "talos_machine_configuration" "kimsufi_cp" {
     ],
     local.kimsufi_user_volume_config_patches[each.key],
     local.kimsufi_eno1_peer_route_patches[each.key],
+    local.kimsufi_cloud_provider_external_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }
