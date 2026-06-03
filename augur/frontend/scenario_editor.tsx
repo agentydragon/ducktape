@@ -30,9 +30,18 @@ const SCALAR_KNOBS = [
 
 // Compact, label-less control for a spreadsheet cell. The row + column headers already name the knob
 // and the scenario, so the input itself carries only an `aria-label`. `muted` dims a value the
-// variant inherits from Base (vs. one it overrides).
-function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }) {
-  const wrap = (control) => <div className={muted ? "opacity-60" : undefined}>{control}</div>;
+// variant inherits from Base (vs. one it overrides); `rightSection` tucks a revert affordance inside
+// the box (like a unit suffix), so an overridden cell carries its own ↩.
+function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, rightSection = undefined, onChange }) {
+  // Inherited (non-overridden) cells render greyed/disabled-looking (Mantine `filled` variant + a
+  // slight fade) so overrides stand out, while staying editable — typing creates an override.
+  const wrap = (control) => <div className={muted ? "opacity-75" : undefined}>{control}</div>;
+  // Spread onto the control: the revert button as a right section (overriding a select's native
+  // chevron, made clickable via pointer-events) + a filled/greyed look for inherited cells.
+  const controlProps = {
+    ...(rightSection ? { rightSection, rightSectionPointerEvents: "auto", rightSectionWidth: 30 } : {}),
+    ...(muted ? { variant: "filled" } : {}),
+  };
   if (knob.kind === "usd") {
     return wrap(
       <NumberField
@@ -41,6 +50,7 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
         min={knob.min}
         step={knob.step}
         prefix="$"
+        {...controlProps}
         onChange={onChange}
       />
     );
@@ -51,6 +61,7 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
         aria-label={ariaLabel}
         value={value}
         data={INDEX_DATA}
+        {...controlProps}
         onChange={(event) => onChange(event.target.value === "none" ? "none" : "inflation")}
       />
     );
@@ -61,6 +72,7 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
         aria-label={ariaLabel}
         value={value ? "inflation" : "none"}
         data={INDEX_DATA}
+        {...controlProps}
         onChange={(event) => onChange(event.target.value === "inflation")}
       />
     );
@@ -75,6 +87,7 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
           { value: "", label: properties.length === 0 ? "(no properties)" : "(no purchase)" },
           ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
         ]}
+        {...controlProps}
         onChange={(event) => onChange(event.target.value || null)}
       />
     );
@@ -88,8 +101,25 @@ function KnobCell({ knob, value, ariaLabel, bootstrap, muted = false, onChange }
         { value: "", label: "(default)" },
         ...bootstrap.locations.map((location) => ({ value: location.id, label: location.label })),
       ]}
+      {...controlProps}
       onChange={(event) => onChange(event.target.value || null)}
     />
+  );
+}
+
+// Revert-to-base affordance rendered inside a cell's input as a right section (suffix). Only shown on
+// overridden cells; clicking drops the override so the cell re-inherits Base.
+function RevertButton({ label, title = "Revert to base", onClick }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={title}
+      onClick={onClick}
+      className="augur-link text-sm leading-none"
+    >
+      ↩
+    </button>
   );
 }
 
@@ -104,28 +134,22 @@ function VariantKnobCell({ knob, variant, baseInput, bootstrap, onPatchVariant, 
   const value = overridden ? variant.overrides[knob.key] : baseInput[knob.key];
   return (
     <td className="px-3 py-1.5 align-top">
-      <div className="flex items-center gap-1">
-        <div className="min-w-0 flex-1">
-          <KnobCell
-            knob={knob}
-            value={value}
-            ariaLabel={`${knob.label} — ${variant.label}`}
-            bootstrap={bootstrap}
-            muted={!overridden}
-            onChange={(next) => onPatchVariant(variant.id, { [knob.key]: next })}
-          />
-        </div>
-        <button
-          type="button"
-          className={`text-xs leading-none ${overridden ? "augur-link" : "invisible"}`}
-          aria-label={`Revert ${knob.label} for ${variant.label} to base`}
-          title="Revert to base"
-          disabled={!overridden}
-          onClick={() => onRevertKeys(variant.id, [knob.key])}
-        >
-          ↩
-        </button>
-      </div>
+      <KnobCell
+        knob={knob}
+        value={value}
+        ariaLabel={`${knob.label} — ${variant.label}`}
+        bootstrap={bootstrap}
+        muted={!overridden}
+        rightSection={
+          overridden ? (
+            <RevertButton
+              label={`Revert ${knob.label} for ${variant.label} to base`}
+              onClick={() => onRevertKeys(variant.id, [knob.key])}
+            />
+          ) : undefined
+        }
+        onChange={(next) => onPatchVariant(variant.id, { [knob.key]: next })}
+      />
     </td>
   );
 }
@@ -139,28 +163,23 @@ function PropertyVariantCell({ variant, baseInput, bootstrap, onSetVariantProper
   const value = overridden ? variant.overrides.propertyId : baseInput.propertyId;
   return (
     <td className="px-3 py-1.5 align-top">
-      <div className="flex items-center gap-1">
-        <div className="min-w-0 flex-1">
-          <KnobCell
-            knob={{ kind: "property" }}
-            value={value}
-            ariaLabel={`Property to buy — ${variant.label}`}
-            bootstrap={bootstrap}
-            muted={!overridden}
-            onChange={(next) => onSetVariantProperty(variant.id, next)}
-          />
-        </div>
-        <button
-          type="button"
-          className={`text-xs leading-none ${overridden ? "augur-link" : "invisible"}`}
-          aria-label={`Revert housing for ${variant.label} to base`}
-          title="Revert housing to base"
-          disabled={!overridden}
-          onClick={() => onRevertKeys(variant.id, HOUSING_KEYS)}
-        >
-          ↩
-        </button>
-      </div>
+      <KnobCell
+        knob={{ kind: "property" }}
+        value={value}
+        ariaLabel={`Property to buy — ${variant.label}`}
+        bootstrap={bootstrap}
+        muted={!overridden}
+        rightSection={
+          overridden ? (
+            <RevertButton
+              label={`Revert housing for ${variant.label} to base`}
+              title="Revert housing to base"
+              onClick={() => onRevertKeys(variant.id, HOUSING_KEYS)}
+            />
+          ) : undefined
+        }
+        onChange={(next) => onSetVariantProperty(variant.id, next)}
+      />
     </td>
   );
 }
