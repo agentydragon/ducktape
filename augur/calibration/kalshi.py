@@ -78,7 +78,6 @@ class KalshiClient:
         market = with_retry(
             lambda: self._fetch(market_id),
             what=f"kalshi market {market_id!r}",
-            retry_on=httpx.HTTPError,
             is_transient=httpx_is_transient,
             sleep=self._sleep,
         )

@@ -31,9 +31,7 @@ def test_retries_transient_then_succeeds() -> None:
             raise _http_status_error(503)
         return "ok"
 
-    result = with_retry(
-        fetch, what="thing", retry_on=httpx.HTTPError, is_transient=httpx_is_transient, sleep=slept.append
-    )
+    result = with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=slept.append)
     assert result == "ok"
     assert attempts["n"] == 3
     # Exponential backoff between the two failed attempts: 0.5s, then 1.0s.
@@ -48,7 +46,7 @@ def test_gives_up_after_max_attempts_and_reraises_last() -> None:
         raise _http_status_error(503)
 
     with pytest.raises(httpx.HTTPStatusError):
-        with_retry(fetch, what="thing", retry_on=httpx.HTTPError, is_transient=httpx_is_transient, sleep=lambda _: None)
+        with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=lambda _: None)
     assert attempts["n"] == 3
 
 
@@ -60,7 +58,7 @@ def test_non_transient_status_is_not_retried() -> None:
         raise _http_status_error(404)
 
     with pytest.raises(httpx.HTTPStatusError):
-        with_retry(fetch, what="thing", retry_on=httpx.HTTPError, is_transient=httpx_is_transient, sleep=lambda _: None)
+        with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=lambda _: None)
     # A 404 won't fix itself: fail immediately without burning the retry budget.
     assert attempts["n"] == 1
 

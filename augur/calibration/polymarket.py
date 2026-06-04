@@ -20,7 +20,6 @@ from polymarket import PublicClient
 # name; these are the SDK's wait-timeout / transport failures, distinct from
 # `builtins.TimeoutError` and `httpx.TransportError`.
 from polymarket.errors import (
-    PolymarketError,
     RateLimitError,
     RequestRejectedError,
     TimeoutError as PolymarketTimeoutError,
@@ -80,7 +79,6 @@ class PolymarketClient:
         market = with_retry(
             lambda: self._fetch(market_id),
             what=f"polymarket market {market_id!r}",
-            retry_on=PolymarketError,
             is_transient=_polymarket_is_transient,
             sleep=self._sleep,
         )

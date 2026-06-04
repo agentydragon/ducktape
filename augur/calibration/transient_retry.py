@@ -22,6 +22,7 @@ import time
 from collections.abc import Callable
 
 import httpx
+from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -44,32 +45,32 @@ def with_retry[T](
     fetch: Callable[[], T],
     *,
     what: str,
-    retry_on: type[BaseException] | tuple[type[BaseException], ...],
     is_transient: Callable[[BaseException], bool],
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     backoff_base_seconds: float = DEFAULT_BACKOFF_BASE_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> T:
-    """Call ``fetch`` up to ``max_attempts`` times, retrying with exponential backoff only
-    those exceptions in ``retry_on`` for which ``is_transient`` returns True. Any other
-    exception (and the final transient one) propagates to the caller.
-
-    ``what`` is a short human label for the resource being fetched, used in the retry log.
+    """Call ``fetch`` via tenacity, retrying with exponential backoff only failures for
+    which ``is_transient`` returns True; any other exception (and the final transient one,
+    once the attempt budget is spent) propagates. ``what`` labels the resource in the log.
     """
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return fetch()
-        except retry_on as exc:
-            if attempt >= max_attempts or not is_transient(exc):
-                raise
-            backoff = backoff_base_seconds * 2 ** (attempt - 1)
-            logger.warning(
-                "transient error fetching %s (attempt %d/%d): %r; retrying in %.1fs",
-                what,
-                attempt,
-                max_attempts,
-                exc,
-                backoff,
-            )
-            sleep(backoff)
-    raise AssertionError("unreachable: retry loop exited without return or raise")
+
+    def _log_retry(retry_state: RetryCallState) -> None:
+        exc = retry_state.outcome.exception() if retry_state.outcome is not None else None
+        logger.warning(
+            "transient error fetching %s (attempt %d/%d): %r; retrying",
+            what,
+            retry_state.attempt_number,
+            max_attempts,
+            exc,
+        )
+
+    retrying = Retrying(
+        retry=retry_if_exception(is_transient),
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=backoff_base_seconds, exp_base=2),
+        sleep=sleep,
+        before_sleep=_log_retry,
+        reraise=True,
+    )
+    return retrying(fetch)

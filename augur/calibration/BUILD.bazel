@@ -41,6 +41,7 @@ py_library(
     srcs = ["transient_retry.py"],
     deps = [
         "@pypi//httpx",
+        "@pypi//tenacity",
     ],
 )
 
