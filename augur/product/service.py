@@ -27,8 +27,8 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.product.decode import (
-    failed_month_index_for_rollout,
-    monthly_metric_arrays,
+    failed_month_index_batch,
+    monthly_metric_arrays_batch,
     rollout_events_from,
     terminal_metrics_from_arrays,
 )
@@ -203,15 +203,28 @@ class ProductService:
             for seed, entry in fresh.items():
                 cached_by_seed[seed] = entry
                 self._cache_put(cache_key, seed, entry)
+        # Reduce each distinct simulated batch once over its whole (…, R) axis, then column-slice
+        # per seed — rather than calling the reduction once per rollout. Seeds requested together
+        # usually share one batch, so the common fan request is a single vectorized reduction pass.
+        batch_metrics: dict[int, dict[str, np.ndarray]] = {}
+        batch_failed: dict[int, np.ndarray] = {}
         decoded: list[_DecodedRollout] = []
         for seed in seeds:
             cached = cached_by_seed[seed]
-            full_arrays = monthly_metric_arrays(
-                cached.batch, primary_agent_id=self._primary_agent_id, rollout_index=cached.column_index
-            )
+            batch_key = id(cached.batch)
+            if batch_key not in batch_metrics:
+                batch_metrics[batch_key] = monthly_metric_arrays_batch(
+                    cached.batch, primary_agent_id=self._primary_agent_id
+                )
+                batch_failed[batch_key] = failed_month_index_batch(cached.batch)
             # `month_index` runs 0..H_max; keep months 0..horizon (i.e. the first horizon+1 snapshots).
-            arrays = {name: array[: horizon_months + 1] for name, array in full_arrays.items()}
-            full_failed_month = failed_month_index_for_rollout(cached.batch, rollout_index=cached.column_index)
+            # Metric columns are (H+1, R); `month_index` has no rollout axis.
+            arrays = {
+                name: (values if name == "month_index" else values[:, cached.column_index])[: horizon_months + 1]
+                for name, values in batch_metrics[batch_key].items()
+            }
+            failed_month = int(batch_failed[batch_key][cached.column_index])
+            full_failed_month = None if failed_month < 0 else failed_month
             # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
             in_window = full_failed_month is not None and full_failed_month < horizon_months
             terminal = terminal_metrics_from_arrays(arrays, failed_month_index=full_failed_month if in_window else None)

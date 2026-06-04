@@ -329,7 +329,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 def test_metric_fan_decodes_each_rollout_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = decode.monthly_metric_arrays
+    original = decode.monthly_metric_arrays_batch
     calls = 0
 
     def counted(*args, **kwargs):
@@ -337,13 +337,14 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "monthly_metric_arrays", counted)
+    monkeypatch.setattr(service, "monthly_metric_arrays_batch", counted)
 
     product.metric_fan(
         MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))
     )
 
-    assert calls == 4
+    # All four seeds share one simulated batch, so the batch is reduced exactly once (not per rollout).
+    assert calls == 1
 
 
 def test_metric_fan_does_not_materialize_rollout_events(
