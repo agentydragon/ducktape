@@ -89,6 +89,94 @@ class TaxLiabilityState:
     amount: jnp.ndarray
 
 
+def scan_supported(plan: CompiledSimulation) -> bool:
+    """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
+
+    The scan fold is being grown phase-by-phase; it currently handles only scheduled/recurring
+    transfers, so route a scenario to it iff it uses no other phase. Anything else falls back to the
+    eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
+    never correctness (the dual-backend suite gates both routes)."""
+    return (
+        plan.obligations.cause.shape[1] == 0
+        and plan.sales.month.shape[0] == 0
+        and plan.liquidity_policies.agent.shape[0] == 0
+        and plan.pe_issuers.codes.shape[0] == 0
+        and plan.harvest_policies.gain_profile_index.shape[0] == 0
+        and plan.tax.profile_agent.shape[0] == 0
+        and bool((plan.properties.month < 0).all())  # only the max(1,·) phantom property row
+        and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
+        and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
+    )
+
+
+def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
+    """JITed `lax.scan` engine: the whole month loop compiles into a single XLA program (one
+    dispatch for all months, not one-per-month), filling the NumPy buffers in a single post-scan
+    transfer. Covers the phases in `scan_supported`; the carry is the per-rollout state pytree and
+    each step gathers the month's plan rows by the traced scan index and runs the branch-free cores.
+
+    First slice: scheduled/recurring transfers. Grown phase-by-phase (obligations, sales, …)."""
+    p = plan.slot_plan
+    r = p.rollout_count
+    horizon = plan.horizon_months
+    cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
+    ordinary0 = jnp.zeros((p.tax_profile_count, r))
+    external_values = jnp.asarray(plan.external_values)
+    t = plan.transfers
+    # Month-indexed transfer plan arrays, device-resident; the scan step gathers row `month`.
+    cause, kind, fixed, base, base_month = (
+        jnp.asarray(t.cause),
+        jnp.asarray(t.amount_kind),
+        jnp.asarray(t.amount_fixed),
+        jnp.asarray(t.amount_base),
+        jnp.asarray(t.amount_base_month),
+    )
+    series, period, from_slot, to_slot, income_profile, deduction_profile = (
+        jnp.asarray(t.amount_series),
+        jnp.asarray(t.amount_period),
+        jnp.asarray(t.from_slot),
+        jnp.asarray(t.to_slot),
+        jnp.asarray(t.income_profile),
+        jnp.asarray(t.deduction_profile),
+    )
+    active = jnp.ones(r, dtype=bool)  # transfers never fail a rollout
+
+    def step(
+        carry: tuple[jnp.ndarray, jnp.ndarray], month: jnp.ndarray
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
+        cash, ordinary = carry
+        cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
+            cause[month],
+            kind[month],
+            fixed[month],
+            base[month],
+            series[month],
+            base_month[month],
+            period[month],
+            from_slot[month],
+            to_slot[month],
+            income_profile[month],
+            deduction_profile[month],
+            cash,
+            ordinary,
+            active,
+            external_values,
+            month,
+        )
+        return (cash, ordinary), (cash, ordinary, transfer_active, transfer_amount)
+
+    (_, _), ys = jax.lax.scan(step, (cash0, ordinary0), jnp.arange(horizon, dtype=jnp.int32))
+    cash_hist, ordinary_hist, transfer_active, transfer_amount = ys  # each leads with the month axis
+
+    # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
+    buffers.state.cash_state[0] = np.asarray(cash0)
+    buffers.state.cash_state[1:] = np.asarray(cash_hist)
+    buffers.state.lot_state[0] = np.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
+    buffers.state.ordinary_state[1:] = np.asarray(ordinary_hist)
+    buffers.transfers.active[:] = np.asarray(transfer_active)
+    buffers.transfers.amount[:] = np.asarray(transfer_amount)
+
+
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     p = plan.slot_plan
     r = p.rollout_count
