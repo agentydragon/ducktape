@@ -88,9 +88,7 @@ def monthly_metric_arrays(
         "home_equity_usd": home_equity_usd,
         "liquid_net_worth_usd": liquid_net_worth_usd,
         "net_worth_usd": liquid_net_worth_usd + home_equity_usd + private_equity_value_usd,
-        "shortfall_usd": _shortfall_by_month(
-            dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
-        ),
+        "shortfall_usd": _shortfall_by_month(dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index),
     }
 
 
@@ -170,9 +168,7 @@ def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rol
     return cast(np.ndarray, dense.buffers.state.cash_state[:, cash_slots, rollout_index].sum(axis=1))
 
 
-def _holding_value_by_month(
-    dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int
-) -> np.ndarray:
+def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
     """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
 
     Excludes private-equity lots: PE is illiquid (saleable only at tender events) so it
@@ -481,7 +477,9 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
     )
 
 
-def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
+def _property_value_by_month(
+    dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int
+) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
@@ -509,7 +507,9 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
     return values
 
 
-def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
+def _mortgage_balance_by_month(
+    dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int
+) -> np.ndarray:
     plan = dense.plan
     balance = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     for lia in range(plan.liabilities.codes.shape[0]):

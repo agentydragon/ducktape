@@ -152,9 +152,7 @@ class ProductService:
         events = tuple(
             event
             for event in rollout_events_from(
-                single.decode(),
-                primary_agent_id=self._primary_agent_id,
-                asset_label_by_id=self._asset_label_by_id,
+                single.decode(), primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
             )
             if event.month_index < horizon_months
         )

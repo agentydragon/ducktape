@@ -75,14 +75,22 @@ async def _download_one(client: TelegramClient, msg: Message, dest: Path, sem: a
         await client.download_media(msg, file=dest)
 
 
-async def _export(takeout: TelegramClient, client: TelegramClient, entity: Entity, out_dir: Path) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    media_dir = out_dir / "media"
-    media_dir.mkdir(exist_ok=True)
+def _prepare_export_dir(out_dir: Path, entity: Entity) -> Path:
+    """Create the export + media dirs and write entity.json; return the media dir.
 
+    Synchronous on purpose: run via `asyncio.to_thread` from the async exporter so the blocking
+    filesystem setup doesn't stall the event loop (ASYNC240).
+    """
+    media_dir = out_dir / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "entity.json").write_text(
         json.dumps(entity.to_dict(), default=_json_default, indent=2, ensure_ascii=False)
     )
+    return media_dir
+
+
+async def _export(takeout: TelegramClient, client: TelegramClient, entity: Entity, out_dir: Path) -> None:
+    media_dir = await asyncio.to_thread(_prepare_export_dir, out_dir, entity)
 
     desc = _entity_slug(entity)
     total = (await takeout.get_messages(entity, limit=0)).total
@@ -104,7 +112,10 @@ async def _export(takeout: TelegramClient, client: TelegramClient, entity: Entit
                 await task
                 bar.update(1)
 
-    (out_dir / "messages.json").write_text(json.dumps(messages, default=_json_default, indent=2, ensure_ascii=False))
+    await asyncio.to_thread(
+        (out_dir / "messages.json").write_text,
+        json.dumps(messages, default=_json_default, indent=2, ensure_ascii=False),
+    )
 
 
 async def _abort_dangling_takeout(client: TelegramClient) -> None:
