@@ -68,17 +68,28 @@ async def _proxy_to_upstream(request: Request) -> Response:
         body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
         try:
+            # 600s: agent image layers are large and can take minutes to stream
+            # through to the upstream; the old 30s read timeout surfaced as
+            # `502 Upstream error` on big blobs.
             upstream_response = await client.request(
-                method=request.method, url=upstream_url, headers=headers, content=body, timeout=30.0
+                method=request.method, url=upstream_url, headers=headers, content=body, timeout=600.0
             )
         except httpx.RequestError as e:
             logger.exception("Upstream request failed")
             raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
+        # Rewrite Location back to the client namespace. The upstream returns
+        # blob-upload session URLs under /v2/{project}/<repo>/...; passed through
+        # verbatim, the client would push blobs to the project-prefixed path and
+        # the manifest couldn't find them (BLOB_UNKNOWN). dict(httpx.Headers)
+        # lowercases keys.
+        response_headers = dict(upstream_response.headers)
+        for header_name in ("location", "content-location"):
+            if header_name in response_headers:
+                response_headers[header_name] = upstream.rewrite_location(response_headers[header_name])
+
         return Response(
-            content=upstream_response.content,
-            status_code=upstream_response.status_code,
-            headers=dict(upstream_response.headers),
+            content=upstream_response.content, status_code=upstream_response.status_code, headers=response_headers
         )
 
 
