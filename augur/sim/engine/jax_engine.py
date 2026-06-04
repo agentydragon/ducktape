@@ -479,7 +479,8 @@ def _apply_scheduled_transfers(
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Functional port of `phases._apply_scheduled_transfers` (branch-free, jit-compiled core)."""
-    return _transfers_jit(
+    # Annotated local: `jax.jit` types its wrapped callable as returning Any (mypy no-any-return).
+    out: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray] = _transfers_jit(
         jnp.asarray(transfers.cause[month]),
         jnp.asarray(transfers.amount_kind[month]),
         jnp.asarray(transfers.amount_fixed[month]),
@@ -497,6 +498,7 @@ def _apply_scheduled_transfers(
         external_values,
         jnp.asarray(month),
     )
+    return out
 
 
 def _apply_scheduled_asset_sales(
@@ -683,6 +685,24 @@ def _apply_obligation_accruals(
     return accrual_active, accrual_due
 
 
+@jax.jit
+def _obligation_group_funded_jit(
+    group_matrix: jnp.ndarray,
+    from_slot: jnp.ndarray,
+    cash: jnp.ndarray,
+    accrual_active: jnp.ndarray,
+    accrual_due: jnp.ndarray,
+) -> jnp.ndarray:
+    """Branch-free funding check: each obligation group (same agent + from-account) is funded for a
+    rollout iff that account's cash covers the group's total due. The per-slot group is encoded as
+    a static `(slots, slots)` membership matrix, so the group sums are one matmul."""
+    due_masked = jnp.where(accrual_active, accrual_due, 0.0)  # (slots, rollouts)
+    group_due = group_matrix.astype(due_masked.dtype) @ due_masked  # (slots, rollouts)
+    cash_padded = jnp.concatenate([cash, jnp.zeros((1, cash.shape[1]), cash.dtype)], axis=0)
+    available = cash_padded[jnp.where(from_slot < 0, cash.shape[0], from_slot)]  # (slots, rollouts), -1 -> 0
+    return accrual_active & (available >= group_due - 1e-9)
+
+
 def _obligation_group_funded(
     obligations: ObligationCompileOutput,
     cash: jnp.ndarray,
@@ -691,17 +711,15 @@ def _obligation_group_funded(
     month: int,
     rollout_count: int,
 ) -> jnp.ndarray:
-    """Port of `phases._obligation_group_funded`: an account funds all its obligations or none."""
-    slot_count = accrual_active.shape[0]
+    """Port of `phases._obligation_group_funded` (branch-free, jit-compiled)."""
     agent_row = obligations.agent[month]
     from_row = obligations.from_slot[month]
-    funded = jnp.zeros((slot_count, rollout_count), dtype=bool)
-    for slot in range(slot_count):
-        from_slot = int(from_row[slot])
-        group = jnp.asarray((agent_row == int(agent_row[slot])) & (from_row == from_slot))
-        group_due = jnp.where(group[:, None] & accrual_active, accrual_due, 0.0).sum(axis=0)
-        available = cash[from_slot] if from_slot >= 0 else jnp.zeros(rollout_count)
-        funded = funded.at[slot].set(accrual_active[slot] & (available >= group_due - 1e-9))
+    # Group membership is static plan data: slots i, j share a group iff same agent and from-account.
+    group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
+    # Annotated local: `jax.jit` types its wrapped callable as returning Any (mypy no-any-return).
+    funded: jnp.ndarray = _obligation_group_funded_jit(
+        jnp.asarray(group_matrix), jnp.asarray(from_row), cash, accrual_active, accrual_due
+    )
     return funded
 
 
