@@ -16,16 +16,24 @@ Ported so far (in `_run_month_step` order):
 - property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
 - liquidity-policy sales;
-- obligation accruals + settlement with failure tracking and `_zero_failed_state`, for the
-  CONFIGURED_OBLIGATION, PROPERTY_TAX, and MORTGAGE_PAYMENT source kinds (incl. the mortgage
-  interest/principal split into liability state);
+- obligation accruals + settlement with failure tracking and `_zero_failed_state`, for every
+  source kind (CONFIGURED_OBLIGATION, PROPERTY_TAX with the SALT/Schedule-E split, MORTGAGE_PAYMENT
+  with the interest/principal split, and ESTIMATED_TAX / ESTIMATED_TAX_Q4 / TAX_TRUE_UP);
 - PE tenders (LNW-floor tender / public-market / forced-sale / forced-recovery sales + opportunity
-  trace).
+  trace);
+- the December year-end tax machinery: Schedule-E rental-interest/depreciation deductions,
+  §1211/§1212 capital-loss netting, the two-pass SALT walk over MID + LTCG brackets + the §1250
+  worksheet, tax-liability accrual, and the true-up settlement (the latter in float64, since a
+  ~$50k liability must settle to exactly zero — float32 leaves a ~$0.004 residual).
 
-Not yet ported (no-op): property sale, depreciation, owner-occupied months, lifecycle, primary
-residence, the estimated-tax obligation source kinds, and the year-end tax machinery (accrual,
-SALT, MID, LTCG brackets, settlements) — so the property-tax/mortgage SALT/Schedule-E and MID
-deduction splits are also deferred until that lands.
+Not yet ported (no-op): property sale, §168 depreciation accrual, owner-occupied-month tracking,
+lifecycle events, and primary-residence assignment — so depreciation_ytd / recapture stay zero,
+which is correct for non-rental, non-sale scenarios.
+
+Float32 note: tax amounts, cash flows, and settlements match the float64 reference to within a few
+parts in 1e8, but a handful of existing tests assert breakdown fields (income, deductions) to
+`rel=1e-9` / `abs=1e-6`, which float32 cannot meet on $10k–$200k values; those JAX variants fail on
+precision alone, not logic.
 """
 
 from __future__ import annotations
@@ -38,7 +46,7 @@ import numpy as np
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
-from augur.sim.compiler.helpers import AMOUNT_FIXED
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
 from augur.sim.enums import (
@@ -47,6 +55,7 @@ from augur.sim.enums import (
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
 )
+from augur.sim.tax import net_capital_gains_with_carryforward
 from augur.sim.tensor_fifo import lot_order_for_pool
 
 
@@ -66,6 +75,14 @@ class LiabilityState:
     rental_interest_ytd: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class TaxLiabilityState:
+    """Per-(tax-liability-slot, rollout) outstanding tax owed (`[tax_liability_count, R]`)."""
+
+    active: jnp.ndarray
+    amount: jnp.ndarray
+
+
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     p = plan.slot_plan
     r = p.rollout_count
@@ -75,6 +92,15 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     ordinary_ytd = jnp.zeros((p.tax_profile_count, r))
     capital_gain_active = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     capital_gain_ytd = jnp.zeros((p.capital_gain_agent_count, 2, r))
+    capital_loss_carryforward = jnp.zeros((p.capital_gain_agent_count, r))
+    # Tax YTD buckets the year-end pass reads; fed by property-tax settlement, depreciation, and
+    # property sale (the latter two not yet ported, so these stay zero for non-rental scenarios).
+    property_tax_ytd = jnp.zeros((p.tax_profile_count, r))
+    property_depreciation_ytd = jnp.zeros((p.property_count, r))
+    recapture_section_1250_ytd = jnp.zeros((p.tax_profile_count, r))
+    tax_liability = TaxLiabilityState(
+        active=jnp.zeros((p.tax_liability_count, r), dtype=bool), amount=jnp.zeros((p.tax_liability_count, r))
+    )
     property_active = jnp.zeros((p.property_count, r), dtype=bool)
     property_basis = jnp.zeros((p.property_count, r))
     property_ownership = jnp.zeros((p.property_count, r))
@@ -138,7 +164,7 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
 
         ob_active, ob_due = _apply_obligation_accruals(
-            plan, property_active, liabilities, active, external_values, month, r
+            plan, property_active, liabilities, tax_liability, active, external_values, month, r
         )
         cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_liquidity_policy_sales(
             plan,
@@ -155,21 +181,34 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             r,
         )
         funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, r)
-        cash, ordinary_ytd, liabilities, failed, failed_month, ob_paid, ob_shortfall, ob_failure = (
-            _apply_obligation_settlement(
-                plan,
-                buffers,
-                cash,
-                ordinary_ytd,
-                liabilities,
-                property_rented_fraction,
-                failed,
-                failed_month,
-                ob_active,
-                ob_due,
-                funded,
-                month,
-            )
+        (
+            cash,
+            ordinary_ytd,
+            liabilities,
+            tax_liability,
+            property_tax_ytd,
+            failed,
+            failed_month,
+            ob_paid,
+            ob_shortfall,
+            ob_failure,
+        ) = _apply_obligation_settlement(
+            plan,
+            buffers,
+            cash,
+            ordinary_ytd,
+            liabilities,
+            tax_liability,
+            property_rented_fraction,
+            property_tax_ytd,
+            failed,
+            failed_month,
+            ob_active,
+            ob_due,
+            funded,
+            month,
+            p.tax_profile_count,
+            r,
         )
         buffers.obligations.active[month] = np.asarray(ob_active)
         buffers.obligations.due[month] = np.asarray(ob_due)
@@ -187,6 +226,34 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             capital_gain_ytd,
             ~failed,
             external_values,
+            month,
+            r,
+        )
+
+        # Year-end (December) tax accrual: creates this year's tax liabilities, which next year's
+        # estimated-tax / true-up obligations read and settle.
+        (
+            ordinary_ytd,
+            capital_gain_ytd,
+            capital_loss_carryforward,
+            liabilities,
+            property_tax_ytd,
+            recapture_section_1250_ytd,
+            property_depreciation_ytd,
+            tax_liability,
+        ) = _apply_tax_accruals(
+            plan,
+            buffers,
+            ordinary_ytd,
+            capital_gain_active,
+            capital_gain_ytd,
+            capital_loss_carryforward,
+            liabilities,
+            property_tax_ytd,
+            property_depreciation_ytd,
+            recapture_section_1250_ytd,
+            tax_liability,
+            ~failed,
             month,
             r,
         )
@@ -214,6 +281,9 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             interest_ytd=liabilities.interest_ytd * keep,
             principal_ytd=liabilities.principal_ytd * keep,
         )
+        # `_zero_failed_state` also zeros capital-loss carryforward and outstanding tax liabilities.
+        capital_loss_carryforward = capital_loss_carryforward * keep
+        tax_liability = replace(tax_liability, amount=tax_liability.amount * keep)
 
         buffers.state.cash_state[month + 1] = np.asarray(cash)
         buffers.state.lot_state[month + 1] = np.asarray(lot_remaining)
@@ -415,12 +485,13 @@ def _apply_obligation_accruals(
     plan: CompiledSimulation,
     property_active: jnp.ndarray,
     liabilities: LiabilityState,
+    tax_liability: TaxLiabilityState,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_accruals` (CONFIGURED + PROPERTY_TAX + MORTGAGE_PAYMENT)."""
+    """Functional port of `phases._apply_obligation_accruals` (all source kinds incl. estimated tax)."""
     obligations = plan.obligations
     slot_count = obligations.cause.shape[1]
     accrual_active = jnp.zeros((slot_count, rollout_count), dtype=bool)
@@ -461,8 +532,25 @@ def _apply_obligation_accruals(
             interest = liabilities.principal[liab] * float(plan.liabilities.annual_rate[liab]) / 12.0
             amount = jnp.minimum(liabilities.monthly_payment[liab], liabilities.principal[liab] + interest)
             slot_active = active & liabilities.active[liab] & (liabilities.principal[liab] > 0.0) & (amount > 0.0)
+        elif source_kind == ObligationSource.ESTIMATED_TAX:
+            quarterly = float(plan.tax.profile_prior_year_tax[int(obligations.source_index[month, slot])]) / 4.0
+            amount = jnp.full(rollout_count, quarterly)
+            slot_active = active & (amount > 0.0)
+        elif source_kind in (ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP):
+            profile = int(obligations.source_index[month, slot])
+            tax_year_end = (month // 12 - 1) * 12 + 11
+            actual = _actual_tax_for_profile_year(
+                plan, tax_liability, profile_index=profile, year_end_month=tax_year_end, rollout_count=rollout_count
+            )
+            prior_year = float(plan.tax.profile_prior_year_tax[profile])
+            safe_harbor = jnp.minimum(prior_year, actual)
+            if source_kind == ObligationSource.ESTIMATED_TAX_Q4:
+                amount = jnp.maximum(safe_harbor - prior_year * 0.75, 0.0)
+            else:
+                amount = jnp.maximum(actual - safe_harbor, 0.0)
+            slot_active = active & (amount > 0.0)
         else:
-            continue  # estimated-tax source kinds not yet ported
+            continue
         accrual_active = accrual_active.at[slot].set(slot_active)
         accrual_due = accrual_due.at[slot].set(jnp.where(slot_active, amount, 0.0))
     return accrual_active, accrual_due
@@ -490,21 +578,39 @@ def _obligation_group_funded(
     return funded
 
 
+_ESTIMATED_TAX_KINDS = (ObligationSource.ESTIMATED_TAX, ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP)
+
+
 def _apply_obligation_settlement(
     plan: CompiledSimulation,
     buffers: SimulationBuffers,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
     liabilities: LiabilityState,
+    tax_liability: TaxLiabilityState,
     property_rented_fraction: jnp.ndarray,
+    property_tax_ytd: jnp.ndarray,
     failed: jnp.ndarray,
     failed_month: jnp.ndarray,
     accrual_active: jnp.ndarray,
     accrual_due: jnp.ndarray,
     funded: jnp.ndarray,
     month: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, LiabilityState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_settlement` (CONFIGURED + PROPERTY_TAX + MORTGAGE_PAYMENT).
+    tax_profile_count: int,
+    rollout_count: int,
+) -> tuple[
+    jnp.ndarray,
+    jnp.ndarray,
+    LiabilityState,
+    TaxLiabilityState,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+]:
+    """Functional port of `phases._apply_obligation_settlement` (all source kinds + tax settlements).
 
     The deduction path uses each obligation's compile-time `deductible_fraction`; the property-tax
     SALT/Schedule-E split (runtime `property_rented_fraction`) lands with the tax-machinery port.
@@ -514,16 +620,31 @@ def _apply_obligation_settlement(
     paid_buffer = jnp.zeros_like(accrual_due)
     shortfall_buffer = jnp.zeros_like(accrual_due)
     failure_active = jnp.zeros_like(accrual_active)
+    # Tax-settlement candidates are float64 numpy (see `_actual_tax_for_profile_year`).
+    candidate = np.zeros((tax_profile_count, rollout_count), dtype=np.float64)
+    candidate_year_end = np.full((tax_profile_count, rollout_count), NO_CODE, dtype=np.int64)
+    payment_failed = np.zeros((tax_profile_count, rollout_count), dtype=bool)
     for slot in range(slot_count):
         source_kind = int(obligations.source_kind[month, slot])
         if source_kind not in (
             ObligationSource.CONFIGURED_OBLIGATION,
             ObligationSource.PROPERTY_TAX,
             ObligationSource.MORTGAGE_PAYMENT,
+            *_ESTIMATED_TAX_KINDS,
         ):
             continue
+        active_slot = accrual_active[slot]
+        if source_kind == ObligationSource.TAX_TRUE_UP:
+            profile = int(obligations.source_index[month, slot])
+            tax_year_end = (month // 12 - 1) * 12 + 11
+            actual = _actual_tax_for_profile_year(
+                plan, tax_liability, profile_index=profile, year_end_month=tax_year_end, rollout_count=rollout_count
+            )
+            active_slot_np = np.asarray(active_slot)
+            candidate[profile] = np.where(active_slot_np, actual, candidate[profile])
+            candidate_year_end[profile] = np.where(active_slot_np, tax_year_end, candidate_year_end[profile])
         amount = accrual_due[slot]
-        paid = accrual_active[slot] & funded[slot]
+        paid = active_slot & funded[slot]
         paid_buffer = paid_buffer.at[slot].set(jnp.where(paid, amount, 0.0))
         from_slot = int(obligations.from_slot[month, slot])
         if from_slot >= 0:
@@ -542,19 +663,57 @@ def _apply_obligation_settlement(
                 paid=paid,
                 amount=amount,
             )
-        # CONFIGURED obligations carry a compile-time deductible_fraction (no property tie).
+        # Property-tax payments accumulate (owner-use share) into the payer's YTD bucket for the
+        # year-end federal SALT pass; the rented share routes to Schedule E via deduction_profile.
+        property_tax_profile = int(obligations.property_tax_profile[month, slot])
+        property_slot = int(obligations.property_slot[month, slot])
+        if property_tax_profile >= 0:
+            owner_share = 1.0 - property_rented_fraction[property_slot]
+            property_tax_ytd = property_tax_ytd.at[property_tax_profile].add(jnp.where(paid, amount * owner_share, 0.0))
+        # Schedule E / itemized deduction: property-tax obligations use the runtime rented fraction;
+        # other deductible obligations use the compile-time deductible_fraction.
         deduction_profile = int(obligations.deduction_profile[month, slot])
         if deduction_profile >= 0:
-            deductible_fraction = float(obligations.deductible_fraction[month, slot])
-            ordinary_ytd = ordinary_ytd.at[deduction_profile].add(jnp.where(paid, -amount * deductible_fraction, 0.0))
+            if property_slot >= 0:
+                rented = property_rented_fraction[property_slot]
+                ordinary_ytd = ordinary_ytd.at[deduction_profile].add(jnp.where(paid, -amount * rented, 0.0))
+            else:
+                deductible_fraction = float(obligations.deductible_fraction[month, slot])
+                ordinary_ytd = ordinary_ytd.at[deduction_profile].add(
+                    jnp.where(paid, -amount * deductible_fraction, 0.0)
+                )
 
-        slot_failed = accrual_active[slot] & ~funded[slot]
+        slot_failed = active_slot & ~funded[slot]
         shortfall_buffer = shortfall_buffer.at[slot].set(jnp.where(slot_failed, amount, 0.0))
         failure_active = failure_active.at[slot].set(slot_failed)
         first_failure = slot_failed & (failed_month < 0)
         failed_month = jnp.where(first_failure, month, failed_month)
         failed = failed | slot_failed
-    return cash, ordinary_ytd, liabilities, failed, failed_month, paid_buffer, shortfall_buffer, failure_active
+        if source_kind in _ESTIMATED_TAX_KINDS:
+            profile = int(obligations.source_index[month, slot])
+            payment_failed[profile] = payment_failed[profile] | np.asarray(slot_failed)
+
+    tax_liability = _apply_tax_settlements(
+        plan,
+        buffers,
+        tax_liability,
+        month=month,
+        candidate=candidate,
+        candidate_year_end=candidate_year_end,
+        payment_failed=payment_failed,
+    )
+    return (
+        cash,
+        ordinary_ytd,
+        liabilities,
+        tax_liability,
+        property_tax_ytd,
+        failed,
+        failed_month,
+        paid_buffer,
+        shortfall_buffer,
+        failure_active,
+    )
 
 
 def _apply_mortgage_payment(
@@ -1155,3 +1314,433 @@ def _apply_pe_tenders(
             oversell_label="PE public market sale",
         )
     return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+
+
+def _apply_brackets(amount: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> jnp.ndarray:
+    """Port of `phases._apply_brackets`: progressive bracket tax on `amount`."""
+    if count <= 0:
+        return jnp.zeros_like(amount)
+    upper = jnp.asarray(upper[:count])
+    rate = jnp.asarray(rate[:count])
+    previous_upper = jnp.concatenate([jnp.zeros(1), upper[:-1]])
+    slice_top = jnp.minimum(amount[:, None], upper[None, :])
+    in_bracket = jnp.maximum(slice_top - previous_upper[None, :], 0.0)
+    return (in_bracket * rate[None, :]).sum(axis=1)
+
+
+def _apply_ltcg_brackets(
+    ltcg_amount: jnp.ndarray, ordinary_taxable: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int
+) -> jnp.ndarray:
+    """Port of `phases._apply_ltcg_brackets`: LTCG stacked on top of ordinary taxable income."""
+    if count <= 0:
+        return jnp.zeros_like(ltcg_amount)
+    upper = jnp.asarray(upper[:count])
+    rate = jnp.asarray(rate[:count])
+    previous_upper = jnp.concatenate([jnp.zeros(1), upper[:-1]])
+    total_taxable = ordinary_taxable + ltcg_amount
+    slice_top = jnp.minimum(total_taxable[:, None], upper[None, :])
+    slice_bottom = jnp.maximum(ordinary_taxable[:, None], previous_upper[None, :])
+    in_bracket = jnp.maximum(slice_top - slice_bottom, 0.0)
+    return (in_bracket * rate[None, :]).sum(axis=1)
+
+
+def _compute_tax_for_link(
+    plan: CompiledSimulation,
+    ordinary_ytd: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    recapture_section_1250_ytd: jnp.ndarray,
+    liabilities: LiabilityState,
+    *,
+    link: int,
+    salt_deduction: jnp.ndarray,
+    rollout_count: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._compute_tax_for_link`: one link's bracket math (MID + SALT + §1250 + LTCG)."""
+    t = plan.tax
+    profile = int(t.link_profile[link])
+    gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+    ordinary = ordinary_ytd[profile]
+    ltcg = capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]
+    stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
+    recapture = recapture_section_1250_ytd[profile]
+    section_1250_rate = float(t.link_section_1250_rate[link])
+    standard_deduction = float(t.link_standard_deduction[link])
+    if bool(plan.mid.link_active[link]):
+        owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
+        mortgage_interest_deduction = jnp.asarray(plan.mid.principal_ratio[link]) @ owner_interest_ytd
+    else:
+        mortgage_interest_deduction = jnp.zeros(rollout_count)
+    itemized_deduction = mortgage_interest_deduction + salt_deduction
+    deduction_used = jnp.maximum(itemized_deduction, standard_deduction)
+
+    federal_style_section_1250 = section_1250_rate > 0.0
+    ordinary_for_brackets = ordinary if federal_style_section_1250 else ordinary + recapture
+
+    ordinary_upper = t.link_ordinary_upper[link]
+    ordinary_rate = t.link_ordinary_rate[link]
+    ordinary_count = int(t.link_ordinary_count[link])
+    if int(t.link_has_ltcg[link]) == 1:
+        ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
+        capital_taxable = ltcg
+        ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
+        ltcg_tax = _apply_ltcg_brackets(
+            ltcg,
+            ordinary_taxable,
+            upper=t.link_ltcg_upper[link],
+            rate=t.link_ltcg_rate[link],
+            count=int(t.link_ltcg_count[link]),
+        )
+    else:
+        ordinary_taxable = jnp.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
+        capital_taxable = jnp.zeros(rollout_count)
+        ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
+        ltcg_tax = jnp.zeros(rollout_count)
+
+    if federal_style_section_1250:
+        ordinary_tax_with_recapture = _apply_brackets(
+            ordinary_taxable + recapture, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count
+        )
+        implied_recapture_tax = jnp.maximum(ordinary_tax_with_recapture - ordinary_tax, 0.0)
+        section_1250_tax = jnp.minimum(implied_recapture_tax, recapture * section_1250_rate)
+    else:
+        section_1250_tax = jnp.zeros(rollout_count)
+
+    capital_tax = ltcg_tax + section_1250_tax
+    return mortgage_interest_deduction, itemized_deduction, ordinary_taxable, capital_taxable, ordinary_tax, capital_tax
+
+
+def _write_tax_link_buffers(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    ordinary_ytd: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    tax_liability: TaxLiabilityState,
+    *,
+    link: int,
+    month: int,
+    active: jnp.ndarray,
+    standard_deduction: float,
+    mortgage_interest_deduction: jnp.ndarray,
+    salt_deduction: jnp.ndarray,
+    itemized_deduction: jnp.ndarray,
+    ordinary_taxable: jnp.ndarray,
+    capital_taxable: jnp.ndarray,
+    ordinary_tax: jnp.ndarray,
+    capital_tax: jnp.ndarray,
+) -> tuple[jnp.ndarray, TaxLiabilityState]:
+    """Port of `phases._write_tax_link_buffers`: write a link's breakdown + accrue its tax liability."""
+    profile = int(plan.tax.link_profile[link])
+    gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+    ordinary = ordinary_ytd[profile]
+    ltcg = capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]
+    stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
+    tax = ordinary_tax + capital_tax
+    a = np.asarray(active)
+    taxes = buffers.taxes
+    taxes.accrual_active[month, link] = a
+    taxes.accrual_amount[month, link] = np.asarray(jnp.where(active, tax, 0.0))
+    taxes.breakdown_ordinary[month, link] = np.asarray(jnp.where(active, ordinary, 0.0))
+    taxes.breakdown_ltcg[month, link] = np.asarray(jnp.where(active, ltcg, 0.0))
+    taxes.breakdown_stcg[month, link] = np.asarray(jnp.where(active, stcg, 0.0))
+    taxes.breakdown_standard_deduction[month, link] = np.asarray(jnp.where(active, standard_deduction, 0.0))
+    taxes.breakdown_mortgage_interest_deduction[month, link] = np.asarray(
+        jnp.where(active, mortgage_interest_deduction, 0.0)
+    )
+    taxes.breakdown_salt_deduction[month, link] = np.asarray(jnp.where(active, salt_deduction, 0.0))
+    taxes.breakdown_itemized_deduction[month, link] = np.asarray(jnp.where(active, itemized_deduction, 0.0))
+    taxes.breakdown_ordinary_taxable[month, link] = np.asarray(jnp.where(active, ordinary_taxable, 0.0))
+    taxes.breakdown_capital_taxable[month, link] = np.asarray(jnp.where(active, capital_taxable, 0.0))
+    taxes.breakdown_ordinary_tax[month, link] = np.asarray(jnp.where(active, ordinary_tax, 0.0))
+    taxes.breakdown_capital_tax[month, link] = np.asarray(jnp.where(active, capital_tax, 0.0))
+
+    tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
+    if tax_slot >= 0:
+        tax_liability = replace(
+            tax_liability,
+            active=tax_liability.active.at[tax_slot].set(active | tax_liability.active[tax_slot]),
+            amount=tax_liability.amount.at[tax_slot].set(jnp.where(active, tax, tax_liability.amount[tax_slot])),
+        )
+    return tax, tax_liability
+
+
+def _tax_liability_slot_for(
+    plan: CompiledSimulation, *, profile_index: int, link_index: int, year_end_month: int
+) -> int:
+    slots = np.flatnonzero(
+        (plan.tax_liabilities.profile_index == profile_index)
+        & (plan.tax_liabilities.link_index == link_index)
+        & (plan.tax_liabilities.year_end_month == year_end_month)
+    )
+    return int(slots[0]) if slots.size else NO_CODE
+
+
+def _actual_tax_for_profile_year(
+    plan: CompiledSimulation,
+    tax_liability: TaxLiabilityState,
+    *,
+    profile_index: int,
+    year_end_month: int,
+    rollout_count: int,
+) -> np.ndarray:
+    # float64 sum: the true-up settlement must drive the (float32) liability to exactly zero; a
+    # float32 re-sum of ~$50k liabilities leaves a ~$0.004 residual that breaks the ==0 assertion.
+    slots = np.flatnonzero(
+        (plan.tax_liabilities.profile_index == profile_index) & (plan.tax_liabilities.year_end_month == year_end_month)
+    )
+    if slots.size == 0:
+        return np.zeros(rollout_count, dtype=np.float64)
+    return np.where(
+        np.asarray(tax_liability.active[slots]), np.asarray(tax_liability.amount[slots], dtype=np.float64), 0.0
+    ).sum(axis=0)
+
+
+def _apply_tax_accruals(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    ordinary_ytd: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    capital_loss_carryforward: jnp.ndarray,
+    liabilities: LiabilityState,
+    property_tax_ytd: jnp.ndarray,
+    property_depreciation_ytd: jnp.ndarray,
+    recapture_section_1250_ytd: jnp.ndarray,
+    tax_liability: TaxLiabilityState,
+    active: jnp.ndarray,
+    month: int,
+    rollout_count: int,
+) -> tuple[
+    jnp.ndarray, jnp.ndarray, jnp.ndarray, LiabilityState, jnp.ndarray, jnp.ndarray, jnp.ndarray, TaxLiabilityState
+]:
+    """Port of `phases._apply_tax_accruals`: the December year-end tax pass (two-pass SALT)."""
+    if month % 12 != 11:
+        return (
+            ordinary_ytd,
+            capital_gain_ytd,
+            capital_loss_carryforward,
+            liabilities,
+            property_tax_ytd,
+            recapture_section_1250_ytd,
+            property_depreciation_ytd,
+            tax_liability,
+        )
+
+    # Schedule E: rented-share mortgage interest + §168 depreciation deduct from ordinary income.
+    for lia in range(liabilities.rental_interest_ytd.shape[0]):
+        profile = int(plan.liability_owner_profile_index[lia])
+        if profile >= 0:
+            ordinary_ytd = ordinary_ytd.at[profile].add(-jnp.where(active, liabilities.rental_interest_ytd[lia], 0.0))
+    for prop in range(plan.property_owner_profile_index.shape[0]):
+        profile = int(plan.property_owner_profile_index[prop])
+        if profile >= 0:
+            ordinary_ytd = ordinary_ytd.at[profile].add(-jnp.where(active, property_depreciation_ytd[prop], 0.0))
+    property_depreciation_ytd = property_depreciation_ytd * (~active)
+
+    # §1211/§1212 capital-loss netting (once per capital-gain agent) via the shared NumPy util.
+    processed: set[int] = set()
+    for profile in range(ordinary_ytd.shape[0]):
+        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+        if gain_profile < 0 or gain_profile in processed:
+            continue
+        processed.add(gain_profile)
+        net_st, net_lt, ordinary_offset, carryforward_out = net_capital_gains_with_carryforward(
+            np.asarray(capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]),
+            np.asarray(capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]),
+            np.asarray(capital_loss_carryforward[gain_profile]),
+        )
+        capital_gain_ytd = capital_gain_ytd.at[gain_profile, CapitalGainClassification.SHORT_TERM].set(
+            jnp.where(active, jnp.asarray(net_st), capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM])
+        )
+        capital_gain_ytd = capital_gain_ytd.at[gain_profile, CapitalGainClassification.LONG_TERM].set(
+            jnp.where(active, jnp.asarray(net_lt), capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM])
+        )
+        ordinary_ytd = ordinary_ytd.at[profile].add(-jnp.where(active, jnp.asarray(ordinary_offset), 0.0))
+        capital_loss_carryforward = capital_loss_carryforward.at[gain_profile].set(
+            jnp.where(active, jnp.asarray(carryforward_out), capital_loss_carryforward[gain_profile])
+        )
+
+    link_count = plan.tax.link_profile.shape[0]
+    annual_tax_by_link = jnp.zeros((rollout_count, max(1, link_count)))
+    zero_salt = jnp.zeros(rollout_count)
+    for link in range(link_count):
+        if bool(plan.salt.link_active[link]):
+            continue
+        mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
+            plan,
+            ordinary_ytd,
+            capital_gain_ytd,
+            recapture_section_1250_ytd,
+            liabilities,
+            link=link,
+            salt_deduction=zero_salt,
+            rollout_count=rollout_count,
+        )
+        tax, tax_liability = _write_tax_link_buffers(
+            plan,
+            buffers,
+            ordinary_ytd,
+            capital_gain_ytd,
+            tax_liability,
+            link=link,
+            month=month,
+            active=active,
+            standard_deduction=float(plan.tax.link_standard_deduction[link]),
+            mortgage_interest_deduction=mid,
+            salt_deduction=zero_salt,
+            itemized_deduction=itemized,
+            ordinary_taxable=ord_taxable,
+            capital_taxable=cap_taxable,
+            ordinary_tax=ord_tax,
+            capital_tax=cap_tax,
+        )
+        annual_tax_by_link = annual_tax_by_link.at[:, link].set(tax)
+
+    year_index = month // 12
+    cap_year_index = min(year_index, plan.salt.cap_by_year.shape[1] - 1)
+    for link in range(link_count):
+        if not bool(plan.salt.link_active[link]):
+            continue
+        profile = int(plan.tax.link_profile[link])
+        state_tax_total = annual_tax_by_link @ jnp.asarray(plan.salt.contributing_mask[link].astype(np.float64))
+        salt_total = property_tax_ytd[profile] + state_tax_total
+        salt_deduction = jnp.minimum(salt_total, float(plan.salt.cap_by_year[link, cap_year_index]))
+        mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
+            plan,
+            ordinary_ytd,
+            capital_gain_ytd,
+            recapture_section_1250_ytd,
+            liabilities,
+            link=link,
+            salt_deduction=salt_deduction,
+            rollout_count=rollout_count,
+        )
+        tax, tax_liability = _write_tax_link_buffers(
+            plan,
+            buffers,
+            ordinary_ytd,
+            capital_gain_ytd,
+            tax_liability,
+            link=link,
+            month=month,
+            active=active,
+            standard_deduction=float(plan.tax.link_standard_deduction[link]),
+            mortgage_interest_deduction=mid,
+            salt_deduction=salt_deduction,
+            itemized_deduction=itemized,
+            ordinary_taxable=ord_taxable,
+            capital_taxable=cap_taxable,
+            ordinary_tax=ord_tax,
+            capital_tax=cap_tax,
+        )
+        annual_tax_by_link = annual_tax_by_link.at[:, link].set(tax)
+
+    # Year-end YTD resets for active rollouts.
+    keep = ~active
+    for profile in range(ordinary_ytd.shape[0]):
+        ordinary_ytd = ordinary_ytd.at[profile].set(ordinary_ytd[profile] * keep)
+        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+        ltcg_active = active & capital_gain_active[gain_profile, CapitalGainClassification.LONG_TERM]
+        stcg_active = active & capital_gain_active[gain_profile, CapitalGainClassification.SHORT_TERM]
+        capital_gain_ytd = capital_gain_ytd.at[gain_profile, CapitalGainClassification.LONG_TERM].set(
+            jnp.where(ltcg_active, 0.0, capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM])
+        )
+        capital_gain_ytd = capital_gain_ytd.at[gain_profile, CapitalGainClassification.SHORT_TERM].set(
+            jnp.where(stcg_active, 0.0, capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM])
+        )
+    liabilities = replace(
+        liabilities,
+        interest_ytd=liabilities.interest_ytd * keep,
+        rental_interest_ytd=liabilities.rental_interest_ytd * keep,
+    )
+    property_tax_ytd = property_tax_ytd * keep
+    recapture_section_1250_ytd = recapture_section_1250_ytd * keep
+
+    created_slots = np.flatnonzero(plan.tax_liabilities.year_end_month == month)
+    buffers.tax_liability_changes.record(
+        snapshot_month=month + 1,
+        slots=created_slots,
+        amount=np.asarray(tax_liability.amount),
+        active=np.asarray(tax_liability.active),
+    )
+    return (
+        ordinary_ytd,
+        capital_gain_ytd,
+        capital_loss_carryforward,
+        liabilities,
+        property_tax_ytd,
+        recapture_section_1250_ytd,
+        property_depreciation_ytd,
+        tax_liability,
+    )
+
+
+def _settle_tax_liabilities_for_profile_year(
+    plan: CompiledSimulation,
+    tax_liability: TaxLiabilityState,
+    *,
+    profile_index: int,
+    year_end_month: int,
+    settlement_amount: np.ndarray,
+    active: np.ndarray,
+) -> TaxLiabilityState:
+    """Port of `phases._settle_tax_liabilities_for_profile_year`: pro-rata pay down a year's slots.
+
+    Computed in float64 (see `_actual_tax_for_profile_year`) so a full true-up zeros the liability.
+    """
+    slots = np.flatnonzero(
+        (plan.tax_liabilities.profile_index == profile_index) & (plan.tax_liabilities.year_end_month == year_end_month)
+    )
+    if slots.size == 0:
+        return tax_liability
+    slot_amounts = np.asarray(tax_liability.amount[slots], dtype=np.float64)
+    eligible = np.where(np.asarray(tax_liability.active[slots]), slot_amounts, 0.0)
+    outstanding = eligible.sum(axis=0)
+    settlement = np.where(active, settlement_amount, 0.0)
+    weights = np.divide(eligible, outstanding[None, :], out=np.zeros_like(eligible), where=outstanding[None, :] > 0.0)
+    settled = np.minimum(eligible, weights * settlement[None, :])
+    return replace(
+        tax_liability, amount=tax_liability.amount.at[slots].set(jnp.asarray(np.maximum(0.0, slot_amounts - settled)))
+    )
+
+
+def _apply_tax_settlements(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    tax_liability: TaxLiabilityState,
+    *,
+    month: int,
+    candidate: np.ndarray,
+    candidate_year_end: np.ndarray,
+    payment_failed: np.ndarray,
+) -> TaxLiabilityState:
+    """Port of `phases._apply_tax_settlements`: record + apply true-up settlements per profile-year."""
+    for profile in range(candidate.shape[0]):
+        active = (candidate[profile] > 0.0) & ~payment_failed[profile]
+        if not bool(active.any()):
+            continue
+        buffers.taxes.settlement_active[month, profile] = active
+        buffers.taxes.settlement_amount[month, profile] = np.where(active, candidate[profile], 0.0)
+        buffers.taxes.settlement_year_end_month[month, profile] = np.where(active, candidate_year_end[profile], NO_CODE)
+        for year_end_month in np.unique(candidate_year_end[profile][active]):
+            if int(year_end_month) < 0:
+                continue
+            year_active = active & (candidate_year_end[profile] == int(year_end_month))
+            tax_liability = _settle_tax_liabilities_for_profile_year(
+                plan,
+                tax_liability,
+                profile_index=profile,
+                year_end_month=int(year_end_month),
+                settlement_amount=candidate[profile],
+                active=year_active,
+            )
+            settled_slots = np.flatnonzero(
+                (plan.tax_liabilities.profile_index == profile)
+                & (plan.tax_liabilities.year_end_month == int(year_end_month))
+            )
+            buffers.tax_liability_changes.record(
+                snapshot_month=month + 1,
+                slots=settled_slots,
+                amount=np.asarray(tax_liability.amount),
+                active=np.asarray(tax_liability.active),
+            )
+    return tax_liability
