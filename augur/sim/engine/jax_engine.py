@@ -41,7 +41,7 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import partial
 from typing import Any, NamedTuple
 
@@ -193,13 +193,56 @@ class _ScanMeta:
     horizon: int
 
 
-# The seed-varying inputs (`external_values`, the PE channel arrays) are traced arguments of the
-# compiled program, so they are EXCLUDED from the fingerprint: the same compiled program is reused
-# across rollout draws that differ only in those inputs. Everything else the program bakes as a
-# constant IS fingerprinted, so a cache hit guarantees byte-identical baked config (correct reuse).
+# Fields that flow into the compiled program as TRACED inputs (not baked constants) are EXCLUDED from
+# the fingerprint: the same compiled program is reused across plans that differ only in these values.
+# Everything else the program bakes IS fingerprinted, so a cache hit guarantees byte-identical baked
+# config (correct reuse). Two classes of traced input:
+#   - seed-varying series (`external_values`, the PE channel arrays) → rollout-draw reuse;
+#   - swept numeric config (currently the income/LTCG tax brackets, rates, standard deduction, and the
+#     MID principal-ratio matrix) → config-value-sweep reuse, with the structural feature/count `if`s
+#     left baked so they still ride in the fingerprint. See `_traced_config` / `_hybrid_plan`.
 _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
-    {("CompiledSimulation", "external_values"), ("CompiledSimulation", "pe_channels")}
+    {
+        ("CompiledSimulation", "external_values"),
+        ("CompiledSimulation", "pe_channels"),
+        ("TaxCompileOutput", "link_standard_deduction"),
+        ("TaxCompileOutput", "link_ordinary_upper"),
+        ("TaxCompileOutput", "link_ordinary_rate"),
+        ("TaxCompileOutput", "link_ltcg_upper"),
+        ("TaxCompileOutput", "link_ltcg_rate"),
+        ("MIDCompileOutput", "principal_ratio"),
+    }
 )
+
+
+def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
+    """The swept numeric-config arrays passed to the compiled program as traced inputs. Mirrors the
+    fields excluded from the fingerprint (the tax-value fields), so a sweep over these values reuses
+    the compiled program instead of recompiling."""
+    return {
+        "link_standard_deduction": jnp.asarray(plan.tax.link_standard_deduction),
+        "link_ordinary_upper": jnp.asarray(plan.tax.link_ordinary_upper),
+        "link_ordinary_rate": jnp.asarray(plan.tax.link_ordinary_rate),
+        "link_ltcg_upper": jnp.asarray(plan.tax.link_ltcg_upper),
+        "link_ltcg_rate": jnp.asarray(plan.tax.link_ltcg_rate),
+        "mid_principal_ratio": jnp.asarray(plan.mid.principal_ratio),
+    }
+
+
+def _hybrid_plan(plan: CompiledSimulation, cfg: dict[str, jnp.ndarray]) -> CompiledSimulation:
+    """A plan whose swept numeric-config fields are the traced `cfg` arrays and whose every other
+    field is the original concrete (numpy) value. The cores read tax values from the traced fields and
+    structural feature flags / counts from the concrete fields, both via the same `plan` object."""
+    tax = replace(
+        plan.tax,
+        link_standard_deduction=cfg["link_standard_deduction"],
+        link_ordinary_upper=cfg["link_ordinary_upper"],
+        link_ordinary_rate=cfg["link_ordinary_rate"],
+        link_ltcg_upper=cfg["link_ltcg_upper"],
+        link_ltcg_rate=cfg["link_ltcg_rate"],
+    )
+    mid = replace(plan.mid, principal_ratio=cfg["mid_principal_ratio"])
+    return replace(plan, tax=tax, mid=mid)
 
 
 def _fingerprint_into(h: Any, obj: Any) -> None:
@@ -288,7 +331,7 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
         "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
     }
-    ys = program(jnp.asarray(plan.external_values), pe_ch_dyn)
+    ys = program(jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan))
     _scatter_ys_to_buffers(plan, buffers, meta, ys)
 
 
@@ -710,7 +753,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
                 jnp.where(dec, ordinary[profile], 0.0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0.0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0.0),
-                jnp.where(dec, float(taxc.link_standard_deduction[link]), 0.0),
+                jnp.where(dec, plan.tax.link_standard_deduction[link], 0.0),  # traced (hybrid plan)
                 jnp.where(dec, mid, 0.0),
                 jnp.where(dec, salt_deduction, 0.0),
                 jnp.where(dec, itemized, 0.0),
@@ -1483,12 +1526,16 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
 
-    def _program_impl(external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray]) -> tuple:
-        # Rebind the seed-varying placeholders to this draw's traced arguments; `step`/the cores read
-        # them from the enclosing scope, so they trace against the traced inputs.
-        nonlocal external_values, pe_ch
+    def _program_impl(
+        external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray], cfg_arg: dict[str, jnp.ndarray]
+    ) -> tuple:
+        # Rebind the traced placeholders to this draw's arguments; `step` and the cores read them from
+        # the enclosing scope, so they trace against the traced inputs. `plan` is swapped for the hybrid
+        # whose swept tax-value fields are the traced `cfg` arrays (structural fields stay concrete).
+        nonlocal external_values, pe_ch, plan
         external_values = external_values_arg
         pe_ch = pe_ch_arg
+        plan = _hybrid_plan(plan, cfg_arg)
         _, ys = jax.lax.scan(step, init, months)
         return ys
 
@@ -2321,7 +2368,7 @@ def _compute_tax_for_link(
     stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
     recapture = recapture_section_1250_ytd[profile]
     section_1250_rate = float(t.link_section_1250_rate[link])
-    standard_deduction = float(t.link_standard_deduction[link])
+    standard_deduction = t.link_standard_deduction[link]  # traced value (hybrid plan); de-scalared
     if bool(plan.mid.link_active[link]):
         owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
         mortgage_interest_deduction = jnp.asarray(plan.mid.principal_ratio[link]) @ owner_interest_ytd
