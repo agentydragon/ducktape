@@ -1381,12 +1381,12 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray,
     """Port of `phases._apply_brackets`: progressive bracket tax on `amount`."""
     if count <= 0:
         return jnp.zeros_like(amount)
-    upper = jnp.asarray(upper[:count])
-    rate = jnp.asarray(rate[:count])
-    previous_upper = jnp.concatenate([jnp.zeros(1), upper[:-1]])
-    slice_top = jnp.minimum(amount[:, None], upper[None, :])
+    upper_edges = jnp.asarray(upper[:count])
+    bracket_rates = jnp.asarray(rate[:count])
+    previous_upper = jnp.concatenate([jnp.zeros(1), upper_edges[:-1]])
+    slice_top = jnp.minimum(amount[:, None], upper_edges[None, :])
     in_bracket = jnp.maximum(slice_top - previous_upper[None, :], 0.0)
-    return (in_bracket * rate[None, :]).sum(axis=1)
+    return (in_bracket * bracket_rates[None, :]).sum(axis=1)
 
 
 def _apply_ltcg_brackets(
@@ -1395,14 +1395,14 @@ def _apply_ltcg_brackets(
     """Port of `phases._apply_ltcg_brackets`: LTCG stacked on top of ordinary taxable income."""
     if count <= 0:
         return jnp.zeros_like(ltcg_amount)
-    upper = jnp.asarray(upper[:count])
-    rate = jnp.asarray(rate[:count])
-    previous_upper = jnp.concatenate([jnp.zeros(1), upper[:-1]])
+    upper_edges = jnp.asarray(upper[:count])
+    bracket_rates = jnp.asarray(rate[:count])
+    previous_upper = jnp.concatenate([jnp.zeros(1), upper_edges[:-1]])
     total_taxable = ordinary_taxable + ltcg_amount
-    slice_top = jnp.minimum(total_taxable[:, None], upper[None, :])
+    slice_top = jnp.minimum(total_taxable[:, None], upper_edges[None, :])
     slice_bottom = jnp.maximum(ordinary_taxable[:, None], previous_upper[None, :])
     in_bracket = jnp.maximum(slice_top - slice_bottom, 0.0)
-    return (in_bracket * rate[None, :]).sum(axis=1)
+    return (in_bracket * bracket_rates[None, :]).sum(axis=1)
 
 
 def _compute_tax_for_link(
@@ -1550,9 +1550,10 @@ def _actual_tax_for_profile_year(
     )
     if slots.size == 0:
         return np.zeros(rollout_count, dtype=np.float64)
-    return np.where(
+    eligible = np.where(
         np.asarray(tax_liability.active[slots]), np.asarray(tax_liability.amount[slots], dtype=np.float64), 0.0
-    ).sum(axis=0)
+    )
+    return np.asarray(eligible.sum(axis=0), dtype=np.float64)
 
 
 def _apply_tax_accruals(
