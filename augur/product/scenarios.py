@@ -41,6 +41,7 @@ from augur.sim.scenario import (
     CapitalImprovementEvent,
     FilingStatus,
     FixedAmount,
+    HarvestPolicy,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
@@ -195,6 +196,7 @@ def build_scenario(
     initial_cash_usd: float,
     initial_lots: tuple[InitialLot, ...],
     properties_by_id: dict[str, Property],
+    harvest_policies: tuple[HarvestPolicy, ...] = (),
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
@@ -439,6 +441,7 @@ def build_scenario(
         liquidity_policies=_liquidity_policies_from_funding_policy(
             scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
+        harvest_policies=list(harvest_policies),
         horizon_months=horizon_months,
     )
 

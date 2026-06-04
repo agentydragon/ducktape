@@ -53,6 +53,7 @@ from augur.product.wire import (
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
+from augur.sim.scenario import HarvestPolicy
 from augur.sim.simulate import simulate_dense_with_external_series
 from augur.sim.slice import slice_dense_result
 
@@ -89,6 +90,7 @@ class ProductService:
         portfolio: PortfolioConfig,
         initial_cash_usd: float,
         primary_agent_id: str,
+        harvest_policies: tuple[HarvestPolicy, ...] = (),
         known_location_ids: frozenset[str],
         locations: dict[str, Location],
         properties_by_id: dict[str, Property],
@@ -114,6 +116,7 @@ class ProductService:
         self._max_horizon_months = int(max_horizon_months)
         self._max_cache_rollouts = int(max_cache_rollouts)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
+        self._harvest_policies = harvest_policies
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         self._cache: OrderedDict[tuple[ScenarioKey, int], _CachedRollout] = OrderedDict()
         # FastAPI + uvicorn dispatches request handlers concurrently. The cache's get→miss→
@@ -240,6 +243,7 @@ class ProductService:
             initial_cash_usd=self._initial_cash_usd,
             initial_lots=self._initial_lots,
             properties_by_id=self._properties_by_id,
+            harvest_policies=self._harvest_policies,
         )
         sampling_request = ExogenousSamplingRequest(
             horizon_months=int(scenario_key.horizon_months),
