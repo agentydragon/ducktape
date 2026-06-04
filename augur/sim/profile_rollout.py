@@ -34,12 +34,39 @@ from augur.sim.scenario import (
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
     PropertyTaxPolicy,
+    RecurringTransfer,
     Scenario,
     ScheduledPropertyPurchase,
 )
 from augur.sim.simulate import simulate, simulate_dense_with_external_series
 
 PROFILE_LOCATION_ID = "sf"
+
+
+def build_transfers_only_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, Location]]:
+    """A transfers-only scenario (recurring paycheck) — exercises the jitted lax.scan fast path."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="payroll"), Agent(agent_id="alice")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=horizon_months - 1,
+                cause_id="paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=8_000.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+    return scenario, {}
 
 
 def build_profile_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, Location]]:
@@ -106,6 +133,11 @@ def main() -> None:
         default="both",
         help="which sim backend(s) to run: a single backend, or 'both' for a numpy-vs-jax comparison",
     )
+    parser.add_argument(
+        "--transfers-only",
+        action="store_true",
+        help="use a transfers-only scenario (routes through the jitted lax.scan fast path on JAX)",
+    )
     parser.add_argument("--sort", choices=["cumulative", "tottime", "both"], default="both")
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
@@ -125,7 +157,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    scenario, locations = build_profile_scenario(horizon_months=args.horizon_months)
+    scenario, locations = (
+        build_transfers_only_scenario(horizon_months=args.horizon_months)
+        if args.transfers_only
+        else build_profile_scenario(horizon_months=args.horizon_months)
+    )
 
     def _materialize(result: object) -> None:
         if args.materialize == "none":
@@ -165,7 +201,9 @@ def main() -> None:
                 _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
 
     def timed(backend: SimBackend) -> float:
-        run(2, backend)  # warm-up: pay one-time import / trace costs outside the timed region
+        # Warm up at the SAME rollout count so one-time costs (imports, tracing, and especially the
+        # JAX/XLA compile, which is shape-specialized on rollout_count) are paid outside the timer.
+        run(args.rollouts, backend)
         t0 = time.perf_counter()
         run(args.rollouts, backend)
         return time.perf_counter() - t0

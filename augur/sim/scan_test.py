@@ -18,9 +18,7 @@ from augur.sim.simulate import simulate
 def _cash(run, agent_id: str, month_index: int) -> float:
     return (
         run.cash_balances.filter(
-            (pl.col("agent_id") == agent_id)
-            & (pl.col("month_index") == month_index)
-            & (pl.col("rollout_index") == 0)
+            (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
         )
         .get_column("balance_usd")
         .item()
