@@ -32,7 +32,7 @@ which is correct for non-rental, non-sale scenarios.
 
 Float32 note: tax amounts, cash flows, and settlements match the float64 reference to within a few
 parts in 1e8, but a handful of existing tests assert breakdown fields (income, deductions) to
-`rel=1e-9` / `abs=1e-6`, which float32 cannot meet on $10k–$200k values; those JAX variants fail on
+`rel=1e-9` / `abs=1e-6`, which float32 cannot meet on $10k-$200k values; those JAX variants fail on
 precision alone, not logic.
 """
 
