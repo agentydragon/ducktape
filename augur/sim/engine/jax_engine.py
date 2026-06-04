@@ -43,11 +43,12 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import partial
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import NDArray
 
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
@@ -255,25 +256,29 @@ def _hybrid_plan(plan: CompiledSimulation, cfg: dict[str, jnp.ndarray]) -> Compi
     ownership / equity, mortgage principal / payment) are the traced `cfg` arrays and whose every other
     field is the original concrete (numpy) value. The cores read values from the traced fields and
     structural feature flags / counts / slot indices from the concrete fields, via the same `plan`."""
+
+    # The compile-output dataclasses are typed with NumPy arrays (they are built by the compiler); the
+    # hybrid deliberately stores the traced jax arrays in those slots, so cast at the boundary.
+    def a(key: str) -> NDArray[np.float64]:
+        return cast("NDArray[np.float64]", cfg[key])
+
     tax = replace(
         plan.tax,
-        link_standard_deduction=cfg["link_standard_deduction"],
-        link_ordinary_upper=cfg["link_ordinary_upper"],
-        link_ordinary_rate=cfg["link_ordinary_rate"],
-        link_ltcg_upper=cfg["link_ltcg_upper"],
-        link_ltcg_rate=cfg["link_ltcg_rate"],
+        link_standard_deduction=a("link_standard_deduction"),
+        link_ordinary_upper=a("link_ordinary_upper"),
+        link_ordinary_rate=a("link_ordinary_rate"),
+        link_ltcg_upper=a("link_ltcg_upper"),
+        link_ltcg_rate=a("link_ltcg_rate"),
     )
-    mid = replace(plan.mid, principal_ratio=cfg["mid_principal_ratio"])
+    mid = replace(plan.mid, principal_ratio=a("mid_principal_ratio"))
     properties = replace(
         plan.properties,
-        adjusted_basis=cfg["property_adjusted_basis"],
-        ownership=cfg["property_ownership"],
-        equity_ledger=cfg["property_equity_ledger"],
+        adjusted_basis=a("property_adjusted_basis"),
+        ownership=a("property_ownership"),
+        equity_ledger=a("property_equity_ledger"),
     )
     liabilities = replace(
-        plan.liabilities,
-        principal=cfg["liability_principal"],
-        monthly_payment=cfg["liability_monthly_payment"],
+        plan.liabilities, principal=a("liability_principal"), monthly_payment=a("liability_monthly_payment")
     )
     return replace(plan, tax=tax, mid=mid, properties=properties, liabilities=liabilities)
 
@@ -1589,9 +1594,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     return jax.jit(_program_impl), meta
 
 
-def _scatter_ys_to_buffers(
-    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple
-) -> None:
+def _scatter_ys_to_buffers(plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple) -> None:
     """Scatter the stacked per-month `ys` from the compiled program back into the NumPy buffers (one
     device->host transfer). Pure host code; uses `meta` for the structural scatter targets."""
     p = plan.slot_plan
