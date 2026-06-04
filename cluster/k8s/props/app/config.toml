@@ -1,6 +1,9 @@
 auto_migrate = true
 auto_sync_specimens = true
 backend_url = "http://props:8000"
+# Default evaluator: the grader supervisor auto-grades critic runs with this
+# model. glm-4.6 (z.ai via LiteLLM) so grading runs without the home GPU host.
+grader_model = "glm-4.6"
 
 [executor]
 type = "kubernetes"
