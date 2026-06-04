@@ -89,7 +89,7 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             plan, buffers, cash, lot_remaining, capital_gain_active, capital_gain_ytd, active, external_values, month
         )
 
-        ob_active, ob_due = _apply_obligation_accruals(plan.obligations, active, external_values, month, r)
+        ob_active, ob_due = _apply_obligation_accruals(plan, property_active, active, external_values, month, r)
         cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_liquidity_policy_sales(
             plan,
             buffers,
@@ -321,33 +321,48 @@ def _record_capital_gains(
 
 
 def _apply_obligation_accruals(
-    obligations: ObligationCompileOutput,
+    plan: CompiledSimulation,
+    property_active: jnp.ndarray,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_accruals` (CONFIGURED_OBLIGATION kind only)."""
+    """Functional port of `phases._apply_obligation_accruals` (CONFIGURED_OBLIGATION + PROPERTY_TAX)."""
+    obligations = plan.obligations
     slot_count = obligations.cause.shape[1]
     accrual_active = jnp.zeros((slot_count, rollout_count), dtype=bool)
     accrual_due = jnp.zeros((slot_count, rollout_count))
     for slot in range(slot_count):
         if int(obligations.cause[month, slot]) < 0 or int(obligations.source_kind[month, slot]) < 0:
             continue
-        if int(obligations.source_kind[month, slot]) != ObligationSource.CONFIGURED_OBLIGATION:
-            continue  # other source kinds (mortgage / property-tax / estimated-tax) not yet ported
-        amount = _amount_values(
-            amount_kind=int(obligations.amount_kind[month, slot]),
-            amount_fixed=float(obligations.amount_fixed[month, slot]),
-            amount_base=float(obligations.amount_base[month, slot]),
-            amount_series=int(obligations.amount_series[month, slot]),
-            amount_base_month=int(obligations.amount_base_month[month, slot]),
-            amount_period=int(obligations.amount_period[month, slot]),
-            external_values=external_values,
-            month=month,
-            rollout_count=rollout_count,
-        )
-        slot_active = active & (amount > 0.0)
+        source_kind = int(obligations.source_kind[month, slot])
+        if source_kind == ObligationSource.CONFIGURED_OBLIGATION:
+            amount = _amount_values(
+                amount_kind=int(obligations.amount_kind[month, slot]),
+                amount_fixed=float(obligations.amount_fixed[month, slot]),
+                amount_base=float(obligations.amount_base[month, slot]),
+                amount_series=int(obligations.amount_series[month, slot]),
+                amount_base_month=int(obligations.amount_base_month[month, slot]),
+                amount_period=int(obligations.amount_period[month, slot]),
+                external_values=external_values,
+                month=month,
+                rollout_count=rollout_count,
+            )
+            slot_active = active & (amount > 0.0)
+        elif source_kind == ObligationSource.PROPERTY_TAX:
+            prop = int(obligations.source_index[month, slot])
+            if int(plan.properties.month[prop]) >= month:
+                continue  # property tax accrues only after the purchase month
+            rate = float(obligations.amount_fixed[month, slot])
+            if np.isnan(rate):
+                rate = float(plan.properties.location_tax_rate[prop])
+            ad_valorem_monthly = float(plan.properties.initial_assessed_value[prop]) * rate / 12.0
+            non_ad_valorem_monthly = float(plan.properties.special_assessment_annual_usd[prop]) / 12.0
+            amount = jnp.full(rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
+            slot_active = active & property_active[prop] & (amount > 0.0)
+        else:
+            continue  # mortgage / estimated-tax source kinds not yet ported
         accrual_active = accrual_active.at[slot].set(slot_active)
         accrual_due = accrual_due.at[slot].set(jnp.where(slot_active, amount, 0.0))
     return accrual_active, accrual_due
@@ -386,13 +401,20 @@ def _apply_obligation_settlement(
     funded: jnp.ndarray,
     month: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_settlement` (CONFIGURED_OBLIGATION kind only)."""
+    """Functional port of `phases._apply_obligation_settlement` (CONFIGURED_OBLIGATION + PROPERTY_TAX).
+
+    The deduction path uses each obligation's compile-time `deductible_fraction`; the property-tax
+    SALT/Schedule-E split (runtime `property_rented_fraction`) lands with the tax-machinery port.
+    """
     slot_count = accrual_active.shape[0]
     paid_buffer = jnp.zeros_like(accrual_due)
     shortfall_buffer = jnp.zeros_like(accrual_due)
     failure_active = jnp.zeros_like(accrual_active)
     for slot in range(slot_count):
-        if int(obligations.source_kind[month, slot]) != ObligationSource.CONFIGURED_OBLIGATION:
+        if int(obligations.source_kind[month, slot]) not in (
+            ObligationSource.CONFIGURED_OBLIGATION,
+            ObligationSource.PROPERTY_TAX,
+        ):
             continue
         amount = accrual_due[slot]
         paid = accrual_active[slot] & funded[slot]
