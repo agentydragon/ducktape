@@ -75,7 +75,14 @@ MARKETS = [
     {"id": "btc>150k@2027-12", "kind": "ge_at", "series": "crypto:BTC", "month": 18, "thr": 150_000, "price": 0.50},
     {"id": "btc>300k@2030-12", "kind": "ge_at", "series": "crypto:BTC", "month": 54, "thr": 300_000, "price": 0.32},
     {"id": "cpi>110@2029-12", "kind": "ge_at", "series": "inflation", "month": 42, "thr": 110.0, "price": 0.60},
-    {"id": "sfhome>115@2030-12", "kind": "ge_at", "series": f"home_value:{LOC}", "month": 54, "thr": 115.0, "price": 0.45},
+    {
+        "id": "sfhome>115@2030-12",
+        "kind": "ge_at",
+        "series": f"home_value:{LOC}",
+        "month": 54,
+        "thr": 115.0,
+        "price": 0.45,
+    },
     {"id": "sfrent>112@2029-12", "kind": "ge_at", "series": f"rent:{LOC}", "month": 42, "thr": 112.0, "price": 0.55},
     {"id": "openai_ipo<=2029-12", "kind": "ipo_by", "month": 42, "price": 0.55},
     {"id": "openai_val>2T@2030-12", "kind": "oval_at", "month": 54, "thr": 2.0, "price": 0.50},
@@ -91,7 +98,9 @@ MAX_MARKET_MONTH = max(m["month"] for m in MARKETS)
 
 
 def _schema() -> str:
-    series_lines = "\n".join(f'    "{k}": [{HORIZON_MONTHS + 1} numbers],  // {desc}' for k, desc in LEVEL_SERIES.items())
+    series_lines = "\n".join(
+        f'    "{k}": [{HORIZON_MONTHS + 1} numbers],  // {desc}' for k, desc in LEVEL_SERIES.items()
+    )
     return (
         f"Each scenario is one internally-consistent monthly trajectory. EXACTLY these keys:\n"
         f'  "label": short string,\n'
@@ -247,13 +256,13 @@ def indicator(scn: dict, m: dict) -> int | None:
 
 def max_monthly_log_jump(scn: dict) -> float | None:
     """Largest absolute month-over-month log return across the level series — a smoothness/teleport diagnostic."""
-    worst = 0.0
+    all_jumps: list[float] = []
     for series in LEVEL_SERIES:
         p = _path(scn, series)
         if p is None:
             return None
-        worst = max(worst, max(abs(math.log(p[t + 1] / p[t])) for t in range(len(p) - 1)))
-    return worst
+        all_jumps.extend(abs(math.log(p[t + 1] / p[t])) for t in range(len(p) - 1))
+    return max(all_jumps)
 
 
 def reweight(g: list[list[int]], targets: list[float], ridge: float = 0.05, steps: int = 2000, lr: float = 0.5):
