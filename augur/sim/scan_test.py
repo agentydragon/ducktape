@@ -11,11 +11,13 @@ import polars as pl
 import pytest
 import pytest_bazel
 
+from augur.model.sim_backend import SimBackend, use_backend
 from augur.product.asset_key import SP500AssetKey
 from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     Agent,
+    FilingStatus,
     InitialAccountBalance,
     InitialLot,
     MortgageFinancing,
@@ -26,6 +28,7 @@ from augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    TaxProfile,
 )
 from augur.sim.simulate import simulate
 
@@ -366,6 +369,58 @@ def test_financed_purchase_scan_parity() -> None:
     # Months 1 & 2 each pay one mortgage bill to the lender; alice's cash nets both off.
     assert _cash(run, "lender", 3) == pytest.approx(2 * payment)
     assert _cash(run, "alice", 3) == pytest.approx(300_000.0 - 100_000.0 - 2 * payment)
+
+
+def _federal_tax(run) -> float:
+    rows = run.tax_liabilities.filter(
+        (pl.col("jurisdiction_id") == "federal_us") & (pl.col("rollout_index") == 0)
+    ).get_column("amount_owed_usd")
+    return float(rows.sum())
+
+
+def test_year_end_tax_scan_parity() -> None:
+    # W-2 income for one calendar year + a single tax profile: the December year-end pass computes the
+    # federal + CA tax and accrues a tax liability. prior_year_tax=0 and a 12-month horizon mean no
+    # estimated-tax/true-up obligations are generated, so the scenario routes through the scan. Runs
+    # both backends explicitly and asserts the JAX scan's tax liability equals the NumPy reference.
+    scenario = Scenario(
+        agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=120_000.0 / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status=FilingStatus.SINGLE,
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+                prior_year_tax_usd=0.0,
+            )
+        ],
+        horizon_months=12,
+    )
+    with use_backend(SimBackend.NUMPY):
+        numpy_tax = _federal_tax(simulate(scenario, rollout_count=2, locations={}))
+    with use_backend(SimBackend.JAX):
+        jax_tax = _federal_tax(simulate(scenario, rollout_count=2, locations={}))
+
+    assert numpy_tax > 0.0  # a real federal tax accrued at year-end
+    assert jax_tax == pytest.approx(numpy_tax, rel=1e-5)
 
 
 if __name__ == "__main__":

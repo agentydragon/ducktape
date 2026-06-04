@@ -182,7 +182,6 @@ def scan_supported(plan: CompiledSimulation) -> bool:
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
-        and plan.tax.profile_agent.shape[0] == 0  # no tax profiles (tax arrays are not padded)
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
     )
@@ -349,6 +348,174 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             & (plan.tax_liabilities.year_end_month[None, None, :] == tax_year_end[:, None, None])
         ).astype(np.float64)
     )
+
+    # December year-end tax pass: static tables. `link_count`/`taxliab_count`/`profile_count` are
+    # compile-time. `tax_slot_table[m, link]` is the tax-liability slot a link accrues at year-end
+    # month m (or -1). `cg_rep_profile[gp]` is the representative tax profile a cg-agent's ordinary
+    # offset lands on (the netting is per cg-agent; the offset goes to its first tax profile).
+    taxc = plan.tax
+    link_count = int(taxc.link_profile.shape[0])
+    profile_count = int(p.tax_profile_count)
+    taxliab_count = int(p.tax_liability_count)
+    tlq = plan.tax_liabilities
+    tax_slot_table_np = np.full((horizon, max(1, link_count)), NO_CODE, dtype=np.int64)
+    for m in range(11, horizon, 12):
+        for link in range(link_count):
+            sel = np.flatnonzero(
+                (tlq.profile_index == int(taxc.link_profile[link]))
+                & (tlq.link_index == link)
+                & (tlq.year_end_month == m)
+            )
+            if sel.size:
+                tax_slot_table_np[m, link] = int(sel[0])
+    tax_slot_table = jnp.asarray(tax_slot_table_np)
+    cg_rep_profile = np.full(max(1, p.capital_gain_agent_count), NO_CODE, dtype=np.int64)
+    for profile in range(profile_count):
+        gp = int(plan.tax_profile_capital_gain_index[profile])
+        if gp >= 0 and cg_rep_profile[gp] < 0:
+            cg_rep_profile[gp] = profile
+    salt_link_active = plan.salt.link_active  # bool array per link
+    cap_year_index_by_month = np.minimum(np.arange(horizon) // 12, plan.salt.cap_by_year.shape[1] - 1)
+    # Per-(link, month) SALT cap (cap_by_year indexed by the month's tax year), so the traced month
+    # can index it directly inside the pass.
+    salt_cap_table = (
+        jnp.asarray(plan.salt.cap_by_year[:, cap_year_index_by_month]) if link_count else jnp.zeros((0, horizon))
+    )
+
+    def december_tax(
+        ordinary: jnp.ndarray,
+        cg_ytd: jnp.ndarray,
+        carryforward: jnp.ndarray,
+        recapture: jnp.ndarray,
+        property_tax_ytd: jnp.ndarray,
+        liab_interest_ytd: jnp.ndarray,
+        liab_rental_ytd: jnp.ndarray,
+        property_dep_ytd: jnp.ndarray,
+        taxliab_active: jnp.ndarray,
+        taxliab_amount: jnp.ndarray,
+        active: jnp.ndarray,
+        month: jnp.ndarray,
+    ):
+        """Branch-free December (`month % 12 == 11`) year-end tax pass, gated per-rollout by `dec`.
+
+        Returns the post-pass YTD/carryforward/tax-liability state plus the 13 per-link tax buffer
+        slabs `(link_count, R)`. For non-December months every output reduces to the inputs / zeros.
+        """
+        dec = (month % 12 == 11) & active  # (R,)
+        liabs_view = LiabilityState(
+            active=taxliab_active,  # unused by _compute_tax_for_link
+            principal=liab_interest_ytd,  # unused
+            monthly_payment=liab_interest_ytd,  # unused
+            interest_ytd=liab_interest_ytd,
+            principal_ytd=liab_interest_ytd,  # unused
+            rental_interest_ytd=liab_rental_ytd,
+        )
+
+        # Schedule E: rented-share mortgage interest (handled via MID below) + §168 depreciation.
+        for prop in range(property_dep_ytd.shape[0]):
+            profile = int(plan.property_owner_profile_index[prop])
+            if profile >= 0:
+                ordinary = ordinary.at[profile].add(-jnp.where(dec, property_dep_ytd[prop], 0.0))
+        for lia in range(liab_rental_ytd.shape[0]):
+            profile = int(plan.liability_owner_profile_index[lia])
+            if profile >= 0:
+                ordinary = ordinary.at[profile].add(-jnp.where(dec, liab_rental_ytd[lia], 0.0))
+
+        # §1211/§1212 netting per capital-gain agent.
+        seen: set[int] = set()
+        for profile in range(profile_count):
+            gp = int(plan.tax_profile_capital_gain_index[profile])
+            if gp < 0 or gp in seen:
+                continue
+            seen.add(gp)
+            net_st, net_lt, ord_offset, carry_out = _net_capital_gains_jnp(
+                cg_ytd[gp, CapitalGainClassification.SHORT_TERM],
+                cg_ytd[gp, CapitalGainClassification.LONG_TERM],
+                carryforward[gp],
+            )
+            cg_ytd = cg_ytd.at[gp, CapitalGainClassification.SHORT_TERM].set(
+                jnp.where(dec, net_st, cg_ytd[gp, CapitalGainClassification.SHORT_TERM])
+            )
+            cg_ytd = cg_ytd.at[gp, CapitalGainClassification.LONG_TERM].set(
+                jnp.where(dec, net_lt, cg_ytd[gp, CapitalGainClassification.LONG_TERM])
+            )
+            rep = int(cg_rep_profile[gp])
+            ordinary = ordinary.at[rep].add(-jnp.where(dec, ord_offset, 0.0))
+            carryforward = carryforward.at[gp].set(jnp.where(dec, carry_out, carryforward[gp]))
+
+        # Two-pass SALT bracket math; collect per-link tax + breakdown slabs.
+        annual_tax_by_link = jnp.zeros((r, max(1, link_count)))
+        zero_salt = jnp.zeros(r)
+        breakdown = [jnp.zeros((max(1, link_count), r)) for _ in range(13)]
+
+        def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
+            mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
+                plan, ordinary, cg_ytd, recapture, liabs_view, link=link, salt_deduction=salt_deduction, rollout_count=r
+            )
+            profile = int(taxc.link_profile[link])
+            gp = int(plan.tax_profile_capital_gain_index[profile])
+            tax = ord_tax + cap_tax
+            cols = [
+                dec.astype(jnp.float32),  # accrual_active flag (->bool post-scan)
+                jnp.where(dec, tax, 0.0),
+                jnp.where(dec, ordinary[profile], 0.0),
+                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0.0),
+                jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0.0),
+                jnp.where(dec, float(taxc.link_standard_deduction[link]), 0.0),
+                jnp.where(dec, mid, 0.0),
+                jnp.where(dec, salt_deduction, 0.0),
+                jnp.where(dec, itemized, 0.0),
+                jnp.where(dec, ord_taxable, 0.0),
+                jnp.where(dec, cap_taxable, 0.0),
+                jnp.where(dec, ord_tax, 0.0),
+                jnp.where(dec, cap_tax, 0.0),
+            ]
+            for b, col in enumerate(cols):
+                breakdown[b] = breakdown[b].at[link].set(col)
+            return ann.at[:, link].set(tax)
+
+        for link in range(link_count):
+            if not bool(salt_link_active[link]):
+                annual_tax_by_link = run_link(link, zero_salt, annual_tax_by_link)
+        for link in range(link_count):
+            if not bool(salt_link_active[link]):
+                continue
+            profile = int(taxc.link_profile[link])
+            state_tax_total = annual_tax_by_link @ jnp.asarray(plan.salt.contributing_mask[link].astype(np.float64))
+            salt_total = property_tax_ytd[profile] + state_tax_total
+            salt_deduction = jnp.minimum(salt_total, salt_cap_table[link][month])
+            annual_tax_by_link = run_link(link, salt_deduction, annual_tax_by_link)
+
+        # Accrue this year's tax liabilities (scatter each link's tax to its year-end slot).
+        slot_for_link = tax_slot_table[month]  # (link_count,)
+        link_tax = annual_tax_by_link.T  # (link_count, R)
+        written = _scatter_rows(jnp.zeros((taxliab_count, r)), slot_for_link, jnp.where(dec, link_tax, 0.0))
+        written_mask = _scatter_rows(jnp.zeros((taxliab_count, r)), slot_for_link, dec.astype(jnp.float32)) > 0.0
+        taxliab_amount = jnp.where(written_mask, written, taxliab_amount)
+        taxliab_active = taxliab_active | written_mask
+
+        # Year-end YTD resets for active rollouts (dec).
+        notdec = ~dec
+        ordinary = ordinary * notdec
+        cg_ytd = cg_ytd * notdec[None, None, :]
+        property_tax_ytd = property_tax_ytd * notdec
+        recapture = recapture * notdec
+        liab_interest_ytd = liab_interest_ytd * notdec
+        liab_rental_ytd = liab_rental_ytd * notdec
+        property_dep_ytd = property_dep_ytd * notdec
+        return (
+            ordinary,
+            cg_ytd,
+            carryforward,
+            recapture,
+            property_tax_ytd,
+            liab_interest_ytd,
+            liab_rental_ytd,
+            property_dep_ytd,
+            taxliab_active,
+            taxliab_amount,
+            tuple(breakdown),
+        )
 
     def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
@@ -561,12 +728,41 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             failed,
         )
 
+        # December year-end tax pass (creates this year's tax liabilities; resets the YTD buckets).
+        (
+            ordinary,
+            cg_ytd,
+            capital_loss_carryforward,
+            recapture_ytd,
+            property_tax_ytd,
+            liab_interest_ytd,
+            liab_rental_ytd,
+            property_dep_ytd,
+            taxliab_active,
+            taxliab_amount,
+            tax_breakdown,
+        ) = december_tax(
+            ordinary,
+            cg_ytd,
+            capital_loss_carryforward,
+            recapture_ytd,
+            property_tax_ytd,
+            liab_interest_ytd,
+            liab_rental_ytd,
+            property_dep_ytd,
+            taxliab_active,
+            taxliab_amount,
+            active,
+            month,
+        )
+
         keep = ~failed
         # `_zero_failed_state`: drain dollar-valued state for newly-failed rollouts. `cg_active`, the
         # property activity flag, depreciation accumulators, and owner-occupied months are left intact
         # (matches the eager engine, which zeros only dollar fields).
         cash, ordinary, lot_remaining = cash * keep, ordinary * keep, lot_remaining * keep
         cg_ytd, tlh = cg_ytd * keep[None, None, :], tlh * keep
+        capital_loss_carryforward, taxliab_amount = capital_loss_carryforward * keep, taxliab_amount * keep
         property_basis, property_ownership, property_contribution, property_equity = (
             property_basis * keep,
             property_ownership * keep,
@@ -655,7 +851,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             if folded_sales
             else ()
         )
-        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys)
+        # Tax slabs: 13 per-(link, rollout) breakdown buffers + the post-month tax-liability snapshot
+        # (amount, active) for change-log reconstruction. Only when the plan has tax links.
+        tax_ys = (*tax_breakdown, taxliab_amount, taxliab_active) if link_count > 0 else ()
+        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys)
 
     prop0 = jnp.zeros((p.property_count, r))
     liab0 = jnp.zeros((p.liability_count, r))
@@ -718,13 +917,16 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         ob_fail,
         *rest,
     ) = ys
-    # Three variable-length tail groups, sliced by compile-time presence: sale slabs (5 leaves if any
-    # sales), property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities).
+    # Four variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
+    # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
+    # (15 = 13 breakdowns + tax-liability amount/active snapshots if any tax links).
     n_sale = 5 if folded_sales else 0
     n_purchase = 2 if folded_purchases else 0
+    n_mortgage = 5 if p.liability_count > 0 else 0
     sale_h = rest[:n_sale]
     purchase_h = rest[n_sale : n_sale + n_purchase]
-    mortgage_h = rest[n_sale + n_purchase :]
+    mortgage_h = rest[n_sale + n_purchase : n_sale + n_purchase + n_mortgage]
+    tax_h = rest[n_sale + n_purchase + n_mortgage :]
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
@@ -785,6 +987,38 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         props_buf.mortgage_payment_interest[:] = pay_interest_h
         props_buf.mortgage_payment_principal[:] = pay_principal_h
         props_buf.mortgage_payment_total[:] = pay_total_h
+    if tax_h:
+        # 13 per-(month, link) breakdown stacks + the post-month tax-liability snapshots.
+        *breakdown_h, taxliab_amount_h, taxliab_active_h = (np.asarray(a) for a in tax_h)
+        taxes = buffers.taxes
+        taxes.accrual_active[:] = breakdown_h[0] > 0.0
+        for buf, slab in zip(
+            (
+                taxes.accrual_amount,
+                taxes.breakdown_ordinary,
+                taxes.breakdown_ltcg,
+                taxes.breakdown_stcg,
+                taxes.breakdown_standard_deduction,
+                taxes.breakdown_mortgage_interest_deduction,
+                taxes.breakdown_salt_deduction,
+                taxes.breakdown_itemized_deduction,
+                taxes.breakdown_ordinary_taxable,
+                taxes.breakdown_capital_taxable,
+                taxes.breakdown_ordinary_tax,
+                taxes.breakdown_capital_tax,
+            ),
+            breakdown_h[1:],
+            strict=True,
+        ):
+            buf[:] = slab
+        # Reconstruct the sparse tax-liability change log: each year-end records the slots it created
+        # at snapshot month m+1 with that month's post-accrual balance.
+        for m in range(11, horizon, 12):
+            created = np.flatnonzero(plan.tax_liabilities.year_end_month == m)
+            if created.size:
+                buffers.tax_liability_changes.record(
+                    snapshot_month=m + 1, slots=created, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
+                )
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -2549,6 +2783,30 @@ def _apply_ltcg_brackets(
     slice_bottom = jnp.maximum(ordinary_taxable[:, None], previous_upper[None, :])
     in_bracket = jnp.maximum(slice_top - slice_bottom, 0.0)
     return (in_bracket * bracket_rates[None, :]).sum(axis=1)
+
+
+def _net_capital_gains_jnp(
+    short_term: jnp.ndarray,
+    long_term: jnp.ndarray,
+    carryforward_in: jnp.ndarray,
+    *,
+    max_ordinary_offset_usd: float = 3000.0,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Branch-free `jnp` port of `tax.net_capital_gains_with_carryforward` (§1211/§1212 netting)."""
+    st, lt = short_term, long_term
+    st_loss_vs_lt_gain = jnp.minimum(jnp.maximum(-st, 0.0), jnp.maximum(lt, 0.0))
+    st, lt = st + st_loss_vs_lt_gain, lt - st_loss_vs_lt_gain
+    lt_loss_vs_st_gain = jnp.minimum(jnp.maximum(-lt, 0.0), jnp.maximum(st, 0.0))
+    lt, st = lt + lt_loss_vs_st_gain, st - lt_loss_vs_st_gain
+    carry = carryforward_in
+    used_short_term = jnp.minimum(jnp.maximum(st, 0.0), carry)
+    st, carry = st - used_short_term, carry - used_short_term
+    used_long_term = jnp.minimum(jnp.maximum(lt, 0.0), carry)
+    lt, carry = lt - used_long_term, carry - used_long_term
+    net_short_term, net_long_term = jnp.maximum(st, 0.0), jnp.maximum(lt, 0.0)
+    residual_loss = jnp.maximum(-(st + lt), 0.0) + carry
+    ordinary_offset = jnp.minimum(residual_loss, max_ordinary_offset_usd)
+    return net_short_term, net_long_term, ordinary_offset, residual_loss - ordinary_offset
 
 
 def _compute_tax_for_link(
