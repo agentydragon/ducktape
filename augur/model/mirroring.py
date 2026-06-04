@@ -97,7 +97,9 @@ class MirroringSampler:
             private_equity=bundle.private_equity,
             metadata=bundle.metadata,
         )
-        anchors = {mirror.target: mirror.initial_level for mirror in self.mirror_series if mirror.initial_level is not None}
+        anchors = {
+            mirror.target: mirror.initial_level for mirror in self.mirror_series if mirror.initial_level is not None
+        }
         if anchors:
             merged = anchor_sampled_series_levels(merged, level_series_anchors=anchors)
         validate_sample_satisfies_request(request, merged)

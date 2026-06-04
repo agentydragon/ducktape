@@ -98,10 +98,7 @@ class MirroringProviderConfig(FrozenModel):
         return MirroringSampler(inner=self.model.realize_model(), mirror_series=self.mirror_series)
 
 
-BasicProviderConfig = Annotated[
-    _LeafProviderConfig | MirroringProviderConfig,
-    Field(discriminator="type"),
-]
+BasicProviderConfig = Annotated[_LeafProviderConfig | MirroringProviderConfig, Field(discriminator="type")]
 
 
 class CompositeProviderConfig(FrozenModel):
@@ -114,6 +111,5 @@ class CompositeProviderConfig(FrozenModel):
 
 
 ProviderConfig = Annotated[
-    _LeafProviderConfig | MirroringProviderConfig | CompositeProviderConfig,
-    Field(discriminator="type"),
+    _LeafProviderConfig | MirroringProviderConfig | CompositeProviderConfig, Field(discriminator="type")
 ]

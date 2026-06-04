@@ -149,9 +149,7 @@ def _provider(
 
 
 def _artifact(
-    *,
-    pe_tender_interval_months_median: float = 2.0,
-    pe_tender_interval_log_sigma: float = 0.1,
+    *, pe_tender_interval_months_median: float = 2.0, pe_tender_interval_log_sigma: float = 0.1
 ) -> StateSpaceModelArtifact:
     sp500 = SP500Key().wire_id
     inflation = InflationKey().wire_id

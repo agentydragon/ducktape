@@ -54,8 +54,7 @@ def test_mirror_reanchors_to_initial_level_while_tracking_source_returns() -> No
 def test_mirror_source_must_be_emittable_by_the_inner_model() -> None:
     with pytest.raises(ValueError, match="not a fitted level factor"):
         MirroringSampler(
-            inner=ConstantFrameModel(levels={}),
-            mirror_series=(MirrorLevelSeries(target=_TARGET, source=_SOURCE),),
+            inner=ConstantFrameModel(levels={}), mirror_series=(MirrorLevelSeries(target=_TARGET, source=_SOURCE),)
         )
 
 
