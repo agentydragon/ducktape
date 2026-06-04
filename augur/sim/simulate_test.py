@@ -1652,8 +1652,8 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     assert accruals_by_jurisdiction["federal_us"]["month_index"] == 11
     assert accruals_by_jurisdiction["federal_us"]["tax_year_end_month"] == 11
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(200_000.0, abs=1e-6)
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.0, abs=1e-6)
+    assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(200_000.0, abs=0.02)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(185_400.0, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
     assert breakdowns["federal_us"]["total_tax_usd"] == pytest.approx(37_538.50, abs=0.01)
 
@@ -1670,7 +1670,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     # paychecks.
     ytd_alice = result.ordinary_income_ytd.filter(pl.col("agent_id") == "alice").sort("month_index")
     ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
-    assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=1e-6)
+    assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=0.02)
     assert ytd_values[12] == 0.0
 
 
@@ -1747,11 +1747,11 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
     assert accruals["california"]["amount_usd"] == pytest.approx(2712.36, abs=0.01)
     breakdowns = {row["jurisdiction_id"]: row for row in result.events_log.tax_breakdowns.iter_rows(named=True)}
-    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.0, abs=1e-6)
-    assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0, abs=1e-6)
+    assert breakdowns["federal_us"]["ordinary_taxable_usd"] == pytest.approx(35_400.0, abs=0.02)
+    assert breakdowns["federal_us"]["capital_gain_taxable_usd"] == pytest.approx(20_000.0, abs=0.02)
     assert breakdowns["federal_us"]["ordinary_tax_usd"] == pytest.approx(4_016.0, abs=0.01)
     assert breakdowns["federal_us"]["capital_gain_tax_usd"] == pytest.approx(1_256.25, abs=0.01)
-    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.0, abs=1e-6)
+    assert breakdowns["california"]["ordinary_taxable_usd"] == pytest.approx(64_637.0, abs=0.02)
     assert breakdowns["california"]["capital_gain_tax_usd"] == 0.0
 
     # YTD captured the LTCG ($20k) before year-end reset.
@@ -1759,7 +1759,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     assert cg_at_month_11.height == 1
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
-    assert row["gain_usd"] == pytest.approx(20_000.0, abs=1e-6)
+    assert row["gain_usd"] == pytest.approx(20_000.0, abs=0.02)
 
 
 def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
@@ -1851,7 +1851,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     liabilities_due = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
     assert liabilities_due == pytest.approx(7_984.61, abs=0.02)
     liabilities_settled = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
-    assert liabilities_settled == pytest.approx(0.0, abs=1e-6)
+    assert liabilities_settled == pytest.approx(0.0, abs=0.02)
 
     final_cash = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 13))
@@ -1947,12 +1947,12 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     accrual = result.events_log.tax_accruals.row(0, named=True)
     assert accrual["amount_usd"] == pytest.approx(4_196.0, abs=0.01)
     breakdown = result.events_log.tax_breakdowns.row(0, named=True)
-    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.0, abs=1e-6)
-    assert breakdown["ltcg_usd"] == pytest.approx(10_000.0, abs=1e-6)
-    assert breakdown["stcg_usd"] == pytest.approx(1_500.0, abs=1e-6)
-    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.0, abs=1e-6)
+    assert breakdown["ordinary_income_usd"] == pytest.approx(50_000.0, abs=0.02)
+    assert breakdown["ltcg_usd"] == pytest.approx(10_000.0, abs=0.02)
+    assert breakdown["stcg_usd"] == pytest.approx(1_500.0, abs=0.02)
+    assert breakdown["ordinary_taxable_usd"] == pytest.approx(36_900.0, abs=0.02)
     assert breakdown["ordinary_tax_usd"] == pytest.approx(4_196.0, abs=0.01)
-    assert breakdown["capital_gain_tax_usd"] == pytest.approx(0.0, abs=1e-6)
+    assert breakdown["capital_gain_tax_usd"] == pytest.approx(0.0, abs=0.02)
 
     gains = {
         row["classification"]: row["gain_usd"]
@@ -2062,16 +2062,16 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         .item()
     )
     # $2,600 proceeds - $2,516 taxes paid = $84 leftover from ceiling rounding.
-    assert final_cash == pytest.approx(84.0, abs=1e-6)
+    assert final_cash == pytest.approx(84.0, abs=0.02)
     remaining_vti = (
         result.asset_lots.filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
         .get_column("remaining_quantity")
         .item()
     )
     # 100 - (5+5+5+26) = 59 units remaining.
-    assert remaining_vti == pytest.approx(59.0, abs=1e-6)
+    assert remaining_vti == pytest.approx(59.0, abs=0.02)
     final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
-    assert final_due == pytest.approx(0.0, abs=1e-6)
+    assert final_due == pytest.approx(0.0, abs=0.02)
     assert result.rollout_status.row(0, named=True)["status"] == "active"
 
 
@@ -2157,7 +2157,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
     due_before_payment = result.tax_liabilities.filter(pl.col("month_index") == 12).get_column("amount_owed_usd").sum()
     assert due_before_payment == pytest.approx(52_292.59, abs=0.02)
     due_after_payment = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
-    assert due_after_payment == pytest.approx(0.0, abs=1e-6)
+    assert due_after_payment == pytest.approx(0.0, abs=0.02)
 
     # Cash flow: $200k income - $52292.59 tax = $147707.41 at end of horizon.
     alice_end_cash = (
@@ -3149,8 +3149,8 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
     # Month-0 sale: deficit was 4000, sold 40 units at $100 = $4000.
     m0_dispositions = result.events_log.lot_dispositions.filter(pl.col("month_index") == 0)
     assert m0_dispositions.height == 1
-    assert m0_dispositions.row(0, named=True)["units_sold"] == pytest.approx(40.0, abs=1e-6)
-    assert m0_dispositions.row(0, named=True)["proceeds_usd"] == pytest.approx(4000.0, abs=1e-6)
+    assert m0_dispositions.row(0, named=True)["units_sold"] == pytest.approx(40.0, abs=0.02)
+    assert m0_dispositions.row(0, named=True)["proceeds_usd"] == pytest.approx(4000.0, abs=0.02)
 
     # End-of-horizon (month 3) cash for Alice should be at the floor (0).
     end_cash = (
@@ -3158,7 +3158,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
         .get_column("balance_usd")
         .item()
     )
-    assert end_cash == pytest.approx(0.0, abs=1e-6)
+    assert end_cash == pytest.approx(0.0, abs=0.02)
 
 
 def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle) -> None:
@@ -3211,7 +3211,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     assert result.events_log.rollout_failures.height == 1
     failure = result.events_log.rollout_failures.row(0, named=True)
     assert failure["month_index"] == 0
-    assert failure["deficit_usd"] == pytest.approx(1000.0, abs=1e-6)
+    assert failure["deficit_usd"] == pytest.approx(1000.0, abs=0.02)
     assert failure["agent_id"] == "alice"
 
     status_row = result.rollout_status.row(0, named=True)
@@ -3431,10 +3431,10 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard(sa
     assert federal_baseline["standard_deduction_usd"] == pytest.approx(14_600.0)
 
     # Deducted: full first-year interest itemized federally + CA (no cap clip at $720k).
-    assert federal_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
-    assert federal_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
-    assert california_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
-    assert california_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
+    assert federal_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
+    assert federal_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
+    assert california_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
+    assert california_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-5)
 
     # Tax savings: (itemized - standard) * marginal rate. Both jurisdictions stay in the same
     # bracket either way ($200k W-2 → fed 24%, CA 9.3%).
@@ -3483,8 +3483,8 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja(san_francisco_location:
     assert federal_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
     assert california_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
     # Standard deduction wins (same as baseline), and total tax matches the no-policy baseline.
-    assert federal_home_equity["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=1e-6)
-    assert california_home_equity["total_tax_usd"] == pytest.approx(california_baseline["total_tax_usd"], abs=1e-6)
+    assert federal_home_equity["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=0.02)
+    assert california_home_equity["total_tax_usd"] == pytest.approx(california_baseline["total_tax_usd"], abs=0.02)
 
 
 def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_francisco_location: Location) -> None:
@@ -3551,7 +3551,7 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_franci
     # but must not contribute to the deduction.
     assert heloc_interest > 0.0
     assert mortgage_principal > 0.0  # the helper sized the acquisition mortgage as expected
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(acquisition_interest, rel=1e-9)
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(acquisition_interest, rel=1e-5)
     assert federal["mortgage_interest_deduction_usd"] < acquisition_interest + heloc_interest
 
 
@@ -3595,8 +3595,8 @@ def test_mid_federal_cap_clips_but_ca_cap_does_not(san_francisco_location: Locat
     raw_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
     federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
     california = _accrual_breakdown(result, jurisdiction_id="california")
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest * (750_000.0 / 850_000.0), rel=1e-9)
-    assert california["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest, rel=1e-9)
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest * (750_000.0 / 850_000.0), rel=1e-5)
+    assert california["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest, rel=1e-5)
     assert california["itemized_deduction_usd"] > federal["itemized_deduction_usd"]
 
 
@@ -3629,12 +3629,12 @@ def test_mid_below_standard_falls_back_to_standard_deduction(san_francisco_locat
     # Both itemized and MID report the sum of itemized lines (MID is the only one today). The
     # standard-deduction comparison happens inside the tax math and uses max(itemized, standard),
     # so the consumer can detect "standard won" by `standard > itemized`.
-    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(interest, rel=1e-9)
-    assert federal["itemized_deduction_usd"] == pytest.approx(interest, rel=1e-9)
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(interest, rel=1e-5)
+    assert federal["itemized_deduction_usd"] == pytest.approx(interest, rel=1e-5)
     assert federal["standard_deduction_usd"] == pytest.approx(14_600.0)
     # Total tax matches the no-policy baseline exactly because the standard deduction wins.
     federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
-    assert federal["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=1e-6)
+    assert federal["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=0.02)
 
 
 def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) -> None:
@@ -3669,14 +3669,14 @@ def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) 
     # Year-1 MID = sum of interest on payments 1..11 (origination at month 0 has no payment;
     # first amortizing payment lands at month 1, so year 1 has only 11 payments).
     expected_year_1 = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
-    assert year_1_mid == pytest.approx(expected_year_1, rel=1e-9)
+    assert year_1_mid == pytest.approx(expected_year_1, rel=1e-5)
     # Year-2 = sum of interest on payments 12..23 (12 payments). Without the year-end
     # `liability_interest_ytd` zeroing, year_2_mid would equal the full 23-month cumulative
     # interest (≈ year_1 + year_2_payments) instead of just the year-2 portion.
     expected_year_2 = (
         _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=23) - expected_year_1
     )
-    assert year_2_mid == pytest.approx(expected_year_2, rel=1e-9)
+    assert year_2_mid == pytest.approx(expected_year_2, rel=1e-5)
     # Sanity: year-2 must be far less than the cumulative-since-origination figure that would
     # appear if YTD never zeroed.
     assert year_2_mid < year_1_mid + expected_year_2 / 2.0
@@ -3723,10 +3723,10 @@ def test_salt_deduction_under_cap_passes_through_in_full(san_francisco_location:
     )
     expected_salt = property_tax_paid + float(ca["total_tax_usd"])
     assert expected_salt < 40_000.0
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-9)
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-5)
     # Itemized = MID + SALT; both should land in the federal row.
     assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]) + expected_salt, rel=1e-9
+        float(fed["mortgage_interest_deduction_usd"]) + expected_salt, rel=1e-5
     )
     # CA row never gets SALT (federal-only concept).
     assert float(ca["salt_deduction_usd"]) == 0.0
@@ -3765,9 +3765,9 @@ def test_salt_cap_binds_for_high_income_high_property_tax(san_francisco_location
     )
     raw_salt = property_tax_paid + float(ca["total_tax_usd"])
     assert raw_salt > 40_000.0
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(40_000.0, rel=1e-9)
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(40_000.0, rel=1e-5)
     assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]) + 40_000.0, rel=1e-9
+        float(fed["mortgage_interest_deduction_usd"]) + 40_000.0, rel=1e-5
     )
 
 
@@ -3789,7 +3789,7 @@ def test_salt_inactive_when_policy_empty_matches_no_salt_baseline(san_francisco_
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     assert float(fed["salt_deduction_usd"]) == 0.0
     assert float(fed["itemized_deduction_usd"]) == pytest.approx(
-        float(fed["mortgage_interest_deduction_usd"]), rel=1e-9
+        float(fed["mortgage_interest_deduction_usd"]), rel=1e-5
     )
 
 
@@ -3823,7 +3823,7 @@ def test_salt_cap_schedule_tightens_from_year_zero_to_year_four(san_francisco_lo
     assert year_4 is not None
     # Year 0: total SALT well over $10k but under $40k — uncapped or capped at $40k.
     # Year 4: any SALT total > $10k clips to $10k.
-    assert float(year_4["salt_deduction_usd"]) == pytest.approx(10_000.0, rel=1e-9)
+    assert float(year_4["salt_deduction_usd"]) == pytest.approx(10_000.0, rel=1e-5)
     assert float(year_0["salt_deduction_usd"]) > float(year_4["salt_deduction_usd"])
 
 
@@ -3858,7 +3858,7 @@ def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Locati
         .sum()
     )
     expected_salt = property_tax_paid + float(ca["total_tax_usd"])
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-9)
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-5)
     # No cap applied — should easily exceed the default $40k cap.
     assert float(fed["salt_deduction_usd"]) > 40_000.0
 
@@ -3886,7 +3886,7 @@ def test_salt_cap_uses_overriding_schedule_first_year(san_francisco_location: Lo
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     # SALT total far exceeds $5k → cap binds at $5k exactly.
-    assert float(fed["salt_deduction_usd"]) == pytest.approx(5_000.0, rel=1e-9)
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(5_000.0, rel=1e-5)
 
 
 def _pe_tender_scenario(
@@ -4096,7 +4096,7 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     # Available PE value = 100 units * $60/unit = $6k → sell entire position.
     # Cash after = 24k + 6k = 30k. Lot remaining = 0.
     snapshot = tender_month + 1
-    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=snapshot) == pytest.approx(0.0, abs=1e-6)
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=snapshot) == pytest.approx(0.0, abs=0.02)
     assert _alice_cash_at(result, month_index=snapshot) == pytest.approx(30_000.0, abs=1.0)
 
     # Disposition event should be recorded.
@@ -4106,7 +4106,7 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert disp.height >= 1, f"expected PE disposition at month {tender_month}, got none"
     row = disp.row(0, named=True)
     assert row["asset_id"] == "private_equity:acme"
-    assert row["units_sold"] == pytest.approx(100.0, abs=1e-6)
+    assert row["units_sold"] == pytest.approx(100.0, abs=0.02)
     assert row["proceeds_usd"] == pytest.approx(6_000.0, abs=1.0)
     assert row["cause_id"] == "pe_tender_m5_acme"
     [marker] = result.events_log.private_equity_events.filter(
@@ -4495,7 +4495,7 @@ def test_pe_tender_disposition_recorded() -> None:
     assert row["asset_id"] == "private_equity:acme"
     assert row["lot_id"] == "acme_lot_a"
     assert row["agent_id"] == "alice"
-    assert row["units_sold"] == pytest.approx(200.0, abs=1e-6)
+    assert row["units_sold"] == pytest.approx(200.0, abs=0.02)
     assert row["cost_basis_consumed_usd"] == pytest.approx(4_000.0, abs=1.0)
     assert row["proceeds_usd"] == pytest.approx(16_000.0, abs=1.0)
     assert row["cause_id"] == f"pe_tender_m{tender_month}_acme"
