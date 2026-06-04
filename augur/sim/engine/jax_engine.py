@@ -474,6 +474,52 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         for s in range(sales.month.shape[0])
         if int(sales.month[s]) >= 0
     ]
+    # Stacked per-sale static data for the loop-free scheduled-sale FIFO. The across-sales FIFO is one
+    # cumulative-supply x cumulative-demand interval overlap (generalizing `_fifo_sell_units` from one
+    # sale to all): supply prefix over each pool's lots, demand prefix over each pool's sales (via the
+    # `same_pool_prior` lower-triangular mask), so shared pools need no sequential loop.
+    n_sales = len(folded_sales)
+    sale_max_pool = max((fs.ordered_lots.shape[0] for fs in folded_sales), default=1)
+    sale_months_t = jnp.asarray([fs.month for fs in folded_sales], dtype=jnp.int32)
+    sale_qty_t = jnp.asarray([fs.quantity for fs in folded_sales], dtype=jnp.float32)
+    sale_pslot = np.array([fs.proceeds_slot for fs in folded_sales], dtype=np.int64).reshape(n_sales)
+    sale_bufidx = np.array([fs.buffer_index for fs in folded_sales], dtype=np.int64).reshape(n_sales)
+    sale_olots = np.full((n_sales, sale_max_pool), p.lot_count, dtype=np.int64)  # pad with the dummy lot
+    for _i, _fs in enumerate(folded_sales):
+        sale_olots[_i, : _fs.ordered_lots.shape[0]] = _fs.ordered_lots
+    sale_price_fixed_t = jnp.asarray(
+        [float(sales.price_fixed[fs.buffer_index]) for fs in folded_sales], dtype=jnp.float32
+    )
+    sale_price_series = np.array(
+        [int(sales.price_series[fs.buffer_index]) for fs in folded_sales], dtype=np.int64
+    ).reshape(n_sales)
+    # Same-pool ((agent, account, asset)) earlier-sale mask -> cumulative prior demand on each pool.
+    _pool_key = [
+        (
+            int(sales.agent[fs.buffer_index]),
+            int(sales.source_account[fs.buffer_index]),
+            int(sales.asset[fs.buffer_index]),
+        )
+        for fs in folded_sales
+    ]
+    _prior = np.zeros((n_sales, n_sales), dtype=np.float32)
+    for _j in range(n_sales):
+        for _k in range(_j):
+            if _pool_key[_k] == _pool_key[_j]:
+                _prior[_j, _k] = 1.0
+    sale_prior_t = jnp.asarray(_prior)
+    # Per-sale -> capital-gain-agent accrual map (the sale's agent's cg buckets).
+    sale_cg_map_t = jnp.asarray(
+        np.array([(plan.capital_gain_agent_codes == fs.agent_code) for fs in folded_sales], dtype=np.float32).reshape(
+            n_sales, p.capital_gain_agent_count
+        )
+    )
+    # TLH give-back: active harvest policies' lot masks (others zeroed). Used to drain each policy's
+    # cumulative harvested loss proportionally to units sold (the per-sale telescoping reduces to a
+    # per-policy rate `tlh0 / pre_sale_units`).
+    _hp = plan.harvest_policies
+    _hp_active = (_hp.gain_profile_index >= 0)[:, None]
+    sale_policy_mask_t = jnp.asarray((_hp.lot_mask & _hp_active).astype(np.float32))  # (policy, L)
     folded_purchases = [
         _FoldedPurchase(
             buffer_index=prop,
@@ -993,27 +1039,82 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             purchase_active_rows.append(buy)
             transfer_active_rows.append(transfer_fires)
 
-        # Scheduled asset sales (before obligations, matching eager order: proceeds can fund the
-        # month's obligations). Each real sale fires when its static month equals the traced month;
-        # `_fifo_sell_units` sells nothing when target_units is 0, so non-firing slots are no-ops. The
-        # disposition `(sale, lot, R)` is accumulated into the carry at each sale's `buffer_index`: a
-        # sale fires once, so adding the per-month sells collapses the horizon axis (most months add 0).
-        for fs in folded_sales:
-            fires = month == fs.month
-            target_units = jnp.where(active & fires, fs.quantity, 0.0)
-            unit_price = _sale_unit_price(sales, external_values, month, fs.buffer_index, r)
-            sold_units, proceeds, basis, oversell = _fifo_sell_units(
-                lot_remaining.T, fs.ordered_lots, target_units, unit_price, cost_basis_per_unit
+        # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
+        # Vectorized over ALL sales at once — no Python loop. The across-sales FIFO is one
+        # cumulative-supply (over each pool's lots) x cumulative-demand (over each pool's sales,
+        # `sale_prior_t`) interval overlap, so shared pools fall out without sequencing. Each sale's
+        # disposition `(sale, lot, R)` accumulates into the carry at its slot (fires once -> horizon
+        # collapsed). `L` is padded with a zero dummy lot so the ragged pools share one shape.
+        if folded_sales:
+            ld = p.lot_count
+            lot_rem_pad = jnp.concatenate([lot_remaining, jnp.zeros((1, r))], axis=0)  # (L+1, R)
+            cost_pad = jnp.concatenate([cost_basis_per_unit, jnp.zeros(1)])  # (L+1,)
+            lpm_pad = jnp.concatenate([jnp.asarray(plan.lot_purchase_month).astype(jnp.int32), jnp.zeros(1, jnp.int32)])
+            pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
+            target = jnp.where(
+                (active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0.0
+            )  # (N, R)
+            prior = sale_prior_t @ target  # (N, R) demand already claimed by earlier same-pool sales
+            oversell = target > (pool_qty.sum(axis=1) - prior) + 1e-9  # (N, R)
+            d_lo = prior  # demand interval (D_{j-1}, D_j], with oversold sales selling nothing
+            d_hi = prior + jnp.where(oversell, 0.0, target)
+            s_before = jnp.cumsum(pool_qty, axis=1) - pool_qty  # supply prefix S_{k-1} (N, P, R)
+            sold = jnp.maximum(
+                0.0, jnp.minimum(d_hi[:, None, :], s_before + pool_qty) - jnp.maximum(d_lo[:, None, :], s_before)
             )
-            lot_remaining = lot_remaining - sold_units.T
-            if fs.proceeds_slot >= 0:
-                cash = cash.at[fs.proceeds_slot].add(proceeds.sum(axis=1))
-            cg_active, cg_ytd, tlh = _record_capital_gains(
-                plan, cg_active, cg_ytd, tlh, lot_remaining, month, fs.agent_code, sold_units, proceeds - basis
+
+            # TLH give-back (telescoped): each policy drains tlh proportional to units sold of its lots,
+            # at rate tlh0 / pre_sale_units; the per-sale realization is `sold * rate` on the sold lots.
+            t_policy = sale_policy_mask_t @ lot_remaining  # (policy, R) pre-sale units
+            gb_rate = jnp.where(t_policy > 0.0, tlh / jnp.where(t_policy > 0.0, t_policy, 1.0), 0.0)  # (policy, R)
+            lot_gb_rate_pad = jnp.concatenate([sale_policy_mask_t.T @ gb_rate, jnp.zeros((1, r))], axis=0)  # (L+1, R)
+
+            # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
+            # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
+            if external_values.shape[0] > 0:
+                safe_series = np.where(sale_price_series >= 0, sale_price_series, 0)
+                unit_price = jnp.where(
+                    jnp.isnan(sale_price_fixed_t)[:, None],
+                    external_values[safe_series, :, month],
+                    sale_price_fixed_t[:, None],
+                )  # (N, R)
+            else:
+                unit_price = jnp.broadcast_to(sale_price_fixed_t[:, None], (n_sales, r))
+            proceeds = sold * unit_price[:, None, :]  # (N, P, R)
+            basis = sold * cost_pad[sale_olots][:, :, None]
+            gains = proceeds - basis + sold * lot_gb_rate_pad[sale_olots]  # (N, P, R) incl. give-back
+
+            total_sold = jnp.zeros((ld + 1, r)).at[sale_olots].add(sold)  # (L+1, R)
+            lot_remaining = lot_remaining - total_sold[:ld]
+            tlh = tlh - (sale_policy_mask_t @ total_sold[:ld]) * gb_rate
+            cash = cash.at[np.maximum(sale_pslot, 0)].add(
+                jnp.where(jnp.asarray(sale_pslot >= 0)[:, None], proceeds.sum(axis=1), 0.0)
             )
-            sale_disp_units = sale_disp_units.at[fs.buffer_index].add(sold_units.T)
-            sale_disp_basis = sale_disp_basis.at[fs.buffer_index].add(basis.T)
-            sale_disp_proceeds = sale_disp_proceeds.at[fs.buffer_index].add(proceeds.T)
+
+            # Capital gains: classify each pool lot long/short, accrue per sale's cg agents via cg_map.
+            long_m = (month - lpm_pad[sale_olots]) >= 12  # (N, P)
+            gains_long = (gains * long_m[:, :, None]).sum(axis=1)  # (N, R)
+            gains_short = (gains * (~long_m)[:, :, None]).sum(axis=1)
+            sold_pos = sold > 0.0
+            act_long = (sold_pos & long_m[:, :, None]).any(axis=1)  # (N, R)
+            act_short = (sold_pos & (~long_m)[:, :, None]).any(axis=1)
+            cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].add(sale_cg_map_t.T @ gains_long)
+            cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].add(sale_cg_map_t.T @ gains_short)
+            cg_active = cg_active.at[:, CapitalGainClassification.LONG_TERM, :].set(
+                cg_active[:, CapitalGainClassification.LONG_TERM, :]
+                | ((sale_cg_map_t.T @ act_long.astype(jnp.float32)) > 0.0)
+            )
+            cg_active = cg_active.at[:, CapitalGainClassification.SHORT_TERM, :].set(
+                cg_active[:, CapitalGainClassification.SHORT_TERM, :]
+                | ((sale_cg_map_t.T @ act_short.astype(jnp.float32)) > 0.0)
+            )
+
+            # Dispositions: scatter sold/basis/proceeds into each sale's slot (dummy lot clamped; sold 0).
+            disp_sale = np.broadcast_to(sale_bufidx[:, None], sale_olots.shape)
+            disp_lot = np.minimum(sale_olots, ld - 1)
+            sale_disp_units = sale_disp_units.at[disp_sale, disp_lot].add(sold)
+            sale_disp_basis = sale_disp_basis.at[disp_sale, disp_lot].add(basis)
+            sale_disp_proceeds = sale_disp_proceeds.at[disp_sale, disp_lot].add(proceeds)
             sale_oversell = sale_oversell | oversell.any()
 
         # Obligation accrual — every source kind, branch-free. Static per-(month,slot) data is sliced
@@ -1977,15 +2078,6 @@ def _transfers_jit(
     ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
     ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
     return cash, ordinary_ytd, fire, amounts
-
-
-def _sale_unit_price(
-    sales, external_values: jnp.ndarray, month: int | jnp.ndarray, sale: int, rollout_count: int
-) -> jnp.ndarray:
-    fixed_price = float(sales.price_fixed[sale])
-    if not np.isnan(fixed_price):
-        return jnp.full(rollout_count, fixed_price)
-    return external_values[int(sales.price_series[sale]), :, month]
 
 
 def _fifo_sell_units(
