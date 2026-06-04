@@ -33,13 +33,13 @@ And the three "data" roles never connect:
   to fit;
 - **eval** (`augur/fit/metrics_report.py`) scores predictive log-density / CRPS, but largely as
   **resubstitution** — on the same data the model was fit on, with no clean held-out split — and
-  only for the models wired into its active list (VECM, Independent), *not* the deployed
+  only for the models wired into its active list (VECM, Independent), _not_ the deployed
   `state_space` macro;
 - **prediction-market calibration** (`augur/calibration/`) scores the assembled model against
   live market prices entirely **post hoc**. Nothing in `augur/fit/` ever optimizes it.
 
 So calibration — arguably the truest external signal we have about whether the joint model's
-*marginals* are sane — is a scoreboard, never an objective.
+_marginals_ are sane — is a scoreboard, never an objective.
 
 ## The idea
 
@@ -50,7 +50,7 @@ Carlo rollout.
 The key realization is that we do not have to differentiate the (discrete-event, numpy) rollout to
 put calibration in the loss. A prediction market scores a **marginal** of the model — `P(S&P > 10k
 by 2030)`, `P(CPI YoY ∈ [2%, 3%])`, `P(IPO by month m)`. Those marginals are smooth, often
-closed-form functions of the model parameters, even when the rollout that *also* produces them is
+closed-form functions of the model parameters, even when the rollout that _also_ produces them is
 not differentiable.
 
 This is not a new framework bolted on — it is the `Scorable` protocol that already exists
@@ -92,14 +92,14 @@ door open to full posteriors later (the dilution NUTS work already does this).
 
 Every catalog mapping kind (`augur/calibration/`) becomes a differentiable function of `θ`:
 
-| Market kind | Marginal | Differentiable? |
-|---|---|---|
-| `level_at_date` / `level_by_date` threshold (S&P, BTC, ETH, home value) | `Φ((log K − μ_h(θ)) / σ_h(θ))` — Gaussian predictive CDF | **Yes, closed form.** `μ_h, σ_h` are smooth in `θ` via the NumPyro model. |
-| `inflation_yoy` bucket | difference of two Gaussian CDFs over a YoY-return marginal | **Yes, closed form.** |
-| multinomial bucket family | softmax-like vector of CDF differences | **Yes, closed form.** |
-| `ipo_by_date` / event-by-date | the **hazard CDF** `_public_market_marginal_cdf` (`private_equity_risk.py`) | **Yes** — smooth in the hazard params, no rollout needed. |
-| `pre_ipo_failure` / collapse | collapse-hazard CDF | **Yes** if expressed as a hazard CDF rather than MC-counted. |
-| PE `valuation_by_date` / mark thresholds | marginal of the PE mark process | **Hard today** — see Obstacles. |
+| Market kind                                                             | Marginal                                                                    | Differentiable?                                                           |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `level_at_date` / `level_by_date` threshold (S&P, BTC, ETH, home value) | `Φ((log K − μ_h(θ)) / σ_h(θ))` — Gaussian predictive CDF                    | **Yes, closed form.** `μ_h, σ_h` are smooth in `θ` via the NumPyro model. |
+| `inflation_yoy` bucket                                                  | difference of two Gaussian CDFs over a YoY-return marginal                  | **Yes, closed form.**                                                     |
+| multinomial bucket family                                               | softmax-like vector of CDF differences                                      | **Yes, closed form.**                                                     |
+| `ipo_by_date` / event-by-date                                           | the **hazard CDF** `_public_market_marginal_cdf` (`private_equity_risk.py`) | **Yes** — smooth in the hazard params, no rollout needed.                 |
+| `pre_ipo_failure` / collapse                                            | collapse-hazard CDF                                                         | **Yes** if expressed as a hazard CDF rather than MC-counted.              |
+| PE `valuation_by_date` / mark thresholds                                | marginal of the PE mark process                                             | **Hard today** — see Obstacles.                                           |
 
 The headline: **the macro / level / crypto / inflation markets — the bulk of the catalog — are
 already Gaussian-marginal and differentiable.** That is the high-value, low-friction win.
@@ -144,14 +144,14 @@ Before optimizing anything against held-out / calibration signal, make the eval 
      (Gumbel-softmax) for the discrete IPO/collapse/tender jumps, or score-function (REINFORCE)
      gradients for the discrete parts;
   3. keep PE on the existing offline NUTS fits (`bayes_dilution`, `bayes_mint_streams`) and only
-     *wire* their outputs automatically (see "coherence wins") without making them calibration-aware.
+     _wire_ their outputs automatically (see "coherence wins") without making them calibration-aware.
 - Decide per-channel whether PE markets are worth the JAX port; the macro win does not depend on it.
 
 ## What this fixes (coherence wins)
 
 Even partial adoption collapses several of the incoherences catalogued in the model review:
 
-- **deployed = fitted.** The macro artifact (drifts, vols, *and* the conditioning the config now
+- **deployed = fitted.** The macro artifact (drifts, vols, _and_ the conditioning the config now
   hand-sets) comes out of one fit command; no hand-pasting.
 - **calibration becomes an objective with a knob**, not a post-hoc scoreboard — `λ` makes the
   history-vs-market tradeoff explicit and tunable instead of implicit in hand-tuning.
@@ -182,7 +182,7 @@ Even partial adoption collapses several of the incoherences catalogued in the mo
   regime the historical window doesn't contain). `λ` is the dial; this is a feature, not a bug, but
   it needs monitoring.
 - **Resolution lag.** Many catalog markets resolve years out, so the calibration term is scored
-  against *current prices*, not outcomes — it teaches the model to agree with the crowd, not to be
+  against _current prices_, not outcomes — it teaches the model to agree with the crowd, not to be
   right. That is still useful (the crowd is a strong prior) but should be stated plainly and never
   conflated with backtested accuracy.
 
