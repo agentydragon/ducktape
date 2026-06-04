@@ -28,6 +28,9 @@ metadata:
     # CPI-U index level (YoY is a ratio, so the exact level is scale-invariant — it just
     # has to be present and positive for the inflation_yoy market to anchor).
     inflation: 320.0
+    # Live BTC spot (USD). Refresh alongside the catalog; crypto thresholds compare against
+    # the sampled crypto:btc path anchored to this.
+    "crypto:btc": 63645.0
 
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output
@@ -41,7 +44,8 @@ metadata:
     ipo_by_date: "{ by_date } -- a PUBLIC_MARKET_OPEN event occurs by date D (per-issuer)"
     pre_ipo_failure: "{} -- an absorbing COLLAPSED/ACQUIRED exit before any PUBLIC_MARKET_OPEN"
     valuation_by_date: "{ threshold_usd, by_date } -- company valuation >= X by D (opt-in M2 channel)"
-    level_at_date: "{ series, threshold, direction, at_date } -- level value at a date vs threshold"
+    level_at_date: "{ series, threshold, direction, at_date } -- level value AT a date vs threshold"
+    level_by_date: "{ series, threshold, direction, by_date } -- level EVER reaches threshold by a date (touch)"
     inflation_yoy: "{ series, threshold, direction, at_date[, window_months] } -- trailing YoY vs threshold"
   #
   # `correlate_of` (correlate markets only) -- the augur signal to surface, one of:
@@ -562,6 +566,27 @@ markets:
     resolution_criterion_text: "YES if YoY CPI-U (all items) for the year ending July 2026 exceeds 3.0%."
     notes: "Trailing-12mo window straddles as_of -> UNRESOLVED until pre-as_of CPI anchoring (see plan gotchas)."
 
+  # ============================================================================
+  # EXACT -- crypto markets (scored against the model's crypto:btc level channel).
+  # ============================================================================
+  - manifold_id: 2q2qZNLRlE
+    question: "Will Bitcoin be higher than $88,888 at the end of 2026?"
+    outcome_type: BINARY
+    resolution_deadline: "2026-12-31"
+    mappability: exact
+    mapping: { kind: level_at_date, series: "crypto:btc", threshold: 88888, direction: above, at_date: "2026-12-31" }
+    resolution_criterion_text: "YES if BTC-USD is above $88,888 at the end of 2026."
+    notes: "Point-in-time threshold on the crypto:btc channel."
+
+  - manifold_id: 9PuIhuRZEc
+    question: "Bitcoin $100k before end of June 2026?"
+    outcome_type: BINARY
+    resolution_deadline: "2026-06-30"
+    mappability: exact
+    mapping: { kind: level_by_date, series: "crypto:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
+    resolution_criterion_text: "YES if BTC-USD reaches $100,000 at any point on or before 2026-06-30."
+    notes: "Ever-by-date (touch) on crypto:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
+
 # Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series
 # at a single date, scored as one multinomial D_KL(market ‖ model).
 bucket_families:
@@ -600,3 +625,40 @@ bucket_families:
       - { market_id: KXINXY-26DEC31H1600-B8700, label: "8,600 to 8,799.99", low: 8600, high: 8800 }
       - { market_id: KXINXY-26DEC31H1600-B8900, label: "8,800 to 9,000", low: 8800, high: 9000 }
       - { market_id: KXINXY-26DEC31H1600-T9000, label: "9,000.01 or above", low: 9000, high: null }
+
+  # Kalshi BTC year-end range market (KXBTCY): tiling [low, high) buckets on the crypto:btc
+  # close at year-end 2026 (resolves 2027-01-01), scored as one multinomial.
+  - family_id: btc_eoy_2026
+    question: "Bitcoin closing level at year-end 2026 (Kalshi KXBTCY range)"
+    platform: kalshi
+    series: "crypto:btc"
+    at_date: "2027-01-01"
+    buckets:
+      - { market_id: KXBTCY-27JAN0100-T20000.00, label: "19,999.99 or below", low: null, high: 20000 }
+      - { market_id: KXBTCY-27JAN0100-B22500, label: "20,000 to 24,999.99", low: 20000, high: 25000 }
+      - { market_id: KXBTCY-27JAN0100-B27500, label: "25,000 to 29,999.99", low: 25000, high: 30000 }
+      - { market_id: KXBTCY-27JAN0100-B32500, label: "30,000 to 34,999.99", low: 30000, high: 35000 }
+      - { market_id: KXBTCY-27JAN0100-B37500, label: "35,000 to 39,999.99", low: 35000, high: 40000 }
+      - { market_id: KXBTCY-27JAN0100-B42500, label: "40,000 to 44,999.99", low: 40000, high: 45000 }
+      - { market_id: KXBTCY-27JAN0100-B47500, label: "45,000 to 49,999.99", low: 45000, high: 50000 }
+      - { market_id: KXBTCY-27JAN0100-B52500, label: "50,000 to 54,999.99", low: 50000, high: 55000 }
+      - { market_id: KXBTCY-27JAN0100-B57500, label: "55,000 to 59,999.99", low: 55000, high: 60000 }
+      - { market_id: KXBTCY-27JAN0100-B62500, label: "60,000 to 64,999.99", low: 60000, high: 65000 }
+      - { market_id: KXBTCY-27JAN0100-B67500, label: "65,000 to 69,999.99", low: 65000, high: 70000 }
+      - { market_id: KXBTCY-27JAN0100-B72500, label: "70,000 to 74,999.99", low: 70000, high: 75000 }
+      - { market_id: KXBTCY-27JAN0100-B77500, label: "75,000 to 79,999.99", low: 75000, high: 80000 }
+      - { market_id: KXBTCY-27JAN0100-B82500, label: "80,000 to 84,999.99", low: 80000, high: 85000 }
+      - { market_id: KXBTCY-27JAN0100-B87500, label: "85,000 to 89,999.99", low: 85000, high: 90000 }
+      - { market_id: KXBTCY-27JAN0100-B92500, label: "90,000 to 94,999.99", low: 90000, high: 95000 }
+      - { market_id: KXBTCY-27JAN0100-B97500, label: "95,000 to 99,999.99", low: 95000, high: 100000 }
+      - { market_id: KXBTCY-27JAN0100-B102500, label: "100,000 to 104,999.99", low: 100000, high: 105000 }
+      - { market_id: KXBTCY-27JAN0100-B107500, label: "105,000 to 109,999.99", low: 105000, high: 110000 }
+      - { market_id: KXBTCY-27JAN0100-B112500, label: "110,000 to 114,999.99", low: 110000, high: 115000 }
+      - { market_id: KXBTCY-27JAN0100-B117500, label: "115,000 to 119,999.99", low: 115000, high: 120000 }
+      - { market_id: KXBTCY-27JAN0100-B122500, label: "120,000 to 124,999.99", low: 120000, high: 125000 }
+      - { market_id: KXBTCY-27JAN0100-B127500, label: "125,000 to 129,999.99", low: 125000, high: 130000 }
+      - { market_id: KXBTCY-27JAN0100-B132500, label: "130,000 to 134,999.99", low: 130000, high: 135000 }
+      - { market_id: KXBTCY-27JAN0100-B137500, label: "135,000 to 139,999.99", low: 135000, high: 140000 }
+      - { market_id: KXBTCY-27JAN0100-B142500, label: "140,000 to 144,999.99", low: 140000, high: 145000 }
+      - { market_id: KXBTCY-27JAN0100-B147500, label: "145,000 to 149,999.99", low: 145000, high: 150000 }
+      - { market_id: KXBTCY-27JAN0100-T149999.99, label: "150,000 or above", low: 150000, high: null }

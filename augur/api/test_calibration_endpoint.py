@@ -84,13 +84,13 @@ def test_run_calibration(client: TestClient) -> None:
     assert surfaced_row["p_market"] == 0.5
     assert surfaced_row["url"].startswith("https://")
 
-    # The example catalog ships the Kalshi S&P year-end bucket family, scored as one multinomial.
-    assert isinstance(result["categorical"], list)
-    assert result["categorical"]
-    family = result["categorical"][0]
+    # Macro markets score against the model's level channels: the S&P and Bitcoin bucket families
+    # (multinomial) plus the crypto:btc point-in-time / ever-by-date markets in the clean table.
+    assert {fam["channel"] for fam in result["categorical"]} == {"sp500", "crypto:btc"}
+    family = next(fam for fam in result["categorical"] if fam["channel"] == "sp500")
     assert {"family_id", "question", "platform", "channel", "at_date", "buckets"} <= set(family)
-    assert family["channel"] == "sp500"
     assert len(family["buckets"]) == 27
+    assert any(row.get("channel") == "crypto:btc" for row in result["clean"])
 
     # One mark fan per scored issuer; the example catalog scores `openai`.
     assert [fan["issuer"] for fan in body["mark_fans"]] == ["openai"]

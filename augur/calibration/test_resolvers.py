@@ -14,6 +14,7 @@ from augur.calibration.resolvers import (
     RolloutTrajectory,
     bucket_model_counts,
     inflation_yoy_counts,
+    level_by_date_counts,
     level_threshold_counts,
     resolve_ipo_by_date,
     resolve_pre_ipo_failure,
@@ -117,6 +118,23 @@ def test_inflation_yoy_counts_window() -> None:
     # A trailing window reaching before month 0 (as_of) is not covered by the sample -> UNRESOLVED.
     early = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=6, horizon_months=12)
     assert (early.yes, early.no, early.unresolved) == (0, 0, 3)
+
+
+def test_level_by_date_counts_touch() -> None:
+    # 4 rollouts start at 100; reach 150 at months {0:3, 1:10, 3:12}; rollout 2 never reaches.
+    matrix = np.full((4, 13), 100.0, dtype=np.float64)
+    matrix[0, 3:] = 150.0
+    matrix[1, 10:] = 150.0
+    matrix[3, 12] = 150.0
+    # by month 5: only rollout 0 has touched 150 within the window.
+    early = level_by_date_counts(matrix, threshold=150.0, direction=Direction.ABOVE, by_month=5, horizon_months=12)
+    assert (early.yes, early.no, early.unresolved) == (1, 3, 0)
+    # by month 12 (whole horizon): rollouts 0,1,3 touched -> YES; rollout 2 NO.
+    full = level_by_date_counts(matrix, threshold=150.0, direction=Direction.ABOVE, by_month=12, horizon_months=12)
+    assert (full.yes, full.no, full.unresolved) == (3, 1, 0)
+    # deadline beyond the horizon: the un-touched rollout is UNRESOLVED (might cross later).
+    beyond = level_by_date_counts(matrix, threshold=150.0, direction=Direction.ABOVE, by_month=99, horizon_months=12)
+    assert (beyond.yes, beyond.no, beyond.unresolved) == (3, 0, 1)
 
 
 def test_bucket_model_counts_tile() -> None:

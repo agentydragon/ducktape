@@ -218,11 +218,28 @@ class InflationYoyMapping(BaseModel):
     window_months: int = 12
 
 
+class LevelByDateMapping(BaseModel):
+    """An ever-by-date ("touch") threshold on a level series: the value reaches `direction`'s side
+    of `threshold` at SOME month on/before `by_date` (e.g. "BTC reaches $150k by D", "S&P ATH by D")."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["level_by_date"] = "level_by_date"
+    series: str  # level-series wire id ("sp500", "crypto:btc")
+    threshold: float
+    direction: Direction
+    by_date: date
+
+
 # PE event mappings read a per-issuer trajectory; level mappings read a level-series matrix.
 PeEventMapping = IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping
-LevelMapping = LevelAtDateMapping | InflationYoyMapping
+LevelMapping = LevelAtDateMapping | InflationYoyMapping | LevelByDateMapping
 MarketMapping = Annotated[
-    IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping | LevelAtDateMapping | InflationYoyMapping,
+    IpoByDateMapping
+    | PreIpoFailureMapping
+    | ValuationByDateMapping
+    | LevelAtDateMapping
+    | InflationYoyMapping
+    | LevelByDateMapping,
     Field(discriminator="kind"),
 ]
 

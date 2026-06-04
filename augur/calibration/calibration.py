@@ -39,6 +39,7 @@ from augur.calibration.catalog import (
     ExactMarket,
     InflationYoyMapping,
     IpoByDateMapping,
+    LevelByDateMapping,
     LevelMapping,
     MarketCatalog,
     PeEventMapping,
@@ -52,6 +53,7 @@ from augur.calibration.resolvers import (
     RolloutTrajectory,
     bucket_model_counts,
     inflation_yoy_counts,
+    level_by_date_counts,
     level_threshold_counts,
     months_after,
     resolve_ipo_by_date,
@@ -295,22 +297,29 @@ def _exact_market_counts(
     matrix = level_paths.get(parse_level_series_key(mapping.series))
     if matrix is None:
         return _Unmodeled(target=mapping.series)
-    at_month = months_after(as_of, mapping.at_date)
     if isinstance(mapping, InflationYoyMapping):
         counts = inflation_yoy_counts(
             matrix,
             threshold=mapping.threshold,
             direction=mapping.direction,
-            at_month=at_month,
+            at_month=months_after(as_of, mapping.at_date),
             horizon_months=horizon_months,
             window_months=mapping.window_months,
+        )
+    elif isinstance(mapping, LevelByDateMapping):
+        counts = level_by_date_counts(
+            matrix,
+            threshold=mapping.threshold,
+            direction=mapping.direction,
+            by_month=months_after(as_of, mapping.by_date),
+            horizon_months=horizon_months,
         )
     else:
         counts = level_threshold_counts(
             matrix,
             threshold=mapping.threshold,
             direction=mapping.direction,
-            at_month=at_month,
+            at_month=months_after(as_of, mapping.at_date),
             horizon_months=horizon_months,
         )
     return counts, mapping.series

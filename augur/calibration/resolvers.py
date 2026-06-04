@@ -201,6 +201,28 @@ def inflation_yoy_counts(
     return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)
 
 
+def level_by_date_counts(
+    matrix: npt.NDArray[np.float64], *, threshold: float, direction: Direction, by_month: int, horizon_months: int
+) -> ResolutionCounts:
+    """Ever-by-date ("touch") threshold on a level series, vectorized over rollouts.
+
+    YES iff the series EVER reaches `direction`'s side of `threshold` at some month m <= `by_month`
+    (e.g. "BTC reaches $150k by 2026-06-30", "S&P hits an all-time high by D"). The level-series
+    twin of `valuation_by_date`. A rollout that reaches within the simulated window is YES; when
+    `by_month` is within the horizon the rest are NO (the whole window was simulated), and when it
+    lies beyond the horizon the un-reached rollouts are UNRESOLVED (they might still cross later).
+    """
+    n = int(matrix.shape[0])
+    if by_month < 0:
+        return ResolutionCounts(yes=0, no=0, unresolved=n)
+    window = matrix[:, : min(by_month, horizon_months) + 1]
+    reached = np.any(window >= threshold, axis=1) if direction is Direction.ABOVE else np.any(window < threshold, axis=1)
+    yes = int(np.count_nonzero(reached))
+    if by_month <= horizon_months:
+        return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)
+    return ResolutionCounts(yes=yes, no=0, unresolved=n - yes)
+
+
 def bucket_model_counts(
     matrix: npt.NDArray[np.float64],
     *,

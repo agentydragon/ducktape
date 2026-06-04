@@ -31,6 +31,7 @@ from augur.calibration.catalog import (
     IpoByDateMapping,
     KalshiRef,
     LevelAtDateMapping,
+    LevelByDateMapping,
     ManifoldRef,
     MarketCatalog,
     PolymarketRef,
@@ -228,6 +229,15 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
                 ),
             ),
             ExactMarket(
+                question="S&P 500 reaches 7500 at any point by 2026-12-31?",
+                platform_ref=ManifoldRef(manifold_id="SPX-TOUCH"),
+                outcome_type="BINARY",
+                resolution_deadline=date(2026, 12, 31),
+                mapping=LevelByDateMapping(
+                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, by_date=date(2026, 12, 31)
+                ),
+            ),
+            ExactMarket(
                 question="CPI YoY above 3% (year ending 2026-12)?",
                 platform_ref=ManifoldRef(manifold_id="CPI"),
                 outcome_type="BINARY",
@@ -253,7 +263,7 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
         rollout_count=4,
         horizon_months=_HORIZON,
     )
-    clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "CPI": 0.20}})
+    clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "SPX-TOUCH": 0.45, "CPI": 0.20}})
     result = run_calibration(
         catalog,
         horizon_months=_HORIZON,
@@ -262,12 +272,17 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
         bundle=sampled.private_equity,
         level_paths=level_paths,
     )
-    spx = {row.market_id: row for row in result.clean}["SPX"]
+    clean = {row.market_id: row for row in result.clean}
+    spx = clean["SPX"]
     assert spx.channel == "sp500"
     # month 7 values [7000,7600,8000,5000] >= 7500 -> 2 of 4 YES.
     assert spx.p_model == 0.5
     assert spx.p_market == 0.30
     assert spx.kl_bits is not None
+    # level_by_date (touch): the anchored path only deviates at month 7 here, so the same 2 of 4
+    # rollouts touch 7500 by the deadline -> p_model 0.5 (dispatch + scoring wired end to end).
+    assert clean["SPX-TOUCH"].channel == "sp500"
+    assert clean["SPX-TOUCH"].p_model == 0.5
     # inflation isn't emitted by this preset -> surfaced as unmodeled, never 500.
     cpi = {row.market_id: row for row in result.surfaced}["CPI"]
     assert cpi.mappability == "unmodeled"
