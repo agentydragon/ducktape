@@ -8,20 +8,14 @@ anchors, and the configured moments — rather than specific samples.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import numpy as np
 import pytest
 import pytest_bazel
 
 from augur.model.gbm import GeometricBrownian
-from augur.model.sim_backend import SimBackend, use_backend
+from augur.model.sim_backend import SimBackend
 
-
-@pytest.fixture(params=list(SimBackend), ids=lambda backend: backend.value)
-def backend(request: pytest.FixtureRequest) -> Iterator[SimBackend]:
-    with use_backend(request.param):
-        yield request.param
+# The `backend` fixture (parametrized over both sim backends) lives in conftest.py.
 
 
 def test_shape_and_month_zero_is_initial_value(backend: SimBackend) -> None:
