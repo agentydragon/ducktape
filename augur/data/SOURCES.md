@@ -24,13 +24,13 @@ and click the **Download → CSV** button.)
 The files checked in are **untrimmed** — column shape and date range match
 upstream as of the last refresh. Series mapping:
 
-| Local file                          | FRED series ID   | What it is                                                        |
-| ----------------------------------- | ---------------- | ----------------------------------------------------------------- |
-| `fred_cpi_us.csv`                   | `CPIAUCSL`       | US headline CPI (all items, urban consumers, seasonally adjusted) |
-| `fred_sp500.csv`                    | `SP500`          | S&P 500 daily close                                               |
-| `fred_mortgage30.csv`               | `MORTGAGE30US`   | 30-year fixed mortgage rate (Freddie Mac PMMS, weekly)            |
-| `fred_sfxrsa.csv`                   | `SFXRSA`         | Case-Shiller SF home price index, seasonally adjusted             |
-| `fred_fhfa_sf_oakland_berkeley.csv` | `ATNHPIUS41884Q` | FHFA SF-Oakland-Berkeley MSA all-transactions HPI (quarterly)     |
+| Local file                          | FRED series ID   | What it is                                                                                         |
+| ----------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `fred_cpi_us.csv`                   | `CPIAUCSL`       | US headline CPI (all items, urban consumers, seasonally adjusted)                                  |
+| `fred_sp500.csv`                    | `SP500`          | S&P 500 daily close                                                                                |
+| `fred_mortgage30.csv`               | `MORTGAGE30US`   | 30-year fixed mortgage rate (Freddie Mac PMMS, weekly)                                             |
+| `fred_sfxrsa.csv`                   | `SFXRSA`         | Case-Shiller SF home price index, seasonally adjusted                                              |
+| `fred_fhfa_sf_oakland_berkeley.csv` | `ATNHPIUS41884Q` | FHFA SF-Oakland-Berkeley MSA all-transactions HPI (quarterly)                                      |
 | `fred_sf_rent_cpi.csv`              | `CUURA422SEHA`   | SF-area rent CPI — only the FRED-only degraded evidence path; production rent is Zillow ZORI below |
 
 ### `yahoo_spy_chart_adjusted.json`, `yahoo_btc_chart_adjusted.json`, `yahoo_eth_chart_adjusted.json`
