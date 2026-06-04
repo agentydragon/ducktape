@@ -13,13 +13,15 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from props.config import PropsConfig
+from props.config import LLMProxyConfig
 from props.llm_proxy.app import create_app
 from props.llm_proxy.cli import cli
 
 
 def _client() -> TestClient:
-    config = PropsConfig(backend_url="http://test", agent_env={})
+    # The proxy needs only the minimal LLMProxyConfig (just upstreams); the
+    # health + auth-rejection paths below never route, so empty upstreams suffice.
+    config = LLMProxyConfig()
     # The auth-rejection paths below never touch the DB, so a MagicMock suffices.
     return TestClient(create_app(db=MagicMock(), config=config), raise_server_exceptions=False)
 

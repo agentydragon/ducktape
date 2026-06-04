@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from props.config import PropsConfig
+from props.config import LLMProxyConfig
 from props.db.database import Database
 
 
@@ -20,13 +20,18 @@ def get_admin_db(request: Request) -> Database:
     return request.app.state.admin_db  # type: ignore[no-any-return]
 
 
-def get_config(request: Request) -> PropsConfig:
-    """Get PropsConfig from app state."""
+def get_config(request: Request) -> LLMProxyConfig:
+    """Get the LLM-proxy config (`upstreams`) from app state.
+
+    Typed as `LLMProxyConfig` because the only consumer is the LLM proxy's
+    `/v1/responses` route. The API server sets a full `PropsConfig` here (a
+    subtype), which satisfies this dependency too.
+    """
     return request.app.state.config  # type: ignore[no-any-return]
 
 
 # Type alias for admin database dependency (use in FastAPI route signatures)
 AdminDb = Annotated[Database, Depends(get_admin_db)]
 
-# Type alias for config dependency
-Config = Annotated[PropsConfig, Depends(get_config)]
+# Type alias for config dependency (LLM-proxy upstreams)
+Config = Annotated[LLMProxyConfig, Depends(get_config)]

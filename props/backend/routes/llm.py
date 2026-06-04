@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from openai_utils.model import ResponseUsage
 from props.backend.auth import AgentRole, Auth, AuthenticatedIdentity
 from props.backend.deps import AdminDb, Config
-from props.config import PropsConfig, UpstreamConfig
+from props.config import LLMProxyConfig, UpstreamConfig
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def _resolve_upstream_url(config: UpstreamConfig) -> str:
     raise ValueError("Upstream config must have url or url_env")
 
 
-def _get_upstream_route(model_id: str, session: Session, config: PropsConfig) -> UpstreamRoute:
+def _get_upstream_route(model_id: str, session: Session, config: LLMProxyConfig) -> UpstreamRoute:
     """Look up upstream routing info for a model.
 
     Returns UpstreamRoute with resolved URL, API key, and model name to send.

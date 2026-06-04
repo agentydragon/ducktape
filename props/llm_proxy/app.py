@@ -5,7 +5,7 @@ Serves only ``/v1/responses`` (auth + budget + cost + upstream routing). It reus
 the backend's ``llm`` router, ``auth``, and ``deps`` unchanged — no frontend,
 orchestration, registry proxy, or SSO. The router's only app-state requirements
 are ``admin_db`` (a ``Database`` admin pool, for auth + budget/cost/upstream
-queries) and ``config`` (``PropsConfig``, for upstream routing); the SSO/session
+queries) and ``config`` (``LLMProxyConfig``, for upstream routing); the SSO/session
 branch of ``get_request_identity`` is inert here because no ``SessionMiddleware``
 is installed.
 """
@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from props.backend.routes import llm
-from props.config import PropsConfig, load_config_from_env
+from props.config import LLMProxyConfig, load_proxy_config_from_env
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from util.logging import LogLevel, configure_logging
@@ -32,7 +32,7 @@ configure_logging(
 logger = logging.getLogger(__name__)
 
 
-def create_app(*, db: Database | None = None, config: PropsConfig | None = None) -> FastAPI:
+def create_app(*, db: Database | None = None, config: LLMProxyConfig | None = None) -> FastAPI:
     """Build the LLM proxy app.
 
     `db`/`config` are injected in tests; in production they are loaded from the
@@ -42,7 +42,7 @@ def create_app(*, db: Database | None = None, config: PropsConfig | None = None)
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.admin_db = db or Database(DatabaseConfig())
-        app.state.config = config or load_config_from_env()
+        app.state.config = config or load_proxy_config_from_env()
         logger.info("LLM proxy ready")
         yield
 
