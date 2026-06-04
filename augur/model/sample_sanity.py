@@ -19,6 +19,7 @@ from augur.model.exogenous import (
 )
 from augur.model.provider_config import (
     CompositeProviderConfig,
+    MirroringProviderConfig,
     ProviderConfig,
     StateSpaceProviderConfig,
     TrainedPrivateEquityProviderConfig,
@@ -682,6 +683,8 @@ def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> Provi
             None if provider.trained_blob is None else _resolve_path(provider.trained_blob, base_dir=base_dir)
         )
         return provider.model_copy(update={"trained_blob": trained_blob})
+    if isinstance(provider, MirroringProviderConfig):
+        return provider.model_copy(update={"model": _anchor_provider_paths(provider.model, base_dir=base_dir)})
     if isinstance(provider, CompositeProviderConfig):
         return provider.model_copy(
             update={

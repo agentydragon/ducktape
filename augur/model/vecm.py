@@ -476,17 +476,22 @@ class VecmModel:
         match key:
             case SP500Key():
                 return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
-            case RentKey(location_id="san_francisco_ca"):
-                return self._latest_observation_value("sf_rent_cpi_latest")
             case InflationKey():
                 return self._latest_observation_value("cpi_latest")
             case CryptoKey(symbol=symbol):
                 return self._latest_observation_value(f"{symbol}_close_latest")
             case HomeValueKey() | RentKey():
-                for obs_key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
+                for obs_key in (
+                    "zillow_home_value_latest_by_factor",
+                    "zillow_rent_latest_by_factor",
+                    "case_shiller_home_value_latest_by_factor",
+                ):
                     by_factor = self.latest_observations.get(obs_key)
                     if isinstance(by_factor, dict) and key.wire_id in by_factor:
                         return _observation_value(by_factor[key.wire_id], f"{obs_key}[{key.wire_id!r}]")
+                if isinstance(key, RentKey) and key.location_id == "san_francisco_ca":
+                    # FRED-only degraded evidence anchors SF rent under this legacy CPI key.
+                    return self._latest_observation_value("sf_rent_cpi_latest")
         raise ValueError(f"VECM config latest_observations has no usable latest value for factor {key.wire_id!r}")
 
     def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:

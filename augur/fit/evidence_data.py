@@ -12,7 +12,7 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 
-from augur.model.series import HomeValueKey, LocationId
+from augur.model.series import HomeValueKey, LocationId, RentKey
 from util.bazel.runfiles import get_required_path
 
 # Public exogenous source data files, as repo-root-relative paths. Each string
@@ -25,14 +25,25 @@ YAHOO_SPY_ADJUSTED_JSON = "augur/data/yahoo_spy_chart_adjusted.json"
 YAHOO_BTC_ADJUSTED_JSON = "augur/data/yahoo_btc_chart_adjusted.json"
 YAHOO_ETH_ADJUSTED_JSON = "augur/data/yahoo_eth_chart_adjusted.json"
 FRED_CPI_US_CSV = "augur/data/fred_cpi_us.csv"
+# SF rent CPI: used only by the FRED-only degraded evidence path (`data.py::_evidence_fred_only`).
+# The production loader sources rent from Zillow ZORI (ZILLOW_CITY_ZORI_CSV) for SF and Vallejo.
 FRED_SF_RENT_CPI_CSV = "augur/data/fred_sf_rent_cpi.csv"
 FRED_SFXRSA_CSV = "augur/data/fred_sfxrsa.csv"
 FRED_FHFA_SF_OAKLAND_BERKELEY_CSV = "augur/data/fred_fhfa_sf_oakland_berkeley.csv"
 FRED_MORTGAGE30_CSV = "augur/data/fred_mortgage30.csv"
 ZILLOW_CITY_ZHVI_CSV = "augur/data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
+ZILLOW_CITY_ZORI_CSV = "augur/data/zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv"
 
-# Home-value location -> (Zillow RegionName, State) for the city rows to read.
+# Home-value location -> (Zillow RegionName, State) for the ZHVI city rows to read.
 ZILLOW_HOME_VALUE_REGIONS: dict[LocationId, tuple[str, str]] = {
+    LocationId("san_francisco_ca"): ("San Francisco", "CA"),
+    LocationId("vallejo_ca"): ("Vallejo", "CA"),
+}
+
+# Rent location -> (Zillow RegionName, State) for the ZORI city rows to read. Same Zillow
+# methodology as home value, so the SF/Vallejo rent cross-covariance is sound. Mare Island
+# carries no separate rent index; it mirrors vallejo_ca's path in the model.
+ZILLOW_RENT_REGIONS: dict[LocationId, tuple[str, str]] = {
     LocationId("san_francisco_ca"): ("San Francisco", "CA"),
     LocationId("vallejo_ca"): ("Vallejo", "CA"),
 }
@@ -262,27 +273,34 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     btc_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON)))
     eth_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON)))
     cpi = _monthly_last(_read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL"))
-    rent = _monthly_last(_read_fred_series(_source_path(FRED_SF_RENT_CPI_CSV), "CUURA422SEHA"))
     case_shiller = _monthly_last(_read_fred_series(_source_path(FRED_SFXRSA_CSV), "SFXRSA"))
     fhfa = _monthly_last(_read_fred_series(_source_path(FRED_FHFA_SF_OAKLAND_BERKELEY_CSV), "ATNHPIUS41884Q"))
     mortgage30 = _read_fred_series(_source_path(FRED_MORTGAGE30_CSV), "MORTGAGE30US")
-    zillow_path = _source_path(ZILLOW_CITY_ZHVI_CSV)
-    # Home-value evidence stays keyed by LocationId (its magisterium-natural key); the flat factor
-    # wire id (HomeValueKey(loc).wire_id) is derived only at the matrix/JSON boundaries below.
+    zillow_zhvi_path = _source_path(ZILLOW_CITY_ZHVI_CSV)
+    zillow_zori_path = _source_path(ZILLOW_CITY_ZORI_CSV)
+    # Home-value and rent evidence stay keyed by LocationId (their magisterium-natural key); the
+    # flat factor wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
+    # boundaries below.
     home_values = {
-        location_id: _zillow_city_series(zillow_path, region_name=region_name, state=state)
+        location_id: _zillow_city_series(zillow_zhvi_path, region_name=region_name, state=state)
         for location_id, (region_name, state) in ZILLOW_HOME_VALUE_REGIONS.items()
     }
+    rents = {
+        location_id: _zillow_city_series(zillow_zori_path, region_name=region_name, state=state)
+        for location_id, (region_name, state) in ZILLOW_RENT_REGIONS.items()
+    }
     home_factor_wire_id = {location_id: HomeValueKey(location_id=location_id).wire_id for location_id in home_values}
+    rent_factor_wire_id = {location_id: RentKey(location_id=location_id).wire_id for location_id in rents}
     home_factor_names = tuple(home_factor_wire_id.values())
-    factor_names = ("sp500", "crypto:btc", "crypto:eth", *home_factor_names, "rent:san_francisco_ca", "inflation")
+    rent_factor_names = tuple(rent_factor_wire_id.values())
+    factor_names = ("sp500", "crypto:btc", "crypto:eth", *home_factor_names, *rent_factor_names, "inflation")
     aligned = pd.concat(
         {
             "sp500": _monthly_unit_returns(sp500_total_return),
             "crypto:btc": _monthly_unit_returns(btc_price),
             "crypto:eth": _monthly_unit_returns(eth_price),
             **{home_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in home_values.items()},
-            "rent:san_francisco_ca": _monthly_unit_returns(rent),
+            **{rent_factor_wire_id[loc]: _monthly_unit_returns(series) for loc, series in rents.items()},
             "inflation": _monthly_unit_returns(cpi),
         },
         axis=1,
@@ -295,16 +313,16 @@ def load_exogenous_evidence() -> ExogenousEvidence:
     btc_returns = _period_return_frame(btc_price)
     eth_returns = _period_return_frame(eth_price)
     home_value_returns = {loc: _period_return_frame(series) for loc, series in home_values.items()}
+    rent_returns = {loc: _period_return_frame(series) for loc, series in rents.items()}
     case_shiller_returns = _period_return_frame(case_shiller)
     fhfa_returns = _period_return_frame(fhfa)
-    rent_returns = _period_return_frame(rent)
     cpi_returns = _period_return_frame(cpi)
     marginal = {
         "sp500": _returns([sp500_returns]),
         "crypto:btc": _returns([btc_returns]),
         "crypto:eth": _returns([eth_returns]),
         **{home_factor_wire_id[loc]: _returns([returns]) for loc, returns in home_value_returns.items()},
-        "rent:san_francisco_ca": _returns([rent_returns]),
+        **{rent_factor_wire_id[loc]: _returns([returns]) for loc, returns in rent_returns.items()},
         "inflation": _returns([cpi_returns]),
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
@@ -340,15 +358,20 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             }
             for loc, series in home_values.items()
         },
+        "zillow_rent_latest_by_factor": {
+            rent_factor_wire_id[loc]: {
+                "date": str(series.index[-1]),
+                "value": float(series.iloc[-1]),
+                "source": ZILLOW_CITY_ZORI_CSV,
+                "region_name": ZILLOW_RENT_REGIONS[loc][0],
+                "state": ZILLOW_RENT_REGIONS[loc][1],
+            }
+            for loc, series in rents.items()
+        },
         "case_shiller_sf_latest": {
             "date": str(case_shiller.index[-1]),
             "value": float(case_shiller.iloc[-1]),
             "source": FRED_SFXRSA_CSV,
-        },
-        "sf_rent_cpi_latest": {
-            "date": str(rent.index[-1]),
-            "value": float(rent.iloc[-1]),
-            "source": FRED_SF_RENT_CPI_CSV,
         },
         "cpi_latest": {"date": str(cpi.index[-1]), "value": float(cpi.iloc[-1]), "source": FRED_CPI_US_CSV},
         "mortgage30_latest": {
@@ -372,6 +395,16 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             "fhfa_sf_oakland_berkeley": _return_frame_summary(
                 fhfa_returns, source=FRED_FHFA_SF_OAKLAND_BERKELEY_CSV, used_as_marginal_evidence=False
             ),
+        },
+        "rent_return_sources": {
+            "zillow_city_zori_by_factor": {
+                rent_factor_wire_id[loc]: {
+                    **_return_frame_summary(returns, source=ZILLOW_CITY_ZORI_CSV, used_as_marginal_evidence=True),
+                    "region_name": ZILLOW_RENT_REGIONS[loc][0],
+                    "state": ZILLOW_RENT_REGIONS[loc][1],
+                }
+                for loc, returns in rent_returns.items()
+            }
         },
         "series_path_prior_calibration": {
             name: {

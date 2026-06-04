@@ -88,8 +88,6 @@ def _latest_factor_observation(latest: Mapping[str, Any], factor: str) -> Exogen
         return _point_from_latest(latest["spy_adjusted_close_latest"], source_prefix="public")
     if factor == "inflation":
         return _point_from_latest(latest["cpi_latest"], source_prefix="public")
-    if factor == "rent:san_francisco_ca":
-        return _point_from_latest(latest["sf_rent_cpi_latest"], source_prefix="public")
     if factor == "crypto:btc":
         return _point_from_latest(latest["btc_close_latest"], source_prefix="public")
     if factor == "crypto:eth":
@@ -98,6 +96,9 @@ def _latest_factor_observation(latest: Mapping[str, Any], factor: str) -> Exogen
     home_by_factor = latest.get("zillow_home_value_latest_by_factor")
     if isinstance(home_by_factor, Mapping) and factor in home_by_factor:
         return _point_from_latest(home_by_factor[factor], source_prefix="public")
+    rent_by_factor = latest.get("zillow_rent_latest_by_factor")
+    if isinstance(rent_by_factor, Mapping) and factor in rent_by_factor:
+        return _point_from_latest(rent_by_factor[factor], source_prefix="public")
     case_shiller_by_factor = latest.get("case_shiller_home_value_latest_by_factor")
     if isinstance(case_shiller_by_factor, Mapping) and factor in case_shiller_by_factor:
         return _point_from_latest(case_shiller_by_factor[factor], source_prefix="public")

@@ -265,6 +265,7 @@ py_library(
     deps = [
         ":composite",
         ":independent",
+        ":mirroring",
         ":private_equity_risk",
         ":schemas",
         ":state_space",
@@ -393,6 +394,32 @@ py_library(
     deps = [
         ":exogenous",
         ":private_equity_bundle",
+    ],
+)
+
+py_library(
+    name = "mirroring",
+    srcs = ["mirroring.py"],
+    deps = [
+        ":exogenous",
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "mirroring_test",
+    srcs = ["mirroring_test.py"],
+    deps = [
+        ":exogenous",
+        ":mirroring",
+        ":series",
+        ":testing",
+        "//:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

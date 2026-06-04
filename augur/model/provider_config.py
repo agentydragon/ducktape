@@ -72,18 +72,34 @@ from pydantic import Field
 
 from augur.model.composite import CompositeModel
 from augur.model.independent import IndependentProviderConfig
+from augur.model.mirroring import MirroringSampler, MirrorLevelSeries
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.schemas import FrozenModel
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmProviderConfig
 
-BasicProviderConfig = Annotated[
+# The single-model providers, before the mirroring/composite wrappers that compose over them.
+_LeafProviderConfig = (
     IndependentProviderConfig
     | VecmProviderConfig
     | StateSpaceProviderConfig
     | TrainedPrivateEquityProviderConfig
-    | PrivateEquityRiskProviderConfig,
+    | PrivateEquityRiskProviderConfig
+)
+
+
+class MirroringProviderConfig(FrozenModel):
+    type: Literal["mirroring"] = "mirroring"
+    model: Annotated[_LeafProviderConfig, Field(discriminator="type")]
+    mirror_series: tuple[MirrorLevelSeries, ...] = Field(min_length=1)
+
+    def realize_model(self) -> MirroringSampler:
+        return MirroringSampler(inner=self.model.realize_model(), mirror_series=self.mirror_series)
+
+
+BasicProviderConfig = Annotated[
+    _LeafProviderConfig | MirroringProviderConfig,
     Field(discriminator="type"),
 ]
 
@@ -98,11 +114,6 @@ class CompositeProviderConfig(FrozenModel):
 
 
 ProviderConfig = Annotated[
-    IndependentProviderConfig
-    | VecmProviderConfig
-    | StateSpaceProviderConfig
-    | TrainedPrivateEquityProviderConfig
-    | PrivateEquityRiskProviderConfig
-    | CompositeProviderConfig,
+    _LeafProviderConfig | MirroringProviderConfig | CompositeProviderConfig,
     Field(discriminator="type"),
 ]

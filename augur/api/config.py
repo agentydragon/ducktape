@@ -27,7 +27,7 @@ from augur.api.portfolio_source_config import PortfolioSourcesConfig
 from augur.api.schemas import ApiModel
 from augur.api.wire import ActorRole, ProductInputDefaults
 from augur.budget.schema import BudgetConfig
-from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
+from augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmProviderConfig
@@ -258,6 +258,11 @@ def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> Provi
         if trained_artifact_path.is_absolute():
             return provider
         return provider.model_copy(update={"trained_artifact_path": (base_dir / trained_artifact_path).resolve()})
+    if isinstance(provider, MirroringProviderConfig):
+        model = _anchor_provider_paths(provider.model, base_dir=base_dir)
+        if model == provider.model:
+            return provider
+        return provider.model_copy(update={"model": model})
     if isinstance(provider, CompositeProviderConfig):
         macro = _anchor_provider_paths(provider.macro, base_dir=base_dir)
         private_equity = _anchor_provider_paths(provider.private_equity, base_dir=base_dir)

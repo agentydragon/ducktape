@@ -31,7 +31,7 @@ upstream as of the last refresh. Series mapping:
 | `fred_mortgage30.csv`               | `MORTGAGE30US`   | 30-year fixed mortgage rate (Freddie Mac PMMS, weekly)            |
 | `fred_sfxrsa.csv`                   | `SFXRSA`         | Case-Shiller SF home price index, seasonally adjusted             |
 | `fred_fhfa_sf_oakland_berkeley.csv` | `ATNHPIUS41884Q` | FHFA SF-Oakland-Berkeley MSA all-transactions HPI (quarterly)     |
-| `fred_sf_rent_cpi.csv`              | `CUURA422SEHA`   | SF-area rent CPI (urban consumers, not seasonally adjusted)       |
+| `fred_sf_rent_cpi.csv`              | `CUURA422SEHA`   | SF-area rent CPI — only the FRED-only degraded evidence path; production rent is Zillow ZORI below |
 
 ### `yahoo_spy_chart_adjusted.json`, `yahoo_btc_chart_adjusted.json`, `yahoo_eth_chart_adjusted.json`
 
@@ -116,6 +116,29 @@ with open(sys.argv[1], newline='') as fin, open(sys.argv[2], 'w', newline='') as
 
 Add the corresponding `(RegionName, State)` pair to the filter when extending
 the location set.
+
+### `zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv`
+
+Zillow's city-level Observed Rent Index (ZORI) for the SFR + condo/co-op + MFR
+bucket, smoothed and seasonally adjusted, monthly. The production rent ground
+truth for SF and Vallejo location paths — same Zillow methodology as the ZHVI
+home-value file, so the SF/Vallejo rent cross-covariance is consistent. (Mare
+Island has no separate rent index; the model mirrors `rent:vallejo_ca` for it.)
+
+Source: [Zillow Research](https://www.zillow.com/research/data/) — pick
+**Rentals → ZORI (Smoothed, Seasonally Adjusted): All Homes Plus Multifamily
+Time Series ($) → City**.
+
+Direct URL (subject to change as Zillow rotates dataset paths):
+
+```
+https://files.zillowstatic.com/research/public_csvs/zori/City_zori_uc_sfrcondomfr_sm_sa_month.csv
+```
+
+**Trimmed** with the same `(RegionType, State, RegionName)` filter as the ZHVI
+file above (the loader reuses `_zillow_city_series`); the checked-in file keeps
+only the San Francisco + Vallejo CA city rows plus the header. Size: ~4.5 MB
+upstream → ~5 KB trimmed.
 
 ## Prior and reference sources
 
