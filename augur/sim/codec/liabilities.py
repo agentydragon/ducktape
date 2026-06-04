@@ -9,6 +9,7 @@ import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
+    code_column,
     codes_to_strings,
     frame_from_columns,
     r_first_view,
@@ -26,27 +27,24 @@ def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
     h1, r, n_liab = principal.shape
     months, rollouts, liabs = state_axes(h1, r, n_liab)
     mask = active.reshape(-1)
-    liability_ids = codes_to_strings(plan, plan.liabilities.codes)
-    agent_ids = codes_to_strings(plan, plan.liabilities.agent)
-    payment_account_ids = codes_to_strings(plan, plan.liabilities.payment_account)
-    counterparty_agent_ids = codes_to_strings(plan, plan.liabilities.counterparty_agent)
-    counterparty_account_ids = codes_to_strings(plan, plan.liabilities.counterparty_account)
-    property_ids_per_liab = codes_to_strings(plan, plan.properties.id)[plan.liabilities.property_slot.astype(np.int64)]
-    origination_per_liab = plan.properties.month.astype(np.int64)[plan.liabilities.property_slot.astype(np.int64)]
+    liab_idx = liabs[mask]
+    property_slot = plan.liabilities.property_slot.astype(np.int64)
+    property_id_codes = plan.properties.id[property_slot]
+    origination_per_liab = plan.properties.month.astype(np.int64)[property_slot]
     return state_history_frame_from_columns(
         {
             "rollout_index": rollouts[mask],
             "month_index": months[mask],
-            "liability_id": liability_ids[liabs[mask]],
-            "agent_id": agent_ids[liabs[mask]],
-            "payment_account_id": payment_account_ids[liabs[mask]],
-            "counterparty_agent_id": counterparty_agent_ids[liabs[mask]],
-            "counterparty_account_id": counterparty_account_ids[liabs[mask]],
-            "property_id": property_ids_per_liab[liabs[mask]],
+            "liability_id": code_column(plan, plan.liabilities.codes[liab_idx]),
+            "agent_id": code_column(plan, plan.liabilities.agent[liab_idx]),
+            "payment_account_id": code_column(plan, plan.liabilities.payment_account[liab_idx]),
+            "counterparty_agent_id": code_column(plan, plan.liabilities.counterparty_agent[liab_idx]),
+            "counterparty_account_id": code_column(plan, plan.liabilities.counterparty_account[liab_idx]),
+            "property_id": code_column(plan, property_id_codes[liab_idx]),
             "principal_usd": principal.reshape(-1)[mask],
-            "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liabs[mask]],
-            "term_months": plan.liabilities.term_months.astype(np.int64)[liabs[mask]],
-            "origination_month_index": origination_per_liab[liabs[mask]],
+            "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liab_idx],
+            "term_months": plan.liabilities.term_months.astype(np.int64)[liab_idx],
+            "origination_month_index": origination_per_liab[liab_idx],
             "monthly_payment_usd": buffers.state.liability_monthly_payment_state.reshape(-1)[mask],
             "interest_paid_ytd_usd": buffers.state.liability_interest_ytd_state.reshape(-1)[mask],
             "principal_paid_ytd_usd": buffers.state.liability_principal_ytd_state.reshape(-1)[mask],

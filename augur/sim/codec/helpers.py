@@ -8,12 +8,56 @@ match the event/state-frame schemas declared in `augur.sim.state` + `augur.sim.e
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
 import polars as pl
 
 from augur.sim.compiler import CompiledSimulation
+
+
+@dataclass(frozen=True)
+class CodeColumn:
+    """A string output column carried as integer codes + a (small) category table.
+
+    The frame builders materialize it via a single Arrow dict-gather (`categories[codes]`)
+    instead of constructing a `pl.Utf8` column from a NumPy `object` array of Python `str`
+    (the GIL-bound `new_str` path that dominated decode at scale). `codes < 0` → null.
+    """
+
+    codes: np.ndarray
+    categories: Sequence[str | None]
+
+
+def code_column(plan: CompiledSimulation, codes: np.ndarray) -> CodeColumn:
+    """A `CodeColumn` for ids interned in `plan.strings` (agents, accounts, lots, causes, …)."""
+    return CodeColumn(codes=codes, categories=plan.strings)
+
+
+def asset_code_column(plan: CompiledSimulation, codes: np.ndarray) -> CodeColumn:
+    """A `CodeColumn` mapping asset codes to their wire ids (the frontend's `asset_id`)."""
+    return CodeColumn(codes=codes, categories=[asset.wire_id for asset in plan.assets])
+
+
+def _gather_str(name: str, column: CodeColumn) -> pl.Series:
+    # Prepend a null category so code -1 (NO_CODE) maps to null after the +1 shift; clamp any
+    # other negative code to that null slot too.
+    categories = pl.Series("", [None, *column.categories], dtype=pl.Utf8())
+    codes = np.asarray(column.codes, dtype=np.int64)
+    indices = np.where(codes < 0, -1, codes) + 1
+    return categories.gather(indices).rename(name)
+
+
+def _columns_to_polars(columns: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: (_gather_str(name, value) if isinstance(value, CodeColumn) else value) for name, value in columns.items()
+    }
+
+
+def _column_size(value: Any) -> int:
+    return value.codes.size if isinstance(value, CodeColumn) else value.size
 
 
 def text(plan: CompiledSimulation, code: int) -> str | None:
@@ -74,7 +118,7 @@ def state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndar
     return months, rollouts, slots
 
 
-def state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) -> pl.DataFrame:
+def state_history_frame_from_columns(columns: dict[str, Any], spec: Any) -> pl.DataFrame:
     """Build a state-history frame from pre-built numpy column arrays. State-history specs
     don't carry `month_index` in their schema (the cross-section is one month wide); decode
     adds month_index in front of every column the spec declares, so this helper threads
@@ -88,20 +132,20 @@ def state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) 
             **{name: dtype for name, dtype in spec.schema.items() if name != "rollout_index"},
         }
     )
-    n = next(iter(columns.values())).size
+    n = _column_size(next(iter(columns.values())))
     if n == 0:
         return state_schema.to_frame()
-    return pl.DataFrame(columns, schema=state_schema).select(list(state_schema.names()))
+    return pl.DataFrame(_columns_to_polars(columns), schema=state_schema).select(list(state_schema.names()))
 
 
-def frame_from_columns(spec: Any, **columns: np.ndarray) -> pl.DataFrame:
+def frame_from_columns(spec: Any, **columns: Any) -> pl.DataFrame:
     """Materialize an event frame from numpy column arrays. Empty input produces a
     correctly-typed empty frame matching the spec's schema. Polars cast/infer is driven by
     `spec.schema` so object-dtype numpy arrays of Python strings become `pl.Utf8` (rather
     than `pl.Object`, which breaks downstream concat between dense and empty frames)."""
 
-    n = next(iter(columns.values())).size
+    n = _column_size(next(iter(columns.values())))
     if n == 0:
         return cast(pl.DataFrame, spec.empty())
-    df: pl.DataFrame = pl.DataFrame(columns, schema=spec.schema)
+    df: pl.DataFrame = pl.DataFrame(_columns_to_polars(columns), schema=spec.schema)
     return cast(pl.DataFrame, df.select(spec.schema.names()))

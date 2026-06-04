@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
-from augur.sim.codec.helpers import codes_to_strings, frame_from_columns
+from augur.sim.codec.helpers import code_column, codes_to_strings, frame_from_columns
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES
 
@@ -27,13 +27,14 @@ def decode_obligations(
         months, slots, rollouts = np.argwhere(active).T
     else:
         months = slots = rollouts = np.array([], dtype=np.int64)
-    cause_ids = codes_to_strings(plan, plan.obligations.cause)[months, slots]
-    obligation_ids = codes_to_strings(plan, plan.obligations.id)[months, slots]
-    obligation_types = codes_to_strings(plan, plan.obligations.type)[months, slots]
-    agent_ids = codes_to_strings(plan, plan.obligations.agent)[months, slots]
-    from_account_ids = codes_to_strings(plan, plan.obligations.from_account)[months, slots]
-    to_agent_ids = codes_to_strings(plan, plan.obligations.to_agent)[months, slots]
-    to_account_ids = codes_to_strings(plan, plan.obligations.to_account)[months, slots]
+    # Per-event integer code arrays (lifted to strings lazily via CodeColumn dict-gather).
+    cause_codes = plan.obligations.cause[months, slots]
+    obligation_id_codes = plan.obligations.id[months, slots]
+    type_codes = plan.obligations.type[months, slots]
+    agent_codes = plan.obligations.agent[months, slots]
+    from_account_codes = plan.obligations.from_account[months, slots]
+    to_agent_codes = plan.obligations.to_agent[months, slots]
+    to_account_codes = plan.obligations.to_account[months, slots]
     amount_due = buffers.obligations.due[months, slots, rollouts]
     amount_paid = buffers.obligations.paid[months, slots, rollouts]
     shortfall = buffers.obligations.shortfall[months, slots, rollouts]
@@ -44,24 +45,24 @@ def decode_obligations(
         EVENT_FRAMES.obligation_accruals,
         rollout_index=rollouts,
         month_index=months,
-        cause_id=cause_ids,
-        obligation_id=obligation_ids,
-        obligation_type=obligation_types,
-        agent_id=agent_ids,
-        from_account_id=from_account_ids,
-        to_agent_id=to_agent_ids,
-        to_account_id=to_account_ids,
+        cause_id=code_column(plan, cause_codes),
+        obligation_id=code_column(plan, obligation_id_codes),
+        obligation_type=code_column(plan, type_codes),
+        agent_id=code_column(plan, agent_codes),
+        from_account_id=code_column(plan, from_account_codes),
+        to_agent_id=code_column(plan, to_agent_codes),
+        to_account_id=code_column(plan, to_account_codes),
         amount_due_usd=amount_due,
     )
     settlements = frame_from_columns(
         EVENT_FRAMES.obligation_settlements,
         rollout_index=rollouts,
         month_index=months,
-        cause_id=cause_ids,
-        obligation_id=obligation_ids,
-        obligation_type=obligation_types,
-        agent_id=agent_ids,
-        from_account_id=from_account_ids,
+        cause_id=code_column(plan, cause_codes),
+        obligation_id=code_column(plan, obligation_id_codes),
+        obligation_type=code_column(plan, type_codes),
+        agent_id=code_column(plan, agent_codes),
+        from_account_id=code_column(plan, from_account_codes),
         amount_due_usd=amount_due,
         amount_paid_usd=amount_paid,
         shortfall_usd=shortfall,
@@ -74,11 +75,11 @@ def decode_obligations(
             EVENT_FRAMES.transfers,
             rollout_index=rollouts[paid_mask],
             month_index=months[paid_mask],
-            cause_id=cause_ids[paid_mask],
-            from_agent_id=agent_ids[paid_mask],
-            from_account_id=from_account_ids[paid_mask],
-            to_agent_id=to_agent_ids[paid_mask],
-            to_account_id=to_account_ids[paid_mask],
+            cause_id=code_column(plan, cause_codes[paid_mask]),
+            from_agent_id=code_column(plan, agent_codes[paid_mask]),
+            from_account_id=code_column(plan, from_account_codes[paid_mask]),
+            to_agent_id=code_column(plan, to_agent_codes[paid_mask]),
+            to_account_id=code_column(plan, to_account_codes[paid_mask]),
             amount_usd=amount_paid[paid_mask],
             income_category=np.full(int(paid_mask.sum()), None, dtype=object),
         )
@@ -87,16 +88,17 @@ def decode_obligations(
     # Subset 2: obligations whose failure flag fired emit a failure row.
     failure_mask = buffers.obligations.failure_active[months, slots, rollouts]
     if failure_mask.any():
-        failure_cause_ids = np.array([f"{oid}_failure" for oid in obligation_ids[failure_mask]], dtype=object)
+        failed_obligation_ids = codes_to_strings(plan, obligation_id_codes[failure_mask])
+        failure_cause_ids = np.array([f"{oid}_failure" for oid in failed_obligation_ids], dtype=object)
         failures = frame_from_columns(
             EVENT_FRAMES.rollout_failures,
             rollout_index=rollouts[failure_mask],
             month_index=months[failure_mask],
             cause_id=failure_cause_ids,
-            agent_id=agent_ids[failure_mask],
+            agent_id=code_column(plan, agent_codes[failure_mask]),
             deficit_usd=shortfall[failure_mask],
-            obligation_id=obligation_ids[failure_mask],
-            obligation_type=obligation_types[failure_mask],
+            obligation_id=code_column(plan, obligation_id_codes[failure_mask]),
+            obligation_type=code_column(plan, type_codes[failure_mask]),
             amount_due_usd=amount_due[failure_mask],
             amount_paid_usd=amount_paid[failure_mask],
             shortfall_usd=shortfall[failure_mask],

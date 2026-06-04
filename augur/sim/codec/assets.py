@@ -11,6 +11,8 @@ from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEqui
 from augur.product.asset_key import PrivateEquityAssetKey
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
+    asset_code_column,
+    code_column,
     codes_to_asset_wire_ids,
     codes_to_strings,
     frame_from_columns,
@@ -28,14 +30,12 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
     state = r_first_view(buffers.state.cash_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
-    agent_ids = codes_to_strings(plan, plan.cash_agent_codes)
-    account_ids = codes_to_strings(plan, plan.cash_account_codes)
     return state_history_frame_from_columns(
         {
             "rollout_index": rollouts,
             "month_index": months,
-            "agent_id": agent_ids[slots],
-            "account_id": account_ids[slots],
+            "agent_id": code_column(plan, plan.cash_agent_codes[slots]),
+            "account_id": code_column(plan, plan.cash_account_codes[slots]),
             "balance_usd": state.reshape(-1),
         },
         CASH_BALANCES_FRAME,
@@ -50,10 +50,10 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
         {
             "rollout_index": rollouts,
             "month_index": months,
-            "lot_id": codes_to_strings(plan, plan.lot_id_codes)[slots],
-            "agent_id": codes_to_strings(plan, plan.lot_agent_codes)[slots],
-            "account_id": codes_to_strings(plan, plan.lot_account_codes)[slots],
-            "asset_id": codes_to_asset_wire_ids(plan, plan.lot_asset_codes)[slots],
+            "lot_id": code_column(plan, plan.lot_id_codes[slots]),
+            "agent_id": code_column(plan, plan.lot_agent_codes[slots]),
+            "account_id": code_column(plan, plan.lot_account_codes[slots]),
+            "asset_id": asset_code_column(plan, plan.lot_asset_codes[slots]),
             "purchase_month_index": plan.lot_purchase_month.astype(np.int64)[slots],
             "cost_basis_per_unit_usd": plan.lot_cost_basis_per_unit.astype(np.float64)[slots],
             "remaining_quantity": state.reshape(-1),

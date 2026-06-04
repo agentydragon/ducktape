@@ -126,41 +126,49 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
     )
 
 
+# Status categories indexed by the rollout's `failed` flag (0 = active, 1 = failed).
+_ROLLOUT_STATUS_CATEGORIES = pl.Series("status", ["active", "failed_insufficient_cash"], dtype=pl.Utf8())
+
+
+def _status_series(failed: np.ndarray) -> pl.Series:
+    """Vectorized `failed`-flag → status string via Arrow take (avoids per-element `new_str`)."""
+    return _ROLLOUT_STATUS_CATEGORIES.gather(failed.astype(np.int64)).rename("status")
+
+
+def _failed_month_series(failed_month: np.ndarray) -> pl.Series:
+    """`failed_month` int array → Int64 column with NO_CODE (-1) mapped to null, no Python loop."""
+    values = failed_month.astype(np.int64)
+    return pl.Series("failed_month", values).set(pl.Series(values < 0), None)
+
+
 def decode_rollout_status_history(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     failed_state = buffers.state.rollout_failed_state  # (H+1, r) bool
-    failed_month_state = buffers.state.rollout_failed_month_state.astype(np.int64)  # (H+1, r) int
+    failed_month_state = buffers.state.rollout_failed_month_state  # (H+1, r) int
     h1, r = failed_state.shape
     months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None], (h1, r)).ravel()
     rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :], (h1, r)).ravel()
-    status = np.where(failed_state.reshape(-1), "failed_insufficient_cash", "active")
-    failed_month_flat = failed_month_state.reshape(-1)
-    # Polars rejects an object-dtype column for an Int64 schema; build the int|None list explicitly.
-    # `h1*r` is small (≤ horizon × rollout_count) so the Python loop is fine.
-    failed_month_col = [None if m < 0 else int(m) for m in failed_month_flat]
     return pl.DataFrame(
-        {"rollout_index": rollouts, "month_index": months, "status": status, "failed_month": failed_month_col},
-        schema={
-            "rollout_index": pl.Int64(),
-            "month_index": pl.Int64(),
-            "status": pl.Utf8(),
-            "failed_month": pl.Int64(),
-        },
+        {
+            "rollout_index": rollouts,
+            "month_index": months,
+            "status": _status_series(failed_state.reshape(-1)),
+            "failed_month": _failed_month_series(failed_month_state.reshape(-1)),
+        }
     )
 
 
 def decode_final_rollout_status(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     month = plan.horizon_months
     failed = buffers.state.rollout_failed_state[month]  # (r,) bool
-    failed_month = buffers.state.rollout_failed_month_state[month].astype(np.int64)  # (r,) int
     r = failed.shape[0]
     if r == 0:
         return ROLLOUT_STATUS_FRAME.empty()
-    rollouts = np.arange(r, dtype=np.int64)
-    status = np.where(failed, "failed_insufficient_cash", "active")
-    failed_month_col = [None if m < 0 else int(m) for m in failed_month]
     return ROLLOUT_STATUS_FRAME.normalize(
         pl.DataFrame(
-            {"rollout_index": rollouts, "status": status, "failed_month": failed_month_col},
-            schema={"rollout_index": pl.Int64(), "status": pl.Utf8(), "failed_month": pl.Int64()},
+            {
+                "rollout_index": np.arange(r, dtype=np.int64),
+                "status": _status_series(failed),
+                "failed_month": _failed_month_series(buffers.state.rollout_failed_month_state[month]),
+            }
         )
     )

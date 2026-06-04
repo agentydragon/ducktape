@@ -195,6 +195,25 @@ rows accumulated to tens of millions over 100 years), so the full pipeline now f
 Remaining lever for full `simulate()` at 10000 is lazy/opt-in decode (#5): the other
 state-history frames (cash, lots, …) are still materialized eagerly at O(months × R).
 
+## Results after the third pass (dict-encoded id columns)
+
+`new_str` — Polars building `pl.Utf8` columns from NumPy `object` arrays of Python `str` —
+was the dominant remaining decode cost (~60% of decode wall, spread across `decode_cash`,
+`decode_asset_lots`, `decode_liabilities`, `decode_obligations`, `decode_transfers`). The
+codec now carries id columns as a `CodeColumn` (integer codes + small category table) and
+materializes them with a single Arrow dict-gather instead of per-element `str`; the two
+`rollout_status` decoders are likewise vectorized (no Python `failed_month` loop, gather for
+the status string).
+
+500/1000-rollout, 1200-month decode (cProfile, relative): `new_str` 13.3 s → 0.7 s;
+`decode_obligations` 7.2 s → 0.9 s. Full `simulate()` at 1000 × 1200: **7.4 s → 5.1 s**
+(≈30% faster), output frames byte-identical (all sim + product + api tests pass).
+
+`#5` for the genuinely per-month frames (`cash`, `liabilities`, `ordinary_income`) is _not_
+safe to event-ize: unlike tax liabilities, they change every month and consumers query them
+at arbitrary months expecting forward-filled state. Their remaining decode cost is the row
+count itself (O(months × R)); the lever there is lazy/opt-in decode (#1), not event-izing.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**
