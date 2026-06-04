@@ -1146,6 +1146,28 @@ def test_public_market_marginal_cdf_without_anchors_is_flat_hazard() -> None:
     assert cdf[12] == pytest.approx(expected_cdf_12, rel=1e-9)
 
 
+def test_public_market_marginal_cdf_horizon_shorter_than_largest_anchor() -> None:
+    """A horizon shorter than the largest anchor month must not index past `cdf` (regression for
+    the `bayesian_mint_streams` preset crashing at short calibration horizons): the write loop is
+    clamped to the horizon while `prev_month`/`prev_cum` keep advancing to the true anchor."""
+
+    issuer = _mint_streams_issuer(
+        public_market_cdf_anchors=(
+            PublicMarketCdfAnchor(month=12, cumulative_probability=0.30),
+            PublicMarketCdfAnchor(month=36, cumulative_probability=0.70),
+        ),
+        annual_public_market_probability=0.05,
+    )
+    # Horizon (24) sits between the two anchors (12 and 36); the second anchor is past the horizon.
+    cdf = _public_market_marginal_cdf(issuer, horizon_months=24)
+    assert cdf.shape == (25,)
+    assert cdf[0] == 0.0
+    assert cdf[12] == pytest.approx(0.30, abs=1e-9)
+    # Monotone non-decreasing all the way to the horizon, partway up the 12->36 anchor segment.
+    assert np.all(np.diff(cdf) >= -1e-12)
+    assert 0.30 < cdf[24] < 0.70
+
+
 def test_legacy_bayesian_central_trajectory_collapses() -> None:
     """Documents the defect that motivated the mint-streams model: with a flat 28%/yr smooth
     dilution + scale-reverting V drift, the central 10y per-share mark collapses despite V
