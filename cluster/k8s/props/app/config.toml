@@ -11,7 +11,11 @@ namespace = "props"
 image_pull_secret = "props-forgejo-robot"
 
 [agent_env]
-PGHOST = "props-postgresql"
+# Agents connect to the CNPG primary (read-write) service. Must match the
+# backend's PGHOST (deployment.yaml). The old Bitnami "props-postgresql"
+# service no longer exists since the CNPG migration, so a stale value here
+# makes every critic/grader crash at Database.from_env() before any work.
+PGHOST = "props-db-rw"
 PGPORT = "5432"
 PGDATABASE = "eval_results"
 
