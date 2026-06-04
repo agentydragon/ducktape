@@ -78,6 +78,35 @@ def test_run_handles_calledprocesserror_with_none_streams() -> None:
     assert "crane tag x y failed (exit 1)" in str(exc_info.value)
 
 
+def test_digest_or_none_returns_digest_when_present() -> None:
+    crane = Crane(path=Path("/nonexistent/crane"))
+    done = subprocess.CompletedProcess(args=["crane", "digest"], returncode=0, stdout="sha256:abc123\n", stderr="")
+    with patch("subprocess.run", return_value=done):
+        assert crane.digest_or_none("repo:latest") == "sha256:abc123"
+
+
+@pytest.mark.parametrize("marker", ["MANIFEST_UNKNOWN", "NAME_UNKNOWN"])
+def test_digest_or_none_returns_none_for_absent_tag_or_repo(marker: str) -> None:
+    """An unpublished tag/repo is the expected 'push it' case — not an error."""
+    crane = Crane(path=Path("/nonexistent/crane"))
+    fake_error = subprocess.CalledProcessError(
+        returncode=1, cmd=["crane", "digest", "repo:latest"], stderr=f"{marker}: not found\n"
+    )
+    with patch("subprocess.run", side_effect=fake_error):
+        assert crane.digest_or_none("repo:latest") is None
+
+
+def test_digest_or_none_reraises_real_errors() -> None:
+    """Auth/transport failures must propagate, not be mistaken for 'absent'
+    (which would silently churn a re-push)."""
+    crane = Crane(path=Path("/nonexistent/crane"))
+    fake_error = subprocess.CalledProcessError(
+        returncode=1, cmd=["crane", "digest", "repo:latest"], stderr="UNAUTHORIZED: token expired\n"
+    )
+    with patch("subprocess.run", side_effect=fake_error), pytest.raises(RuntimeError):
+        crane.digest_or_none("repo:latest")
+
+
 def test_arun_raises_with_stderr_and_stdout() -> None:
     """Async `_arun` is symmetric: stderr is in the message, stdout when nonempty."""
     crane = Crane(path=Path("/nonexistent/crane"))

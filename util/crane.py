@@ -110,6 +110,21 @@ class Crane:
     def digest(self, image_ref: str) -> str:
         return self._run("digest", image_ref)
 
+    def digest_or_none(self, image_ref: str) -> str | None:
+        """Remote digest of `image_ref`, or None when the tag/repo doesn't exist yet.
+
+        For content-dedup before a push: an unpublished tag (`MANIFEST_UNKNOWN`)
+        or repo (`NAME_UNKNOWN`) means "nothing there, push it". Any other crane
+        failure (auth, transport, 5xx) re-raises — a real error must not be
+        mistaken for "absent" and silently turned into a churny re-push.
+        """
+        try:
+            return self._run("digest", image_ref)
+        except RuntimeError as e:
+            if "MANIFEST_UNKNOWN" in str(e) or "NAME_UNKNOWN" in str(e):
+                return None
+            raise
+
     def ls(self, repo: str) -> list[str]:
         return self._run("ls", repo).splitlines()
 

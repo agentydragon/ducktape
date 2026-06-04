@@ -19,7 +19,9 @@ import uvicorn
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
-from props.backend.routes.registry import _proxy_to_upstream
+from props.backend.routes.registry import _is_grader_builtin_push, _proxy_to_upstream
+from props.core.agent_types import AgentType
+from props.core.oci_utils import BUILTIN_TAG
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",
@@ -107,6 +109,22 @@ async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.M
         assert media_type in all_accept, (
             f"Accept type {media_type!r} was lost during proxying. Upstream received Accept: {upstream_accept_values!r}"
         )
+
+
+def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:
+    """The GraderSupervisor restart is triggered ONLY by a move of the grader's
+    builtin tag. By-digest pushes and per-commit sha pins (pushed alongside
+    `latest` by //props/agents:push_images) must not trigger it — otherwise
+    every devel commit restarts every grader, cancelling in-flight grades."""
+    grader = str(AgentType.GRADER)
+    # The one case that should notify: grader builtin tag moved.
+    assert _is_grader_builtin_push(grader, BUILTIN_TAG)
+    # Per-commit pinned sha tag pushed next to latest — must NOT notify.
+    assert not _is_grader_builtin_push(grader, "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2")
+    # By-digest push (crane push @sha256:...) — must NOT notify.
+    assert not _is_grader_builtin_push(grader, "sha256:" + "ab" * 32)
+    # Other repos never drive the grader supervisor, even on their builtin tag.
+    assert not _is_grader_builtin_push(str(AgentType.CRITIC), BUILTIN_TAG)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ from props.backend.auth import (
     is_critic_dev_agent,
 )
 from props.backend.deps import AdminDb
-from props.core.oci_utils import UpstreamRegistryConfig, get_upstream_registry_config, is_digest
+from props.core.oci_utils import BUILTIN_TAG, UpstreamRegistryConfig, get_upstream_registry_config, is_digest
 from props.db.database import Database
 from props.db.models import AgentDefinition, AgentType
 from props.db.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
@@ -204,6 +204,19 @@ def _deny(identity: RequestIdentity, action: str) -> HTTPException:
     return HTTPException(status_code=403, detail=f"{identity} not allowed to {action}")
 
 
+def _is_grader_builtin_push(repo: str, ref: str) -> bool:
+    """True iff this push moves the grader's builtin tag — the only push the
+    GraderSupervisor reacts to.
+
+    The supervisor resolves graders by `grader:BUILTIN_TAG`, so only a move of
+    that tag changes which image graders run. By-digest pushes and pinned
+    per-commit sha tags (e.g. `grader:<gitsha>`, pushed alongside `latest` by
+    //props/agents:push_images) do not — notifying on them needlessly restarts
+    every grader, cancelling in-flight grades.
+    """
+    return repo == str(AgentType.GRADER) and ref == BUILTIN_TAG
+
+
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
@@ -223,9 +236,9 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
         manifest_digest = f"sha256:{hashlib.sha256(body).hexdigest()}"
         await _record_manifest_push(repo, manifest_digest, body, agent_run_id, admin_db)
 
-        # When a grader tag moves, notify the GraderSupervisor so it can
-        # (re)start graders that failed due to missing image at startup.
-        if not is_digest(ref) and repo == str(AgentType.GRADER):
+        # When the grader's builtin tag moves, notify the GraderSupervisor so it
+        # can (re)start graders that failed due to missing image at startup.
+        if _is_grader_builtin_push(repo, ref):
             notification = GraderDefinitionChangedNotification(digest=manifest_digest, tag=ref)
             with admin_db.session() as session:
                 session.execute(

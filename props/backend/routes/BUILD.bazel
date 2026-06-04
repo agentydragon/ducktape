@@ -166,6 +166,8 @@ py_test(
     deps = [
         ":registry",
         "//props:conftest",
+        "//props/core:agent_types",
+        "//props/core:oci_utils",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",

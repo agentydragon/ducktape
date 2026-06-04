@@ -52,8 +52,19 @@ def main() -> None:
         base_tag = variant_tag or "latest"
         sha_tag = f"{variant_tag}-{sha}" if variant_tag else sha
 
+        # Content dedup: the images are Bazel-reproducible, so on commits that
+        # don't change an agent image its digest is identical to what's already
+        # published. Re-pushing re-PUTs the moving tag's manifest, which the
+        # registry proxy turns into a grader_definition_changed notify ->
+        # GraderSupervisor restarts every grader (cancelling in-flight grades).
+        # Skip the no-op, mirroring the GHCR matrix dedup in push-images.yml.
+        base_ref = f"{registry}/{repo_name}:{base_tag}"
+        if crane.digest_or_none(base_ref) == local_digest:
+            print(f"{base_ref}: digest unchanged ({local_digest[:19]}) — skipping")
+            continue
+
         ref = f"{registry}/{repo_name}@{local_digest}"
-        print(f"{registry}/{repo_name}:{base_tag}: pushing {local_digest[:19]}")
+        print(f"{base_ref}: pushing {local_digest[:19]}")
         crane.push(image_dir, ref)
         crane.tag(ref, base_tag)
         crane.tag(ref, sha_tag)
