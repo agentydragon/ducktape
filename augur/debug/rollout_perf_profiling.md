@@ -278,38 +278,45 @@ Two fixes landed:
 
 (cProfile inflates wall ~3–4× and over-weights high-call-count paths; figures are relative.)
 
-## Next levers (highest impact first)
+## Results after the sixth pass (eliminate slicing; vectorize validation)
 
-1. **Reduce on the batch; stop slicing into R owning copies (biggest — ~46 s / 50%).** Slicing
-   exists only because the LRU is keyed per `(scenario, seed)`. But `metric_fan` reduces over _all_
-   requested seeds, and `monthly_metric_arrays` is then run per R=1 slice — so we deep-copy the batch
-   into R pieces and then loop over them. Instead cache the **batch** dense result per scenario and
-   run the fan/terminal reductions vectorized over the `(…, R)` axis once (no Python per-rollout
-   loop, no `slice_dense_results`). Per-seed reuse becomes a column index into the batch; the single-
-   rollout detail view (`rollout()`) slices just the one seed it asks for, on read. This removes the
-   33.9 s copy floor _and_ the per-rollout reduction loop. Cost: redesign the `ProductService` cache
-   from per-seed entries to a per-scenario batch (handle growing/!subset seed sets, eviction
-   granularity). This is the structural win.
+Two of the four "next levers" proposed above did **not** survive the call graph and were dropped
+after investigation — a caution against attributing cost by where lines sit in a cumulative profile:
 
-2. **Cache the compiled plan per scenario (~7.7 s/request).** `compile_simulation` is
-   seed-independent — it depends on scenario structure, not the rollout draws — yet runs on every
-   cold request. Memoize the `CompiledSimulation` keyed by scenario so warm requests with new seeds
-   skip recompilation.
+- **"Cache the compiled plan" was wrong.** `compile_simulation` calls `external_values_cube(external_series, …)`,
+  baking the per-rollout sampled cube into the plan — it is **seed-dependent**, so a per-scenario plan
+  cache would serve stale data. Not done.
+- **"Batch the month-loop collects" was misattributed.** The dense month loop is pure NumPy (zero
+  `.collect()`); the 20 k `LazyFrame.collect` calls were `slice_dense_results` doing a per-rollout
+  `with_columns(rollout_index=0)` relabel. So they were **part of slicing**, not a separate lever —
+  and disappear with it.
 
-3. **Batch the per-month-step polars `collect` (~7.3 s, 20 k calls).** The dense month loop collects
-   lazy frames ~84×/step × 240 steps. Build the per-step frames eagerly, or hoist the collect out of
-   the loop so it runs once over the whole horizon.
+The two valid levers landed:
 
-4. **Finish vectorizing `_validate_series_indexed_amounts` (~8.2 s).** Pass-1 short-circuited the
-   _no-indexed-amount_ case; this scenario _uses_ inflation-indexed spend, so it falls through to the
-   slow path. Do the membership/zero checks with a Polars filter/join over the referenced series
-   instead of per-row Python structures.
+1. **Reduce `metric_fan` on the batch; stop per-rollout slicing (PR #1859).** Cache the simulated
+   batch once, shared by every seed it was sampled with; each cache entry records only its column
+   index. The metric reductions take a `rollout_index` and read that column straight out of the shared
+   batch (only the arrays a metric needs), so the fan path slices nothing; `rollout()` slices its one
+   seed on demand for the event log. Per-`(scenario, seed)` keys and overlapping-range reuse unchanged.
+   `slice_dense_results` — the #1 line at ~50% — **leaves the profile entirely** (no copy floor, no
+   relabel collects). 10k × 100mo: whole request **~30 s → 19.6 s wall**.
+2. **Vectorize `_validate_series_indexed_amounts` (PR #1858).** It built a per-`(series, month, rollout)`
+   dict from `iter_rows()` over the whole referenced frame before any check; now restricted to each
+   amount's reset anchors with a columnar `group_by`/`n_unique`. Was ~8 s (its share at this scale);
+   no longer a hotspot.
 
-5. **Incremental fallback for #1 — cut the copy floor in place (~34 s → ~15 s).** If the per-seed
-   cache stays, make the R copies contiguous: `np.ascontiguousarray(np.moveaxis(arr, -1, 0))` once per
-   field (one bulk memcpy), then cheap contiguous per-rollout copies, instead of R strided
-   `[..., i:i+1].copy()` gathers. Requires confirming `decode()` tolerates the resulting layout (or a
-   cheap re-contiguify). Lower ceiling than #1 but localized and low-risk.
+With both, `metric_fan` is dominated by `simulate_dense_with_external_series` itself — the actual
+rollout compute plus exogenous sampling (`composite.sample`), i.e. real work rather than marshaling.
+
+### Remaining levers
+
+- **Exogenous sampling (`composite.sample`, ~5 s).** PE-risk + level-series draws; the deterministic
+  parts may be cacheable across requests, the stochastic parts are not.
+- **Structural compile split.** The seed-independent part of `compile_simulation` (string/asset tables,
+  tax/transfer/property slots) _could_ be cached per scenario, rebuilding only `external_values_cube`
+  per request — but that part is a small slice of compile, so the payoff is modest.
+- **Process-level chunking** of the R axis (below) for memory bounding and multi-core, once the
+  per-request boundaries are this thin.
 
 ## Note on parallelism
 
