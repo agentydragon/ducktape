@@ -172,9 +172,7 @@ def test_metric_fan_truncates_one_cached_max_horizon_rollout(
     assert one(short.terminal_metric_percentiles["value"]) == pytest.approx(short_by_month[2])
 
 
-def test_metric_fan_rejects_horizon_above_server_max(
-    product: service.ProductService, augur_config: Config
-) -> None:
+def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductService, augur_config: Config) -> None:
     request = MetricFanRequest(
         scenario=ScenarioKey(
             model_id="current_model",

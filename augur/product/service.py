@@ -206,9 +206,7 @@ class ProductService:
             full_failed_month = failed_month_index_for_rollout(cached.dense)
             # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
             in_window = full_failed_month is not None and full_failed_month < horizon_months
-            terminal = terminal_metrics_from_arrays(
-                arrays, failed_month_index=full_failed_month if in_window else None
-            )
+            terminal = terminal_metrics_from_arrays(arrays, failed_month_index=full_failed_month if in_window else None)
             decoded.append(
                 _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, cached=cached)
             )
