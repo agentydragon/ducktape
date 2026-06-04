@@ -11,12 +11,15 @@ import polars as pl
 import pytest
 import pytest_bazel
 
+from augur.product.asset_key import SP500AssetKey
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
+    InitialLot,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
+    ScheduledAssetSale,
     ScheduledTransfer,
 )
 from augur.sim.simulate import simulate
@@ -157,6 +160,59 @@ def test_obligation_failure_scan_parity() -> None:
     assert _cash(run, "landlord", 1) == pytest.approx(600.0)  # month 0's rent landed pre-failure
     assert _cash(run, "alice", 12) == pytest.approx(0.0)  # whole rollout zeroed after month-1 failure
     assert _cash(run, "landlord", 12) == pytest.approx(0.0)  # landlord's column zeroed too
+
+
+def _gain(run, agent_id: str, classification: str, month_index: int) -> float:
+    rows = run.capital_gains_ytd.filter(
+        (pl.col("agent_id") == agent_id)
+        & (pl.col("classification") == classification)
+        & (pl.col("month_index") == month_index)
+        & (pl.col("rollout_index") == 0)
+    ).get_column("gain_usd")
+    return float(rows.item()) if len(rows) else 0.0
+
+
+def test_scheduled_sale_scan_parity() -> None:
+    # A long-term capital-gain sale: 100 SP500 units bought 24 months pre-horizon at $80, sold at
+    # month 3 for $120 — exercises the scan's FIFO lot matching, proceeds credit, and capital-gain
+    # classification. No tax profiles, so the year-end pass never runs and the scenario routes through
+    # the scan. Deterministic fixed price keeps the assertion exact across rollouts.
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_sp500",
+                agent_id="alice",
+                account_id="brokerage",
+                asset=SP500AssetKey(),
+                purchase_month_index=-24,  # long-term when sold at month 3
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=3,
+                cause_id="alice_sells_sp500",
+                agent_id="alice",
+                source_account_id="brokerage",
+                asset=SP500AssetKey(),
+                quantity=100.0,
+                price_per_unit_usd=120.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=6,
+    )
+    run = simulate(scenario, rollout_count=4, locations={})
+
+    assert _cash(run, "alice", 3) == pytest.approx(0.0)  # before the month-3 sale
+    assert _cash(run, "alice", 4) == pytest.approx(100.0 * 120.0)  # proceeds credited after month 3
+    # Long-term realized gain = 100 * (120 - 80) = 4000, held in YTD through the (sub-year) horizon.
+    assert _gain(run, "alice", "ltcg", 4) == pytest.approx(4_000.0)
+    assert _gain(run, "alice", "stcg", 4) == pytest.approx(0.0)
 
 
 if __name__ == "__main__":
