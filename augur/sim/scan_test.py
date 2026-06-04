@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 
 from augur.product.asset_key import SP500AssetKey
+from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -20,6 +21,7 @@ from augur.sim.scenario import (
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
 )
 from augur.sim.simulate import simulate
@@ -213,6 +215,51 @@ def test_scheduled_sale_scan_parity() -> None:
     # Long-term realized gain = 100 * (120 - 80) = 4000, held in YTD through the (sub-year) horizon.
     assert _gain(run, "alice", "ltcg", 4) == pytest.approx(4_000.0)
     assert _gain(run, "alice", "stcg", 4) == pytest.approx(0.0)
+
+
+def test_cash_property_purchase_scan_parity() -> None:
+    # All-cash (no-mortgage) home purchase at month 2: the buyer's down payment + closing cost moves
+    # to the seller and the property goes active. No tax profile / property-tax policy / mortgage, so
+    # it routes through the scan (the financed case is still barred). rented_fraction=0 -> no
+    # depreciation, keeping the assertion to the cash move the fold performs.
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=2,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="sf",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,  # all-cash
+                buyer_closing_cost_usd=10_000.0,
+                rented_fraction=0.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=6,
+    )
+    locations = {
+        "sf": Location(
+            location_id="sf",
+            display_name="SF",
+            jurisdiction_ids=["federal_us", "california"],
+            annual_property_tax_rate=0.0118,
+        )
+    }
+    run = simulate(scenario, rollout_count=4, locations=locations)
+
+    # stake = down payment + closing = 510k, moved buyer -> seller during month 2 (snapshot index 3).
+    assert _cash(run, "alice", 2) == pytest.approx(600_000.0)  # before purchase
+    assert _cash(run, "alice", 3) == pytest.approx(600_000.0 - 510_000.0)
+    assert _cash(run, "seller", 3) == pytest.approx(510_000.0)
 
 
 if __name__ == "__main__":
