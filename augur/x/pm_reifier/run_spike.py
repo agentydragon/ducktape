@@ -194,7 +194,7 @@ def evaluate(scenarios: list[dict], variant: str) -> dict:
     n = len(valid)
     targets = [m["price"] for m in MARKETS]
     raw = [sum(row[m] for row in valid) / n for m in range(len(MARKETS))] if n else []
-    w, post, ess = reweight(valid, targets) if n else ([], [], 0.0)
+    _weights, post, ess = reweight(valid, targets) if n else ([], [], 0.0)
     report = {
         "variant": variant,
         "scenarios_returned": len(scenarios),
