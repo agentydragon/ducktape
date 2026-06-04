@@ -119,10 +119,13 @@ def scan_supported(plan: CompiledSimulation) -> bool:
     accruals), so route a scenario to it iff it uses no other phase. Anything else falls back to the
     eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
     never correctness (the dual-backend suite gates both routes)."""
-    obligation_kind = plan.obligations.source_kind
+    obligation = plan.obligations
+    # A real obligation slot has `cause >= 0`; the compiler also stamps a PROPERTY_TAX `source_kind`
+    # on the padded sentinel property slot (with `cause = NO_CODE`), so gate on `cause`, not on
+    # `source_kind` alone — only *real* obligations must be CONFIGURED for the scan to handle them.
+    real_obligation = obligation.cause >= 0
     return (
-        # only CONFIGURED obligations (or empty sentinel slots) — no property-tax/mortgage/estimated
-        bool(((obligation_kind < 0) | (obligation_kind == ObligationSource.CONFIGURED_OBLIGATION)).all())
+        bool((~real_obligation | (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION)).all())
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
@@ -245,11 +248,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         # month's obligations). Each real sale fires when its static month equals the traced month;
         # `_fifo_sell_units` sells nothing when target_units is 0, so non-firing slots are no-ops.
         disp_active, disp_units, disp_basis, disp_proceeds = [], [], [], []
+        oversells = []
         for fs in folded_sales:
             fires = month == fs.month
             target_units = jnp.where(active & fires, fs.quantity, 0.0)
             unit_price = _sale_unit_price(sales, external_values, month, fs.buffer_index, r)
-            sold_units, proceeds, basis, _oversell = _fifo_sell_units(
+            sold_units, proceeds, basis, oversell = _fifo_sell_units(
                 lot_remaining.T, fs.ordered_lots, target_units, unit_price, cost_basis_per_unit
             )
             lot_remaining = lot_remaining - sold_units.T
@@ -262,6 +266,7 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             disp_units.append(sold_units.T)
             disp_basis.append(basis.T)
             disp_proceeds.append(proceeds.T)
+            oversells.append(oversell.any())
 
         # CONFIGURED-obligation accrual (the only kind `scan_supported` admits): a fixed/series amount,
         # active where scheduled and positive. Property-tax/mortgage/estimated kinds are excluded by the gate.
@@ -335,9 +340,16 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             shortfall,
             failure_active,
         )
-        # Per-(sale, lot, rollout) disposition slabs, stacked over the real sales; empty when no sales.
+        # Per-(sale, lot, rollout) disposition slabs (stacked over real sales) + a per-month oversell
+        # flag; all empty when there are no sales.
         sale_ys = (
-            (jnp.stack(disp_active), jnp.stack(disp_units), jnp.stack(disp_basis), jnp.stack(disp_proceeds))
+            (
+                jnp.stack(disp_active),
+                jnp.stack(disp_units),
+                jnp.stack(disp_basis),
+                jnp.stack(disp_proceeds),
+                jnp.stack(oversells).any(),
+            )
             if folded_sales
             else ()
         )
@@ -391,14 +403,20 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     buffers.obligations.shortfall[:] = np.asarray(ob_short)
     buffers.obligations.failure_active[:] = np.asarray(ob_fail)
     if folded_sales:
+        disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = sale_h
+        # Match the eager engine's hard error (it raises mid-loop the first month a sale oversells).
+        if bool(np.asarray(oversell_h).any()):
+            raise ValueError("scheduled asset sale exceeds available lots")
         # `sale_h` stacks are `(horizon, num_real_sales, L, R)`; scatter each real sale to its column.
         disp = buffers.lot_dispositions.scheduled
-        disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h = (np.asarray(a) for a in sale_h[0])
+        disp_active_np, disp_units_np, disp_basis_np, disp_proceeds_np = (
+            np.asarray(a) for a in (disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h)
+        )
         for i, fs in enumerate(folded_sales):
-            disp.active[:, fs.buffer_index] = disp_active_h[:, i]
-            disp.units[:, fs.buffer_index] = disp_units_h[:, i]
-            disp.basis[:, fs.buffer_index] = disp_basis_h[:, i]
-            disp.proceeds[:, fs.buffer_index] = disp_proceeds_h[:, i]
+            disp.active[:, fs.buffer_index] = disp_active_np[:, i]
+            disp.units[:, fs.buffer_index] = disp_units_np[:, i]
+            disp.basis[:, fs.buffer_index] = disp_basis_np[:, i]
+            disp.proceeds[:, fs.buffer_index] = disp_proceeds_np[:, i]
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
