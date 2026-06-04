@@ -22,6 +22,7 @@ from augur.sim.enums import (
 )
 from augur.sim.tax import net_capital_gains_with_carryforward
 from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
+from augur.sim.tlh_harvest import monthly_harvest_fraction, split_short_long
 
 
 def _apply_scheduled_transfers(
@@ -203,6 +204,110 @@ def _write_tax_link_buffers(
         current.tax_liability_active[tax_slot, active_rollout] = True
         current.tax_liability_amount[tax_slot, active_rollout] = tax[active_rollout]
     return tax
+
+
+def _apply_tlh_harvest(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    """Reduced-form tax-loss-harvesting (Piece 2b). LIMITED, DELIBERATELY-APPROXIMATE MODEL.
+
+    This is NOT a real direct-indexing harvester. It does not simulate the sleeve's constituent
+    stocks, does not track which names are below basis, and does not run FIFO on sub-lots. For
+    each `HarvestPolicy` it instead books a CALIBRATED capital loss each month — a function of the
+    index path Augur already samples (`augur/sim/tlh_harvest.py`), shaped by the position's
+    embedded-gain fraction and amplified in drawdowns. Every parameter is `[HEURISTIC]`, anchored
+    only to the account's first-year (TY2025) 1099-B; the decay rate is an external prior, not
+    fitted (no prior-year forms exist). See `augur/plans/tax_loss_harvesting.md`.
+
+    The harvested loss is honest tax DEFERRAL, not free money: the loss is offset by a basis
+    give-back at sale (`_record_capital_gains` reduces the sold lots' basis by the accumulated
+    `tlh_cumulative_harvest`). The net lifetime benefit is bounded — it can only come from
+    rate-arbitrage (ST loss now vs LT gain later), the $3k/yr ordinary offset, and deferral timing.
+
+    Per policy, per active rollout this month:
+      MV               = sum over the policy's lots of remaining_units * index_price[month]
+      original_basis   = sum over the policy's lots of remaining_units * cost_basis_per_unit
+      adjusted_basis   = max(0, original_basis - tlh_cumulative_harvest)   # give-back already taken
+      e                = clip((MV - adjusted_basis) / MV, 0, 1)            # embedded-gain fraction
+      period_return    = index_price[month] / index_price[month-1] - 1     # 0 at month 0
+      gross_harvest    = MV * monthly_harvest_fraction(period_return, e, params)
+      gross_harvest    = min(gross_harvest, original_basis - tlh_cumulative_harvest)  # loss ceiling
+    Then split ST/LT by the policy's short_term_fraction and inject the loss as a NEGATIVE into
+    capital_gain_ytd[gain_profile, ST|LT, :] (Piece-1 netting handles it unchanged), and add the
+    gross to tlh_cumulative_harvest. The ceiling keeps adjusted_basis >= 0 and e in [0, 1]; the
+    e -> floor decay already prevents over-harvesting in long bull runs (a vol-tied ceiling is a
+    documented future refinement — see the plan — and is intentionally NOT built here).
+
+    What a more honest / less fake implementation would look like (do not build now): the plan's
+    option #3 — 5-10 representative sleeves, each = index factor + scaled idiosyncratic noise, with
+    REAL FIFO harvesting on sub-lots so losses emerge from actual below-basis names; and option #4
+    — a full factor model with hundreds of names (explicitly never to be built: unobservable,
+    uncalibratable parameters).
+    """
+
+    policy_count = plan.harvest_policies.gain_profile_index.shape[0]
+    if policy_count == 0:
+        return
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+
+    harvest = plan.harvest_policies
+    for policy_idx in range(policy_count):
+        gain_profile = int(harvest.gain_profile_index[policy_idx])
+        if gain_profile < 0:
+            continue  # owner has no capital-gain profile; nothing to net a harvested loss against
+        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
+        if lot_indices.size == 0:
+            continue
+        series_index = int(harvest.series_index[policy_idx])
+        price = plan.external_values[series_index, :, month]  # (R,)
+        if not np.isfinite(price).all() or (price < 0.0).any():
+            raise ValueError(f"harvest policy {policy_idx} index series produced a negative or non-finite price")
+
+        remaining = current.lot_remaining[lot_indices, :]  # (lot, R)
+        market_value = (remaining * price[None, :]).sum(axis=0)  # (R,)
+        original_basis = (remaining * plan.lot_cost_basis_per_unit[lot_indices, None]).sum(axis=0)  # (R,)
+        cumulative = current.tlh_cumulative_harvest[policy_idx, :]  # (R,)
+        adjusted_basis = np.maximum(0.0, original_basis - cumulative)
+        embedded_gain_fraction = np.divide(
+            market_value - adjusted_basis, market_value, out=np.zeros_like(market_value), where=market_value > 0.0
+        )
+
+        # Period return drives the drawdown kicker. Month 0 has no prior price, so treat it as flat
+        # (return 0): the position still harvests at its base monthly rate.
+        if month == 0:
+            period_return = np.zeros(plan.rollout_count, dtype=np.float64)
+        else:
+            prior_price = plan.external_values[series_index, :, month - 1]
+            period_return = np.divide(
+                price - prior_price, prior_price, out=np.zeros_like(price), where=prior_price > 0.0
+            )
+
+        fraction = monthly_harvest_fraction(period_return, embedded_gain_fraction, harvest.params[policy_idx])
+        gross_harvest = market_value * fraction
+        # Loss ceiling: never harvest more than the remaining below-basis room, so cumulative
+        # harvest stays <= original_basis (adjusted_basis >= 0). Only harvest on active rollouts.
+        ceiling = np.maximum(0.0, original_basis - cumulative)
+        gross_harvest = np.where(active_rollout, np.minimum(np.maximum(gross_harvest, 0.0), ceiling), 0.0)
+        if not (gross_harvest > 0.0).any():
+            continue
+
+        split = split_short_long(gross_harvest, harvest.short_term_fraction[policy_idx])
+        # Inject the harvested loss as a NEGATIVE realized gain — never a synthetic gain or a tax
+        # credit. Piece-1's `net_capital_gains_with_carryforward` nets it like any other loss.
+        if (split.short_term_usd > 0.0).any():
+            current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, :] -= split.short_term_usd
+            current.capital_gain_active[
+                gain_profile, CapitalGainClassification.SHORT_TERM, split.short_term_usd > 0.0
+            ] = True
+        if (split.long_term_usd > 0.0).any():
+            current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, :] -= split.long_term_usd
+            current.capital_gain_active[
+                gain_profile, CapitalGainClassification.LONG_TERM, split.long_term_usd > 0.0
+            ] = True
+        # Accumulate the give-back scalar: this is exactly the deferred gain repaid at sale.
+        current.tlh_cumulative_harvest[policy_idx, :] += gross_harvest
 
 
 def _apply_pe_tenders(
@@ -1552,6 +1657,11 @@ def _record_capital_gains(
 ) -> None:
     if sold_units.size == 0:
         return
+    # TLH basis give-back (Piece 2b): before recording gains, fold the deferred harvested loss back
+    # into the realized gain of any sold harvest-policy lots, so the deferral is honestly repaid.
+    # Mutates a per-lot copy of `gains` (caller's array is untouched) and drains the cumulative
+    # harvest scalar. Applies across EVERY sale path because they all route through here.
+    gains = _apply_tlh_give_back(plan, current, sold_units=sold_units, gains=gains)
     for profile in range(plan.capital_gain_agent_codes.shape[0]):
         if int(plan.capital_gain_agent_codes[profile]) != agent_code:
             continue
@@ -1564,3 +1674,57 @@ def _record_capital_gains(
             active = sold_units[:, lot] > 0.0
             current.capital_gain_active[profile, cls, active] = True
             current.capital_gain_ytd[profile, cls, :] += gains[:, lot]
+
+
+def _apply_tlh_give_back(
+    plan: CompiledSimulation, current: CurrentStateBuffers, *, sold_units: np.ndarray, gains: np.ndarray
+) -> np.ndarray:
+    """Repay deferred harvested loss as extra realized gain on sold harvest-policy lots.
+
+    CORRECTNESS-CRITICAL (the part the design says to get right and test hardest). `sold_units`
+    and `gains` are `(R, L)`. For each `HarvestPolicy`, the fraction of the policy's pre-sale units
+    being sold in THIS sale determines the share of `tlh_cumulative_harvest` that is realized now:
+    that share is added to the gain of the sold policy-lots (split across them by sold units, so
+    each lot keeps its own ST/LT character) and subtracted from the cumulative scalar. A full
+    liquidation (across one or many sales) therefore gives back exactly the whole accumulated
+    harvest — never more (the scalar is drained, so it cannot double-pay) and never less. Lots left
+    unsold at the terminal carry their unrealized deferred gain forward, which is correct: nothing
+    is realized, so nothing is given back. Returns the give-back-adjusted `(R, L)` gains; the
+    caller's array is not mutated. The harvest phase guarantees `cumulative <= original_basis`, so
+    the give-back can never exceed the gain that the reduced basis implies.
+    """
+
+    harvest = plan.harvest_policies
+    policy_count = harvest.gain_profile_index.shape[0]
+    adjusted_gains = gains
+    copied = False
+    for policy_idx in range(policy_count):
+        if int(harvest.gain_profile_index[policy_idx]) < 0:
+            continue
+        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
+        if lot_indices.size == 0:
+            continue
+        sold_policy = sold_units[:, lot_indices]  # (R, policy_lots)
+        units_sold = sold_policy.sum(axis=1)  # (R,)
+        if not (units_sold > 0.0).any():
+            continue
+        # Pre-sale held units of the policy = units still remaining + units just sold. `sold_units`
+        # was already subtracted from `current.lot_remaining` by the caller before this runs.
+        remaining_policy = current.lot_remaining[lot_indices, :].T  # (R, policy_lots)
+        pre_sale_units = remaining_policy.sum(axis=1) + units_sold  # (R,)
+        cumulative = current.tlh_cumulative_harvest[policy_idx, :]  # (R,)
+        fraction_sold = np.divide(units_sold, pre_sale_units, out=np.zeros_like(units_sold), where=pre_sale_units > 0.0)
+        give_back = fraction_sold * cumulative  # (R,)
+        if not (give_back > 0.0).any():
+            continue
+        if not copied:
+            adjusted_gains = gains.copy()
+            copied = True
+        # Distribute the give-back across the sold policy-lots in proportion to each lot's sold
+        # units, so the realized extra gain follows the lots actually disposed (preserving ST/LT).
+        per_lot_weight = np.divide(
+            sold_policy, units_sold[:, None], out=np.zeros_like(sold_policy), where=units_sold[:, None] > 0.0
+        )  # (R, policy_lots), rows sum to 1 where any policy lot sold
+        adjusted_gains[:, lot_indices] += per_lot_weight * give_back[:, None]
+        current.tlh_cumulative_harvest[policy_idx, :] = cumulative - give_back
+    return adjusted_gains

@@ -35,6 +35,7 @@ from augur.sim.engine.phases import (
     _apply_scheduled_asset_sales,
     _apply_scheduled_transfers,
     _apply_tax_accruals,
+    _apply_tlh_harvest,
 )
 from augur.sim.enums import PrivateEquityDispositionKind
 from augur.sim.external_series import ExternalSeriesContext
@@ -73,6 +74,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         capital_gain_active=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.bool_),
         capital_gain_ytd=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.float64),
         capital_loss_carryforward=np.zeros((p.capital_gain_agent_count, r), dtype=np.float64),
+        tlh_cumulative_harvest=np.zeros((p.harvest_policy_count, r), dtype=np.float64),
         tax_liability_active=np.zeros((p.tax_liability_count, r), dtype=np.bool_),
         tax_liability_amount=np.zeros((p.tax_liability_count, r), dtype=np.float64),
         property_active=np.zeros((p.property_count, r), dtype=np.bool_),
@@ -137,6 +139,9 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
     current.ordinary_ytd[:, failed] = 0.0
     current.capital_gain_ytd[:, :, failed] = 0.0
     current.capital_loss_carryforward[:, failed] = 0.0
+    # Reset cumulative harvest on failed rollouts, mirroring capital_loss_carryforward (a failed
+    # rollout's state is meaningless and must not leak deferred basis into snapshots).
+    current.tlh_cumulative_harvest[:, failed] = 0.0
     current.tax_liability_amount[:, failed] = 0.0
     current.property_basis[:, failed] = 0.0
     current.property_ownership[:, failed] = 0.0
@@ -159,6 +164,11 @@ def _run_month_step(
     _apply_obligation_accruals(plan, buffers, current, month)
     _apply_liquidity_policy_sales(plan, buffers, current, month)
     _apply_obligation_settlement(plan, buffers, current, month)
+    # Reduced-form TLH harvest: book each harvest policy's calibrated capital loss into
+    # capital_gain_ytd and grow its cumulative-harvest scalar. Runs BEFORE PE tenders (and the
+    # year-end tax pass) so the harvested loss is available for §1211/§1212 netting this year,
+    # and before any PE tender so a same-month tender's gain nets against the fresh harvest loss.
+    _apply_tlh_harvest(plan, buffers, current, month)
     # PE tender sales fire after obligation settlement so the policy compares against the
     # post-settlement liquid net worth (cash already moved out for this month's bills) and the
     # cap-gain accrual from any tender is captured by the year-end tax pass below.

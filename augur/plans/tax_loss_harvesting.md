@@ -1,7 +1,13 @@
 # Tax-loss harvesting (TLH) in Augur
 
 Status: 2026-06-04. Piece 1 (capital-loss netting + carryforward) landed
-(ducktape #1846); Piece 2 (harvest process) designed, not started.
+(ducktape #1846). Piece 2: Step 2a (yield core, `augur/sim/tlh_harvest.py`) landed; Step 2b
+(engine integration) implemented — config `HarvestProcessConfig` →
+`Scenario.harvest_policies` → compiled `harvest_policies` table (`augur/sim/compiler/tlh_harvest.py`)
+→ engine phase `_apply_tlh_harvest` + sale-time basis give-back in
+`_record_capital_gains` (`augur/sim/engine/phases.py`), with the per-(policy, rollout)
+`tlh_cumulative_harvest` scalar in `augur/sim/buffers.py`. The basis-reset design fork below
+was resolved as option **(B)** (scalar, not extra lot slots).
 
 ## Motivation
 

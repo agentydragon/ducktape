@@ -46,6 +46,7 @@ from augur.sim.compiler.tax import (
     compile_tax,
     compile_tax_liability_slots,
 )
+from augur.sim.compiler.tlh_harvest import HarvestPolicyCompileOutput, compile_harvest_policies
 from augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
@@ -80,6 +81,9 @@ class SlotPlan:
     liquidity_policy_count: int
     max_liquidity_policy_assets: int
     pe_issuer_count: int
+    # Count of reduced-form TLH harvest policies (`max(1, len(scenario.harvest_policies))`); the
+    # sentinel row when there are none carries an empty lot mask the engine skips.
+    harvest_policy_count: int
     max_tax_settlement_slots: int
 
 
@@ -154,6 +158,10 @@ class CompiledSimulation:
     pe_issuers: PEIssuerCompileOutput
     pe_policies: PEPolicyCompileOutput
     pe_channels: PEChannels
+    # Reduced-form TLH harvest policies (Piece 2b). Per-policy yield curve + lot mask + the
+    # owner's capital-gain agent index + the index series index driving the period return.
+    # Consumed by the engine's `_apply_tlh_harvest` phase and the sale-time basis give-back.
+    harvest_policies: HarvestPolicyCompileOutput
     liquidity_policies: LiquidityPolicyCompileOutput
 
 
@@ -316,6 +324,20 @@ def compile_simulation(
         pe_issuers, private_equity=external_series.private_equity, rollout_count=rollout_count, horizon_months=horizon
     )
 
+    # Reduced-form TLH harvest policies. Pass the intern lookups (`strings.require` / `assets.require`)
+    # so the policy's (owner, account, asset) lot mask is matched against the exact codes the lot
+    # table was built from above.
+    harvest_policies = compile_harvest_policies(
+        scenario,
+        series_index_by_id=series_index_by_id,
+        lot_agent_codes=lot_agent_codes_arr,
+        lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
+        lot_asset_codes=lot_asset_codes_arr,
+        capital_gain_agent_codes=capital_gain_agent_codes,
+        string_code_of=strings.require,
+        asset_code_of=assets.require,
+    )
+
     slot_plan = SlotPlan(
         event_months=horizon,
         snapshot_months=horizon + 1,
@@ -335,6 +357,7 @@ def compile_simulation(
         liquidity_policy_count=liquidity_policies.assets.shape[0],
         max_liquidity_policy_assets=liquidity_policies.assets.shape[1],
         pe_issuer_count=pe_issuers.codes.shape[0],
+        harvest_policy_count=harvest_policies.gain_profile_index.shape[0],
         max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),
     )
 
@@ -381,6 +404,7 @@ def compile_simulation(
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,
         pe_channels=pe_channels,
+        harvest_policies=harvest_policies,
         liquidity_policies=liquidity_policies,
     )
 

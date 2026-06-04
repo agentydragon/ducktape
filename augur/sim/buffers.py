@@ -156,6 +156,13 @@ class CurrentStateBuffers:
     # against ordinary income ($3k cap), carries here into future years. Unlike the YTD gain
     # buffers it is NOT zeroed at year-end — it persists across tax years by design.
     capital_loss_carryforward: NDArray[np.float64]
+    # Cumulative reduced-form TLH harvested loss per (harvest policy, rollout), >= 0 (Piece 2b).
+    # Each month `_apply_tlh_harvest` adds the loss it booked into `capital_gain_ytd` here; the
+    # total lowers the policy holding's adjusted basis (so `e` rises and yield ossifies) and is the
+    # exact amount GIVEN BACK as extra realized gain when the policy's lots are sold. Like the
+    # carryforward it persists across years (it is NOT zeroed at year-end) — it is reset only on
+    # rollout failure, mirroring `capital_loss_carryforward`. Clamped so adjusted_basis stays >= 0.
+    tlh_cumulative_harvest: NDArray[np.float64]
     tax_liability_active: NDArray[np.bool_]
     tax_liability_amount: NDArray[np.float64]
     property_active: NDArray[np.bool_]
@@ -232,6 +239,12 @@ class CurrentStateBuffers:
             "current capital_loss_carryforward",
             self.capital_loss_carryforward,
             shape=(plan.capital_gain_agent_count, r),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current tlh_cumulative_harvest",
+            self.tlh_cumulative_harvest,
+            shape=(plan.harvest_policy_count, r),
             dtype=np.float64,
         )
         _expect_array(

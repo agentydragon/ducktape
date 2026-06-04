@@ -10,6 +10,7 @@ from pydantic import Field, NonNegativeInt, PositiveFloat, model_validator
 from augur.api.finance import FinanceSnapshot
 from augur.api.portfolio import HoldingKind, PortfolioAccountType, PortfolioConfig
 from augur.api.schemas import ApiModel
+from augur.sim.tlh_harvest import HarvestYieldParams
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
 
@@ -55,6 +56,30 @@ class PlaidProxyHoldingPeriodBucket(ApiModel):
     )
 
 
+class HarvestProcessConfig(ApiModel):
+    """Optional reduced-form tax-loss-harvesting (TLH) process attached to an SP500 proxy sleeve.
+
+    LIMITED, DELIBERATELY-APPROXIMATE ("untruthful") MODEL — see `augur.sim.scenario.HarvestPolicy`
+    and the engine phase `_apply_tlh_harvest`. It does NOT simulate the direct-indexing sleeve's
+    constituent stocks; the harvestable loss is a calibrated function of the SP500 path, not a real
+    below-basis amount, and all `HarvestYieldParams` are `[HEURISTIC]` (first-year-1099-B anchor,
+    external decay prior). The loss is honest deferral: a basis give-back at sale repays it.
+    """
+
+    yield_params: HarvestYieldParams = Field(description="Calibrated harvest-yield curve. All params [HEURISTIC].")
+    short_term_fraction: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Optional override for the share of each month's harvested loss booked as short-term. "
+            "When omitted, it is seeded from the proxy's holding_period_buckets short-term (<12mo) "
+            "market-value share, defaulting to 1.0 when no buckets are configured (young account, "
+            "all short-term — matching the TY2025 1099-B)."
+        ),
+    )
+
+
 class PlaidSp500ProxyGroupConfig(ApiModel):
     """Map selected Plaid investment accounts into one Augur SP500 proxy position."""
 
@@ -76,6 +101,14 @@ class PlaidSp500ProxyGroupConfig(ApiModel):
             "aggregate lot at `default_holding_period_months_at_start`. When set, the live Plaid "
             "value/basis is distributed across these buckets so short- vs long-term tax treatment "
             "is modeled."
+        ),
+    )
+    harvest: HarvestProcessConfig | None = Field(
+        default=None,
+        description=(
+            "Optional reduced-form TLH harvest process for this sleeve (Piece 2b). When set, the "
+            "sleeve realizes calibrated monthly capital losses with a basis give-back at sale "
+            "(honest deferral). When omitted, the sleeve behaves exactly as before — no harvesting."
         ),
     )
 

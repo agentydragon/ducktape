@@ -94,6 +94,7 @@ py_library(
         ":finance",
         ":portfolio",
         ":schemas",
+        "//augur/sim:tlh_harvest",
         "@pypi//pydantic",
     ],
 )
@@ -107,6 +108,7 @@ py_library(
         ":portfolio",
         ":portfolio_source_config",
         "//augur/product:asset_key",
+        "//augur/sim:scenario",
         "//plaid_utils:read_model",
         "//plaid_utils:schema",
     ],

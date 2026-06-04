@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_valida
 from augur.model.series import IndexSeriesKey
 from augur.model.series_model import SeriesModelBundle
 from augur.product.asset_key import AssetKey
+from augur.sim.tlh_harvest import HarvestYieldParams
 
 
 class FilingStatus(StrEnum):
@@ -581,6 +582,45 @@ class PrivateEquityTenderPolicy(BaseModel):
     liquid_net_worth_floor: AmountSchedule
 
 
+class HarvestPolicy(BaseModel):
+    """Attach a reduced-form tax-loss-harvesting (TLH) process to one index-tracking holding.
+
+    LIMITED / DELIBERATELY-APPROXIMATE ("UNTRUTHFUL") MODEL — read before relying on output.
+    This does NOT simulate the real direct-indexing sleeve's constituent stocks. The holding
+    stays a single index-tracking position; the "harvested loss" each month is a *calibrated
+    function* of the index path (see `augur/sim/tlh_harvest.py`), not a real below-basis amount
+    realized by selling specific underwater names. All `HarvestYieldParams` are `[HEURISTIC]`,
+    anchored only to the account's first-year (TY2025) 1099-B. See the engine phase
+    `_apply_tlh_harvest` and `augur/plans/tax_loss_harvesting.md` for the full rationale and for
+    the "what a more honest implementation would look like" note (the plan's options #3/#4).
+
+    The policy is keyed to the lots of one (agent, account, asset) pool — typically the Plaid
+    SP500 proxy sleeve. Each month the engine harvests a calibrated capital LOSS into that
+    owner's `capital_gain_ytd` (Piece-1 netting then nets it like any other realized loss) and
+    accumulates the harvested total into a single scalar `tlh_cumulative_harvest` per
+    (policy, rollout). That scalar lowers the holding's adjusted basis, which (a) raises the
+    embedded-gain fraction so the yield decays toward its floor ("ossification"), and (b) is
+    GIVEN BACK at sale time: any realized gain on this pool's lots uses the *reduced* basis, so
+    the deferred gain is honestly repaid. The net benefit is therefore bounded deferral +
+    rate-arbitrage + the $3k/yr ordinary offset — never free money.
+    """
+
+    owner_agent_id: str
+    account_id: str = "checking"
+    asset: AssetKey = Field(description="Index-tracking asset whose lots this policy harvests (e.g. an SP500AssetKey).")
+    yield_params: HarvestYieldParams
+    short_term_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Share of each month's harvested loss booked as short-term (the rest is long-term). "
+            "Seeded from the holding-period buckets — near 1.0 for a young account, matching the "
+            "TY2025 1099-B's essentially-all-short-term harvest. [HEURISTIC]."
+        ),
+    )
+
+
 class MortgageInterestDeductionPolicy(BaseModel):
     """Mortgage-interest deduction (IRC §163(h)(3)) for one liability.
 
@@ -641,6 +681,9 @@ class Scenario(BaseModel):
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
     federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)
     private_equity_tender_policies: list[PrivateEquityTenderPolicy] = Field(default_factory=list)
+    # Reduced-form TLH harvest processes attached to index-tracking holdings (Piece 2). Empty by
+    # default, so scenarios without harvesting reproduce prior behavior exactly. See HarvestPolicy.
+    harvest_policies: list[HarvestPolicy] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]

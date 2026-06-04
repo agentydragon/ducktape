@@ -19,10 +19,16 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
 )
 from augur.product.asset_key import SP500AssetKey
+from augur.sim.scenario import HarvestPolicy
 from plaid_utils.read_model import CurrentCashBalance, CurrentHolding, read_current_cash_balances, read_current_holdings
 from plaid_utils.schema import async_session_factory
 
 logger = logging.getLogger(__name__)
+
+# A direct-indexing sleeve's short-term harvest character comes from its recently-bought lots; a
+# lot is short-term until it has been held a full year (IRC §1222), so buckets below this many
+# months at month 0 contribute to the harvested loss's short-term share.
+_SHORT_TERM_HOLDING_PERIOD_MONTHS = 12
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,7 @@ class _PortfolioContribution:
     as_of_date: str | None
     accounts: tuple[PortfolioAccountConfig, ...]
     holdings: tuple[HoldingPositionConfig, ...]
+    harvest_policies: tuple[HarvestPolicy, ...]
     latest_captured_at: datetime | None
 
 
@@ -38,6 +45,10 @@ class _PortfolioContribution:
 class ResolvedPortfolioSources:
     snapshot: FinanceSnapshot
     portfolio: PortfolioConfig
+    # Reduced-form TLH harvest processes attached to index-tracking sleeves (Piece 2b). Empty when
+    # no proxy group configures `harvest`. Fed into `Scenario.harvest_policies` so the engine's
+    # `_apply_tlh_harvest` phase realizes calibrated losses with a sale-time basis give-back.
+    harvest_policies: tuple[HarvestPolicy, ...]
 
 
 def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
@@ -54,14 +65,13 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
         if not db_url:
             raise ValueError(f"Plaid portfolio source is enabled but ${plaid.database_url_env} is not set")
         contributions.append(asyncio.run(_read_plaid_contribution(plaid, db_url=db_url)))
-    portfolio = _merge_contributions(tuple(contribution for contribution in contributions if contribution is not None))
+    present = tuple(contribution for contribution in contributions if contribution is not None)
+    portfolio = _merge_contributions(present)
     snapshot = FinanceSnapshot(
-        as_of_date=_merged_as_of_date(
-            tuple(contribution for contribution in contributions if contribution is not None)
-        ),
-        cash_usd=sum(contribution.cash_usd for contribution in contributions if contribution is not None),
+        as_of_date=_merged_as_of_date(present), cash_usd=sum(contribution.cash_usd for contribution in present)
     )
-    return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio)
+    harvest_policies = tuple(policy for contribution in present for policy in contribution.harvest_policies)
+    return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio, harvest_policies=harvest_policies)
 
 
 async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url: str) -> _PortfolioContribution:
@@ -91,6 +101,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
 
     accounts: list[PortfolioAccountConfig] = []
     holdings: list[HoldingPositionConfig] = []
+    harvest_policies: list[HarvestPolicy] = []
     for group in plaid.sp500_proxy_groups:
         group_holdings = tuple(
             holding for account_id in group.plaid_account_ids for holding in holdings_by_account.get(account_id, ())
@@ -106,6 +117,8 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
             )
         )
         holdings.append(_sp500_proxy_holding(group, group_holdings))
+        if group.harvest is not None:
+            harvest_policies.append(_harvest_policy(group))
 
     captured = [balance.captured_at for balance in cash_balances] + [
         holding.captured_at for holding in current_holdings
@@ -115,8 +128,51 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
         as_of_date=None,
         accounts=tuple(accounts),
         holdings=tuple(holdings),
+        harvest_policies=tuple(harvest_policies),
         latest_captured_at=max(captured) if captured else None,
     )
+
+
+def _harvest_policy(group: PlaidSp500ProxyGroupConfig) -> HarvestPolicy:
+    """Build the scenario-level TLH harvest policy for one proxy group's sleeve.
+
+    The policy is keyed to the proxy's (owner_agent, portfolio_account, SP500) lots — the same
+    pool `_sp500_proxy_holding` expanded. The short-term share is the config override if set,
+    else the buckets' short-term (<12mo) market-value share, else 1.0 (no buckets → young account,
+    all short-term, matching the TY2025 1099-B).
+    """
+
+    assert group.harvest is not None  # caller guards
+    if group.harvest.short_term_fraction is not None:
+        short_term_fraction = group.harvest.short_term_fraction
+    else:
+        short_term_fraction = _bucket_short_term_fraction(group)
+    return HarvestPolicy(
+        owner_agent_id=group.owner_agent_id,
+        account_id=group.portfolio_account_id,
+        asset=SP500AssetKey(),
+        yield_params=group.harvest.yield_params,
+        short_term_fraction=short_term_fraction,
+    )
+
+
+def _bucket_short_term_fraction(group: PlaidSp500ProxyGroupConfig) -> float:
+    """Short-term (<12mo) market-value share across the proxy's holding-period buckets.
+
+    With no buckets the sleeve is a single aggregate lot whose age is unknown; treat a fresh
+    direct-indexing account as fully short-term (1.0), which both matches the TY2025 1099-B and is
+    the conservative-for-deferral default (short-term losses are the more valuable to harvest)."""
+
+    buckets = group.holding_period_buckets
+    if not buckets:
+        return 1.0
+    total = sum(bucket.market_value_fraction for bucket in buckets)
+    short_term = sum(
+        bucket.market_value_fraction
+        for bucket in buckets
+        if bucket.holding_period_months_at_start < _SHORT_TERM_HOLDING_PERIOD_MONTHS
+    )
+    return short_term / total if total > 0.0 else 1.0
 
 
 def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBalance, ...]) -> float:
@@ -226,6 +282,7 @@ def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribu
         as_of_date=fixed.snapshot.as_of_date if fixed.snapshot is not None else None,
         accounts=fixed.portfolio.accounts,
         holdings=fixed.portfolio.holdings,
+        harvest_policies=(),
         latest_captured_at=None,
     )
 
