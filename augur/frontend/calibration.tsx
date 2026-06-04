@@ -5,7 +5,7 @@ import { fmtPct, fmtVolume } from "./lib/format.ts";
 import { toastFetchError } from "./lib/toast.ts";
 import { MetricFanChart } from "./fan_chart.tsx";
 import { RolloutResultsSkeleton } from "./skeleton.tsx";
-import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.ts";
+import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed } from "./input_helpers.ts";
 import { markFanRows } from "./data_helpers.ts";
 import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.ts";
 
@@ -22,9 +22,13 @@ function fmtProb(value) {
   return value == null || !Number.isFinite(Number(value)) ? "n/a" : fmtPct(value);
 }
 
-// `D_KL(market ‖ model)` in bits: 0 = model matches the market, larger = louder disagreement.
-function fmtBits(value) {
-  return value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(3)} bits`;
+// `D_KL(market ‖ model)`: 0 = model matches the market, larger = louder disagreement. Pass
+// `withUnit` for standalone figures (e.g. a categorical family's overall KL) that have no column
+// header to carry the unit; the scored-markets table omits it because its "KL (bits)" header does.
+function fmtKl(value, { withUnit = false } = {}) {
+  if (value == null || !Number.isFinite(Number(value))) return "—";
+  const formatted = Number(value).toFixed(3);
+  return withUnit ? `${formatted} bits` : formatted;
 }
 
 // Bigger model-vs-market divergences get a louder tint on the KL cell itself (see
@@ -150,7 +154,7 @@ function CleanTable({ rows }) {
             <th className="px-3 py-2 text-right font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Model (95% CI)</th>
             <th className="px-3 py-2 text-right font-semibold" title="D_KL(market ‖ model)">
-              KL
+              KL (bits)
             </th>
             <th className="px-3 py-2 text-right font-semibold">Unresolved</th>
           </tr>
@@ -198,7 +202,7 @@ function CleanTable({ rows }) {
                     </>
                   )}
                 </td>
-                <td className={`px-3 py-2 text-right ${klTextClass(row.klBits)}`}>{fmtBits(row.klBits)}</td>
+                <td className={`px-3 py-2 text-right ${klTextClass(row.klBits)}`}>{fmtKl(row.klBits)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
                   {unresolvedPct == null ? "—" : fmtPct(unresolvedPct)}
                 </td>
@@ -271,18 +275,7 @@ function SurfacedTable({ rows }) {
   );
 }
 
-function IssuerFanPanel({
-  fan,
-  metric,
-  title,
-  description,
-  metricScale,
-  horizonMonths,
-  onChangeHorizonMonths,
-  maxHorizonMonths,
-  dataAttribute,
-  emptyLabel,
-}) {
+function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttribute, emptyLabel }) {
   const rows = useMemo(() => markFanRows(fan), [fan]);
   const percentiles = fan?.percentiles?.length ? fan.percentiles : FAN_PERCENTILES;
   return (
@@ -296,9 +289,6 @@ function IssuerFanPanel({
           series={[{ id: "mark", label: title, color: "#1d4ed8", rows, isActive: true }]}
           metric={metric}
           metricScale={metricScale}
-          horizonMonths={horizonMonths}
-          onChangeHorizonMonths={onChangeHorizonMonths}
-          maxHorizonMonths={maxHorizonMonths}
           percentiles={percentiles}
           selectedRows={[]}
           selectedEvents={[]}
@@ -412,7 +402,7 @@ function CategoricalPanel({ families }) {
                 </div>
               </div>
               <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>
-                {fmtBits(family.klBits)}
+                {fmtKl(family.klBits, { withUnit: true })}
               </div>
             </div>
             <table className="mt-2 min-w-full text-sm">
@@ -442,7 +432,7 @@ function CategoricalPanel({ families }) {
   );
 }
 
-function CalibrationResults({ response, metricScale, horizonMonths, onChangeHorizonMonths, maxHorizonMonths }) {
+function CalibrationResults({ response, metricScale }) {
   const { result, markFans, valuationFans } = response;
   return (
     <div className="min-w-0 space-y-5">
@@ -470,11 +460,8 @@ function CalibrationResults({ response, metricScale, horizonMonths, onChangeHori
           fan={fan}
           metric={MARK_METRIC}
           title={`Per-unit mark — ${fan.issuer}`}
-          description={`Percentile bands of ${fan.issuer}'s modelled per-unit mark over the horizon.`}
+          description={`Percentile bands of ${fan.issuer}'s modelled per-unit mark over the full horizon.`}
           metricScale={metricScale}
-          horizonMonths={horizonMonths}
-          onChangeHorizonMonths={onChangeHorizonMonths}
-          maxHorizonMonths={maxHorizonMonths}
           dataAttribute="data-calibration-mark-fan"
           emptyLabel="No mark fan data."
         />
@@ -486,11 +473,8 @@ function CalibrationResults({ response, metricScale, horizonMonths, onChangeHori
           fan={fan}
           metric={VALUATION_METRIC}
           title={`Company valuation — ${fan.issuer}`}
-          description={`Percentile bands of ${fan.issuer}'s modelled company valuation over the horizon.`}
+          description={`Percentile bands of ${fan.issuer}'s modelled company valuation over the full horizon.`}
           metricScale={metricScale}
-          horizonMonths={horizonMonths}
-          onChangeHorizonMonths={onChangeHorizonMonths}
-          maxHorizonMonths={maxHorizonMonths}
           dataAttribute="data-calibration-valuation-fan"
           emptyLabel="No valuation fan data."
         />
@@ -512,35 +496,31 @@ function CalibrationResults({ response, metricScale, horizonMonths, onChangeHori
   );
 }
 
-export function CalibrationWorkspace({
-  bootstrap,
-  rolloutCount,
-  firstSeed,
-  model,
-  horizonMonths,
-  onChangeHorizonMonths,
-  metricScale,
-  sharedControlsSlot,
-}) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount, firstSeed, model, metricScale, sharedControlsSlot }) {
   const catalog = bootstrap.calibration ?? null;
 
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
+  // A run is in flight over already-rendered results (vs. the first load, which shows the skeleton).
+  // Drives a subtle dim instead of tearing the page down — see the effect and render below.
+  const [refreshing, setRefreshing] = useState(false);
 
-  // The calibration run is fully determined by tab-shared shell controls: exogenous model (`?x=`),
-  // rollout count (`?n=`), and horizon (`?h=`), plus the fixed first seed. Memoizing keeps the
-  // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  // The calibration run is determined by the tab-shared exogenous model (`?x=`) and rollout count
+  // (`?n=`), plus the fixed first seed. It always resolves markets at the deployment's full max
+  // rollout horizon — deliberately independent of the product tab's `?h=` zoom — so a fan-chart
+  // scroll never changes the scored markets or re-runs the catalog. Memoizing keeps the auto-run
+  // effect from re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const seed = clampFirstSeed(firstSeed);
-  const horizon = clampHorizonMonths(horizonMonths, bootstrap);
+  const horizonMonths = bootstrap.maxHorizonMonths;
   const request = useMemo(
     () => ({
       presetId: model,
-      horizonMonths: horizon,
+      horizonMonths,
       rollouts,
       seed,
     }),
-    [model, horizon, rollouts, seed]
+    [model, horizonMonths, rollouts, seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -548,7 +528,12 @@ export function CalibrationWorkspace({
   useEffect(() => {
     if (!catalog || !request.presetId) return undefined;
     const controller = new AbortController();
-    setResponse(null);
+    // Stale-while-revalidate: keep the current results on screen while the new run loads instead of
+    // blanking to the skeleton. Changing the model (`?x=`) or rollout count (`?n=`) shouldn't flash
+    // the scored / surfaced market tables away. Only the first load (no `response` yet) falls through
+    // to the skeleton. Clear any stale error so a prior failure doesn't shadow the retry.
+    setRunError(null);
+    setRefreshing(true);
     const handle = setTimeout(() => {
       fetchCalibrationRun(request, { signal: controller.signal })
         .then((payload) => {
@@ -557,9 +542,12 @@ export function CalibrationWorkspace({
         })
         .catch((error) => {
           if (error?.name === "AbortError") return;
-          setResponse(null);
           setRunError(error?.message || String(error));
           toastFetchError("calibration-run", "Calibration run failed", error);
+        })
+        .finally(() => {
+          // A superseded run's abort lands here too; the run that replaced it now owns `refreshing`.
+          if (!controller.signal.aborted) setRefreshing(false);
         });
     }, 120);
     return () => {
@@ -588,13 +576,9 @@ export function CalibrationWorkspace({
           {runError ? (
             <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
           ) : response ? (
-            <CalibrationResults
-              response={response}
-              metricScale={metricScale}
-              horizonMonths={horizonMonths}
-              onChangeHorizonMonths={onChangeHorizonMonths}
-              maxHorizonMonths={bootstrap.maxHorizonMonths}
-            />
+            <div className={`transition-opacity ${refreshing ? "opacity-60" : ""}`} aria-busy={refreshing}>
+              <CalibrationResults response={response} metricScale={metricScale} />
+            </div>
           ) : (
             <RolloutResultsSkeleton />
           )}
