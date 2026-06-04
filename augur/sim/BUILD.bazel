@@ -282,6 +282,7 @@ py_library(
     name = "engine",
     srcs = [
         "engine/__init__.py",
+        "engine/jax_engine.py",
         "engine/phases.py",
     ],
     deps = [
@@ -296,7 +297,27 @@ py_library(
         ":tensor_fifo",
         ":tlh_harvest",
         "//augur/model:series",
+        "//augur/model:sim_backend",
+        "@pypi//jax",
         "@pypi//numpy",
+    ],
+)
+
+py_test(
+    name = "jax_engine_test",
+    size = "small",
+    srcs = ["engine/jax_engine_test.py"],
+    deps = [
+        ":codec",
+        ":engine",
+        ":external_series",
+        ":scenario",
+        ":simulate",
+        "//:conftest",
+        "//augur:conftest",
+        "//augur/model:sim_backend",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
     ],
 )
 
