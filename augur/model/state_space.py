@@ -39,7 +39,7 @@ from augur.model.private_equity_protocol import (
 )
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
-from augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
+from augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key, parse_level_series_key
 from augur.model.series_model import derive_stream_rollout_seeds
 from augur.model.state_space_factor import FactorKey, PrivateEquityMarkKey, parse_factor_key
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
@@ -69,6 +69,12 @@ class StateSpaceModelArtifact(FrozenModel):
     private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
+    # Level series the model EMITS as an exact copy of a fitted factor's sampled path, mapping the
+    # emitted wire-id -> source factor wire-id (which must be a fitted level factor in
+    # `factor_names`). This is the model's own modeling choice — e.g. emit a second location's
+    # home_value/rent equal to a fitted location's draws — kept inside the trained artifact so a
+    # different model can fit those series independently instead. Copy and source must share kind.
+    emitted_factor_copies: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_shapes(self) -> StateSpaceModelArtifact:
@@ -100,6 +106,18 @@ class StateSpaceModelArtifact(FrozenModel):
                 "private_equity_event_priors missing issuer(s) "
                 f"{sorted(missing_event_priors)}; private-equity tender event series is required"
             )
+        for copy_wire, source_wire in self.emitted_factor_copies.items():
+            if source_wire not in factors:
+                raise ValueError(f"emitted_factor_copies source {source_wire!r} is not a fitted factor")
+            if copy_wire in factors:
+                raise ValueError(f"emitted_factor_copies key {copy_wire!r} is already a fitted factor; drop the copy")
+            copy_key = parse_level_series_key(copy_wire)
+            source_key = parse_level_series_key(source_wire)
+            if copy_key.kind != source_key.kind:
+                raise ValueError(
+                    f"emitted_factor_copies {copy_wire!r} -> {source_wire!r} must share kind "
+                    f"({copy_key.kind} != {source_key.kind})"
+                )
         return self
 
     @cached_property
@@ -120,6 +138,15 @@ class StateSpaceModelArtifact(FrozenModel):
         """PE issuer ids in `factor_names` order."""
 
         return tuple(item.issuer_id for item in self.factor_classifications if isinstance(item, PrivateEquityMarkKey))
+
+    @cached_property
+    def emitted_copy_level_keys(self) -> tuple[tuple[LevelSeriesKey, LevelSeriesKey], ...]:
+        """(emitted copy key, source factor key) for each `emitted_factor_copies` entry."""
+
+        return tuple(
+            (parse_level_series_key(copy_wire), parse_level_series_key(source_wire))
+            for copy_wire, source_wire in self.emitted_factor_copies.items()
+        )
 
 
 @dataclass(frozen=True)
@@ -254,7 +281,7 @@ class StateSpaceModel:
         return self.artifact.level_factors
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(self.artifact.level_factors)
+        return frozenset(self.artifact.level_factors) | {copy_key for copy_key, _ in self.artifact.emitted_copy_level_keys}
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
         return frozenset(self.artifact.private_equity_factor_issuers)
@@ -296,6 +323,10 @@ class StateSpaceModel:
                     )
                 continue
             level_by_key[classification] = levels
+        # The model emits its chosen copy series by reusing a fitted factor's sampled draws under
+        # the copy's own level key (e.g. a second location's home_value equal to a fitted one's).
+        for copy_key, source_key in self.artifact.emitted_copy_level_keys:
+            level_by_key[copy_key] = level_by_key[source_key]
         asset_price_blocks, property_value_blocks, index_blocks = partition_level_blocks(level_by_key.items())
         frames = assemble_level_magisteria(
             asset_price_blocks=asset_price_blocks,
