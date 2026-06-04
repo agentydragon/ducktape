@@ -133,6 +133,11 @@ def _make_lifespan(deps: BackendDeps):
             model_parallelism_limits = {
                 m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
             }
+            # Agents reach the LLM only through props/llm_proxy (the backend dropped
+            # its own /v1 mount in #1894), so this must be configured.
+            llm_proxy_url = deps.config.llm_proxy_url
+            if llm_proxy_url is None:
+                raise RuntimeError("config.llm_proxy_url must be set for agent runs")
             app.state.registry = AgentRegistry(
                 executor=executor,
                 db=db,
@@ -141,7 +146,7 @@ def _make_lifespan(deps: BackendDeps):
                 agent_base_env=deps.config.agent_env,
                 registry_config=deps.registry_proxy_config,
                 model_parallelism_limits=model_parallelism_limits,
-                llm_base_url=deps.config.llm_proxy_url,
+                llm_base_url=llm_proxy_url,
             )
 
             if deps.grader_model:

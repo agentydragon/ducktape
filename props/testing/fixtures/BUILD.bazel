@@ -72,6 +72,7 @@ py_library(
         "//util:crane",
         "//util:net",
         "@pypi//aiodocker",
+        "@pypi//fastapi",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//uvicorn",
