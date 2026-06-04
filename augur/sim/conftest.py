@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 
 import pytest
 
@@ -10,12 +10,25 @@ from augur.model.deterministic import Deterministic
 from augur.model.level_series_groups import AssetPriceGroups
 from augur.model.series import CryptoSymbol
 from augur.model.series_model import SeriesModelBundle
+from augur.model.sim_backend import SimBackend, use_backend
 from augur.sim.locations import Location
 
 DeterministicSeriesModelBundleFactory = Callable[[Sequence[float]], SeriesModelBundle]
 
 # Module-level singleton so the fixture's default isn't a call in arg defaults (ruff B008).
 _DEFAULT_SYMBOL = CryptoSymbol("vti")
+
+
+@pytest.fixture(params=list(SimBackend), ids=lambda backend: backend.value, autouse=True)
+def backend(request: pytest.FixtureRequest) -> Iterator[SimBackend]:
+    """Run every simulator test against both backends (NumPy reference + the in-progress JAX port).
+
+    Autouse so the existing suite doubles as the parity harness with no per-test edits: each test
+    runs once per backend under the same assertions. JAX variants for scenarios that exercise
+    not-yet-ported phases are expected to fail until the port lands those phases.
+    """
+    with use_backend(request.param):
+        yield request.param
 
 
 @pytest.fixture

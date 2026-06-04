@@ -303,28 +303,6 @@ py_library(
     ],
 )
 
-py_test(
-    name = "jax_engine_test",
-    size = "small",
-    srcs = ["engine/jax_engine_test.py"],
-    deps = [
-        ":codec",
-        ":engine",
-        ":external_series",
-        ":locations",
-        ":scenario",
-        ":simulate",
-        "//:conftest",
-        "//augur:conftest",
-        "//augur/model:series",
-        "//augur/model:series_model",
-        "//augur/model:sim_backend",
-        "//augur/product:asset_key",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "slice",
     srcs = ["slice.py"],
@@ -345,6 +323,7 @@ py_library(
         "//augur/model:deterministic",
         "//augur/model:level_series_groups",
         "//augur/model:series_model",
+        "//augur/model:sim_backend",
         "@pypi//pytest",
     ],
 )
