@@ -9,20 +9,26 @@ for scenarios touching not-yet-ported phases fail until the port lands them. Sel
 
 `run_jax(plan, buffers)` fills the (already NumPy-allocated, zeroed) `buffers` from a JAX run.
 Un-ported phases / branches are no-ops, so the JAX backend is correct only for scenarios that
-exercise only the ported paths — which is exactly what the parity tests use, growing as more land.
+exercise only the ported paths — which is exactly what the passing parity tests use.
 
 Ported so far (in `_run_month_step` order):
 - scheduled / recurring transfers;
+- property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
-- obligation accruals + settlement for the CONFIGURED_OBLIGATION source kind, with failure tracking
-  and `_zero_failed_state`.
+- liquidity-policy sales;
+- obligation accruals + settlement with failure tracking and `_zero_failed_state`, for the
+  CONFIGURED_OBLIGATION, PROPERTY_TAX, and MORTGAGE_PAYMENT source kinds (incl. the mortgage
+  interest/principal split into liability state).
 
-Not yet ported (no-op): property purchase/sale, liquidity sales, PE tenders, depreciation,
-owner-occupied months, tax accruals/settlements, lifecycle, primary residence, and the
-mortgage / property-tax / estimated-tax obligation source kinds.
+Not yet ported (no-op): property sale, depreciation, owner-occupied months, PE tenders, lifecycle,
+primary residence, the estimated-tax obligation source kinds, and the year-end tax machinery
+(accrual, SALT, MID, LTCG brackets, settlements) — so the property-tax/mortgage SALT/Schedule-E and
+MID deduction splits are also deferred until that lands.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass, replace
 
 import jax.numpy as jnp
 import numpy as np
@@ -34,6 +40,22 @@ from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
 from augur.sim.enums import CapitalGainClassification, ObligationSource
 from augur.sim.tensor_fifo import lot_order_for_pool
+
+
+@dataclass(frozen=True)
+class LiabilityState:
+    """Per-(liability, rollout) mortgage state threaded through the month loop (all R-last `[L, R]`).
+
+    `rental_interest_ytd` is the rented-share slice of `interest_ytd` (Schedule E vs MID split); it
+    stays at the NumPy reference's behavior of not being zeroed on rollout failure.
+    """
+
+    active: jnp.ndarray
+    principal: jnp.ndarray
+    monthly_payment: jnp.ndarray
+    interest_ytd: jnp.ndarray
+    principal_ytd: jnp.ndarray
+    rental_interest_ytd: jnp.ndarray
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -50,6 +72,17 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     property_ownership = jnp.zeros((p.property_count, r))
     property_contribution = jnp.zeros((p.property_count, r))
     property_equity = jnp.zeros((p.property_count, r))
+    property_rented_fraction = jnp.asarray(
+        np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r))
+    )
+    liabilities = LiabilityState(
+        active=jnp.zeros((p.liability_count, r), dtype=bool),
+        principal=jnp.zeros((p.liability_count, r)),
+        monthly_payment=jnp.zeros((p.liability_count, r)),
+        interest_ytd=jnp.zeros((p.liability_count, r)),
+        principal_ytd=jnp.zeros((p.liability_count, r)),
+        rental_interest_ytd=jnp.zeros((p.liability_count, r)),
+    )
     failed = jnp.zeros(r, dtype=bool)
     # int32 (not int64): x64 is disabled, so a jnp.int64 request truncates with a warning. Values
     # are tiny (month index or -1); the NumPy int64 state buffer upcasts on assignment.
@@ -70,26 +103,35 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.transfers.active[month] = np.asarray(transfer_active)
         buffers.transfers.amount[month] = np.asarray(transfer_amount)
 
-        cash, property_active, property_basis, property_ownership, property_contribution, property_equity = (
-            _apply_property_purchases(
-                plan,
-                buffers,
-                cash,
-                property_active,
-                property_basis,
-                property_ownership,
-                property_contribution,
-                property_equity,
-                active,
-                month,
-            )
+        (
+            cash,
+            property_active,
+            property_basis,
+            property_ownership,
+            property_contribution,
+            property_equity,
+            liabilities,
+        ) = _apply_property_purchases(
+            plan,
+            buffers,
+            cash,
+            property_active,
+            property_basis,
+            property_ownership,
+            property_contribution,
+            property_equity,
+            liabilities,
+            active,
+            month,
         )
 
         cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_scheduled_asset_sales(
             plan, buffers, cash, lot_remaining, capital_gain_active, capital_gain_ytd, active, external_values, month
         )
 
-        ob_active, ob_due = _apply_obligation_accruals(plan, property_active, active, external_values, month, r)
+        ob_active, ob_due = _apply_obligation_accruals(
+            plan, property_active, liabilities, active, external_values, month, r
+        )
         cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_liquidity_policy_sales(
             plan,
             buffers,
@@ -105,8 +147,21 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             r,
         )
         funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, r)
-        cash, ordinary_ytd, failed, failed_month, ob_paid, ob_shortfall, ob_failure = _apply_obligation_settlement(
-            plan.obligations, cash, ordinary_ytd, failed, failed_month, ob_active, ob_due, funded, month
+        cash, ordinary_ytd, liabilities, failed, failed_month, ob_paid, ob_shortfall, ob_failure = (
+            _apply_obligation_settlement(
+                plan,
+                buffers,
+                cash,
+                ordinary_ytd,
+                liabilities,
+                property_rented_fraction,
+                failed,
+                failed_month,
+                ob_active,
+                ob_due,
+                funded,
+                month,
+            )
         )
         buffers.obligations.active[month] = np.asarray(ob_active)
         buffers.obligations.due[month] = np.asarray(ob_due)
@@ -128,6 +183,15 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             property_contribution * keep,
             property_equity * keep,
         )
+        # It also zeros liability dollar fields (principal/payment/interest_ytd/principal_ytd) but
+        # leaves `active` and `rental_interest_ytd` untouched.
+        liabilities = replace(
+            liabilities,
+            principal=liabilities.principal * keep,
+            monthly_payment=liabilities.monthly_payment * keep,
+            interest_ytd=liabilities.interest_ytd * keep,
+            principal_ytd=liabilities.principal_ytd * keep,
+        )
 
         buffers.state.cash_state[month + 1] = np.asarray(cash)
         buffers.state.lot_state[month + 1] = np.asarray(lot_remaining)
@@ -139,6 +203,11 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.state.property_ownership_state[month + 1] = np.asarray(property_ownership)
         buffers.state.property_contribution_state[month + 1] = np.asarray(property_contribution)
         buffers.state.property_equity_state[month + 1] = np.asarray(property_equity)
+        buffers.state.liability_active_state[month + 1] = np.asarray(liabilities.active)
+        buffers.state.liability_principal_state[month + 1] = np.asarray(liabilities.principal)
+        buffers.state.liability_monthly_payment_state[month + 1] = np.asarray(liabilities.monthly_payment)
+        buffers.state.liability_interest_ytd_state[month + 1] = np.asarray(liabilities.interest_ytd)
+        buffers.state.liability_principal_ytd_state[month + 1] = np.asarray(liabilities.principal_ytd)
         buffers.state.rollout_failed_state[month + 1] = np.asarray(failed)
         buffers.state.rollout_failed_month_state[month + 1] = np.asarray(failed_month)
 
@@ -323,12 +392,13 @@ def _record_capital_gains(
 def _apply_obligation_accruals(
     plan: CompiledSimulation,
     property_active: jnp.ndarray,
+    liabilities: LiabilityState,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_accruals` (CONFIGURED_OBLIGATION + PROPERTY_TAX)."""
+    """Functional port of `phases._apply_obligation_accruals` (CONFIGURED + PROPERTY_TAX + MORTGAGE_PAYMENT)."""
     obligations = plan.obligations
     slot_count = obligations.cause.shape[1]
     accrual_active = jnp.zeros((slot_count, rollout_count), dtype=bool)
@@ -361,8 +431,16 @@ def _apply_obligation_accruals(
             non_ad_valorem_monthly = float(plan.properties.special_assessment_annual_usd[prop]) / 12.0
             amount = jnp.full(rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
             slot_active = active & property_active[prop] & (amount > 0.0)
+        elif source_kind == ObligationSource.MORTGAGE_PAYMENT:
+            liab = int(obligations.source_index[month, slot])
+            prop = int(plan.liabilities.property_slot[liab])
+            if int(plan.properties.month[prop]) >= month:
+                continue  # mortgage payments accrue only after the purchase month
+            interest = liabilities.principal[liab] * float(plan.liabilities.annual_rate[liab]) / 12.0
+            amount = jnp.minimum(liabilities.monthly_payment[liab], liabilities.principal[liab] + interest)
+            slot_active = active & liabilities.active[liab] & (liabilities.principal[liab] > 0.0) & (amount > 0.0)
         else:
-            continue  # mortgage / estimated-tax source kinds not yet ported
+            continue  # estimated-tax source kinds not yet ported
         accrual_active = accrual_active.at[slot].set(slot_active)
         accrual_due = accrual_due.at[slot].set(jnp.where(slot_active, amount, 0.0))
     return accrual_active, accrual_due
@@ -391,29 +469,35 @@ def _obligation_group_funded(
 
 
 def _apply_obligation_settlement(
-    obligations: ObligationCompileOutput,
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
     cash: jnp.ndarray,
     ordinary_ytd: jnp.ndarray,
+    liabilities: LiabilityState,
+    property_rented_fraction: jnp.ndarray,
     failed: jnp.ndarray,
     failed_month: jnp.ndarray,
     accrual_active: jnp.ndarray,
     accrual_due: jnp.ndarray,
     funded: jnp.ndarray,
     month: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_obligation_settlement` (CONFIGURED_OBLIGATION + PROPERTY_TAX).
+) -> tuple[jnp.ndarray, jnp.ndarray, LiabilityState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_obligation_settlement` (CONFIGURED + PROPERTY_TAX + MORTGAGE_PAYMENT).
 
     The deduction path uses each obligation's compile-time `deductible_fraction`; the property-tax
     SALT/Schedule-E split (runtime `property_rented_fraction`) lands with the tax-machinery port.
     """
+    obligations = plan.obligations
     slot_count = accrual_active.shape[0]
     paid_buffer = jnp.zeros_like(accrual_due)
     shortfall_buffer = jnp.zeros_like(accrual_due)
     failure_active = jnp.zeros_like(accrual_active)
     for slot in range(slot_count):
-        if int(obligations.source_kind[month, slot]) not in (
+        source_kind = int(obligations.source_kind[month, slot])
+        if source_kind not in (
             ObligationSource.CONFIGURED_OBLIGATION,
             ObligationSource.PROPERTY_TAX,
+            ObligationSource.MORTGAGE_PAYMENT,
         ):
             continue
         amount = accrual_due[slot]
@@ -425,6 +509,17 @@ def _apply_obligation_settlement(
         to_slot = int(obligations.to_slot[month, slot])
         if to_slot >= 0:
             cash = cash.at[to_slot].add(jnp.where(paid, amount, 0.0))
+        if source_kind == ObligationSource.MORTGAGE_PAYMENT:
+            liabilities = _apply_mortgage_payment(
+                plan,
+                buffers,
+                liabilities,
+                property_rented_fraction,
+                month=month,
+                liability_slot=int(obligations.source_index[month, slot]),
+                paid=paid,
+                amount=amount,
+            )
         # CONFIGURED obligations carry a compile-time deductible_fraction (no property tie).
         deduction_profile = int(obligations.deduction_profile[month, slot])
         if deduction_profile >= 0:
@@ -437,7 +532,45 @@ def _apply_obligation_settlement(
         first_failure = slot_failed & (failed_month < 0)
         failed_month = jnp.where(first_failure, month, failed_month)
         failed = failed | slot_failed
-    return cash, ordinary_ytd, failed, failed_month, paid_buffer, shortfall_buffer, failure_active
+    return cash, ordinary_ytd, liabilities, failed, failed_month, paid_buffer, shortfall_buffer, failure_active
+
+
+def _apply_mortgage_payment(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    liabilities: LiabilityState,
+    property_rented_fraction: jnp.ndarray,
+    *,
+    month: int,
+    liability_slot: int,
+    paid: jnp.ndarray,
+    amount: jnp.ndarray,
+) -> LiabilityState:
+    """Port of `phases._apply_mortgage_payment`: split a paid mortgage bill into interest/principal."""
+    principal_before = liabilities.principal[liability_slot]
+    interest = jnp.minimum(principal_before * float(plan.liabilities.annual_rate[liability_slot]) / 12.0, amount)
+    principal = jnp.minimum(jnp.maximum(amount - interest, 0.0), principal_before)
+
+    buffers.properties.mortgage_payment_active[month, liability_slot] = np.asarray(paid)
+    buffers.properties.mortgage_payment_interest[month, liability_slot] = np.asarray(jnp.where(paid, interest, 0.0))
+    buffers.properties.mortgage_payment_principal[month, liability_slot] = np.asarray(jnp.where(paid, principal, 0.0))
+    buffers.properties.mortgage_payment_total[month, liability_slot] = np.asarray(jnp.where(paid, amount, 0.0))
+
+    new_principal = jnp.where(paid, jnp.maximum(0.0, principal_before - principal), principal_before)
+    interest_ytd = liabilities.interest_ytd[liability_slot] + jnp.where(paid, interest, 0.0)
+    principal_ytd = liabilities.principal_ytd[liability_slot] + jnp.where(paid, principal, 0.0)
+    rental_interest_ytd = liabilities.rental_interest_ytd[liability_slot]
+    prop_slot = int(plan.liabilities.property_slot[liability_slot])
+    if prop_slot >= 0:
+        rented = property_rented_fraction[prop_slot]
+        rental_interest_ytd = rental_interest_ytd + jnp.where(paid, interest * rented, 0.0)
+    return replace(
+        liabilities,
+        principal=liabilities.principal.at[liability_slot].set(new_principal),
+        interest_ytd=liabilities.interest_ytd.at[liability_slot].set(interest_ytd),
+        principal_ytd=liabilities.principal_ytd.at[liability_slot].set(principal_ytd),
+        rental_interest_ytd=liabilities.rental_interest_ytd.at[liability_slot].set(rental_interest_ytd),
+    )
 
 
 def _fifo_sell_dollars(
@@ -598,16 +731,15 @@ def _apply_property_purchases(
     property_ownership: jnp.ndarray,
     property_contribution: jnp.ndarray,
     property_equity: jnp.ndarray,
+    liabilities: LiabilityState,
     active: jnp.ndarray,
     month: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_property_purchases` (cash purchases; mortgages not yet ported)."""
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, LiabilityState]:
+    """Functional port of `phases._apply_property_purchases` (cash + mortgage-financed purchases)."""
     properties = plan.properties
     for prop in range(properties.month.shape[0]):
         if int(properties.month[prop]) != month:
             continue
-        if int(properties.mortgage_slot[prop]) >= 0:
-            raise NotImplementedError("mortgaged property purchase is not yet ported to the JAX engine")
         buffers.properties.purchase_active[month, prop] = np.asarray(active)
         property_active = property_active.at[prop].set(active | property_active[prop])
         property_basis = property_basis.at[prop].set(
@@ -631,4 +763,38 @@ def _apply_property_purchases(
             seller_slot = int(properties.seller_slot[prop])
             if seller_slot >= 0:
                 cash = cash.at[seller_slot].add(jnp.where(active, buyer_cash, 0.0))
-    return cash, property_active, property_basis, property_ownership, property_contribution, property_equity
+
+        mortgage_slot = int(properties.mortgage_slot[prop])
+        if mortgage_slot >= 0:
+            buffers.properties.mortgage_origination_active[month, mortgage_slot] = np.asarray(active)
+            liabilities = replace(
+                liabilities,
+                active=liabilities.active.at[mortgage_slot].set(active | liabilities.active[mortgage_slot]),
+                principal=liabilities.principal.at[mortgage_slot].set(
+                    jnp.where(
+                        active, float(plan.liabilities.principal[mortgage_slot]), liabilities.principal[mortgage_slot]
+                    )
+                ),
+                monthly_payment=liabilities.monthly_payment.at[mortgage_slot].set(
+                    jnp.where(
+                        active,
+                        float(plan.liabilities.monthly_payment[mortgage_slot]),
+                        liabilities.monthly_payment[mortgage_slot],
+                    )
+                ),
+                interest_ytd=liabilities.interest_ytd.at[mortgage_slot].set(
+                    jnp.where(active, 0.0, liabilities.interest_ytd[mortgage_slot])
+                ),
+                principal_ytd=liabilities.principal_ytd.at[mortgage_slot].set(
+                    jnp.where(active, 0.0, liabilities.principal_ytd[mortgage_slot])
+                ),
+            )
+    return (
+        cash,
+        property_active,
+        property_basis,
+        property_ownership,
+        property_contribution,
+        property_equity,
+        liabilities,
+    )
