@@ -358,28 +358,39 @@ export function ScenarioEditor({
   ].filter((entry) => entry.input.propertyId != null);
 
   return (
-    <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700" data-product-scenario-editor="">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <div className="augur-eyebrow">
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="augur-card divide-y divide-slate-200 dark:divide-slate-700 [&_summary::-webkit-details-marker]:hidden"
+      data-product-scenario-editor=""
+    >
+      <summary
+        className="augur-eyebrow flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-4 py-3"
+        data-product-editor-toggle=""
+      >
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+            ▸
+          </span>
           Scenario comparison{multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
-        </div>
-        <div className="flex items-center gap-2">
-          {variants.length < MAX_VARIANTS && (
-            <Button size="xs" variant="light" data-product-scenario-add="" onClick={onAddVariant}>
-              + Add variant
-            </Button>
-          )}
+        </span>
+        {variants.length < MAX_VARIANTS && (
           <Button
             size="xs"
-            variant="default"
-            data-product-editor-toggle=""
-            aria-expanded={open}
-            onClick={() => setOpen((previous) => !previous)}
+            variant="light"
+            data-product-scenario-add=""
+            onClick={(event) => {
+              // Nested in <summary>: stop the click from toggling the disclosure so this only adds a
+              // variant (and leaves the editor's open state untouched).
+              event.preventDefault();
+              event.stopPropagation();
+              onAddVariant();
+            }}
           >
-            {open ? "Hide ▴" : "Edit ▾"}
+            + Add variant
           </Button>
-        </div>
-      </div>
+        )}
+      </summary>
 
       {open && (
         <>
@@ -601,7 +612,7 @@ export function ScenarioEditor({
           </div>
         </>
       )}
-    </div>
+    </details>
   );
 }
 
