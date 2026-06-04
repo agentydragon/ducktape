@@ -100,6 +100,24 @@ py_test(
 )
 
 py_test(
+    name = "service_scale_test",
+    size = "medium",
+    srcs = ["service_scale_test.py"],
+    data = [
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+    ],
+    deps = [
+        ":conftest",
+        ":service",
+        ":wire",
+        "//:conftest",
+        "//augur/api:config",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "service_test",
     size = "medium",
     srcs = ["service_test.py"],
