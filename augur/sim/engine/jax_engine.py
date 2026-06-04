@@ -185,13 +185,12 @@ def scan_supported(plan: CompiledSimulation) -> bool:
 
     The scan fold now handles transfers, all obligation kinds (configured / property-tax / mortgage /
     estimated-tax / true-up), scheduled asset sales, property purchases (cash + financed), depreciation,
-    owner-occupied tracking, the full year-end tax pass, liquidity sales, and PE tenders. Remaining
-    un-folded phases — TLH harvest policies and lifecycle / primary-residence events — fall back to the
-    eager `run_jax`. Conservative by construction: a missing feature here only costs the fast path,
-    never correctness (the dual-backend suite gates both routes)."""
+    owner-occupied tracking, the full year-end tax pass, liquidity sales, PE tenders, and TLH harvest.
+    Remaining un-folded phases — lifecycle / primary-residence events — fall back to the eager
+    `run_jax`. Conservative by construction: a missing feature here only costs the fast path, never
+    correctness (the dual-backend suite gates both routes)."""
     return (
-        bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
-        and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
+        int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
     )
 
@@ -450,6 +449,29 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
         "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
     }
+
+    # TLH harvest policies: per-policy static data (the jitted core books a calibrated capital loss).
+    harvest = plan.harvest_policies
+    folded_harvest: list[tuple] = []
+    for policy_idx in range(harvest.gain_profile_index.shape[0]):
+        gain_profile = int(harvest.gain_profile_index[policy_idx])
+        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
+        if gain_profile < 0 or lot_indices.size == 0:
+            continue
+        params = harvest.params[policy_idx]
+        folded_harvest.append(
+            (
+                policy_idx,
+                gain_profile,
+                lot_indices,
+                int(harvest.series_index[policy_idx]),
+                float(params.peak_annual_yield),
+                float(params.floor_annual_yield),
+                float(params.maturity_decay_exponent),
+                float(params.drawdown_sensitivity),
+                float(harvest.short_term_fraction[policy_idx]),
+            )
+        )
 
     # December year-end tax pass: static tables. `link_count`/`taxliab_count`/`profile_count` are
     # compile-time. `tax_slot_table[m, link]` is the tax-liability slot a link accrues at year-end
@@ -878,6 +900,41 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             _scatter_rows(jnp.zeros((profile_count, r)), settle_prof_idx, trueup_paid.astype(jnp.float32)) > 0.0
         )
         settle_year_end = jnp.where(settle_active, acc["tax_year_end"][month], NO_CODE)
+
+        # TLH harvest (after settlement, before PE): book a calibrated capital loss per policy. The
+        # prior price clamps to month 0 (max(0, month-1)), giving a flat period return there — so the
+        # eager engine's month-0 `has_prior=False` special case is unnecessary inside the scan.
+        for (
+            hp_policy,
+            hp_gain_profile,
+            hp_lots,
+            hp_series,
+            hp_peak,
+            hp_floor,
+            hp_gamma,
+            hp_dd,
+            hp_stf,
+        ) in folded_harvest:
+            hp_price = external_values[hp_series, :, month]
+            hp_prior = external_values[hp_series, :, jnp.maximum(0, month - 1)]
+            cg_ytd, cg_active, hp_cumulative = _tlh_harvest_policy_jit(
+                lot_remaining[hp_lots, :],
+                cost_basis_per_unit[hp_lots],
+                hp_price,
+                hp_prior,
+                tlh[hp_policy],
+                cg_ytd,
+                cg_active,
+                active,
+                gain_profile=hp_gain_profile,
+                has_prior=True,
+                peak=hp_peak,
+                floor=hp_floor,
+                gamma=hp_gamma,
+                drawdown_sensitivity=hp_dd,
+                short_term_fraction=hp_stf,
+            )
+            tlh = tlh.at[hp_policy].set(hp_cumulative)
 
         # Private-equity tenders (after settlement, eager order): per issuer, forced-recovery and
         # forced-sale dispositions, then the LNW-floor tender (+ public-market sale). Branch-free —
