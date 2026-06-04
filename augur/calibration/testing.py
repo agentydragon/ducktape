@@ -31,6 +31,9 @@ def mock_manifold_client(
                 "id": market_id,
                 "url": f"https://manifold.markets/test/{market_id}",
                 "probability": prices[market_id],
+                # Title/criterion are fetched live in production; the hermetic mock echoes the id.
+                "question": market_id,
+                "textDescription": f"Resolves per market {market_id}.",
             },
         )
 
@@ -46,7 +49,17 @@ def mock_kalshi_client(
 
     def handler(request: httpx.Request) -> httpx.Response:
         ticker = request.url.path.rstrip("/").rsplit("/", 1)[-1]
-        return httpx.Response(200, json={"market": {"last_price_dollars": str(prices[ticker]), "ticker": ticker}})
+        return httpx.Response(
+            200,
+            json={
+                "market": {
+                    "last_price_dollars": str(prices[ticker]),
+                    "ticker": ticker,
+                    "title": ticker,
+                    "rules_primary": f"Resolves per market {ticker}.",
+                }
+            },
+        )
 
     return KalshiClient(
         clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))
@@ -60,7 +73,13 @@ class _StaticClient:
         self._prices = prices
 
     def get_market(self, market_id: str) -> Market:
-        return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._prices[market_id])
+        return Market(
+            id=market_id,
+            url=f"https://test.example/{market_id}",
+            probability=self._prices[market_id],
+            title=market_id,
+            rules=f"Resolves per market {market_id}.",
+        )
 
     def close(self) -> None:
         pass

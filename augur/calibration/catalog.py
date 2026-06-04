@@ -7,14 +7,16 @@ its mappability via an orthogonal variant (``exact`` / ``correlate`` /
 ``unmappable``). Invalid combinations (wrong ID for platform, missing ID) are
 unrepresentable.
 
-The verbatim ``resolution_criterion_text`` is the source of truth a resolver
-implements -- NOT the question title. This module only parses + validates the
-catalog; resolution lives in ``resolvers.py`` and scoring in ``calibration.py``.
-Consumers dispatch on the mappability variant via ``isinstance`` (mypy narrows),
-never on the ``mappability`` string.
+Each exact market's ``mapping`` (the kind + params, e.g. ``level_at_date``) is the
+resolver's contract -- resolution lives in ``resolvers.py`` and scoring in
+``calibration.py``. Consumers dispatch on the mappability variant via ``isinstance``
+(mypy narrows), never on the ``mappability`` string.
 
-``p_market`` is NOT stored here: the catalog is pure market metadata and live
-prices are fetched at scoring time via platform-specific clients.
+The catalog stores NEITHER live prices NOR human-readable market text (the
+``question``/title and verbatim resolution criterion): all three are fetched live at
+scoring time via the platform clients (``Market.probability`` / ``.title`` / ``.rules``),
+so they can never drift from the platform. The catalog is the stable mapping + provenance
+(IDs, ``notes``) only.
 """
 
 from __future__ import annotations
@@ -134,14 +136,14 @@ class _MarketBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    question: str
+    # The market's `question`/title and verbatim resolution criterion are NOT stored here: they are
+    # fetched live alongside the price (see Market.title / Market.rules) so they can never drift
+    # from the platform. The catalog carries only the stable mapping + provenance.
     platform_ref: PlatformRef
     outcome_type: str
     close_date: date | None = None
     # Date the YES condition must occur by; often differs from `close_date`.
     resolution_deadline: date | None = None
-    # The market's verbatim resolution criteria -- the source of truth a resolver implements.
-    resolution_criterion_text: str | None = None
     notes: str | None = None
 
     normalize_platform_fields = model_validator(mode="before")(_extract_platform_ref)

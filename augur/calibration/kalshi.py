@@ -30,6 +30,12 @@ class _KalshiMarket(BaseModel):
 
     last_price_dollars: float | None = None
     volume_fp: float | None = None
+    # Title + verbatim resolution rules, surfaced live so the catalog needn't store/drift them.
+    # `title` is the market's headline; `yes_sub_title` is the bucket/threshold leg (e.g.
+    # "Above 3.0%"); `rules_primary` is the verbatim resolution criterion.
+    title: str | None = None
+    yes_sub_title: str | None = None
+    rules_primary: str | None = None
 
 
 class _KalshiResponse(BaseModel):
@@ -68,12 +74,17 @@ class KalshiClient:
         response = self._client.get(f"{_BASE_URL}/markets/{market_id}")
         response.raise_for_status()
         raw = _KalshiResponse.model_validate(response.json()).market
+        # Kalshi's per-market title is the event headline; the leg's distinguishing clause lives in
+        # yes_sub_title (e.g. "Above 3.0%"), so join them for a self-describing question.
+        title = " — ".join(part for part in (raw.title, raw.yes_sub_title) if part) or None
         market = Market(
             id=market_id,
             url=_MARKET_URL_TEMPLATE.format(ticker=market_id),
             probability=raw.last_price_dollars,
             volume=raw.volume_fp,
             volume_unit="contracts" if raw.volume_fp is not None else None,
+            title=title,
+            rules=raw.rules_primary,
         )
         self._cache[market_id] = (market, now)
         return market

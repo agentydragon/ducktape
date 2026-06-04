@@ -74,20 +74,17 @@ def catalog() -> MarketCatalog:
         metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
         markets=[
             ExactMarket(
-                question="Issuer IPO before 2027?",
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
-                question="Issuer collapses or acquired before IPO?",
                 platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
                 mapping=PreIpoFailureMapping(issuer=_ISSUER),
             ),
             CorrelateMarket(
-                question="Issuer completes an IPO in 2026 with $1T cap?",
                 platform_ref=ManifoldRef(manifold_id="CCC"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
@@ -216,7 +213,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
         metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
         markets=[
             ExactMarket(
-                question="S&P 500 above 7500 on 2026-12-31?",
                 platform_ref=ManifoldRef(manifold_id="SPX"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
@@ -225,7 +221,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
                 ),
             ),
             ExactMarket(
-                question="S&P 500 reaches 7500 at any point by 2026-12-31?",
                 platform_ref=ManifoldRef(manifold_id="SPX-TOUCH"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
@@ -234,7 +229,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
                 ),
             ),
             ExactMarket(
-                question="CPI YoY above 3% (year ending 2026-12)?",
                 platform_ref=ManifoldRef(manifold_id="CPI"),
                 outcome_type="BINARY",
                 mapping=InflationYoyMapping(
@@ -362,7 +356,6 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
         metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
         markets=[
             ExactMarket(
-                question="S&P 500 above 7500 on 2026-12-31? (no live price)",
                 platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
                 outcome_type="BINARY",
                 mapping=LevelAtDateMapping(
@@ -430,14 +423,12 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
         metadata={"as_of": "2026-05-29"},
         markets=[
             ExactMarket(
-                question="IPO before 2027? (Manifold)",
                 platform_ref=ManifoldRef(manifold_id="M1"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
-                question="IPO before Sep 2026? (Kalshi)",
                 platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 9, 1),

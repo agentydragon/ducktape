@@ -140,7 +140,10 @@ class CleanRow(BaseModel):
     """An apples-to-apples comparison: a market augur models as an event."""
 
     market_id: str
-    question: str
+    # Title + verbatim resolution criterion, fetched LIVE from the platform (the catalog no longer
+    # stores them, so they can't drift); `None` when the platform response carried none.
+    question: str | None = None
+    resolution_criterion: str | None = None
     url: str
     platform: str
     # The model channel that scored this market: a PE issuer id (for event markets) or a
@@ -163,7 +166,8 @@ class SurfacedRow(BaseModel):
     """A market augur lacks the concept for: shown with its price + reason, never scored."""
 
     market_id: str
-    question: str
+    question: str | None = None
+    resolution_criterion: str | None = None
     url: str
     platform: str
     mappability: str
@@ -241,7 +245,8 @@ def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, c
     p_model = counts.p_model
     return CleanRow(
         market_id=market.market_id,
-        question=market.question,
+        question=live.title,
+        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         channel=channel,
@@ -447,7 +452,8 @@ def _surfaced_row(
 ) -> SurfacedRow:
     return SurfacedRow(
         market_id=market.market_id,
-        question=market.question,
+        question=live.title,
+        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         mappability=market.mappability,
@@ -504,7 +510,8 @@ def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRo
     """Surface an exact market whose bound channel (issuer or level series) the preset doesn't emit."""
     return SurfacedRow(
         market_id=market.market_id,
-        question=market.question,
+        question=live.title,
+        resolution_criterion=live.rules,
         url=live.url,
         platform=market.platform,
         mappability="unmodeled",

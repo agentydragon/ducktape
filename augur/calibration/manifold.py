@@ -44,6 +44,9 @@ class _ManifoldResponse(BaseModel):
     # All-time traded volume in mana (Manifold's play currency); Manifold returns this on
     # every market response so it's the natural "is this market thick" indicator.
     volume: float | None = None
+    # Title + resolution prose, surfaced live so the catalog needn't store (and drift from) them.
+    question: str | None = None
+    text_description: str | None = None
 
 
 def _headers() -> dict[str, str]:
@@ -85,7 +88,15 @@ class ManifoldClient:
         raw = _ManifoldResponse.model_validate(response.json())
         # Manifold's brand symbol for mana is double-struck capital M (U+1D544); RUF001 flags
         # it as ambiguous with plain capital M, but the resemblance is intentional.
-        market = Market(id=raw.id, url=raw.url, probability=raw.probability, volume=raw.volume, volume_unit="𝕄")  # noqa: RUF001
+        market = Market(
+            id=raw.id,
+            url=raw.url,
+            probability=raw.probability,
+            volume=raw.volume,
+            volume_unit="𝕄",  # noqa: RUF001
+            title=raw.question,
+            rules=raw.text_description,
+        )
         self._cache[market_id] = (market, now)
         return market
 

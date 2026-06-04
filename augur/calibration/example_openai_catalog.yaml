@@ -4,13 +4,13 @@
 # model); this file ships as a worked example.
 #
 # DATA ONLY and read-only with respect to any model. calibration.py resolves the
-# cleanly-mappable (`exact`) markets per rollout and surfaces the rest. The verbatim
-# `resolution_criterion_text` is the source of truth a resolver implements -- NOT the
-# question title.
+# cleanly-mappable (`exact`) markets per rollout and surfaces the rest. Each exact market's
+# typed `mapping` is the resolver's contract.
 #
-# Provenance: collected via the Manifold MCP server (search_markets / get_market) on
-# `as_of`. `resolution_criterion_text` is the market's verbatim `textDescription`;
-# long descriptions are kept only for the resolution-criteria portion (`# excerpt`).
+# NOTE: market title/question and verbatim resolution criteria are NOT parsed data -- they are
+# fetched LIVE from the platform at scoring time (Market.title / Market.rules) so they can never
+# drift from the source. The `# question:` lines below are human-readable comments only; this
+# file carries stable IDs, mappings, and `notes` as data.
 
 metadata:
   source: manifold
@@ -75,7 +75,7 @@ markets:
   # EXACT -- ipo_by_date  (first PUBLIC_MARKET_OPEN by the deadline)
   # ============================================================================
   - manifold_id: NII0slqg2N
-    question: "OpenAI IPO before 2027?"
+    # question: "OpenAI IPO before 2027?"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2027-01-01"
@@ -83,14 +83,10 @@ markets:
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
     # exact event match. NB the model's IPO hazard is a flat ~7%/yr Bernoulli vs the
     # market's ~0.75 -- the headline calibration gap, computed exactly.
-    resolution_criterion_text: |
-      Update 2025-12-20 (PST) (AI summary of creator comment): This market
-      resolves based on when the actual IPO occurs, not when an IPO date is
-      announced.
     notes: "Highest-signal IPO market (vol ~27k, 82 bettors). Resolves on the actual IPO, not announcement."
 
   - manifold_id: RPNylZcpZg
-    question: "OpenAI IPO before 2028?"
+    # question: "OpenAI IPO before 2028?"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2028-01-01"
@@ -98,39 +94,30 @@ markets:
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2028-01-01" }
     # exact; with the 2027/2029 siblings this samples the model's IPO survival curve
     # against the market term structure.
-    resolution_criterion_text: |
-      Part of the @Bayesian openai-ipo-before-{2027,2028,2029} series; same
-      resolution basis as openai-ipo-before-2027: resolves on the actual IPO
-      occurring (not an announced date), before Jan 1, 2028.
     notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2028."
 
   - manifold_id: U5d5lNQLqR
-    question: "OpenAI IPO before 2029?"
+    # question: "OpenAI IPO before 2029?"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2029-01-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2029-01-01" }
     # exact; third point on the IPO survival curve.
-    resolution_criterion_text: |
-      Part of the @Bayesian openai-ipo-before-{2027,2028,2029} series; same
-      resolution basis as openai-ipo-before-2027: resolves on the actual IPO
-      occurring (not an announced date), before Jan 1, 2029.
     notes: "API closeTime is 2027-01-01 (shared across the series); resolution horizon is before 2029."
 
   - manifold_id: 0nIGd2HdusAb3id9SqzH
-    question: "Will OpenAI IPO by 2030?"
+    # question: "Will OpenAI IPO by 2030?"
     outcome_type: BINARY
     close_date: "2030-01-01"
     resolution_deadline: "2030-01-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2030-01-01" }
     # exact (within 120-month horizon).
-    resolution_criterion_text: ""
     notes: "Market page has NO resolution-criteria text (empty description); classified from the title. Confirm intended semantics."
 
   - manifold_id: Csgc56pdZc
-    question: "Will OpenAI go public in 2026?"
+    # question: "Will OpenAI go public in 2026?"
     outcome_type: BINARY
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
@@ -138,34 +125,23 @@ markets:
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
     # exact; criterion ('completes an IPO and begins trading') matches the
     # PUBLIC_MARKET regime.
-    resolution_criterion_text: |
-      Resolution criteria
-
-      OpenAI will be considered to have gone public in 2026 if it completes an
-      initial public offering (IPO) and begins trading on a public stock exchange
-      at any point during the calendar year 2026. This includes any IPO filing,
-      pricing, and first day of trading occurring in 2026. The resolution will be
-      verified through major financial news sources (Bloomberg, Reuters, CNBC,
-      WSJ) and official SEC filings if the IPO occurs in the United States.
 
   - manifold_id: NjpljpCCdCFW6aAG3SUa
-    question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of Halloween 2026?"
+    # question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of Halloween 2026?"
     outcome_type: BINARY
     close_date: "2026-11-01"
     resolution_deadline: "2026-10-31"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-31" }
-    resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2026-10-31)."
 
   - manifold_id: 4EmLfjixbVhMfJzPc4C1
-    question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of April Fools 2027?"
+    # question: "Will OpenAI IPO and be a publicly traded company in the United States by the end of April Fools 2027?"
     outcome_type: BINARY
     close_date: "2027-04-01"
     resolution_deadline: "2027-04-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-04-01" }
-    resolution_criterion_text: ""
     notes: "Empty description; classified from title (IPO + publicly traded in the US by 2027-04-01)."
 
   # ============================================================================
@@ -176,7 +152,7 @@ markets:
   # Manifold IPO series above. Kalshi read-only API requires no auth.
   - platform: kalshi
     kalshi_id: KXIPOOPENAI-26SEP01
-    question: "OpenAI IPO before Sep 1, 2026? (Kalshi)"
+    # question: "OpenAI IPO before Sep 1, 2026? (Kalshi)"
     outcome_type: BINARY
     close_date: "2026-09-01"
     resolution_deadline: "2026-09-01"
@@ -184,59 +160,46 @@ markets:
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-01" }
     # exact. Kalshi resolves YES if SEC declares S-1 effective OR IPO is priced OR
     # exchange assigns a ticker.
-    resolution_criterion_text: |
-      If OpenAI confirms an IPO before Sep 1, 2026, then the market resolves to Yes.
-      An IPO is confirmed if 1) the SEC declares the company's Form S-1 effective OR
-      2) the IPO is priced OR 3) a securities exchange has assigned a ticker to it.
     notes: "Kalshi KXIPOOPENAI series. OI ~42K, last_price 0.16."
 
   - platform: kalshi
     kalshi_id: KXIPOOPENAI-26OCT01
-    question: "OpenAI IPO before Oct 1, 2026? (Kalshi)"
+    # question: "OpenAI IPO before Oct 1, 2026? (Kalshi)"
     outcome_type: BINARY
     close_date: "2026-10-01"
     resolution_deadline: "2026-10-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-10-01" }
-    resolution_criterion_text: |
-      If OpenAI confirms an IPO before Oct 1, 2026, then the market resolves to Yes.
-      Same IPO confirmation criteria as the series.
     notes: "Kalshi KXIPOOPENAI series. OI ~17K, last_price 0.50."
 
   - platform: kalshi
     kalshi_id: KXIPOOPENAI-26NOV01
-    question: "OpenAI IPO before Nov 1, 2026? (Kalshi)"
+    # question: "OpenAI IPO before Nov 1, 2026? (Kalshi)"
     outcome_type: BINARY
     close_date: "2026-11-01"
     resolution_deadline: "2026-11-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-11-01" }
-    resolution_criterion_text: |
-      If OpenAI confirms an IPO before Nov 1, 2026, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~19K, last_price 0.76."
 
   - platform: kalshi
     kalshi_id: KXIPOOPENAI-26DEC01
-    question: "OpenAI IPO before Dec 1, 2026? (Kalshi)"
+    # question: "OpenAI IPO before Dec 1, 2026? (Kalshi)"
     outcome_type: BINARY
     close_date: "2026-12-01"
     resolution_deadline: "2026-12-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-01" }
-    resolution_criterion_text: |
-      If OpenAI confirms an IPO before Dec 1, 2026, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~18K, last_price 0.74."
 
   - platform: kalshi
     kalshi_id: KXIPOOPENAI-27JAN01
-    question: "OpenAI IPO before Jan 1, 2027? (Kalshi)"
+    # question: "OpenAI IPO before Jan 1, 2027? (Kalshi)"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2027-01-01"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2027-01-01" }
-    resolution_criterion_text: |
-      If OpenAI confirms an IPO before Jan 1, 2027, then the market resolves to Yes.
     notes: "Kalshi KXIPOOPENAI series. OI ~26K, last_price 0.86. Overlaps Manifold 'before 2027' market."
 
   # ============================================================================
@@ -247,35 +210,32 @@ markets:
   # validation. No auth needed for read-only.
   - platform: polymarket
     polymarket_id: "0x753e6031044632c083fede2715235b69bb2596e37d34f6f19d2b6635d2d4dd58"
-    question: "OpenAI IPO by June 30, 2026? (Polymarket)"
+    # question: "OpenAI IPO by June 30, 2026? (Polymarket)"
     outcome_type: BINARY
     close_date: "2026-06-30"
     resolution_deadline: "2026-06-30"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-06-30" }
-    resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~0.9%."
 
   - platform: polymarket
     polymarket_id: "0x23e52206ff8a49e4f097ac3b7f32826d930a0b6c76b7902a7858cf2183383c63"
-    question: "OpenAI IPO by September 30, 2026? (Polymarket)"
+    # question: "OpenAI IPO by September 30, 2026? (Polymarket)"
     outcome_type: BINARY
     close_date: "2026-09-30"
     resolution_deadline: "2026-09-30"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-09-30" }
-    resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~43%."
 
   - platform: polymarket
     polymarket_id: "0x66f5b8203ee1c36b993af623fd7f9ef7271dd87b3aebf6df508048ad4b563432"
-    question: "OpenAI IPO by December 31, 2026? (Polymarket)"
+    # question: "OpenAI IPO by December 31, 2026? (Polymarket)"
     outcome_type: BINARY
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
     mappability: exact
     mapping: { kind: ipo_by_date, issuer: openai, by_date: "2026-12-31" }
-    resolution_criterion_text: ""
     notes: "Polymarket OpenAI IPO series. YES price ~70.5%."
 
   # ============================================================================
@@ -288,7 +248,7 @@ markets:
 
   - platform: kalshi
     kalshi_id: KXIPO-26-OPENAI
-    question: "OpenAI IPO before 2027? (Kalshi)"
+    # question: "OpenAI IPO before 2027? (Kalshi)"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2027-01-01"
@@ -300,12 +260,11 @@ markets:
       Binary IPO-before-2027 market; overlaps the exact Kalshi monthly series and
       Manifold ipo_by_date markets for the same deadline. Surfaced for cross-platform
       price comparison, not scored (the exact monthly markets are scored instead).
-    resolution_criterion_text: "Will OpenAI IPO before 2027? Kalshi KXIPO-26 series."
     notes: "OI ~77K, last_price 0.85. Highest-volume Kalshi IPO market."
 
   - platform: polymarket
     polymarket_id: "0x7844ad013088564a11d5d4d3b1766c57ad936a"
-    question: "OpenAI IPO before 2027? (Polymarket)"
+    # question: "OpenAI IPO before 2027? (Polymarket)"
     outcome_type: BINARY
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
@@ -339,7 +298,7 @@ markets:
   # EXACT -- pre_ipo_failure  (absorbing COLLAPSED/ACQUIRED before any IPO)
   # ============================================================================
   - manifold_id: SlSdQOIU0l
-    question: "OpenAI collapses or gets acquired before IPO?"
+    # question: "OpenAI collapses or gets acquired before IPO?"
     outcome_type: BINARY
     close_date: "2041-01-18"
     resolution_deadline: null
@@ -349,19 +308,12 @@ markets:
     # acquisition ~1%/yr vs IPO ~7%/yr). Only the 'files for IPO then withdrawn ->
     # YES' edge is unmodeled (negligible). Many rollouts stay private within 120mo ->
     # UNRESOLVED.
-    resolution_criterion_text: |
-      # excerpt (resolution criteria)
-      This market resolves YES if OpenAI either collapses (becomes insolvent or
-      ceases operations) or is acquired by another company before completing an
-      initial public offering. The market resolves NO if OpenAI successfully
-      completes an IPO. If OpenAI files for IPO but the offering is withdrawn or
-      fails to complete, the market resolves YES.
 
   # ============================================================================
   # SURFACED (valuation) -- augur does NOT model company valuation; not scored.
   # ============================================================================
   - manifold_id: dy9AO5nLNq
-    question: "Will OpenAi have a valuation of $1 trillion by the end of 2027?"
+    # question: "Will OpenAi have a valuation of $1 trillion by the end of 2027?"
     outcome_type: BINARY
     close_date: "2027-12-31"
     resolution_deadline: "2027-01-01"
@@ -373,14 +325,10 @@ markets:
       market-cap concept. A constant-shares proxy (mark * external shares) maps mark to
       a cap, but dilution is unmodeled, so this is surfaced for the reader, not scored.
     # not scored: augur does not model company valuation.
-    resolution_criterion_text: |
-      Update 2025-12-16 (PST) (AI summary of creator comment): The market will
-      resolve as YES if Gemini determines the company's value is $1,000,000,000,000
-      on Jan 1, 2027. Otherwise, it resolves as NO.
     notes: "Criterion evaluates valuation ON Jan 1, 2027 (title says 'end of 2027')."
 
   - manifold_id: hdy0nPpEsA
-    question: "OpenAI completes an IPO in 2026 and has a market cap of $1 trillion+?"
+    # question: "OpenAI completes an IPO in 2026 and has a market cap of $1 trillion+?"
     outcome_type: BINARY
     close_date: "2026-12-31"
     resolution_deadline: "2026-12-31"
@@ -393,18 +341,12 @@ markets:
       market-cap conjunct needs a valuation augur does not model. Surfaced, not scored;
       calibration shows P(IPO by 2026) as the related clean signal (augur_context).
     # IPO-timing leg is exact; the valuation conjunct is not scored.
-    resolution_criterion_text: |
-      Resolves YES if OpenAI completes an IPO in 2026 and has a market cap at market
-      close of $1trillion or more (USD). Completes an IPO means listing stocks on a
-      public stock exchange; announcement of a date or filings does not count. Market
-      cap is the one on IPO day at market close, per yahoo finance; private valuations
-      don't count.
 
   # ============================================================================
   # CORRELATE -- augur has a related signal for context; not scored.
   # ============================================================================
   - manifold_id: y2R55l60OA
-    question: "[ACX 2026] Will OpenAI file for an IPO during 2026?"
+    # question: "[ACX 2026] Will OpenAI file for an IPO during 2026?"
     outcome_type: BINARY
     close_date: "2026-12-31"
     resolution_deadline: "2027-01-01"
@@ -416,17 +358,10 @@ markets:
       Resolves on a SEC Form S-1 FILING, not a completed IPO. The sim has no filing
       event; P(PUBLIC_MARKET_OPEN by D) is a lower-bound leading-correlate.
     # approx: filing vs completion gap; no distinct filing event in the sim.
-    resolution_criterion_text: |
-      Resolves according to Metaculus resolution.
-      Metaculus high-level description: This question will resolve as Yes if
-      OpenAI, a parent company, or any subsidiary that is primarily responsible
-      for developing ChatGPT, files a public, non-confidential initial public
-      registration statement (SEC Form S-1) at the U.S. Securities and Exchange
-      Commission's EDGAR database before January 1, 2027.
     notes: "High liquidity (5100), strong signal -- valuable correlate even though not exact."
 
   - manifold_id: 95POzZAIhg
-    question: "Will OpenAI go public NOT via an IPO?"
+    # question: "Will OpenAI go public NOT via an IPO?"
     outcome_type: BINARY
     close_date: "2026-12-07"
     resolution_deadline: "2026-12-31"
@@ -439,16 +374,9 @@ markets:
       EXCLUDING a traditional S-1 IPO). PUBLIC_MARKET_OPEN is mechanism-agnostic, so it
       relates to but does not equal this market (the non-IPO slice).
     # approx: sim cannot split IPO vs non-IPO mechanism.
-    resolution_criterion_text: |
-      # excerpt (resolution criteria)
-      Resolve YES if, on or before 2026-12-31 23:59:59 UTC, there is verifiable
-      public evidence that OpenAI's equity became listed and tradable on any public
-      exchange as a result of a non-IPO route (direct listing, SPAC/de-SPAC merger, or
-      merger/acquisition resulting in listed OpenAI equity). If OpenAI goes public via
-      a traditional underwritten IPO (Form S-1 primary IPO) by the deadline, resolve NO.
 
   - manifold_id: ugRnhOtcqN
-    question: "OpenAI reaches $100B revenue in 2028?"
+    # question: "OpenAI reaches $100B revenue in 2028?"
     outcome_type: BINARY
     close_date: "2028-12-31"
     resolution_deadline: "2028-12-31"
@@ -459,14 +387,9 @@ markets:
       Revenue threshold. The sim has no revenue channel; the per-unit mark path is at
       best a loose growth proxy. Surfaced for context, not scored.
     # weak/indirect: augur models neither revenue nor valuation.
-    resolution_criterion_text: |
-      # excerpt
-      Resolves on whether OpenAI reaches $100B revenue in 2028, per Epoch AI analysis.
-      Open question (per FAQ) whether "total 2028 revenue" or "annualized run-rate by
-      end of 2028" is the measure.
 
   - manifold_id: mQB5gkPdsaqoQdaAlMoL
-    question: "Will OpenAI have >$10 billion in revenue by 2030?"
+    # question: "Will OpenAI have >$10 billion in revenue by 2030?"
     outcome_type: BINARY
     close_date: "2030-01-01"
     resolution_deadline: "2030-01-01"
@@ -475,11 +398,10 @@ markets:
     correlate_strength: weak
     reason: "Revenue threshold; augur models neither revenue nor valuation. Near-certain (~0.99) so low information anyway."
     # weak/indirect; market near-certain, low information.
-    resolution_criterion_text: ""
     notes: "Empty description; classified from title."
 
   - manifold_id: HrMP25RvBmOw3FfGVOup
-    question: "OpenAI will be nationalized or have the Defense Production Act applied to it by mid 2030"
+    # question: "OpenAI will be nationalized or have the Defense Production Act applied to it by mid 2030"
     outcome_type: BINARY
     close_date: "2030-07-01"
     resolution_deadline: "2030-07-01"
@@ -490,15 +412,9 @@ markets:
       Government nationalization / control. The sim's LEGAL_IMPAIRMENT event (severe
       legal, ~0.05%/yr) is the nearest signal but is not nationalization. Weak correlate.
     # weak: LEGAL_IMPAIRMENT is rare legal-severity, not nationalization specifically.
-    resolution_criterion_text: |
-      # excerpt
-      YES if OpenAI is significantly owned or controlled by the US government, is
-      legally required to follow US-government production directions, or is forced to
-      sell/merge/share ownership with (or take a large investment from) the US
-      government. NO if OpenAI still independently determines its own direction.
 
   - manifold_id: x7ZzkewbkjWtnz3eGFg1
-    question: "Will OpenAI be more valuable than Microsoft before 2040?"
+    # question: "Will OpenAI be more valuable than Microsoft before 2040?"
     outcome_type: BINARY
     close_date: "2040-01-19"
     resolution_deadline: "2040-01-01"
@@ -510,15 +426,12 @@ markets:
       for OpenAI (only a per-unit mark) nor Microsoft's cap, and 2040 exceeds the
       120-month horizon (~2036). Surfaced, not scored.
     # not scored: no valuation, no comparator, beyond horizon.
-    resolution_criterion_text: |
-      Resolves yes if OpenAI has a valuation (from a funding round etc.) or market cap
-      greater than Microsoft at any point before Jan. 1st 2040.
 
   # ============================================================================
   # UNMAPPABLE -- no meaningfully related augur signal.
   # ============================================================================
   - manifold_id: 7f4WjccHH6yD42cot2Ep
-    question: "Will Sam Altman still be CEO of OpenAI at the end of 2026?"
+    # question: "Will Sam Altman still be CEO of OpenAI at the end of 2026?"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2026-12-31"
@@ -527,7 +440,6 @@ markets:
       Governance / leadership (CEO tenure). The sim models marks and
       liquidity/legal/collapse events -- nothing about leadership.
     # not computable; no governance state in the sim.
-    resolution_criterion_text: ""
     notes: "Empty description; classified from title."
 
   # ============================================================================
@@ -536,13 +448,12 @@ markets:
   # to metadata.anchors. See augur/plans/whole_model_calibration.md.
   # ============================================================================
   - manifold_id: hISQySnLnu
-    question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"
+    # question: "[ACX 2026] Will the S&P 500 close above 7,500 at the end of 2026?"
     outcome_type: BINARY
     close_date: "2027-01-01"
     resolution_deadline: "2026-12-31"
     mappability: exact
     mapping: { kind: level_at_date, series: sp500, threshold: 7500, direction: above, at_date: "2026-12-31" }
-    resolution_criterion_text: "YES if the S&P 500 index closes above 7,500 on the last trading day of 2026."
     notes: "Point-in-time threshold on the sp500 channel; p_model = share of rollouts with anchored sp500 >= 7500 at 2026-12-31."
 
   # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
@@ -551,33 +462,30 @@ markets:
   # evidence (see macro_anchors.py), so the market scores instead of resolving UNRESOLVED.
   - platform: kalshi
     kalshi_id: KXCPIYOY-26JUL-T3.0
-    question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
+    # question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
     outcome_type: BINARY
     resolution_deadline: "2026-08-15"
     mappability: exact
     mapping: { kind: inflation_yoy, series: inflation, threshold: 0.03, direction: above, at_date: "2026-07-31" }
-    resolution_criterion_text: "YES if YoY CPI-U (all items) for the year ending July 2026 exceeds 3.0%."
     notes: "Trailing-12mo window looks back past as_of; the denominator is the vendored pre-anchor CPI-U."
 
   # ============================================================================
   # EXACT -- crypto markets (scored against the model's crypto:btc level channel).
   # ============================================================================
   - manifold_id: 2q2qZNLRlE
-    question: "Will Bitcoin be higher than $88,888 at the end of 2026?"
+    # question: "Will Bitcoin be higher than $88,888 at the end of 2026?"
     outcome_type: BINARY
     resolution_deadline: "2026-12-31"
     mappability: exact
     mapping: { kind: level_at_date, series: "crypto:btc", threshold: 88888, direction: above, at_date: "2026-12-31" }
-    resolution_criterion_text: "YES if BTC-USD is above $88,888 at the end of 2026."
     notes: "Point-in-time threshold on the crypto:btc channel."
 
   - manifold_id: 9PuIhuRZEc
-    question: "Bitcoin $100k before end of June 2026?"
+    # question: "Bitcoin $100k before end of June 2026?"
     outcome_type: BINARY
     resolution_deadline: "2026-06-30"
     mappability: exact
     mapping: { kind: level_by_date, series: "crypto:btc", threshold: 100000, direction: above, by_date: "2026-06-30" }
-    resolution_criterion_text: "YES if BTC-USD reaches $100,000 at any point on or before 2026-06-30."
     notes: "Ever-by-date (touch) on crypto:btc: p_model = share of rollouts whose anchored BTC path reaches 100k by the deadline."
 
 # Categorical (multinomial) bucket families: mutually-exclusive ranges over one level series

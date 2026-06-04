@@ -68,6 +68,8 @@ class PolymarketClient:
             probability=probability,
             volume=volume,
             volume_unit="USD" if volume is not None else None,
+            title=pm_market.question,
+            rules=pm_market.description,
         )
         self._cache[market_id] = (market, now)
         return market

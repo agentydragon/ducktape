@@ -49,6 +49,11 @@ class Market:
     probability: float | None
     volume: float | None = None
     volume_unit: str | None = None
+    # The market's current title/question and verbatim resolution rules, fetched LIVE alongside the
+    # price so they can't drift from the platform. `None` when the response carried none. The
+    # catalog no longer stores these per market — they are populated from this live snapshot.
+    title: str | None = None
+    rules: str | None = None
 
     def require_probability(self) -> float:
         if self.probability is None:
