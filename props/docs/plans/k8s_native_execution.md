@@ -1,8 +1,10 @@
 # Plan: k8s-native agent execution
 
-**Status:** planning (not yet implementing). Supersedes the bespoke
-container-orchestration layer (`props/orchestration/`) with native Kubernetes
-workloads.
+**Status:** in progress (Stage 1 landed). Splits the agent data plane from the
+dashboard control plane and replaces most of the bespoke container-orchestration
+layer (`props/orchestration/`) with native Kubernetes patterns — while **keeping** a
+slim reconcile-from-API controller to create agent pods (the cred boundary in Stage 5
+requires it).
 
 ## Why
 
@@ -14,14 +16,18 @@ real and recurring:
 
 - Graders held actual-state in memory, so every backend rollout started a fresh
   generation and orphaned the previous one into duplicate pods per snapshot
-  (no `ownerReferences`, no reaping). #1882 added a reconcile-from-API
-  controller to patch this; native workloads make the whole class moot.
+  (no `ownerReferences`, no reaping). #1882 fixed this by making the controller
+  reconcile from the k8s API (one labeled grader per snapshot; adopt/reap) — the
+  robustness a `Deployment` would have given for free.
 - Agents are coupled to the dashboard backend: every LLM call is proxied through
   it, so rolling the API server can disrupt in-flight agents.
 
-The fix is to let Kubernetes own pod lifecycle and split the agent **data plane**
-(the LLM proxy + DB) from the dashboard **control/read plane** (API + frontend),
-so the disposable part can roll freely.
+The fix is **not** to hand pod lifecycle to k8s `Deployment`s/`Job`s: a security
+boundary — _privileged creds never enter any agent pod_ (see Stage 5) — requires
+the controller to create each pod so it can inject ephemeral per-run creds. Instead
+we keep that controller but make it a proper reconcile-from-API controller (#1882,
+done) and split the agent **data plane** (the LLM proxy + DB) from the dashboard
+**control/read plane** (API + frontend), so the disposable part can roll freely.
 
 ## Target architecture
 
@@ -39,8 +45,11 @@ so the disposable part can roll freely.
   control endpoints agents call to request work (e.g. critic_dev launching a
   critic). Also hosts the **registry proxy for external CI push** only.
 - **Orchestration controller** — the one irreducible custom piece: reconciles
-  the snapshot set ↔ grader `Deployment`s, and creates critic `Pod`s on request.
-  Holds the only cluster-write RBAC; agent pods get none.
+  the snapshot set ↔ grader `Pod`s (the #1882 reconcile-from-API loop) and
+  creates critic `Pod`s on request. Holds the only cluster-write RBAC **and** the
+  admin DB creds, so it — never an agent pod — mints each pod's ephemeral per-run
+  role. Pod creation lives here precisely to keep _privileged creds out of agent
+  pods_ (see Stage 5).
 
 **Workloads:**
 
@@ -49,13 +58,13 @@ so the disposable part can roll freely.
   wrapper would only add `ttlSecondsAfterFinished` (cleanup if the controller is
   down) — adopt later if wanted. No auto-retry (each run is one eval data point
   and costs LLM spend).
-- **Graders → `Deployment`s** (`replicas: 1` per snapshot). k8s owns "one
-  running" + restart-on-crash (with backoff) + rolling image updates. **Graders
-  still have runs:** a _run is a pod generation_ — the grader self-registers a
-  new `AgentRun` (`agent_run_id`) at startup, so "restart from fresh context" =
-  `rollout restart` and "new image" = template bump, each producing a new run.
-  Graders use a **stable per-snapshot role** (`grader_<snapshot>`), not per-run
-  HMAC roles, so a pod doesn't need admin creds to mint a role at startup.
+- **Graders → controller-managed bare `Pod`s** (one per snapshot), _not_
+  `Deployment`s — see Stage 5 for why (the cred boundary needs host-created pods).
+  The #1882 reconcile loop keeps exactly one healthy grader per snapshot and reaps
+  the rest. **Graders still have runs:** a _run is a pod generation_ — but the
+  **controller** (not the pod) opens a new `AgentRun` + per-run role each time it
+  spawns/replaces a grader, so "restart from fresh context" and "new image" each
+  produce a new run, with the same ephemeral per-run creds critics get.
 
 ## Logs & transcript
 
@@ -82,9 +91,11 @@ lives in the DB, logs live in Loki, transcript lives in the DB via the proxy.
 
 Flux **image automation** watches the grader repo in Forgejo (an
 `ImageRepository` + `ImagePolicy`) and writes the current digest into a
-`ConfigMap` (or directly into the grader Deployment template); Flux rolls the
-grader Deployments. This replaces the registry-proxy `pg_notify`
-(`grader_definition_changed`) + builtin-tag mechanism entirely.
+`ConfigMap`; the **controller** reads it and reconciles grader pods onto the new
+digest (it already reaps wrong-image pods, #1882). This replaces the registry-proxy
+`pg_notify` (`grader_definition_changed`) + builtin-tag mechanism entirely. (There
+is no grader `Deployment` for Flux to roll — the controller rolls the pods, for the
+cred-boundary reason in Stage 5.)
 
 Grader-only: critics have **no** "current" pointer — each critic run names an
 explicit image digest chosen by the optimize loop from DB fitness.
@@ -139,6 +150,9 @@ earlier ones only where noted.
 
 ### Stage 3 — In-cluster Forgejo pulls
 
+**Punted (2026-06-04)** — deferred for later; agent images still pull through the
+backend registry proxy for now. The rest of this stage stands as the eventual design.
+
 - Point agent `imagePullSecret`s at the in-cluster Forgejo Service; kubelet pulls
   directly.
 - Reduce the backend registry proxy to external-CI push only (keep
@@ -151,23 +165,61 @@ earlier ones only where noted.
 - Replace the Docker/testcontainers e2e fixtures with a session-shared **kind**
   cluster fixture; validate kind on the RBE workers (DinD/cgroups) early.
 - **Done when:** e2e tests run the real flow against a real k8s API.
-- **Rationale:** prerequisite for testing Stages 5–6 against native workloads.
+- **Rationale:** prerequisite for testing Stages 5–6 (controller-managed
+  grader/critic pods) against a real k8s API + RBAC.
 
-### Stage 5 — Graders as Deployments
+### Stage 5 — Keep grader Pods controller-managed (no Deployments)
 
-- Controller reconciles the snapshot set ↔ grader `Deployment`s (create on
-  `snapshot_created`, delete on removal). This is the only grader controller
-  logic left — k8s owns pod lifecycle.
-- Stable per-snapshot role `grader_<snapshot>`; update RLS so that role owns its
-  runs + grading edges for its snapshot.
-- Grader pod self-registers an `AgentRun` per generation; finalize the prior
-  generation's run on roll/crash (controller watch or self-report — see Open
-  questions).
-- Wire Flux image automation → ConfigMap/template for the current grader image.
-- Retire `GraderSupervisor` (the #1882 reconcile loop).
-- **Done when:** backend rollouts never orphan/duplicate graders; image pushes
-  roll grader Deployments via Flux.
-- **Depends on:** Stage 4.
+**Decision (2026-06-04): graders stay bare `Pod`s created by the controller — the
+#1882 reconcile-from-API model — and are _not_ converted to `Deployment`s.**
+
+The security boundary is **_privileged creds never enter any agent pod_**: the host
+(controller, holding admin DB creds) mints a fresh per-run Postgres role + `AgentRun`
+and injects only that narrow, ephemeral credential into each pod it creates — exactly
+the critic model. This works _because the controller creates the pod_. A `Deployment`
+hands generation creation to k8s: rollouts and crash-restarts spin up pods from a
+fixed template with **no host hook** to provision a per-generation role first. That
+leaves only two ways to credential a Deployment-born grader, both worse:
+
+- **Self-registration** — the pod mints its own role/run at startup. Needs standing
+  privileged creds _inside_ the pod → erodes the boundary.
+- **Bootstrap handshake** — the pod fetches per-run creds from the backend using a
+  standing bootstrap identity baked into the template. Adds a long-lived shared
+  secret and a new code path for no real gain.
+
+What Deployments would have bought — k8s-owned "one running," restart-on-crash, and
+reconcile-from-API robustness — **#1882 already delivers** from the controller (one
+labeled grader per snapshot; adopt healthy, reap duplicate/orphan/wrong-image/terminal;
+survives backend restarts). The only _net-new_ thing a Deployment adds is
+template-driven rollout, not worth weakening the cred posture.
+
+**Consequence — graders keep the per-run ephemeral-cred model (like critics).** The
+earlier "stable per-snapshot role `grader_<snapshot>`" idea was a workaround for the
+Deployment model's standing-pod problem (a self-registering pod can't mint a role
+without admin creds); with the host minting creds per generation, drop it. Each grader
+generation gets a host-created `AgentRun` + per-run HMAC role, RLS-scoped by
+`current_agent_run_id()` like every other agent. This converges Stages 5 and 6 on one
+pattern — _the controller creates the pod and injects ephemeral per-run creds_ —
+differing only in lifecycle (graders: one-per-snapshot, respawned; critics: one-shot,
+`restartPolicy: Never` + `activeDeadlineSeconds`).
+
+**Remaining hardening (not a conversion):**
+
+- **Run-per-generation.** The controller opens a new `AgentRun` (+ per-run role) each
+  time it spawns/replaces a grader, so "restart from fresh context" and "new image"
+  each produce a distinct run. It already reaps wrong-image pods (#1882); extend it to
+  open the successor's run and finalize the predecessor's.
+- **Crash finalization.** Mark a predecessor run terminal on roll/crash — watch-based
+  finalizer vs. "next generation finalizes its predecessor" (see Open questions).
+- **Current-grader image pointer.** Flux image automation writes the current grader
+  digest into a `ConfigMap`; the controller reconciles grader pods onto it (replacing
+  the registry-proxy `grader_definition_changed` notify + builtin-tag).
+- **Keep, don't retire, `GraderSupervisor`.** It _is_ the controller this stage hardens.
+- **Done when:** each grader generation is a host-created run with ephemeral creds, and
+  image pushes roll grader pods via image-automation → ConfigMap → controller. (The
+  "never orphan/duplicate on backend rollout" goal is already met by #1882.)
+- **Benefits from (no longer hard-depends on):** Stage 4 (kind e2e) for testing
+  run-per-generation + finalization; #1882 already shipped this model to prod without it.
 
 ### Stage 6 — Critics as controller-managed Pods
 
@@ -182,21 +234,23 @@ earlier ones only where noted.
 
 ### Stage 7 — Remove the bespoke layer
 
-- Delete `DockerExecutor`, the Docker bits of the executor abstraction, the
-  registry's spawn/`_collect_run` log-to-DB code, and `GraderSupervisor`.
+- Delete `DockerExecutor`, the Docker bits of the executor abstraction, and the
+  registry's spawn/`_collect_run` log-to-DB code. **Keep `GraderSupervisor`** — the
+  reconcile-from-API controller is the irreducible custom piece (Stage 5), not part
+  of the bespoke layer being removed.
 - Drop the now-dead `container_stdout`/`container_stderr` columns (migration)
   once nothing reads them.
 - Tombstone this plan.
 
 ## Migration / cutover
 
-- **Graders (Stage 5):** the moment graders become Deployments, the existing
-  bespoke grader pods are orphans the new system won't select — exactly the
-  unlabeled→labeled migration we are handling for #1882. Cut over by deleting the
-  old generation once the Deployments are up (the new system never recreates
-  them).
-- **Per-run → stable roles:** create the `grader_<snapshot>` roles before
-  retiring per-run grader roles; drop the old roles after cutover.
+- **Graders (Stage 5):** no Deployment cutover — graders stay controller-managed
+  pods, and #1882 already did the unlabeled→labeled adoption/reaping in prod. What
+  remains is the run-per-generation bookkeeping (the controller opens/finalizes
+  runs), transparent to running pods.
+- **Roles:** graders keep per-run ephemeral roles — there is no stable
+  `grader_<snapshot>` role to create or retire (that idea is dropped with the
+  Deployment model).
 - Stages 1–3 are transparent to running agents (proxy/registry repointing);
   schedule a window only if `OPENAI_BASE_URL` / pull endpoints change for
   already-running pods (they won't re-read env, so let the next generation pick
@@ -215,7 +269,9 @@ earlier ones only where noted.
 - **Transcript schema:** one row per LLM turn vs. a single blob per run; how the
   dashboard + critic_dev consume it.
 - **Controller home:** fold into the API server vs. its own Deployment. A brief
-  controller gap is safe (Deployments self-heal), so either works.
+  controller gap is safe — the reconcile loop is level-triggered (the next
+  `snapshot_created`/periodic tick re-derives desired state) and existing grader
+  pods keep running meanwhile — so either works.
 
 ## Non-goals / what stays
 
