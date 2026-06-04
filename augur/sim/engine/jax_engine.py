@@ -524,21 +524,22 @@ def _record_capital_gains(
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._record_capital_gains`: classify each lot's gain long/short and accrue."""
-    for profile in range(plan.capital_gain_agent_codes.shape[0]):
-        if int(plan.capital_gain_agent_codes[profile]) != agent_code:
-            continue
-        for lot in range(plan.lot_id_codes.shape[0]):
-            classification = (
-                int(CapitalGainClassification.LONG_TERM)
-                if month - int(plan.lot_purchase_month[lot]) >= 12
-                else int(CapitalGainClassification.SHORT_TERM)
-            )
-            became_active = sold_units[:, lot] > 0.0
-            capital_gain_active = capital_gain_active.at[profile, classification].set(
-                capital_gain_active[profile, classification] | became_active
-            )
-            capital_gain_ytd = capital_gain_ytd.at[profile, classification].add(gains[:, lot])
+    """Port of `phases._record_capital_gains`: classify each lot's gain long/short and accrue.
+
+    Branch-free: the per-lot long/short split is a static `(L,)` boolean mask (holding period vs
+    the lot's purchase month), so the whole `[2, R]` classification block is one masked sum/any —
+    no per-lot scatter loop, no data-dependent branching. The only Python loop is over the
+    statically-known capital-gain profiles matching `agent_code`.
+    """
+    long_mask = jnp.asarray(month - plan.lot_purchase_month >= 12)  # (L,)
+    masks = jnp.stack([long_mask, ~long_mask])  # (2, L), rows ordered LONG_TERM=0, SHORT_TERM=1
+    sold = sold_units > 0.0  # (R, L)
+    # einsum over lots: (2, L) x (R, L) -> (2, R) per-classification gain sums and activity flags.
+    gains_by_class = jnp.einsum("cl,rl->cr", masks.astype(gains.dtype), gains)
+    active_by_class = (masks[:, None, :] & sold[None, :, :]).any(axis=2)  # (2, R)
+    for profile in np.flatnonzero(plan.capital_gain_agent_codes == agent_code).tolist():
+        capital_gain_active = capital_gain_active.at[profile].set(capital_gain_active[profile] | active_by_class)
+        capital_gain_ytd = capital_gain_ytd.at[profile].add(gains_by_class)
     return capital_gain_active, capital_gain_ytd
 
 
