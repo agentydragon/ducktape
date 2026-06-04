@@ -11,13 +11,17 @@ Reconciliation is triggered by:
 Each trigger calls reconcile(), which compares desired state (all snapshot
 slugs from DB) against actual state (self._handles) and creates/kills
 containers to converge.
+
+Event-driven triggers (snapshot_created, grader_definition_changed) are
+debounced: a burst coalesces into a single trailing-edge reconcile, so rapid
+image pushes delay-and-collapse into one respawn instead of many restart
+storms. Startup reconciles immediately.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Coroutine
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +47,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Coalesce reconcile triggers arriving within this window into a single
+# trailing-edge reconcile (delay-and-collapse, never skip).
+DEFAULT_RECONCILE_DEBOUNCE_S = 30.0
+
 
 class GraderSupervisor:
     """Manages per-snapshot grader containers via reconciliation.
@@ -59,7 +67,15 @@ class GraderSupervisor:
         # gs.shutdown() called automatically
     """
 
-    def __init__(self, registry: AgentRegistry, db_config: DatabaseConfig, model: str, db: Database):
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        db_config: DatabaseConfig,
+        model: str,
+        db: Database,
+        *,
+        reconcile_debounce_s: float = DEFAULT_RECONCILE_DEBOUNCE_S,
+    ):
         self._registry = registry
         self._db_config = db_config
         self._model = model
@@ -68,6 +84,11 @@ class GraderSupervisor:
         self._listener_conn: asyncpg.Connection[Any] | None = None
         self._shutdown = False
         self._background_tasks: set[asyncio.Task[None]] = set()
+        # Trailing-edge debounce of event-driven reconciles.
+        self._reconcile_debounce_s = reconcile_debounce_s
+        self._debounce_task: asyncio.Task[None] | None = None
+        self._pending_restart_existing = False
+        self._pending_triggers: list[str] = []
 
     async def __aenter__(self) -> GraderSupervisor:
         await self.start()
@@ -78,13 +99,7 @@ class GraderSupervisor:
     ) -> None:
         await self.shutdown()
 
-    def _launch_background(self, coro: Coroutine[Any, Any, None], *, name: str) -> None:
-        """Launch a background task and prevent garbage collection."""
-        task = asyncio.create_task(coro, name=name)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
-
-    # --- Event handlers (thin wrappers that trigger reconcile) ---
+    # --- Event handlers (debounced — coalesce bursts into one reconcile) ---
 
     def _snapshot_created_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -96,9 +111,7 @@ class GraderSupervisor:
             return
         notification = SnapshotCreatedNotification.model_validate_json(payload)
         logger.info(f"Snapshot created: {notification.snapshot_slug}")
-        self._launch_background(
-            self.reconcile(trigger=f"snapshot_created:{notification.snapshot_slug}"), name="reconcile-snapshot-created"
-        )
+        self._schedule_reconcile(trigger=f"snapshot_created:{notification.snapshot_slug}")
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -110,10 +123,7 @@ class GraderSupervisor:
             return
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
-        self._launch_background(
-            self.reconcile(trigger=f"grader_definition_changed:{notification.tag}", restart_existing=True),
-            name="reconcile-definition-changed",
-        )
+        self._schedule_reconcile(trigger=f"grader_definition_changed:{notification.tag}", restart_existing=True)
 
     # --- Lifecycle ---
 
@@ -124,6 +134,52 @@ class GraderSupervisor:
     async def spawn_existing(self) -> None:
         """Initial reconciliation after HTTP server is ready."""
         await self.reconcile(trigger="startup")
+
+    # --- Debounced reconcile scheduling ---
+
+    def _schedule_reconcile(self, *, trigger: str, restart_existing: bool = False) -> None:
+        """Debounce an event-driven reconcile: coalesce rapid triggers into one
+        trailing-edge run.
+
+        A burst of events (several grader image pushes, a batch of new
+        snapshots) collapses into a single reconcile that fires after
+        ``reconcile_debounce_s`` of quiet. The respawn is *delayed and
+        coalesced*, never skipped — ``restart_existing`` is OR'd across the
+        window so a genuine image change in the burst still restarts graders,
+        exactly once.
+        """
+        if self._shutdown:
+            return
+        self._pending_restart_existing |= restart_existing
+        self._pending_triggers.append(trigger)
+        # Reset the quiet window so we fire once, after the LAST trigger. Only a
+        # still-debouncing timer is cancelled — never an in-flight reconcile.
+        if self._debounce_task is not None and not self._debounce_task.done():
+            self._debounce_task.cancel()
+        task = asyncio.create_task(self._run_debounced_reconcile(), name="grader-debounced-reconcile")
+        self._debounce_task = task
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _run_debounced_reconcile(self) -> None:
+        try:
+            await asyncio.sleep(self._reconcile_debounce_s)
+        except asyncio.CancelledError:
+            # Superseded by a newer trigger (window reset) or shutdown — the
+            # replacement timer, if any, will fire. Don't reconcile here.
+            return
+        # Window elapsed. Clear the timer handle first so a trigger arriving
+        # during the (awaited) reconcile opens a fresh window instead of
+        # cancelling this run.
+        self._debounce_task = None
+        if self._shutdown:
+            return
+        restart_existing = self._pending_restart_existing
+        triggers = self._pending_triggers
+        self._pending_restart_existing = False
+        self._pending_triggers = []
+        label = triggers[0] if len(triggers) == 1 else f"debounced({len(triggers)}): {', '.join(triggers)}"
+        await self.reconcile(trigger=label, restart_existing=restart_existing)
 
     # --- Core reconciliation ---
 
@@ -228,6 +284,8 @@ class GraderSupervisor:
         """Kill all grader containers and stop listeners."""
         self._shutdown = True
         logger.info("Shutting down graders...")
+        if self._debounce_task is not None and not self._debounce_task.done():
+            self._debounce_task.cancel()
         await self._stop_listener()
         for slug in list(self._handles.keys()):
             await self._kill_grader(slug, reason="shutdown")

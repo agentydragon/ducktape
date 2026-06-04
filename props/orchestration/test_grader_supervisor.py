@@ -6,6 +6,7 @@ snapshot when an image is available.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -47,8 +48,10 @@ class FakeRegistry:
     image: ResolvedImage | None = FAKE_IMAGE
     _counter: int = 0
     killed: list[FakeHandle] = field(default_factory=list)
+    resolve_count: int = 0  # incremented once per reconcile() run
 
     async def resolve_image(self, agent_type: Any, tag: str) -> ResolvedImage:
+        self.resolve_count += 1
         if self.image is None:
             raise ImageResolutionError("no image")
         return self.image
@@ -61,9 +64,13 @@ class FakeRegistry:
 
 
 def _make_supervisor(
-    snapshot_slugs: list[SnapshotSlug], *, image: ResolvedImage | None = FAKE_IMAGE
+    snapshot_slugs: list[SnapshotSlug], *, image: ResolvedImage | None = FAKE_IMAGE, reconcile_debounce_s: float = 0.05
 ) -> tuple[GraderSupervisor, FakeRegistry]:
-    """Build a GraderSupervisor with a FakeRegistry and mock DB."""
+    """Build a GraderSupervisor with a FakeRegistry and mock DB.
+
+    `reconcile_debounce_s` defaults small so debounce tests run fast; the
+    direct `reconcile()` tests don't touch the debounce path.
+    """
     registry = FakeRegistry(image=image)
 
     @contextmanager
@@ -75,7 +82,13 @@ def _make_supervisor(
     db = MagicMock()
     db.session = fake_session
 
-    gs = GraderSupervisor(registry=registry, db_config=MagicMock(), model="gpt-5-mini", db=db)  # type: ignore[arg-type]
+    gs = GraderSupervisor(
+        registry=registry,  # type: ignore[arg-type]
+        db_config=MagicMock(),
+        model="gpt-5-mini",
+        db=db,
+        reconcile_debounce_s=reconcile_debounce_s,
+    )
     return gs, registry
 
 
@@ -204,6 +217,54 @@ async def test_reconcile_logs_trigger_and_kill_reason(caplog: pytest.LogCaptureF
     assert "Reconcile triggered by grader_definition_changed:latest" in log
     # The image-push restart attributes why it killed the running grader.
     assert "reason: grader_image_changed" in log
+
+
+async def test_schedule_reconcile_debounces_burst() -> None:
+    """A burst of triggers coalesces into a single trailing-edge reconcile —
+    rapid image pushes must not each restart every grader."""
+    gs, registry = _make_supervisor([SNAP_A, SNAP_B], reconcile_debounce_s=0.05)
+    for _ in range(5):
+        gs._schedule_reconcile(trigger="grader_definition_changed:latest", restart_existing=True)
+    # Debounced, not immediate: nothing has reconciled yet.
+    assert registry.resolve_count == 0
+    await asyncio.sleep(0.2)
+    # The whole burst produced exactly one reconcile.
+    assert registry.resolve_count == 1
+    assert set(gs._handles) == {SNAP_A, SNAP_B}
+
+
+async def test_schedule_reconcile_delays_but_does_not_drop() -> None:
+    """The reconcile is delayed by the debounce window, then runs — delay, not cancel."""
+    gs, registry = _make_supervisor([SNAP_A], reconcile_debounce_s=0.1)
+    gs._schedule_reconcile(trigger="snapshot_created:snap-a")
+    assert registry.resolve_count == 0  # still within the quiet window
+    assert gs._handles == {}
+    await asyncio.sleep(0.25)
+    assert registry.resolve_count == 1  # fired after the window
+    assert SNAP_A in gs._handles
+
+
+async def test_schedule_reconcile_ors_restart_existing() -> None:
+    """If any trigger in the window asked to restart, the single coalesced
+    reconcile restarts existing graders (OR semantics)."""
+    gs, registry = _make_supervisor([SNAP_A], reconcile_debounce_s=0.05)
+    await gs.reconcile(trigger="seed")  # one grader already running
+    old = gs._handles[SNAP_A]
+    gs._schedule_reconcile(trigger="snapshot_created:x")  # restart_existing=False
+    gs._schedule_reconcile(trigger="grader_definition_changed:latest", restart_existing=True)
+    await asyncio.sleep(0.2)
+    assert old in registry.killed  # restart took effect
+    assert gs._handles[SNAP_A] is not old  # respawned
+
+
+async def test_schedule_reconcile_noop_after_shutdown() -> None:
+    """Scheduling after shutdown does nothing (no late respawn)."""
+    gs, registry = _make_supervisor([SNAP_A], reconcile_debounce_s=0.05)
+    await gs.shutdown()
+    gs._schedule_reconcile(trigger="late")
+    await asyncio.sleep(0.15)
+    assert registry.resolve_count == 0
+    assert gs._handles == {}
 
 
 if __name__ == "__main__":
