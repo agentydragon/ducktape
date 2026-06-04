@@ -97,13 +97,13 @@ def scan_supported(plan: CompiledSimulation) -> bool:
     eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
     never correctness (the dual-backend suite gates both routes)."""
     return (
-        plan.obligations.cause.shape[1] == 0
-        and plan.sales.month.shape[0] == 0
-        and plan.liquidity_policies.agent.shape[0] == 0
-        and plan.pe_issuers.codes.shape[0] == 0
-        and plan.harvest_policies.gain_profile_index.shape[0] == 0
-        and plan.tax.profile_agent.shape[0] == 0
-        and bool((plan.properties.month < 0).all())  # only the max(1,·) phantom property row
+        bool((plan.obligations.cause < 0).all())  # no real obligations in any month
+        and bool((plan.sales.month < 0).all())  # no scheduled asset sales
+        and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
+        and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
+        and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
+        and plan.tax.profile_agent.shape[0] == 0  # no tax profiles (tax arrays are not padded)
+        and bool((plan.properties.month < 0).all())  # no real properties
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
     )
