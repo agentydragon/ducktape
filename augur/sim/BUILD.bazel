@@ -490,3 +490,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "jax_engine_reuse_test",
+    size = "medium",
+    srcs = ["jax_engine_reuse_test.py"],
+    data = [":jurisdiction_data"],
+    deps = [
+        ":buffers",
+        ":compiler",
+        ":engine",
+        ":external_series",
+        ":runtime",
+        ":scenario",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
