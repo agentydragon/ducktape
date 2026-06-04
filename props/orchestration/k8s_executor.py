@@ -169,13 +169,6 @@ class K8sExecutor:
     def handle_for(self, name: str) -> K8sPodHandle:
         return K8sPodHandle(name=name, namespace=self._namespace, core_v1=self._core_v1)
 
-    async def read_logs(self, name: str) -> str:
-        try:
-            return str(await self._core_v1.read_namespaced_pod_log(name=name, namespace=self._namespace))
-        except ApiException as e:
-            logger.warning("Failed to read logs for pod %s: %s", name, e)
-            return ""
-
     async def close(self) -> None:
         """Close the k8s API client."""
         await self._api_client.close()

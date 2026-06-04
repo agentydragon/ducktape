@@ -1511,9 +1511,6 @@ class AgentRun(Base):
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
-    # Container logs captured after container exits (for in-container agent loops)
-    container_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
-    container_stderr: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs", foreign_keys=[image_digest])

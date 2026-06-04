@@ -10,6 +10,7 @@
     fetchSnapshotDetail,
     fetchSnapshotFile,
     fetchLLMRequests,
+    fetchRunLogs,
     type AgentRunDetail,
     type CriticTypeConfig,
     type GraderTypeConfig,
@@ -55,8 +56,12 @@
   let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 
+  // Container logs state (lazily fetched from Loki via GET /api/runs/{id}/logs)
+  let containerLogs: string | null = $state(null);
+  let loadingLogs = $state(false);
+
   // Tab state for logs/LLM view
-  type LogTab = "stdout" | "stderr" | "llm";
+  type LogTab = "logs" | "llm";
   let activeLogTab: LogTab = $state("llm");
 
   // --- Helpers ---
@@ -145,6 +150,21 @@
       toast.error(message);
     } finally {
       loadingLLMRequests = false;
+    }
+  }
+
+  // Load container logs (from Loki)
+  async function loadLogs() {
+    if (loadingLogs) return;
+    loadingLogs = true;
+    try {
+      const response = await fetchRunLogs(runId);
+      containerLogs = response.logs;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load logs";
+      toast.error(message);
+    } finally {
+      loadingLogs = false;
     }
   }
 
@@ -458,40 +478,28 @@
             LLM Requests ({run.llm_call_count})
           </button>
           <button
-            class="px-3 py-1 text-sm rounded {activeLogTab === 'stdout'
+            class="px-3 py-1 text-sm rounded {activeLogTab === 'logs'
               ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
               : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
-            onclick={() => (activeLogTab = "stdout")}
+            onclick={() => {
+              activeLogTab = "logs";
+              loadLogs();
+            }}
           >
-            stdout
-          </button>
-          <button
-            class="px-3 py-1 text-sm rounded {activeLogTab === 'stderr'
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
-            onclick={() => (activeLogTab = "stderr")}
-          >
-            stderr
+            Logs
           </button>
         </div>
       </div>
 
-      {#if activeLogTab === "stdout"}
+      {#if activeLogTab === "logs"}
         <div class="p-4">
-          {#if run.container_stdout}
+          {#if loadingLogs}
+            <p class="text-gray-500 dark:text-gray-400">Loading logs...</p>
+          {:else if containerLogs}
             <pre
-              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stdout}</pre>
+              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{containerLogs}</pre>
           {:else}
-            <p class="text-gray-500 dark:text-gray-400 italic">No stdout captured</p>
-          {/if}
-        </div>
-      {:else if activeLogTab === "stderr"}
-        <div class="p-4">
-          {#if run.container_stderr}
-            <pre
-              class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stderr}</pre>
-          {:else}
-            <p class="text-gray-500 dark:text-gray-400 italic">No stderr captured</p>
+            <p class="text-gray-500 dark:text-gray-400 italic">No logs</p>
           {/if}
         </div>
       {:else if activeLogTab === "llm"}

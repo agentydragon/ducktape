@@ -169,14 +169,6 @@ class DockerExecutor:
     def handle_for(self, name: str) -> DockerContainerHandle:
         return DockerContainerHandle(container=self._docker_client.containers.container(name), name=name)
 
-    async def read_logs(self, name: str) -> str:
-        try:
-            container = self._docker_client.containers.container(name)
-            return "".join(await container.log(stdout=True, stderr=True))
-        except aiodocker.DockerError as e:
-            logger.warning("Failed to read logs for container %s: %s", name, e)
-            return ""
-
     async def close(self) -> None:
         """Close the Docker client."""
         await self._docker_client.close()

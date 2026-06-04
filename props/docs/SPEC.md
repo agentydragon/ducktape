@@ -169,7 +169,7 @@ Critic-dev agents perform the full definition development loop:
 - LLM requests table (from `llm_requests`):
   - Model, latency, token counts, cost
   - Expandable request/response bodies
-- Container stdout/stderr (from `agent_runs.container_stdout/stderr`)
+- Container logs (merged stdout/stderr from Loki, via `GET /api/runs/{id}/logs`)
 - Completion summary when done
 - Grading summary (for grader runs): TP matches, FP hits, recall score
 

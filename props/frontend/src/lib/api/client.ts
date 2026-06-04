@@ -226,6 +226,9 @@ export type LocationAnchor = components["schemas"]["LocationAnchor"];
 export type LLMRequestInfo = components["schemas"]["LLMRequestInfo"];
 export type LLMRequestsResponse = components["schemas"]["LLMRequestsResponse"];
 
+// Container logs (from Loki)
+export type RunLogsResponse = components["schemas"]["RunLogsResponse"];
+
 export async function fetchSnapshots() {
   const { data, error } = await api.GET("/api/gt/snapshots");
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch snapshots"));
@@ -265,6 +268,15 @@ export async function fetchLLMRequests(runId: string) {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, "Failed to fetch LLM requests"));
+  return data;
+}
+
+// Fetch container logs (from Loki) for an agent run
+export async function fetchRunLogs(runId: string) {
+  const { data, error } = await api.GET("/api/runs/{run_id}/logs", {
+    params: { path: { run_id: runId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, "Failed to fetch logs"));
   return data;
 }
 

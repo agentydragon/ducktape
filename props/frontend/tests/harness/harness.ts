@@ -632,8 +632,6 @@ const mockCriticRunDetail = {
   llm_call_count: 5,
   budget_usd: 0.5,
   parent_agent_run_id: null,
-  container_stdout: "Agent completed successfully.",
-  container_stderr: null,
   llm_costs: {
     totals: { requests: 5, input_tokens: 2000, cached_tokens: 500, output_tokens: 800, cost_usd: 0.0342 },
   },

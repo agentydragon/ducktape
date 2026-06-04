@@ -242,10 +242,6 @@ class AgentRunDetail(BaseModel):
     llm_call_count: int
     child_runs: list[ChildRunInfo]
 
-    # Container output (captured after container exits)
-    container_stdout: str | None
-    container_stderr: str | None
-
     # LLM costs aggregated for this run
     llm_costs: LLMCostSummary | None
 
@@ -1009,8 +1005,6 @@ def get_run(run_id: UUID, caller_db: CallerDb) -> AgentRunDetail:
             type_config=run.type_config,
             llm_call_count=llm_call_count,
             child_runs=child_runs,
-            container_stdout=run.container_stdout,
-            container_stderr=run.container_stderr,
             llm_costs=llm_costs,
             details=details,
         )

@@ -121,10 +121,6 @@ class ContainerExecutor(Protocol):
         """
         ...
 
-    async def read_logs(self, name: str) -> str:
-        """Read a container/pod's current logs. Best-effort; returns '' on failure."""
-        ...
-
     async def close(self) -> None:
         """Release runtime resources (API clients, connections)."""
         ...

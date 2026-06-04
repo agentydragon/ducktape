@@ -363,9 +363,7 @@ class AgentRegistry:
             # not leak as IN_PROGRESS — the pod is gone and nothing else will
             # finalize it. The DB write is synchronous, so it completes even while
             # the task is being cancelled.
-            self._persist_run_result(
-                agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None, stdout="", stderr=""
-            )
+            self._persist_run_result(agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
             raise
         finally:
             try:
@@ -387,23 +385,16 @@ class AgentRegistry:
             status = AgentRunStatus.EXITED
             container_exit_code = exit.exit_code
 
-        self._persist_run_result(
-            agent_run_id,
-            status=status,
-            container_exit_code=container_exit_code,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        )
+        self._persist_run_result(agent_run_id, status=status, container_exit_code=container_exit_code)
         return status
 
     def _persist_run_result(
-        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None, stdout: str, stderr: str
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
     ) -> None:
-        """Write an agent run's terminal status + captured logs to the DB.
+        """Write an agent run's terminal status + exit code to the DB.
 
-        Persisting the logs (not just logging them) makes failures visible in the
-        run record (GET /api/runs/{id}); the pod is already deleted by the caller,
-        so this is the only durable copy.
+        Container logs are not persisted here — they live in Loki and are served
+        by GET /api/runs/{id}/logs.
         """
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
@@ -412,8 +403,6 @@ class AgentRegistry:
                 raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
-            found_run.container_stdout = stdout or None
-            found_run.container_stderr = stderr or None
             session.commit()
             logger.info("Updated %s status to %s", agent_run_id, status)
 
@@ -758,16 +747,13 @@ class AgentRegistry:
         """Delete an unwanted grader pod (duplicate, orphan, removed snapshot, or
         wrong image) and finalize its run as CANCELLED if it's still in progress."""
         logger.info("Reaping grader pod %s (snapshot=%s, reason=%s)", pod.name, pod.snapshot_slug, reason)
-        logs = await self._executor.read_logs(pod.name)
-        self._finalize_run_if_in_progress(
-            pod.agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None, stdout=logs
-        )
+        self._finalize_run_if_in_progress(pod.agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None)
         await self._executor.handle_for(pod.name).kill_and_delete()
 
     def _finalize_run_if_in_progress(
-        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None, stdout: str
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None
     ) -> None:
-        """Set a grader run's terminal status + logs, but only if it's still
+        """Set a grader run's terminal status + exit code, but only if it's still
         IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
         another path may already have finalized."""
         with self._db.session() as session:
@@ -779,6 +765,5 @@ class AgentRegistry:
                 return
             run.status = status
             run.container_exit_code = container_exit_code
-            run.container_stdout = stdout or None
             session.commit()
             logger.info("Finalized grader run %s -> %s", agent_run_id, status)

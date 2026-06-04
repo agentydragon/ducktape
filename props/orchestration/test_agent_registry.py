@@ -68,7 +68,7 @@ def _in_progress_critic_run(db: Database) -> UUID:
     return agent_run_id
 
 
-async def test_collect_run_persists_container_logs(db: Database) -> None:
+async def test_collect_run_finalizes_exited(db: Database) -> None:
     agent_run_id = _in_progress_critic_run(db)
     handle = _FakeHandle(
         name="critic-x",
@@ -78,32 +78,28 @@ async def test_collect_run_persists_container_logs(db: Database) -> None:
     status = await _registry(db)._collect_run(agent_run_id, cast(Any, handle), None)
 
     assert status == AgentRunStatus.EXITED
-    assert handle.killed  # pod deleted before we persisted
+    assert handle.killed  # pod deleted before we finalized
     with db.session() as session:
         run = session.get(AgentRun, agent_run_id)
         assert run is not None
         assert run.status == AgentRunStatus.EXITED
         assert run.container_exit_code == 1
-        # The captured logs are durable in the run record, not just the orchestrator's stdout.
-        assert run.container_stdout == "boom\nTraceback ..."
-        assert run.container_stderr == "warn line"
 
 
-async def test_collect_run_stores_empty_logs_as_null(db: Database) -> None:
+async def test_collect_run_finalizes_exit_zero(db: Database) -> None:
     agent_run_id = _in_progress_critic_run(db)
     handle = _FakeHandle(name="critic-y", result=ContainerResult(stdout="", stderr="", exit=Exited(exit_code=0)))
 
-    await _registry(db)._collect_run(agent_run_id, cast(Any, handle), None)
+    status = await _registry(db)._collect_run(agent_run_id, cast(Any, handle), None)
 
+    assert status == AgentRunStatus.EXITED
     with db.session() as session:
         run = session.get(AgentRun, agent_run_id)
         assert run is not None
         assert run.container_exit_code == 0
-        assert run.container_stdout is None
-        assert run.container_stderr is None
 
 
-async def test_collect_run_timeout_persists_partial_logs(db: Database) -> None:
+async def test_collect_run_timeout_finalizes_timed_out(db: Database) -> None:
     agent_run_id = _in_progress_critic_run(db)
     handle = _FakeHandle(name="critic-z", result=ContainerResult(stdout="partial output", stderr="", exit=TimedOut()))
 
@@ -115,7 +111,6 @@ async def test_collect_run_timeout_persists_partial_logs(db: Database) -> None:
         assert run is not None
         assert run.status == AgentRunStatus.TIMED_OUT
         assert run.container_exit_code is None
-        assert run.container_stdout == "partial output"
 
 
 @dataclass
