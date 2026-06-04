@@ -21,7 +21,6 @@ from augur.model.series import (
     SP500Key,
 )
 from augur.model.state_space import (
-    StateSpaceModel,
     StateSpaceModelArtifact,
     StateSpacePrivateEquityEventPrior,
     StateSpaceProviderConfig,
@@ -153,7 +152,6 @@ def _artifact(
     *,
     pe_tender_interval_months_median: float = 2.0,
     pe_tender_interval_log_sigma: float = 0.1,
-    emitted_factor_copies: dict[str, str] | None = None,
 ) -> StateSpaceModelArtifact:
     sp500 = SP500Key().wire_id
     inflation = InflationKey().wire_id
@@ -189,43 +187,7 @@ def _artifact(
         },
         source_manifest={"source_ids": ("fixture:public",)},
         prior_manifest={"kind": "fixture"},
-        emitted_factor_copies=emitted_factor_copies or {},
     )
-
-
-def test_state_space_emits_chosen_factor_copies_with_identical_draws() -> None:
-    # The model privately chooses to emit a second location's home_value/rent equal to a fitted
-    # location's draws; the copy series must be emittable and numerically identical to its source.
-    hv_sf = HomeValueKey(location_id=LocationId("san_francisco_ca"))
-    rent_sf = RentKey(location_id=LocationId("san_francisco_ca"))
-    hv_mi = HomeValueKey(location_id=LocationId("mare_island_vallejo_ca"))
-    rent_mi = RentKey(location_id=LocationId("mare_island_vallejo_ca"))
-    artifact = _artifact(emitted_factor_copies={hv_mi.wire_id: hv_sf.wire_id, rent_mi.wire_id: rent_sf.wire_id})
-    model = StateSpaceModel(artifact=artifact, conditioning=ExogenousConditioningContext(start_at=date(2026, 5, 1)))
-
-    assert {hv_mi, rent_mi} <= model.emittable_level_keys()
-    sampled = model.sample(
-        ExogenousSamplingRequest(
-            rollout_seeds=(3, 4), horizon_months=3, **level_series_request_channels(frozenset({hv_mi, rent_mi}))
-        )
-    )
-    for copy_key, source_key in ((hv_mi, hv_sf), (rent_mi, rent_sf)):
-        np.testing.assert_array_equal(
-            sampled.level_matrix(copy_key, rollout_count=2, horizon_months=3),
-            sampled.level_matrix(source_key, rollout_count=2, horizon_months=3),
-        )
-
-
-def test_state_space_artifact_rejects_invalid_factor_copies() -> None:
-    hv_sf = HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id
-    rent_sf = RentKey(location_id=LocationId("san_francisco_ca")).wire_id
-    hv_mi = HomeValueKey(location_id=LocationId("mare_island_vallejo_ca")).wire_id
-    with pytest.raises(ValueError, match="not a fitted factor"):
-        _artifact(emitted_factor_copies={hv_mi: HomeValueKey(location_id=LocationId("nowhere_xx")).wire_id})
-    with pytest.raises(ValueError, match="already a fitted factor"):
-        _artifact(emitted_factor_copies={hv_sf: hv_sf})
-    with pytest.raises(ValueError, match="must share kind"):
-        _artifact(emitted_factor_copies={hv_mi: rent_sf})
 
 
 if __name__ == "__main__":
