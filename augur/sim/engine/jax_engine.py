@@ -158,6 +158,28 @@ class _FoldedPurchase:
     mortgage_monthly_payment: float
 
 
+@dataclass(frozen=True)
+class _LiquidityPool:
+    """One (asset, source-account) FIFO pool a liquidity policy can sell from."""
+
+    asset_idx: int  # column in the policy's asset list (the disposition buffer's asset axis)
+    series_index: int
+    ordered_lots: np.ndarray
+
+
+@dataclass(frozen=True)
+class _FoldedLiquidity:
+    """One liquidity policy, static data resolved host-side. `pools` enumerates its (asset, account)
+    FIFO pools in eager order; `trigger`/`sale` are the amount-spec tuples for the buffer rule."""
+
+    policy_index: int
+    agent: int
+    cash_slot: int
+    trigger: tuple[int, float, float, int, int, int]
+    sale: tuple[int, float, float, int, int, int]
+    pools: tuple[_LiquidityPool, ...]
+
+
 def scan_supported(plan: CompiledSimulation) -> bool:
     """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
 
@@ -168,8 +190,7 @@ def scan_supported(plan: CompiledSimulation) -> bool:
     Conservative by construction: a missing feature here only costs the fast path, never correctness
     (the dual-backend suite gates both routes)."""
     return (
-        bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
-        and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
+        bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
@@ -341,6 +362,64 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     # and the (static, per-month) prior year-end being settled.
     acc["prof_idx"] = jnp.asarray(np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, -1))
     acc["tax_year_end"] = jnp.asarray(tax_year_end)
+
+    # Liquidity policies: resolve each policy's (asset, source-account) FIFO pools host-side. Sells
+    # raise cash to cover the month's obligation demand (+ an optional buffer) before the funding check.
+    liq_policies = plan.liquidity_policies
+    liq_policy_count = int(liq_policies.cash_slot.shape[0])
+    liq_max_assets = int(liq_policies.assets.shape[1]) if liq_policies.assets.ndim == 2 else 1
+    folded_liquidity: list[_FoldedLiquidity] = []
+    for policy in range(liq_policy_count):
+        if int(liq_policies.cash_slot[policy]) < 0:
+            continue  # padded sentinel policy
+        agent_code = int(liq_policies.agent[policy])
+        pools: list[_LiquidityPool] = []
+        for asset_idx in range(liq_max_assets):
+            asset_code = int(liq_policies.assets[policy, asset_idx])
+            series_index = int(liq_policies.asset_series[policy, asset_idx])
+            if asset_code < 0 or series_index < 0:
+                continue
+            for account in liq_policies.source_accounts[policy]:
+                account_code = int(account)
+                if account_code < 0:
+                    continue
+                ordered = lot_order_for_pool(
+                    lot_agent_codes=plan.lot_agent_codes,
+                    lot_account_codes=plan.lot_account_codes,
+                    lot_asset_codes=plan.lot_asset_codes,
+                    lot_purchase_month=plan.lot_purchase_month,
+                    lot_id_codes=plan.lot_id_codes,
+                    agent_code=agent_code,
+                    account_code=account_code,
+                    asset_code=asset_code,
+                )
+                if ordered.size:
+                    pools.append(_LiquidityPool(asset_idx=asset_idx, series_index=series_index, ordered_lots=ordered))
+        folded_liquidity.append(
+            _FoldedLiquidity(
+                policy_index=policy,
+                agent=agent_code,
+                cash_slot=int(liq_policies.cash_slot[policy]),
+                trigger=(
+                    int(liq_policies.trigger_kind[policy]),
+                    float(liq_policies.trigger_fixed[policy]),
+                    float(liq_policies.trigger_base[policy]),
+                    int(liq_policies.trigger_series[policy]),
+                    int(liq_policies.trigger_base_month[policy]),
+                    int(liq_policies.trigger_period[policy]),
+                ),
+                sale=(
+                    int(liq_policies.sale_kind[policy]),
+                    float(liq_policies.sale_fixed[policy]),
+                    float(liq_policies.sale_base[policy]),
+                    int(liq_policies.sale_series[policy]),
+                    int(liq_policies.sale_base_month[policy]),
+                    int(liq_policies.sale_period[policy]),
+                ),
+                pools=tuple(pools),
+            )
+        )
+    lot_axis = max(1, p.lot_count)
 
     # December year-end tax pass: static tables. `link_count`/`taxliab_count`/`profile_count` are
     # compile-time. `tax_slot_table[m, link]` is the tax-liability slot a link accrues at year-end
@@ -649,6 +728,49 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             month,
         )
 
+        # Liquidity-policy sales (before the funding check, eager order): raise cash to cover this
+        # month's obligation demand for the policy's account (+ an optional buffer top-up), selling
+        # FIFO across the policy's (asset, account) pools sequentially. Branch-free: a pool whose
+        # target is 0 sells nothing (the dollar target is capped at the pool's available value).
+        liq_disp_active = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r), dtype=bool)
+        liq_disp_units = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
+        liq_disp_basis = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
+        liq_disp_proceeds = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
+        attempt_policy = jnp.full((slot_active.shape[0], r), NO_CODE, dtype=jnp.int64)
+        for lp in folded_liquidity:
+            matching = (og["agent"][month] == lp.agent) & (og["from_slot"][month] == lp.cash_slot)  # (slots,)
+            hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0.0).sum(axis=0)  # (R,)
+            attempt_policy = jnp.where(matching[:, None] & slot_active, lp.policy_index, attempt_policy)
+            cash_balance = cash[lp.cash_slot]
+            required_sale = jnp.maximum(hard_demand - cash_balance, 0.0)
+            post_required_cash = cash_balance + required_sale - hard_demand
+            trigger_val = _amount_values_tuple(lp.trigger, external_values, month, r)
+            sale_val = _amount_values_tuple(lp.sale, external_values, month, r)
+            buffer_sale = jnp.where((sale_val > 0.0) & (post_required_cash < trigger_val), sale_val, 0.0)
+            remaining = jnp.where(active, required_sale + buffer_sale, 0.0)
+            for pool in lp.pools:
+                raw_price = external_values[pool.series_index, :, month]
+                valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
+                unit_price = jnp.where(valid_price, raw_price, 0.0)
+                available = lot_remaining[pool.ordered_lots].sum(axis=0) * unit_price
+                target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0.0), available), 0.0)
+                sold_units, proceeds, basis, _ovr = _fifo_sell_dollars(
+                    lot_remaining.T, pool.ordered_lots, target, unit_price, cost_basis_per_unit
+                )
+                lot_remaining = lot_remaining - sold_units.T
+                total_proceeds = proceeds.sum(axis=1)
+                cash = cash.at[lp.cash_slot].add(total_proceeds)
+                cg_active, cg_ytd, tlh = _record_capital_gains(
+                    plan, cg_active, cg_ytd, tlh, lot_remaining, month, lp.agent, sold_units, proceeds - basis
+                )
+                liq_disp_active = liq_disp_active.at[lp.policy_index, pool.asset_idx].set(
+                    liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0.0).T
+                )
+                liq_disp_units = liq_disp_units.at[lp.policy_index, pool.asset_idx].add(sold_units.T)
+                liq_disp_basis = liq_disp_basis.at[lp.policy_index, pool.asset_idx].add(basis.T)
+                liq_disp_proceeds = liq_disp_proceeds.at[lp.policy_index, pool.asset_idx].add(proceeds.T)
+                remaining = jnp.maximum(remaining - total_proceeds, 0.0)
+
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
         funded = _obligation_group_funded_jit(group_matrix, from_row, cash, slot_active, accrual_due)
@@ -872,7 +994,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             if link_count > 0
             else ()
         )
-        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys)
+        # Liquidity slabs: per-(policy, asset) disposition (active/units/basis/proceeds) + the
+        # per-obligation attempt-policy assignment. Only when the plan has liquidity policies.
+        liquidity_ys = (
+            (liq_disp_active, liq_disp_units, liq_disp_basis, liq_disp_proceeds, attempt_policy)
+            if folded_liquidity
+            else ()
+        )
+        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys)
 
     prop0 = jnp.zeros((p.property_count, r))
     liab0 = jnp.zeros((p.liability_count, r))
@@ -935,16 +1064,25 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         ob_fail,
         *rest,
     ) = ys
-    # Four variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
+    # Five variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
     # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
-    # (15 = 13 breakdowns + tax-liability amount/active snapshots if any tax links).
+    # (18 = 13 breakdowns + 2 tax-liability snapshots + 3 settlement events, if any tax links), and
+    # liquidity slabs (5 if any liquidity policies).
     n_sale = 5 if folded_sales else 0
     n_purchase = 2 if folded_purchases else 0
     n_mortgage = 5 if p.liability_count > 0 else 0
-    sale_h = rest[:n_sale]
-    purchase_h = rest[n_sale : n_sale + n_purchase]
-    mortgage_h = rest[n_sale + n_purchase : n_sale + n_purchase + n_mortgage]
-    tax_h = rest[n_sale + n_purchase + n_mortgage :]
+    n_tax = 18 if link_count > 0 else 0
+    o1, o2, o3, o4 = (
+        n_sale,
+        n_sale + n_purchase,
+        n_sale + n_purchase + n_mortgage,
+        n_sale + n_purchase + n_mortgage + n_tax,
+    )
+    sale_h = rest[:o1]
+    purchase_h = rest[o1:o2]
+    mortgage_h = rest[o2:o3]
+    tax_h = rest[o3:o4]
+    liquidity_h = rest[o4:]
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
@@ -1049,6 +1187,15 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
                     snapshot_month=m + 1, slots=changed, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
                 )
             prev_amount, prev_active = taxliab_amount_h[m], taxliab_active_h[m]
+    if liquidity_h:
+        # Per-(month, policy, asset) liquidity disposition stacks + the per-obligation attempt-policy.
+        liq_active_h, liq_units_h, liq_basis_h, liq_proceeds_h, attempt_h = (np.asarray(a) for a in liquidity_h)
+        liq = buffers.lot_dispositions.liquidity
+        liq.active[:] = liq_active_h
+        liq.units[:] = liq_units_h
+        liq.basis[:] = liq_basis_h
+        liq.proceeds[:] = liq_proceeds_h
+        buffers.obligations.attempt_policy[:] = attempt_h
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -1368,7 +1515,7 @@ def _amount_values(
     amount_base_month: int,
     amount_period: int,
     external_values: jnp.ndarray,
-    month: int,
+    month: int | jnp.ndarray,
     rollout_count: int,
 ) -> jnp.ndarray:
     """Port of `phases._amount_values`: a fixed or series-indexed per-rollout amount."""
@@ -1378,6 +1525,24 @@ def _amount_values(
     base_level = external_values[amount_series, :, amount_base_month]
     reset_level = external_values[amount_series, :, reset_month]
     return amount_base * reset_level / base_level
+
+
+def _amount_values_tuple(
+    spec: tuple[int, float, float, int, int, int], external_values: jnp.ndarray, month: int | jnp.ndarray, r: int
+) -> jnp.ndarray:
+    """`_amount_values` from a `(kind, fixed, base, series, base_month, period)` tuple."""
+    kind, fixed, base, series, base_month, period = spec
+    return _amount_values(
+        amount_kind=kind,
+        amount_fixed=fixed,
+        amount_base=base,
+        amount_series=series,
+        amount_base_month=base_month,
+        amount_period=period,
+        external_values=external_values,
+        month=month,
+        rollout_count=r,
+    )
 
 
 def _scatter_rows(target: jnp.ndarray, indices: jnp.ndarray, values: jnp.ndarray) -> jnp.ndarray:
