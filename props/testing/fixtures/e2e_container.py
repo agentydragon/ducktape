@@ -51,6 +51,7 @@ import aiodocker
 import pytest
 import pytest_asyncio
 import uvicorn
+from fastapi import FastAPI
 
 from openai_utils.model import OpenAIModelProto
 from props.backend.app import BackendDeps, create_app
@@ -59,6 +60,7 @@ from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG, RegistryProxyConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.llm_proxy.app import create_app as create_llm_proxy_app  # alias: backend.app also defines create_app
 from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
@@ -135,10 +137,8 @@ def _build_agent_base_env(db_config: DatabaseConfig) -> dict[str, str]:
 
 
 @asynccontextmanager
-async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> AsyncIterator[None]:
-    """Start the real backend app with uvicorn."""
-    app = create_app(deps=deps)
-
+async def _serve_app(app: FastAPI, port: int, *, name: str, host: str = "0.0.0.0") -> AsyncIterator[None]:
+    """Run a FastAPI app under uvicorn for the lifetime of the context."""
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
@@ -146,10 +146,9 @@ async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> As
     while not server.started:
         await asyncio.sleep(0.01)
         if task.done():
-            exc = task.exception()
-            raise RuntimeError(f"Backend server failed to start: {exc}")
+            raise RuntimeError(f"{name} failed to start on port {port}: {task.exception()}")
 
-    logger.info("Backend started on port %d", port)
+    logger.info("%s started on port %d", name, port)
 
     try:
         yield
@@ -161,7 +160,7 @@ async def run_backend(deps: BackendDeps, port: int, host: str = "0.0.0.0") -> As
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        logger.info("Backend stopped")
+        logger.info("%s stopped", name)
 
 
 def _set_backend_env(monkeypatch: pytest.MonkeyPatch, db_config: DatabaseConfig, e2e_registry_url: str) -> None:
@@ -188,24 +187,32 @@ async def _make_stack(
 
     try:
         _set_backend_env(monkeypatch, db.config, e2e_registry_url)
+        # The LLM proxy's upstream: it forwards agents' /v1/responses calls here.
         monkeypatch.setenv("OPENAI_BASE_URL", f"{fake_openai.url}/v1")
 
         backend_port = pick_free_port()
+        llm_proxy_port = pick_free_port()
         registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
         backend_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+        # Agents talk to the standalone LLM proxy (the backend dropped its /v1
+        # mount in #1894); the proxy reuses the backend's llm router + auth against
+        # the same DB and forwards to the fake OpenAI upstream above.
+        llm_proxy_url = f"http://{E2E_HOST_HOSTNAME}:{llm_proxy_port}"
         agent_base_env = _build_agent_base_env(db.config)
 
-        deps = BackendDeps(
-            config=PropsConfig(
-                backend_url=backend_url,
-                agent_env=agent_base_env,
-                executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
-            ),
-            registry_proxy_config=registry_proxy_config,
+        config = PropsConfig(
             backend_url=backend_url,
+            agent_env=agent_base_env,
+            executor=DockerExecutorConfig(extra_hosts=HOST_GATEWAY),
+            llm_proxy_url=llm_proxy_url,
         )
+        deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
 
-        async with ensure_agent_network(async_docker_client), run_backend(deps, port=backend_port):
+        async with (
+            ensure_agent_network(async_docker_client),
+            _serve_app(create_app(deps=deps), backend_port, name="backend"),
+            _serve_app(create_llm_proxy_app(db=db, config=config), llm_proxy_port, name="llm-proxy"),
+        ):
             executor = DockerExecutor(
                 async_docker_client,
                 network_name=PROPS_NETWORK_NAME,
@@ -219,6 +226,7 @@ async def _make_stack(
                 backend_url=backend_url,
                 agent_base_env=agent_base_env,
                 registry_config=registry_proxy_config,
+                llm_base_url=llm_proxy_url,
             )
 
             try:

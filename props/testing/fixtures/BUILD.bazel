@@ -63,6 +63,7 @@ py_library(
         "//props/core:oci_utils",
         "//props/db:config",
         "//props/db:database",
+        "//props/llm_proxy:app",
         "//props/orchestration:agent_registry",
         "//props/orchestration:docker_env",
         "//props/orchestration:docker_executor",

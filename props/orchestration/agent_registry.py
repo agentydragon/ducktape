@@ -207,8 +207,9 @@ class AgentRegistry:
         self._db_config = db_config
         self._backend_url = backend_url
         # Base URL agents use for the LLM proxy: OPENAI_BASE_URL = <this>/v1. The
-        # proxy is split out of the backend (props/llm_proxy); None falls back to
-        # the backend, which still serves /v1 for dev and not-yet-cycled agents.
+        # proxy is the standalone props/llm_proxy service (the backend dropped its
+        # own /v1 mount in #1894), so callers should pass llm_base_url; the
+        # backend_url fallback no longer serves /v1 and is only a degraded default.
         self._llm_base_url = llm_base_url or backend_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
