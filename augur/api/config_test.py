@@ -1,5 +1,5 @@
-"""Schema-level checks for Config. Verifies the contract a deployment
-must satisfy without exercising any actual file loading."""
+"""Checks for the Config contract a deployment must satisfy: schema-level validation plus
+`load_augur_config` file handling (YAML round-trip, `budget_path` / provider include inlining)."""
 
 from __future__ import annotations
 
