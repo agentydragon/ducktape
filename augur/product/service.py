@@ -54,14 +54,19 @@ from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
 from augur.sim.simulate import simulate_dense_with_external_series
-from augur.sim.slice import slice_dense_results
+from augur.sim.slice import slice_dense_result
 
 DEFAULT_MAX_CACHE_ROLLOUTS = 25_000
 
 
 @dataclass(frozen=True)
 class _CachedRollout:
-    dense: DenseSimulationResult  # R=1
+    # One simulated batch is shared by every seed it was sampled with; each seed reads its own
+    # column out of `batch` (the metric reductions take a `rollout_index`), so no per-rollout
+    # dense slice is materialized for the fan path. The batch stays alive while any of its seeds
+    # remains cached; `rollout()` slices a single seed out of it on demand for the detail view.
+    batch: DenseSimulationResult
+    column_index: int
     model_id: str
 
 
@@ -139,12 +144,15 @@ class ProductService:
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
         horizon_months = int(request.scenario.horizon_months)
         [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
-        # The cached dense result spans the server max horizon; keep only events that fall within the
-        # requested window so the rollout detail matches the truncated monthly metrics.
+        # The detail view needs this one rollout's event log: slice just its column out of the
+        # shared batch (one slice, not R) and decode it. The cached batch spans the server max
+        # horizon; keep only events within the requested window so the detail matches the
+        # truncated monthly metrics.
+        single = slice_dense_result(decoded.cached.batch, rollout_index=decoded.cached.column_index)
         events = tuple(
             event
             for event in rollout_events_from(
-                decoded.cached.dense.decode(),
+                single.decode(),
                 primary_agent_id=self._primary_agent_id,
                 asset_label_by_id=self._asset_label_by_id,
             )
@@ -200,10 +208,12 @@ class ProductService:
         decoded: list[_DecodedRollout] = []
         for seed in seeds:
             cached = cached_by_seed[seed]
-            full_arrays = monthly_metric_arrays(cached.dense, primary_agent_id=self._primary_agent_id)
+            full_arrays = monthly_metric_arrays(
+                cached.batch, primary_agent_id=self._primary_agent_id, rollout_index=cached.column_index
+            )
             # `month_index` runs 0..H_max; keep months 0..horizon (i.e. the first horizon+1 snapshots).
             arrays = {name: array[: horizon_months + 1] for name, array in full_arrays.items()}
-            full_failed_month = failed_month_index_for_rollout(cached.dense)
+            full_failed_month = failed_month_index_for_rollout(cached.batch, rollout_index=cached.column_index)
             # Months are 0-based (0..horizon-1); a failure at/after the requested horizon is outside it.
             in_window = full_failed_month is not None and full_failed_month < horizon_months
             terminal = terminal_metrics_from_arrays(arrays, failed_month_index=full_failed_month if in_window else None)
@@ -243,11 +253,12 @@ class ProductService:
             locations=self._locations,
         )
         model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
-        # Slice the whole batch in one pass (partitions the exogenous frames once) — slicing
-        # per seed would re-filter the full batch frame R times, i.e. O(R²).
-        sliced = slice_dense_results(dense, range(len(seeds)))
+        # Cache the batch once, shared by every seed; each seed records only its column. The fan
+        # path reduces a column per seed straight from this batch (no per-rollout slice), and the
+        # detail view slices a single seed out of it on demand.
         return {
-            seed: _CachedRollout(dense=sliced[batch_index], model_id=model_id) for batch_index, seed in enumerate(seeds)
+            seed: _CachedRollout(batch=dense, column_index=batch_index, model_id=model_id)
+            for batch_index, seed in enumerate(seeds)
         }
 
     def _cache_get(self, scenario_key: ScenarioKey, seed: int) -> _CachedRollout | None:

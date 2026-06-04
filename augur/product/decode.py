@@ -1,4 +1,8 @@
-"""Decode an R=1 DenseSimulationResult into product-shaped metrics and events."""
+"""Decode a DenseSimulationResult into product-shaped metrics and events.
+
+Per-month metric reductions take a `rollout_index` and read that column directly out of a
+(possibly batched) result; event decoding operates on an already-R=1 decoded `SimulationRun`.
+"""
 
 from __future__ import annotations
 
@@ -37,27 +41,37 @@ from augur.sim.codec.plan import SimulationRun
 from augur.sim.engine import DenseSimulationResult
 from augur.sim.scenario import ObligationType
 
-_SINGLE_ROLLOUT_INDEX = 0
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
-def monthly_metric_arrays(dense: DenseSimulationResult, *, primary_agent_id: str) -> dict[str, np.ndarray]:
-    """Per-month product metrics for one R=1 rollout as a `{metric_name: (H+1,) ndarray}` dict.
+def monthly_metric_arrays(
+    dense: DenseSimulationResult, *, primary_agent_id: str, rollout_index: int = 0
+) -> dict[str, np.ndarray]:
+    """Per-month product metrics for one rollout as a `{metric_name: (H+1,) ndarray}` dict.
 
-    The fan + rollout-detail paths consume this directly — polars-frame construction is the
-    dominant cost in the metric-fan hot path. The rollout-detail wire shape
-    (`Frame = dict[str, list[...]]`) is also built directly from these arrays via `.tolist()`
-    in `service.rollout`, with no intermediate polars frame.
+    Reads column `rollout_index` directly out of `dense`, which may be a batched (R>1) result —
+    the product cache shares one batch across all its seeds and reduces a column per seed,
+    avoiding a per-rollout dense slice. The fan + rollout-detail paths consume this directly
+    (polars-frame construction is the dominant cost in the metric-fan hot path); the
+    rollout-detail wire shape (`Frame = dict[str, list[...]]`) is built straight from these
+    arrays via `.tolist()` in `service.rollout`, with no intermediate polars frame.
     """
 
-    _check_r1(dense)
     plan = dense.plan
     primary_agent_code = _required_string_code(plan.strings, primary_agent_id)
-    cash_usd = _cash_by_month(dense, primary_agent_code=primary_agent_code)
-    holding_value_usd = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
-    private_equity_value_usd = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
-    property_value_usd = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
-    mortgage_balance_usd = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
+    cash_usd = _cash_by_month(dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index)
+    holding_value_usd = _holding_value_by_month(
+        dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
+    )
+    private_equity_value_usd = _private_equity_value_by_month(
+        dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
+    )
+    property_value_usd = _property_value_by_month(
+        dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
+    )
+    mortgage_balance_usd = _mortgage_balance_by_month(
+        dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
+    )
     home_equity_usd = property_value_usd - mortgage_balance_usd
     # liquid_net_worth excludes private equity by design: PE is only saleable at sparse
     # tender events, so it doesn't satisfy "cash you could get tomorrow" semantics. The
@@ -74,7 +88,9 @@ def monthly_metric_arrays(dense: DenseSimulationResult, *, primary_agent_id: str
         "home_equity_usd": home_equity_usd,
         "liquid_net_worth_usd": liquid_net_worth_usd,
         "net_worth_usd": liquid_net_worth_usd + home_equity_usd + private_equity_value_usd,
-        "shortfall_usd": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
+        "shortfall_usd": _shortfall_by_month(
+            dense, primary_agent_code=primary_agent_code, rollout_index=rollout_index
+        ),
     }
 
 
@@ -97,9 +113,8 @@ def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_
     )
 
 
-def failed_month_index_for_rollout(dense: DenseSimulationResult) -> int | None:
-    _check_r1(dense)
-    failed_month = int(dense.buffers.state.rollout_failed_month_state[-1, _SINGLE_ROLLOUT_INDEX])
+def failed_month_index_for_rollout(dense: DenseSimulationResult, *, rollout_index: int = 0) -> int | None:
+    failed_month = int(dense.buffers.state.rollout_failed_month_state[-1, rollout_index])
     return None if failed_month < 0 else failed_month
 
 
@@ -150,17 +165,14 @@ def rollout_events_from(
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
 
-def _check_r1(dense: DenseSimulationResult) -> None:
-    if dense.plan.rollout_count != 1:
-        raise ValueError(f"decode helpers require rollout_count=1; got {dense.plan.rollout_count}")
-
-
-def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
     cash_slots = np.flatnonzero(dense.plan.cash_agent_codes == primary_agent_code)
-    return cast(np.ndarray, dense.buffers.state.cash_state[:, cash_slots, _SINGLE_ROLLOUT_INDEX].sum(axis=1))
+    return cast(np.ndarray, dense.buffers.state.cash_state[:, cash_slots, rollout_index].sum(axis=1))
 
 
-def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _holding_value_by_month(
+    dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int
+) -> np.ndarray:
     """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
 
     Excludes private-equity lots: PE is illiquid (saleable only at tender events) so it
@@ -169,20 +181,28 @@ def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code:
     """
 
     return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset: not isinstance(asset, PrivateEquityAssetKey)
+        dense,
+        primary_agent_code=primary_agent_code,
+        include=lambda asset: not isinstance(asset, PrivateEquityAssetKey),
+        rollout_index=rollout_index,
     )
 
 
-def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _private_equity_value_by_month(
+    dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int
+) -> np.ndarray:
     """Sum of private-equity lots priced at the latest sampled mark for each issuer."""
 
     return _lot_value_by_month(
-        dense, primary_agent_code=primary_agent_code, include=lambda asset: isinstance(asset, PrivateEquityAssetKey)
+        dense,
+        primary_agent_code=primary_agent_code,
+        include=lambda asset: isinstance(asset, PrivateEquityAssetKey),
+        rollout_index=rollout_index,
     )
 
 
 def _lot_value_by_month(
-    dense: DenseSimulationResult, *, primary_agent_code: int, include: Callable[[AssetKey], bool]
+    dense: DenseSimulationResult, *, primary_agent_code: int, include: Callable[[AssetKey], bool], rollout_index: int
 ) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
@@ -194,21 +214,21 @@ def _lot_value_by_month(
         asset = plan.assets[int(plan.lot_asset_codes[lot])]
         if not include(asset):
             continue
-        quantity = dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX]
+        quantity = dense.buffers.state.lot_state[:, lot, rollout_index]
         # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
         # read from the series-indexed external_values cube.
         if isinstance(asset, PrivateEquityAssetKey):
             issuer_idx = pe_issuer_index.get(str(asset.issuer_id))
             if issuer_idx is None:
                 raise ValueError(f"holding asset {asset.wire_id!r} has no compiled PE channels")
-            price = plan.pe_channels.marks[issuer_idx, _SINGLE_ROLLOUT_INDEX, :]
+            price = plan.pe_channels.marks[issuer_idx, rollout_index, :]
         else:
             series_index = series_index_by_id.get(asset_price_key(asset))
             if series_index is None:
                 raise ValueError(
                     f"holding asset {asset.wire_id!r} has no modeled price series in the compiled simulation"
                 )
-            price = plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :]
+            price = plan.external_values[series_index, rollout_index, :]
         missing_price = (np.abs(quantity) > 1e-9) & ~np.isfinite(price)
         if missing_price.any():
             months = ", ".join(str(month) for month in np.flatnonzero(missing_price)[:5])
@@ -219,12 +239,12 @@ def _lot_value_by_month(
     return np.maximum(values, 0.0)
 
 
-def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
     plan = dense.plan
     shortfall = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
     shortfall[1:] = (
-        dense.buffers.obligations.shortfall[:, :, _SINGLE_ROLLOUT_INDEX] * primary_obligations.astype(np.float64)
+        dense.buffers.obligations.shortfall[:, :, rollout_index] * primary_obligations.astype(np.float64)
     ).sum(axis=1)
     return shortfall
 
@@ -461,14 +481,14 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
     )
 
 
-def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
     for prop in range(plan.properties.id.shape[0]):
         if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
             continue
-        active = dense.buffers.state.property_active_state[:, prop, _SINGLE_ROLLOUT_INDEX]
+        active = dense.buffers.state.property_active_state[:, prop, rollout_index]
         purchase_month = int(plan.properties.month[prop])
         if purchase_month < 0:
             continue
@@ -476,7 +496,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
         series_index = series_index_by_id.get(HomeValueKey(location_id=LocationId(location_id)))
         if series_index is None:
             continue
-        levels = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)
+        levels = np.nan_to_num(plan.external_values[series_index, rollout_index, :], nan=0.0)
         # State snapshots are H+1 rows: index 0 = pre-month-0 opening, index s = end of month s-1.
         # The property is active starting at snapshot index `purchase_month + 1` (end of purchase month).
         base_level = float(levels[purchase_month])
@@ -489,13 +509,13 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
     return values
 
 
-def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, rollout_index: int) -> np.ndarray:
     plan = dense.plan
     balance = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     for lia in range(plan.liabilities.codes.shape[0]):
         if int(plan.liabilities.agent[lia]) != primary_agent_code:
             continue
-        balance += dense.buffers.state.liability_principal_state[:, lia, _SINGLE_ROLLOUT_INDEX]
+        balance += dense.buffers.state.liability_principal_state[:, lia, rollout_index]
     return balance
 
 
