@@ -329,19 +329,31 @@ slicing-dominated ~30 s wall):
 The polars `collect` count fell from ~20 000 (slicing's per-rollout relabel) to **103** — those
 remaining collects live in GBM/PE sampling and compile, not the hot path.
 
+### Seventh pass: vectorized reduction (PR #1864)
+
+The reduction loop above landed: `monthly_metric_arrays_batch` reduces every metric over the whole
+`(…, R)` batch in one pass (`(H+1, R)` per metric), and `_decoded_rollouts` reduces each distinct
+batch **once** then column-slices per seed, instead of calling the reduction per rollout.
+`monthly_metric_arrays` **leaves the profile** (function calls 4.0 M → 2.3 M); whole request
+**15.2 s → 11.6 s wall**. `metric_fan` is now entirely sampling + simulation:
+
+| Stage                                 | Time  | What                                |
+| ------------------------------------- | ----- | ----------------------------------- |
+| `composite.sample` (exogenous draws)  | 5.2 s | GBM + PE sampling                   |
+| `simulate_dense` (compile+month loop) | 4.8 s | the engine; `_run_month_step` 2.8 s |
+| polars `collect` ×103                 | 2.4 s | inside sampling/compile             |
+
+No per-rollout Python marshaling remains.
+
 ### Remaining levers (highest impact first)
 
-1. **Vectorize the reduction loop (~2.6 s, the last marshaling cost).** `_decoded_rollouts` still
-   calls `monthly_metric_arrays` once per rollout (10 k Python iterations, each looping over lots in
-   `_lot_value_by_month`). The shared batch makes a true `(…, R)`-vectorized reduction possible —
-   reduce all rollouts in one pass over the batch arrays instead of a per-rollout Python loop.
-   Collapses the 10 k-iteration loop to a handful of array ops.
-2. **Exogenous sampling (~5.4 s).** GBM + PE draws are the largest block and inherent stochastic
-   work; the deterministic setup may be cacheable across requests, the draws are not.
-3. **`_apply_liquidity_policy_sales` (~1.75 s) in the month loop.** Per-month Python work in the
+1. **Exogenous sampling (~5.2 s).** GBM + PE draws are now the largest block and inherent stochastic
+   work; the deterministic setup may be cacheable across requests, the draws are not. The 103 polars
+   `collect`s live here.
+2. **`_apply_liquidity_policy_sales` (~1.75 s) in the month loop.** Per-month Python work in the
    otherwise-NumPy loop — candidate for the same fast-path / vectorization treatment as the other
    phases (interventions 7–8 above).
-4. **Process-level chunking** of the R axis for memory bounding and multi-core, now that the
+3. **Process-level chunking** of the R axis for memory bounding and multi-core, now that the
    per-request boundaries are this thin.
 
 ## Note on parallelism
