@@ -183,19 +183,29 @@ def inflation_yoy_counts(
     at_month: int,
     horizon_months: int,
     window_months: int = 12,
+    history: npt.NDArray[np.float64] | None = None,
 ) -> ResolutionCounts:
     """Trailing year-over-year change of an index series, vectorized over rollouts.
 
-    `yoy = value[at_month] / value[at_month - window] - 1`, compared to `threshold`
-    (a fraction, e.g. 0.03 for 3%). The index path starts at `as_of` (month 0), so a
-    trailing window reaching before month 0 is NOT covered by the sample and the
-    whole market is UNRESOLVED — only `at_date >= as_of + window` is scoreable
-    without a pre-`as_of` index anchor (see the plan's gotchas).
+    `yoy = value[at_month] / value[at_month - window] - 1`, compared to `threshold` (a fraction,
+    e.g. 0.03 for 3%). The numerator comes from the sampled path (`at_month` must be within the
+    horizon). For the denominator: when `at_month - window` is still within the path it's the
+    sampled value; when it falls BEFORE `as_of` (month 0) it's taken from `history` — real index
+    values for the months immediately before `as_of`, ordered oldest-first with `history[-1]` the
+    month before `as_of` (so `history[lb]` for a negative offset `lb` reads the right month). With
+    no history covering that far back, the market is UNRESOLVED.
     """
     n = int(matrix.shape[0])
-    if at_month - window_months < 0 or at_month > horizon_months:
+    if at_month < 0 or at_month > horizon_months:
         return ResolutionCounts(yes=0, no=0, unresolved=n)
-    yoy = matrix[:, at_month] / matrix[:, at_month - window_months] - 1.0
+    lookback = at_month - window_months
+    if lookback >= 0:
+        denominator: npt.NDArray[np.float64] | np.float64 = matrix[:, lookback]
+    elif history is not None and lookback >= -len(history):
+        denominator = history[lookback]  # real index value (deterministic), broadcasts over rollouts
+    else:
+        return ResolutionCounts(yes=0, no=0, unresolved=n)
+    yoy = matrix[:, at_month] / denominator - 1.0
     yes_mask = yoy >= threshold if direction is Direction.ABOVE else yoy < threshold
     yes = int(np.count_nonzero(yes_mask))
     return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)

@@ -120,6 +120,25 @@ def test_inflation_yoy_counts_window() -> None:
     assert (early.yes, early.no, early.unresolved) == (0, 0, 3)
 
 
+def test_inflation_yoy_counts_with_pre_as_of_history() -> None:
+    # Near-term YoY (at_month=2) looks back 10 months into real pre-as_of history.
+    matrix = np.full((3, 13), 330.0, dtype=np.float64)
+    matrix[:, 2] = 340.0  # numerator
+    history = np.full(12, 300.0, dtype=np.float64)  # history[-10] == 300 -> yoy = 340/300 - 1 = 13.3%
+    scored = inflation_yoy_counts(
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, history=history
+    )
+    assert (scored.yes, scored.no, scored.unresolved) == (3, 0, 0)
+    # Without history the same near-term market is UNRESOLVED (the look-back precedes as_of).
+    no_hist = inflation_yoy_counts(matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12)
+    assert no_hist.unresolved == 3
+    # History too short to cover the look-back -> still UNRESOLVED.
+    short = inflation_yoy_counts(
+        matrix, threshold=0.03, direction=Direction.ABOVE, at_month=2, horizon_months=12, history=np.full(5, 300.0)
+    )
+    assert short.unresolved == 3
+
+
 def test_level_by_date_counts_touch() -> None:
     # 4 rollouts start at 100; reach 150 at months {0:3, 1:10, 3:12}; rollout 2 never reaches.
     matrix = np.full((4, 13), 100.0, dtype=np.float64)

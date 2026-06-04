@@ -110,6 +110,11 @@ class CatalogMetadata(BaseModel):
     # meaningless unless month 0 of the path is today's real index level. Refreshed
     # alongside the catalog (data, not model).
     anchors: dict[str, float] = Field(default_factory=dict)
+    # Real CPI-U index for the months immediately BEFORE `model_anchor_date`, oldest first
+    # (the last entry is the month before as_of; the month-0 value is `anchors.inflation`, same
+    # units). Lets an `inflation_yoy` market whose year-ending date is within a year of as_of look
+    # back to real data instead of resolving UNRESOLVED. Refreshed alongside the catalog.
+    inflation_history: list[float] = Field(default_factory=list)
 
     @property
     def model_anchor_date(self) -> date:

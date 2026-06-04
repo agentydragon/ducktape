@@ -279,6 +279,7 @@ def _exact_market_counts(
     *,
     trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]],
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
+    inflation_history: npt.NDArray[np.float64] | None,
     as_of: date,
     horizon_months: int,
 ) -> tuple[ResolutionCounts, str] | _Unmodeled:
@@ -305,6 +306,7 @@ def _exact_market_counts(
             at_month=months_after(as_of, mapping.at_date),
             horizon_months=horizon_months,
             window_months=mapping.window_months,
+            history=inflation_history,
         )
     elif isinstance(mapping, LevelByDateMapping):
         counts = level_by_date_counts(
@@ -533,6 +535,11 @@ def run_calibration(
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
+    inflation_history = (
+        np.array(catalog.metadata.inflation_history, dtype=np.float64)
+        if catalog.metadata.inflation_history
+        else None
+    )
     # Per-issuer trajectory slices for every catalog-referenced issuer the bundle actually carries;
     # markets on an absent issuer surface as `unmodeled`.
     emitted_issuers = {str(issuer) for issuer in bundle.issuer_ids()}
@@ -570,6 +577,7 @@ def run_calibration(
             market,
             trajectories_by_issuer=trajectories_by_issuer,
             level_paths=paths,
+            inflation_history=inflation_history,
             as_of=as_of,
             horizon_months=horizon_months,
         )
