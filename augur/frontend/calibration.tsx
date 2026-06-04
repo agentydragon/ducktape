@@ -411,7 +411,9 @@ function CategoricalPanel({ families }) {
                   </div>
                 </div>
               </div>
-              <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>{fmtBits(family.klBits)}</div>
+              <div className={`shrink-0 text-right text-sm ${klTextClass(family.klBits)}`}>
+                {fmtBits(family.klBits)}
+              </div>
             </div>
             <table className="mt-2 min-w-full text-sm">
               <thead>

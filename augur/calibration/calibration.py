@@ -398,9 +398,7 @@ def build_anchored_level_paths(
             )
         anchor_map[key] = anchors[key.wire_id]
     anchored = anchor_sampled_series_levels(sampled, level_series_anchors=anchor_map) if anchor_map else sampled
-    return {
-        key: anchored.level_matrix(key, rollout_count=rollout_count, horizon_months=horizon_months) for key in keys
-    }
+    return {key: anchored.level_matrix(key, rollout_count=rollout_count, horizon_months=horizon_months) for key in keys}
 
 
 def _augur_context(

@@ -116,7 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     fan_months = [0, 6, 12, 24, 60, 120]
     for issuer in emit_issuers:
         mark_pct = mark_fan(
-            bundle, issuer=issuer, rollout_count=args.rollouts, horizon_months=args.horizon, percentiles=(5.0, 50.0, 95.0)
+            bundle,
+            issuer=issuer,
+            rollout_count=args.rollouts,
+            horizon_months=args.horizon,
+            percentiles=(5.0, 50.0, 95.0),
         )
         mark_rows = [
             [m, f"${b.values['5.0']:.0f}", f"${b.values['50.0']:.0f}", f"${b.values['95.0']:.0f}"]

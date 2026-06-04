@@ -329,6 +329,8 @@ class MarketCatalog(BaseModel):
 
     def referenced_issuers(self) -> set[str]:
         """Every PE issuer the catalog's exact PE markets score (and correlate signals reference)."""
-        issuers = {market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)}
+        issuers = {
+            market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)
+        }
         issuers |= {market.issuer for market in self.markets if isinstance(market, CorrelateMarket) and market.issuer}
         return issuers

@@ -91,8 +91,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     settings = build_settings(augur_config)
     loaded_calibration = config.calibration_catalog
     calibration_info = build_calibration_info(
-        loaded_calibration.catalog if loaded_calibration is not None else None,
-        augur_config.calibration_catalog,
+        loaded_calibration.catalog if loaded_calibration is not None else None, augur_config.calibration_catalog
     )
     deployment_info = build_deployment_info()
     product_service = ProductService(

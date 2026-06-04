@@ -108,11 +108,7 @@ def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     return run_calibration(
-        catalog,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=price_clients,
-        bundle=bundle,
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
 
 
@@ -389,7 +385,9 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
         rollout_count=4,
         horizon_months=_HORIZON,
     )
-    clients: dict[Platform, PriceClient] = {Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})}
+    clients: dict[Platform, PriceClient] = {
+        Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})
+    }
     result = run_calibration(
         catalog,
         horizon_months=_HORIZON,

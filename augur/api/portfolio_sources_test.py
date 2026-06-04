@@ -241,10 +241,7 @@ def test_plaid_source_expands_holding_period_buckets(
     [holding] = resolved.portfolio.holdings
     assert holding.lots == (
         HoldingTaxLotConfig(
-            lot_id="wealthfront_sp500_plaid_lt12",
-            holding_period_months_at_start=4,
-            quantity=0.25,
-            cost_basis_usd=300.0,
+            lot_id="wealthfront_sp500_plaid_lt12", holding_period_months_at_start=4, quantity=0.25, cost_basis_usd=300.0
         ),
         HoldingTaxLotConfig(
             lot_id="wealthfront_sp500_plaid_ltcore",
