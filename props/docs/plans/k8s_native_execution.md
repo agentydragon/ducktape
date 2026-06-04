@@ -104,6 +104,19 @@ earlier ones only where noted.
 - **Done when:** rolling the API server does not interrupt an in-flight agent's
   LLM calls; transcripts are queryable from the DB.
 - **Risk:** low. Pure extraction of an existing chokepoint.
+- **TODO — split the config.** The proxy needs only `upstreams` (+ DB and the
+  upstream API-key envs). `backend_url`, `grader_model`, `executor`,
+  `auto_migrate`/`auto_sync_specimens`, `agent_env`, `models`, and the specimens
+  are API-server-only — and the proxy reads model routing from the DB
+  `ModelMetadata` table (synced by the API server), not `config.models`. The
+  initial split reuses the full `PropsConfig` and reads only `.upstreams`; follow
+  up by carving `PropsConfig` into shared / proxy-only / api-only shapes so each
+  service gets a minimal config (the proxy ideally just `upstreams`), and mount
+  the proxy a slimmer `config.toml`.
+- **Sub-PRs:** (1) the standalone proxy app + `oci_image` + test (no deploy);
+  (2) deploy (Deployment + Service + image automation + `push-images` row),
+  running but unused; (3) cutover — repoint `OPENAI_BASE_URL` via a new
+  `llm_proxy_url` and drop the `/v1` mount from the backend.
 
 ### Stage 2 — Agent-readable logs (transcript + Loki)
 

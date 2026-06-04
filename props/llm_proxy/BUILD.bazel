@@ -1,0 +1,83 @@
+"""Standalone LLM proxy — the agent data plane (only /v1/responses), split out of
+the unified backend so the dashboard/API can roll without disrupting agents.
+
+Reuses the backend's `llm` router + auth + deps; the image bundles just the
+binary (no frontend, no specimens, no orchestration)."""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props:config",
+        "//props/backend/routes:llm",
+        "//props/db:config",
+        "//props/db:database",
+        "//util:logging",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":app",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":app",
+        "//props:config",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# =============================================================================
+# OCI Image
+# =============================================================================
+
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
+    name = "llm_proxy_bin",
+    main = "cli.py",
+    visibility = ["//props:__subpackages__"],
+    deps = [":cli"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":llm_proxy_bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("llm_proxy_bin") + [
+        "serve",
+        "--host",
+        "0.0.0.0",
+    ],
+    env = py_image_env(),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":layers"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["props-llm-proxy:latest"],
+)
