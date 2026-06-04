@@ -39,6 +39,7 @@ precision alone, not logic.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -98,6 +99,9 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     capital_gain_active = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     capital_gain_ytd = jnp.zeros((p.capital_gain_agent_count, 2, r))
     capital_loss_carryforward = jnp.zeros((p.capital_gain_agent_count, r))
+    # TLH give-back ledger: accumulated harvested loss per policy, repaid as gain when policy lots
+    # are sold (`_apply_tlh_give_back`) and zeroed on rollout failure.
+    tlh_cumulative_harvest = jnp.zeros((p.harvest_policy_count, r))
     # Tax YTD buckets the year-end pass reads; property_tax_ytd is fed by property-tax settlement,
     # property_depreciation_ytd by the depreciation accrual, recapture by property sale (not yet ported).
     property_tax_ytd = jnp.zeros((p.tax_profile_count, r))
@@ -199,26 +203,40 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             month,
         )
 
-        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_scheduled_asset_sales(
-            plan, buffers, cash, lot_remaining, capital_gain_active, capital_gain_ytd, active, external_values, month
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = (
+            _apply_scheduled_asset_sales(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                tlh_cumulative_harvest,
+                active,
+                external_values,
+                month,
+            )
         )
 
         ob_active, ob_due = _apply_obligation_accruals(
             plan, property_active, liabilities, tax_liability, active, external_values, month, r
         )
-        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_liquidity_policy_sales(
-            plan,
-            buffers,
-            cash,
-            lot_remaining,
-            capital_gain_active,
-            capital_gain_ytd,
-            ob_active,
-            ob_due,
-            active,
-            external_values,
-            month,
-            r,
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = (
+            _apply_liquidity_policy_sales(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                tlh_cumulative_harvest,
+                ob_active,
+                ob_due,
+                active,
+                external_values,
+                month,
+                r,
+            )
         )
         funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, r)
         (
@@ -256,14 +274,27 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.obligations.shortfall[month] = np.asarray(ob_shortfall)
         buffers.obligations.failure_active[month] = np.asarray(ob_failure)
 
+        # TLH harvest books a calibrated capital loss per policy (after settlement, before PE tenders).
+        tlh_cumulative_harvest, capital_gain_ytd, capital_gain_active = _apply_tlh_harvest(
+            plan,
+            tlh_cumulative_harvest,
+            capital_gain_ytd,
+            capital_gain_active,
+            lot_remaining,
+            external_values,
+            failed,
+            month,
+        )
+
         # PE tenders fire after settlement so the LNW floor compares against post-settlement cash.
-        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_tenders(
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _apply_pe_tenders(
             plan,
             buffers,
             cash,
             lot_remaining,
             capital_gain_active,
             capital_gain_ytd,
+            tlh_cumulative_harvest,
             ~failed,
             external_values,
             month,
@@ -324,6 +355,7 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             ordinary_ytd * keep,
             capital_gain_ytd * keep[None, None, :],
         )
+        tlh_cumulative_harvest = tlh_cumulative_harvest * keep  # `_zero_failed_state` drains the give-back ledger
         # `_zero_failed_state` zeros property dollar fields (but not property_active) for failed rollouts.
         property_basis, property_ownership, property_contribution, property_equity = (
             property_basis * keep,
@@ -524,10 +556,11 @@ def _apply_scheduled_asset_sales(
     lot_remaining: jnp.ndarray,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Functional port of `phases._apply_scheduled_asset_sales` (FIFO sell + capital gains)."""
     sales = plan.sales
     cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
@@ -557,14 +590,22 @@ def _apply_scheduled_asset_sales(
         proceeds_slot = int(sales.proceeds_slot[sale])
         if proceeds_slot >= 0:
             cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
-        capital_gain_active, capital_gain_ytd = _record_capital_gains(
-            plan, capital_gain_active, capital_gain_ytd, month, int(sales.agent[sale]), sold_units, proceeds - basis
+        capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _record_capital_gains(
+            plan,
+            capital_gain_active,
+            capital_gain_ytd,
+            tlh_cumulative_harvest,
+            lot_remaining,
+            month,
+            int(sales.agent[sale]),
+            sold_units,
+            proceeds - basis,
         )
         buffers.lot_dispositions.scheduled.active[month, sale] = np.asarray((sold_units > 0.0).T)
         buffers.lot_dispositions.scheduled.units[month, sale] += np.asarray(sold_units.T)
         buffers.lot_dispositions.scheduled.basis[month, sale] += np.asarray(basis.T)
         buffers.lot_dispositions.scheduled.proceeds[month, sale] += np.asarray(proceeds.T)
-    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
 def _sale_unit_price(sales, external_values: jnp.ndarray, month: int, sale: int, rollout_count: int) -> jnp.ndarray:
@@ -598,22 +639,61 @@ def _fifo_sell_units(
     return sold_units, proceeds, basis, oversell
 
 
+def _apply_tlh_give_back(
+    plan: CompiledSimulation,
+    tlh_cumulative_harvest: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    sold_units: jnp.ndarray,
+    gains: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._apply_tlh_give_back`: repay deferred harvested loss as extra gain on sold
+    harvest-policy lots. The fraction of the policy's pre-sale units sold here realizes that share
+    of `tlh_cumulative_harvest`, distributed across the sold policy-lots by sold units (preserving
+    each lot's ST/LT character) and drained from the ledger. Branch-free over rollouts; the per-policy
+    Python loop is over static plan data. `lot_remaining` is post-sale (caller already subtracted)."""
+    harvest = plan.harvest_policies
+    for policy_idx in range(harvest.gain_profile_index.shape[0]):
+        if int(harvest.gain_profile_index[policy_idx]) < 0:
+            continue
+        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
+        if lot_indices.size == 0:
+            continue
+        sold_policy = sold_units[:, lot_indices]  # (R, policy_lots)
+        units_sold = sold_policy.sum(axis=1)  # (R,)
+        pre_sale_units = lot_remaining[lot_indices, :].T.sum(axis=1) + units_sold  # (R,)
+        cumulative = tlh_cumulative_harvest[policy_idx]  # (R,)
+        fraction_sold = jnp.where(
+            pre_sale_units > 0.0, units_sold / jnp.where(pre_sale_units > 0.0, pre_sale_units, 1.0), 0.0
+        )
+        give_back = fraction_sold * cumulative  # (R,)
+        per_lot_weight = jnp.where(
+            units_sold[:, None] > 0.0, sold_policy / jnp.where(units_sold[:, None] > 0.0, units_sold[:, None], 1.0), 0.0
+        )
+        gains = gains.at[:, lot_indices].add(per_lot_weight * give_back[:, None])
+        tlh_cumulative_harvest = tlh_cumulative_harvest.at[policy_idx].set(cumulative - give_back)
+    return gains, tlh_cumulative_harvest
+
+
 def _record_capital_gains(
     plan: CompiledSimulation,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
     month: int,
     agent_code: int,
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._record_capital_gains`: classify each lot's gain long/short and accrue.
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._record_capital_gains`: TLH give-back, then classify each lot's gain
+    long/short and accrue.
 
     Branch-free: the per-lot long/short split is a static `(L,)` boolean mask (holding period vs
     the lot's purchase month), so the whole `[2, R]` classification block is one masked sum/any —
     no per-lot scatter loop, no data-dependent branching. The only Python loop is over the
     statically-known capital-gain profiles matching `agent_code`.
     """
+    gains, tlh_cumulative_harvest = _apply_tlh_give_back(plan, tlh_cumulative_harvest, lot_remaining, sold_units, gains)
     long_mask = jnp.asarray(month - plan.lot_purchase_month >= 12)  # (L,)
     masks = jnp.stack([long_mask, ~long_mask])  # (2, L), rows ordered LONG_TERM=0, SHORT_TERM=1
     sold = sold_units > 0.0  # (R, L)
@@ -623,7 +703,7 @@ def _record_capital_gains(
     for profile in np.flatnonzero(plan.capital_gain_agent_codes == agent_code).tolist():
         capital_gain_active = capital_gain_active.at[profile].set(capital_gain_active[profile] | active_by_class)
         capital_gain_ytd = capital_gain_ytd.at[profile].add(gains_by_class)
-    return capital_gain_active, capital_gain_ytd
+    return capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
 @jax.jit
@@ -1082,13 +1162,14 @@ def _apply_liquidity_policy_sales(
     lot_remaining: jnp.ndarray,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
     obligation_active: jnp.ndarray,
     obligation_due: jnp.ndarray,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
     rollout_count: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Functional port of `phases._apply_liquidity_policy_sales`: sell assets FIFO to fund cash needs."""
     policies = plan.liquidity_policies
     cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
@@ -1182,8 +1263,16 @@ def _apply_liquidity_policy_sales(
                 total_proceeds = proceeds.sum(axis=1)
                 if policy_cash_slot >= 0:
                     cash = cash.at[policy_cash_slot].add(total_proceeds)
-                capital_gain_active, capital_gain_ytd = _record_capital_gains(
-                    plan, capital_gain_active, capital_gain_ytd, month, policy_agent, sold_units, proceeds - basis
+                capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _record_capital_gains(
+                    plan,
+                    capital_gain_active,
+                    capital_gain_ytd,
+                    tlh_cumulative_harvest,
+                    lot_remaining,
+                    month,
+                    policy_agent,
+                    sold_units,
+                    proceeds - basis,
                 )
                 disposition = buffers.lot_dispositions.liquidity
                 disposition.active[month, policy, asset_idx] |= np.asarray((sold_units > 0.0).T)
@@ -1191,7 +1280,7 @@ def _apply_liquidity_policy_sales(
                 disposition.basis[month, policy, asset_idx] += np.asarray(basis.T)
                 disposition.proceeds[month, policy, asset_idx] += np.asarray(proceeds.T)
                 remaining_target = jnp.maximum(remaining_target - total_proceeds, 0.0)
-    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
 def _apply_property_purchases(
@@ -1334,6 +1423,7 @@ def _apply_pe_sale_result(
     lot_remaining: jnp.ndarray,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
     *,
     month: int,
     issuer_idx: int,
@@ -1344,7 +1434,7 @@ def _apply_pe_sale_result(
     basis: jnp.ndarray,
     oversell: jnp.ndarray,
     oversell_label: str,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Port of `phases._apply_pe_sale_result`: book a PE FIFO sale (cash, lots, cap gains, log)."""
     if bool(oversell.any()):
         raise ValueError(f"{oversell_label} attempted to sell more than available lots for a PE issuer")
@@ -1353,8 +1443,16 @@ def _apply_pe_sale_result(
     if proceeds_slot >= 0:
         cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
     owner_code = int(plan.pe_policies.owner_agent[policy_idx])
-    capital_gain_active, capital_gain_ytd = _record_capital_gains(
-        plan, capital_gain_active, capital_gain_ytd, month, owner_code, sold_units, proceeds - basis
+    capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _record_capital_gains(
+        plan,
+        capital_gain_active,
+        capital_gain_ytd,
+        tlh_cumulative_harvest,
+        lot_remaining,
+        month,
+        owner_code,
+        sold_units,
+        proceeds - basis,
     )
     kind_idx = int(disposition_kind)
     pe = buffers.lot_dispositions.pe
@@ -1362,7 +1460,7 @@ def _apply_pe_sale_result(
     pe.units[month, issuer_idx, kind_idx] += np.asarray(sold_units.T)
     pe.basis[month, issuer_idx, kind_idx] += np.asarray(basis.T)
     pe.proceeds[month, issuer_idx, kind_idx] += np.asarray(proceeds.T)
-    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
 def _apply_pe_target_units_sale(
@@ -1372,6 +1470,7 @@ def _apply_pe_target_units_sale(
     lot_remaining: jnp.ndarray,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
     *,
     month: int,
     issuer_idx: int,
@@ -1381,10 +1480,10 @@ def _apply_pe_target_units_sale(
     target_units: jnp.ndarray,
     disposition_kind: PrivateEquityDispositionKind,
     oversell_label: str,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Port of `phases._apply_pe_target_units_sale`: FIFO-sell a per-rollout unit target at the mark."""
     if not bool((target_units > 0.0).any()):
-        return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+        return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
     sold_units, proceeds, basis, oversell = _fifo_sell_units(
         lot_remaining.T, ordered_lots, target_units, mark, jnp.asarray(plan.lot_cost_basis_per_unit)
     )
@@ -1395,6 +1494,7 @@ def _apply_pe_target_units_sale(
         lot_remaining,
         capital_gain_active,
         capital_gain_ytd,
+        tlh_cumulative_harvest,
         month=month,
         issuer_idx=issuer_idx,
         policy_idx=policy_idx,
@@ -1407,6 +1507,113 @@ def _apply_pe_target_units_sale(
     )
 
 
+@partial(
+    jax.jit,
+    static_argnames=(
+        "gain_profile",
+        "has_prior",
+        "peak",
+        "floor",
+        "gamma",
+        "drawdown_sensitivity",
+        "short_term_fraction",
+    ),
+)
+def _tlh_harvest_policy_jit(
+    remaining_lots: jnp.ndarray,
+    cost_basis_lots: jnp.ndarray,
+    price: jnp.ndarray,
+    prior_price: jnp.ndarray,
+    cumulative: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    active: jnp.ndarray,
+    *,
+    gain_profile: int,
+    has_prior: bool,
+    peak: float,
+    floor: float,
+    gamma: float,
+    drawdown_sensitivity: float,
+    short_term_fraction: float,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of one `HarvestPolicy`'s reduced-form monthly harvest (`tlh_harvest.monthly_harvest_fraction`
+    + `split_short_long`), vectorized over rollouts: book a calibrated capital loss as a NEGATIVE in
+    `capital_gain_ytd` and accumulate it into the give-back ledger `cumulative`. Per-policy params
+    are static (the jitted core compiles once per policy)."""
+    market_value = (remaining_lots * price[None, :]).sum(axis=0)  # (R,)
+    original_basis = (remaining_lots * cost_basis_lots[:, None]).sum(axis=0)  # (R,)
+    adjusted_basis = jnp.maximum(0.0, original_basis - cumulative)
+    safe_mv = jnp.where(market_value > 0.0, market_value, 1.0)
+    embedded_gain = jnp.clip(jnp.where(market_value > 0.0, (market_value - adjusted_basis) / safe_mv, 0.0), 0.0, 1.0)
+    if has_prior:
+        safe_prior = jnp.where(prior_price > 0.0, prior_price, 1.0)
+        period_return = jnp.where(prior_price > 0.0, (price - prior_price) / safe_prior, 0.0)
+    else:
+        period_return = jnp.zeros_like(price)  # month 0: no prior price, treat as flat
+    base_monthly = (floor + (peak - floor) * (1.0 - embedded_gain) ** gamma) / 12.0
+    fraction = base_monthly * (1.0 + drawdown_sensitivity * jnp.maximum(0.0, -period_return))
+    ceiling = jnp.maximum(0.0, original_basis - cumulative)  # never harvest past available below-basis room
+    gross = jnp.where(active, jnp.minimum(jnp.maximum(market_value * fraction, 0.0), ceiling), 0.0)
+    stf = min(max(short_term_fraction, 0.0), 1.0)
+    short_term = int(CapitalGainClassification.SHORT_TERM)
+    long_term = int(CapitalGainClassification.LONG_TERM)
+    capital_gain_ytd = capital_gain_ytd.at[gain_profile, short_term].add(-gross * stf)
+    capital_gain_ytd = capital_gain_ytd.at[gain_profile, long_term].add(-gross * (1.0 - stf))
+    capital_gain_active = capital_gain_active.at[gain_profile, short_term].set(
+        capital_gain_active[gain_profile, short_term] | (gross * stf > 0.0)
+    )
+    capital_gain_active = capital_gain_active.at[gain_profile, long_term].set(
+        capital_gain_active[gain_profile, long_term] | (gross * (1.0 - stf) > 0.0)
+    )
+    return capital_gain_ytd, capital_gain_active, cumulative + gross
+
+
+def _apply_tlh_harvest(
+    plan: CompiledSimulation,
+    tlh_cumulative_harvest: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    external_values: jnp.ndarray,
+    failed: jnp.ndarray,
+    month: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_tlh_harvest` (per-policy jitted core; policies are few)."""
+    harvest = plan.harvest_policies
+    active = ~failed
+    cost_basis = plan.lot_cost_basis_per_unit
+    for policy_idx in range(harvest.gain_profile_index.shape[0]):
+        gain_profile = int(harvest.gain_profile_index[policy_idx])
+        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
+        if gain_profile < 0 or lot_indices.size == 0:
+            continue
+        series_index = int(harvest.series_index[policy_idx])
+        price = external_values[series_index, :, month]
+        prior_price = external_values[series_index, :, month - 1] if month > 0 else price
+        params = harvest.params[policy_idx]
+        result: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray] = _tlh_harvest_policy_jit(
+            lot_remaining[lot_indices, :],
+            jnp.asarray(cost_basis[lot_indices]),
+            price,
+            prior_price,
+            tlh_cumulative_harvest[policy_idx],
+            capital_gain_ytd,
+            capital_gain_active,
+            active,
+            gain_profile=gain_profile,
+            has_prior=month > 0,
+            peak=float(params.peak_annual_yield),
+            floor=float(params.floor_annual_yield),
+            gamma=float(params.maturity_decay_exponent),
+            drawdown_sensitivity=float(params.drawdown_sensitivity),
+            short_term_fraction=float(harvest.short_term_fraction[policy_idx]),
+        )
+        capital_gain_ytd, capital_gain_active, cumulative = result
+        tlh_cumulative_harvest = tlh_cumulative_harvest.at[policy_idx].set(cumulative)
+    return tlh_cumulative_harvest, capital_gain_ytd, capital_gain_active
+
+
 def _apply_pe_tenders(
     plan: CompiledSimulation,
     buffers: SimulationBuffers,
@@ -1414,11 +1621,12 @@ def _apply_pe_tenders(
     lot_remaining: jnp.ndarray,
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
+    tlh_cumulative_harvest: jnp.ndarray,
     active: jnp.ndarray,
     external_values: jnp.ndarray,
     month: int,
     rollout_count: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Functional port of `phases._apply_pe_tenders`: LNW-floor-driven private-equity tender sales."""
     issuers = plan.pe_issuers
     channels = plan.pe_channels
@@ -1480,13 +1688,14 @@ def _apply_pe_tenders(
                 recovery_unit_price,
                 cost_basis_per_unit,
             )
-            cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_sale_result(
+            cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _apply_pe_sale_result(
                 plan,
                 buffers,
                 cash,
                 lot_remaining,
                 capital_gain_active,
                 capital_gain_ytd,
+                tlh_cumulative_harvest,
                 month=month,
                 issuer_idx=issuer_idx,
                 policy_idx=policy_idx,
@@ -1508,13 +1717,14 @@ def _apply_pe_tenders(
                 mark,
                 cost_basis_per_unit,
             )
-            cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_sale_result(
+            cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = _apply_pe_sale_result(
                 plan,
                 buffers,
                 cash,
                 lot_remaining,
                 capital_gain_active,
                 capital_gain_ytd,
+                tlh_cumulative_harvest,
                 month=month,
                 issuer_idx=issuer_idx,
                 policy_idx=policy_idx,
@@ -1572,39 +1782,45 @@ def _apply_pe_tenders(
         if not bool((target_units > 0.0).any()):
             continue
 
-        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_target_units_sale(
-            plan,
-            buffers,
-            cash,
-            lot_remaining,
-            capital_gain_active,
-            capital_gain_ytd,
-            month=month,
-            issuer_idx=issuer_idx,
-            policy_idx=policy_idx,
-            ordered_lots=ordered_lots,
-            mark=mark,
-            target_units=jnp.where(tender_active & ~public_market_active, target_units, 0.0),
-            disposition_kind=PrivateEquityDispositionKind.TENDER,
-            oversell_label="PE tender",
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = (
+            _apply_pe_target_units_sale(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                tlh_cumulative_harvest,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                ordered_lots=ordered_lots,
+                mark=mark,
+                target_units=jnp.where(tender_active & ~public_market_active, target_units, 0.0),
+                disposition_kind=PrivateEquityDispositionKind.TENDER,
+                oversell_label="PE tender",
+            )
         )
-        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_target_units_sale(
-            plan,
-            buffers,
-            cash,
-            lot_remaining,
-            capital_gain_active,
-            capital_gain_ytd,
-            month=month,
-            issuer_idx=issuer_idx,
-            policy_idx=policy_idx,
-            ordered_lots=ordered_lots,
-            mark=mark,
-            target_units=jnp.where(public_market_active, target_units, 0.0),
-            disposition_kind=PrivateEquityDispositionKind.PUBLIC_MARKET,
-            oversell_label="PE public market sale",
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest = (
+            _apply_pe_target_units_sale(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                tlh_cumulative_harvest,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                ordered_lots=ordered_lots,
+                mark=mark,
+                target_units=jnp.where(public_market_active, target_units, 0.0),
+                disposition_kind=PrivateEquityDispositionKind.PUBLIC_MARKET,
+                oversell_label="PE public market sale",
+            )
         )
-    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
 def _apply_brackets(amount: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> jnp.ndarray:
