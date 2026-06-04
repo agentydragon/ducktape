@@ -54,7 +54,7 @@ from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
 from augur.sim.simulate import simulate_dense_with_external_series
-from augur.sim.slice import slice_dense_result
+from augur.sim.slice import slice_dense_results
 
 DEFAULT_MAX_CACHE_ROLLOUTS = 25_000
 
@@ -243,9 +243,11 @@ class ProductService:
             locations=self._locations,
         )
         model_id = str(sampled.metadata.get("model_id") or scenario_key.model_id)
+        # Slice the whole batch in one pass (partitions the exogenous frames once) — slicing
+        # per seed would re-filter the full batch frame R times, i.e. O(R²).
+        sliced = slice_dense_results(dense, range(len(seeds)))
         return {
-            seed: _CachedRollout(dense=slice_dense_result(dense, rollout_index=batch_index), model_id=model_id)
-            for batch_index, seed in enumerate(seeds)
+            seed: _CachedRollout(dense=sliced[batch_index], model_id=model_id) for batch_index, seed in enumerate(seeds)
         }
 
     def _cache_get(self, scenario_key: ScenarioKey, seed: int) -> _CachedRollout | None:
