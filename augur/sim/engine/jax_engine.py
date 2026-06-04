@@ -11,11 +11,12 @@ exercise only the ported paths — which is exactly what the parity tests use, g
 
 Ported so far (in `_run_month_step` order):
 - scheduled / recurring transfers;
+- scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
 - obligation accruals + settlement for the CONFIGURED_OBLIGATION source kind, with failure tracking
   and `_zero_failed_state`.
 
-Not yet ported (no-op): property purchase/sale, asset sales, liquidity sales, PE tenders,
-depreciation, owner-occupied months, tax accruals/settlements, lifecycle, primary residence, and the
+Not yet ported (no-op): property purchase/sale, liquidity sales, PE tenders, depreciation,
+owner-occupied months, tax accruals/settlements, lifecycle, primary residence, and the
 mortgage / property-tax / estimated-tax obligation source kinds.
 """
 
@@ -29,34 +30,43 @@ from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED
 from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
-from augur.sim.enums import ObligationSource
+from augur.sim.enums import CapitalGainClassification, ObligationSource
+from augur.sim.tensor_fifo import lot_order_for_pool
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     p = plan.slot_plan
-    rollout_count = p.rollout_count
+    r = p.rollout_count
 
-    cash = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, rollout_count)))
-    ordinary_ytd = jnp.zeros((p.tax_profile_count, rollout_count))
-    failed = jnp.zeros(rollout_count, dtype=bool)
-    failed_month = jnp.full(rollout_count, -1, dtype=jnp.int64)
+    cash = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
+    lot_remaining = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
+    ordinary_ytd = jnp.zeros((p.tax_profile_count, r))
+    capital_gain_active = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
+    capital_gain_ytd = jnp.zeros((p.capital_gain_agent_count, 2, r))
+    failed = jnp.zeros(r, dtype=bool)
+    failed_month = jnp.full(r, -1, dtype=jnp.int64)
     external_values = jnp.asarray(plan.external_values)
 
-    # Snapshot index 0 is the pre-month-0 opening state (initial cash; all else zero, already set by
-    # `_allocate_buffers`). `rollout_failed_month_state` is already NO_CODE there too.
+    # Snapshot index 0 is the pre-month-0 opening state (initial cash + lots; all else zero, already
+    # set by `_allocate_buffers`; `rollout_failed_month_state` already NO_CODE).
     buffers.state.cash_state[0] = np.asarray(cash)
+    buffers.state.lot_state[0] = np.asarray(lot_remaining)
 
     for month in range(plan.horizon_months):
         active = ~failed
 
         cash, ordinary_ytd, transfer_active, transfer_amount = _apply_scheduled_transfers(
-            plan.transfers, cash, ordinary_ytd, active, external_values, month, rollout_count
+            plan.transfers, cash, ordinary_ytd, active, external_values, month, r
         )
         buffers.transfers.active[month] = np.asarray(transfer_active)
         buffers.transfers.amount[month] = np.asarray(transfer_amount)
 
-        ob_active, ob_due = _apply_obligation_accruals(plan.obligations, active, external_values, month, rollout_count)
-        funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, rollout_count)
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_scheduled_asset_sales(
+            plan, buffers, cash, lot_remaining, capital_gain_active, capital_gain_ytd, active, external_values, month
+        )
+
+        ob_active, ob_due = _apply_obligation_accruals(plan.obligations, active, external_values, month, r)
+        funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, r)
         cash, ordinary_ytd, failed, failed_month, ob_paid, ob_shortfall, ob_failure = _apply_obligation_settlement(
             plan.obligations, cash, ordinary_ytd, failed, failed_month, ob_active, ob_due, funded, month
         )
@@ -66,20 +76,29 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.obligations.shortfall[month] = np.asarray(ob_shortfall)
         buffers.obligations.failure_active[month] = np.asarray(ob_failure)
 
-        cash, ordinary_ytd = _zero_failed_state(cash, ordinary_ytd, failed)
+        cash, lot_remaining, ordinary_ytd, capital_gain_ytd = _zero_failed_state(
+            cash, lot_remaining, ordinary_ytd, capital_gain_ytd, failed
+        )
 
         buffers.state.cash_state[month + 1] = np.asarray(cash)
+        buffers.state.lot_state[month + 1] = np.asarray(lot_remaining)
         buffers.state.ordinary_state[month + 1] = np.asarray(ordinary_ytd)
+        buffers.state.capital_gain_active_state[month + 1] = np.asarray(capital_gain_active)
+        buffers.state.capital_gain_state[month + 1] = np.asarray(capital_gain_ytd)
         buffers.state.rollout_failed_state[month + 1] = np.asarray(failed)
         buffers.state.rollout_failed_month_state[month + 1] = np.asarray(failed_month)
 
 
 def _zero_failed_state(
-    cash: jnp.ndarray, ordinary_ytd: jnp.ndarray, failed: jnp.ndarray
-) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `_zero_failed_state` for the currently-modelled fields (cash, ordinary income)."""
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    failed: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `_zero_failed_state` for the currently-modelled fields."""
     keep = ~failed
-    return cash * keep, ordinary_ytd * keep
+    return cash * keep, lot_remaining * keep, ordinary_ytd * keep, capital_gain_ytd * keep[None, None, :]
 
 
 def _amount_values(
@@ -149,6 +168,114 @@ def _apply_scheduled_transfers(
         if deduction_profile >= 0:
             ordinary_ytd = ordinary_ytd.at[deduction_profile].add(-amount)
     return cash, ordinary_ytd, transfer_active, transfer_amount
+
+
+def _apply_scheduled_asset_sales(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_scheduled_asset_sales` (FIFO sell + capital gains)."""
+    sales = plan.sales
+    cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
+    for sale in range(sales.month.shape[0]):
+        if int(sales.month[sale]) != month:
+            continue
+        # `lot_order_for_pool` is host-side (plan data only) — the FIFO order is a static index array.
+        ordered_lots = lot_order_for_pool(
+            lot_agent_codes=plan.lot_agent_codes,
+            lot_account_codes=plan.lot_account_codes,
+            lot_asset_codes=plan.lot_asset_codes,
+            lot_purchase_month=plan.lot_purchase_month,
+            lot_id_codes=plan.lot_id_codes,
+            agent_code=int(sales.agent[sale]),
+            account_code=int(sales.source_account[sale]),
+            asset_code=int(sales.asset[sale]),
+        )
+        target_units = jnp.where(active, float(sales.quantity[sale]), 0.0)
+        unit_price = _sale_unit_price(sales, external_values, month, sale, lot_remaining.shape[1])
+        sold_units, proceeds, basis, oversell = _fifo_sell_units(
+            lot_remaining.T, ordered_lots, target_units, unit_price, cost_basis_per_unit
+        )
+        if bool(oversell.any()):
+            raise ValueError("scheduled asset sale exceeds available lots")
+
+        lot_remaining = lot_remaining - sold_units.T
+        proceeds_slot = int(sales.proceeds_slot[sale])
+        if proceeds_slot >= 0:
+            cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
+        capital_gain_active, capital_gain_ytd = _record_capital_gains(
+            plan, capital_gain_active, capital_gain_ytd, month, int(sales.agent[sale]), sold_units, proceeds - basis
+        )
+        buffers.lot_dispositions.scheduled.active[month, sale] = np.asarray((sold_units > 0.0).T)
+        buffers.lot_dispositions.scheduled.units[month, sale] += np.asarray(sold_units.T)
+        buffers.lot_dispositions.scheduled.basis[month, sale] += np.asarray(basis.T)
+        buffers.lot_dispositions.scheduled.proceeds[month, sale] += np.asarray(proceeds.T)
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+
+
+def _sale_unit_price(sales, external_values: jnp.ndarray, month: int, sale: int, rollout_count: int) -> jnp.ndarray:
+    fixed_price = float(sales.price_fixed[sale])
+    if not np.isnan(fixed_price):
+        return jnp.full(rollout_count, fixed_price)
+    return external_values[int(sales.price_series[sale]), :, month]
+
+
+def _fifo_sell_units(
+    lot_remaining: jnp.ndarray,
+    ordered_lots: np.ndarray,
+    target_units: jnp.ndarray,
+    unit_price: jnp.ndarray,
+    cost_basis_per_unit: jnp.ndarray,
+    epsilon: float = 1e-9,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `tensor_fifo.fifo_sell_units`: vectorized cumulative-sum FIFO over `[R, L]` lots."""
+    ordered_quantity = lot_remaining[:, ordered_lots]
+    available_units = ordered_quantity.sum(axis=1)
+    oversell = target_units > available_units + epsilon
+    effective_target = jnp.where(oversell, 0.0, target_units)
+    before_units = jnp.cumsum(ordered_quantity, axis=1) - ordered_quantity
+    sold_ordered = jnp.clip(effective_target[:, None] - before_units, 0.0, ordered_quantity)
+    proceeds_ordered = sold_ordered * unit_price[:, None]
+    basis_ordered = sold_ordered * cost_basis_per_unit[ordered_lots][None, :]
+    zeros = jnp.zeros_like(lot_remaining)
+    sold_units = zeros.at[:, ordered_lots].set(sold_ordered)
+    proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
+    basis = zeros.at[:, ordered_lots].set(basis_ordered)
+    return sold_units, proceeds, basis, oversell
+
+
+def _record_capital_gains(
+    plan: CompiledSimulation,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    month: int,
+    agent_code: int,
+    sold_units: jnp.ndarray,
+    gains: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._record_capital_gains`: classify each lot's gain long/short and accrue."""
+    for profile in range(plan.capital_gain_agent_codes.shape[0]):
+        if int(plan.capital_gain_agent_codes[profile]) != agent_code:
+            continue
+        for lot in range(plan.lot_id_codes.shape[0]):
+            classification = (
+                int(CapitalGainClassification.LONG_TERM)
+                if month - int(plan.lot_purchase_month[lot]) >= 12
+                else int(CapitalGainClassification.SHORT_TERM)
+            )
+            became_active = sold_units[:, lot] > 0.0
+            capital_gain_active = capital_gain_active.at[profile, classification].set(
+                capital_gain_active[profile, classification] | became_active
+            )
+            capital_gain_ytd = capital_gain_ytd.at[profile, classification].add(gains[:, lot])
+    return capital_gain_active, capital_gain_ytd
 
 
 def _apply_obligation_accruals(
