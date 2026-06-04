@@ -35,8 +35,7 @@ metadata:
   # Real CPI-U (all items) index for the 12 months BEFORE model_anchor_date (2025-05 .. 2026-04,
   # oldest first; the last entry is the month before as_of). Lets near-term inflation_yoy markets
   # look back to real data instead of resolving UNRESOLVED. REFRESH with actual CPI-U releases.
-  inflation_history:
-    [318.0, 318.76, 319.52, 320.28, 321.04, 321.81, 322.58, 323.35, 324.12, 324.89, 325.67, 326.44]
+  inflation_history: [318.0, 318.76, 319.52, 320.28, 321.04, 321.81, 322.58, 323.35, 324.12, 324.89, 325.67, 326.44]
 
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output

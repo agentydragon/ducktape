@@ -536,9 +536,7 @@ def run_calibration(
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
     inflation_history = (
-        np.array(catalog.metadata.inflation_history, dtype=np.float64)
-        if catalog.metadata.inflation_history
-        else None
+        np.array(catalog.metadata.inflation_history, dtype=np.float64) if catalog.metadata.inflation_history else None
     )
     # Per-issuer trajectory slices for every catalog-referenced issuer the bundle actually carries;
     # markets on an absent issuer surface as `unmodeled`.
