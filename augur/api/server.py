@@ -56,9 +56,8 @@ class LoadedCalibrationCatalog:
     """The configured calibration catalog config paired with its parsed `MarketCatalog`.
 
     `sample_sanity_spec` is the parsed `SampleSanitySpec` when the deployment configures a
-    `sample_sanity_path`, else None (the feature is simply absent). Only its `*_checks` +
-    `required_*` are consumed; its `provider_config_path` is never realized — the calibration
-    endpoint reuses the live preset model.
+    `sample_sanity_path`, else None (the feature is simply absent). Only its `*_checks` are
+    consumed; the bands are scored against the live preset model the calibration endpoint runs.
     """
 
     config: CalibrationCatalogConfig
@@ -314,8 +313,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 def _load_sample_sanity_spec(path: Path | None) -> SampleSanitySpec | None:
     """Parse the deployment's `SampleSanitySpec` YAML, or None when unconfigured.
 
-    Consumed only for its `*_checks` + `required_*`; `provider_config_path` is left unresolved
-    (the calibration endpoint reuses the live preset model rather than realizing the spec's)."""
+    Consumed only for its `*_checks`; the bands are scored against the live preset model the
+    calibration endpoint runs (the spec carries no model of its own)."""
     if path is None:
         return None
     return SampleSanitySpec.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))

@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-from textwrap import dedent
-
-import pytest
 import pytest_bazel
 
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, level_series_request_channels
@@ -14,12 +10,9 @@ from augur.model.sample_sanity import (
     SampleSanitySpec,
     evaluate_sample_checks,
     partition_spec_coverage,
-    run_sample_sanity,
-    run_sample_sanity_file,
 )
 from augur.model.series import HomeValueKey, IssuerId, LocationId, SP500Key
 from augur.model.testing import ConstantFrameModel
-from util.bazel.runfiles import get_required_path
 
 _HORIZON_MONTHS = 12
 _ROLLOUT_COUNT = 8
@@ -32,7 +25,6 @@ _FAILING_BAND = PercentileRangeBound(month=12, lower_percentile=1, upper_percent
 
 def _spec_with_bands(*bands: PercentileRangeBound) -> SampleSanitySpec:
     return SampleSanitySpec(
-        provider_config_path=Path("unused.yaml"),
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
         level_checks=(LevelSeriesSanityCheck(key=SP500Key(), value_percentile_ranges=bands),),
@@ -47,10 +39,6 @@ def _sample_constant_sp500(*, horizon_months: int = _HORIZON_MONTHS) -> SampledE
         **level_series_request_channels(frozenset({SP500Key()})),
     )
     return model.sample(request)
-
-
-def test_checked_in_fixture_model_samples_sane_trajectories() -> None:
-    run_sample_sanity_file(get_required_path("_main/augur/model/testdata/fixture_sample_sanity.yaml"))
 
 
 def test_evaluate_sample_checks_reports_pass_and_fail() -> None:
@@ -96,7 +84,6 @@ def test_evaluate_sample_checks_surfaces_unmodeled_level_check() -> None:
 
     unmodeled_key = HomeValueKey(location_id=LocationId("prices_of_tea_china"))
     spec = SampleSanitySpec(
-        provider_config_path=Path("unused.yaml"),
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
         level_checks=(
@@ -138,7 +125,6 @@ def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
     """A PE mark check whose issuer the sampler can't emit returns one `unmodeled` summary row."""
 
     spec = SampleSanitySpec(
-        provider_config_path=Path("unused.yaml"),
         horizon_months=_HORIZON_MONTHS,
         rollout_count=_ROLLOUT_COUNT,
         private_equity_mark_checks=(
@@ -161,30 +147,6 @@ def test_evaluate_sample_checks_surfaces_unmodeled_pe_mark_check() -> None:
     assert len(results) == 1
     assert results[0].status == "unmodeled"
     assert "unmodeled_co" in results[0].series_id
-
-
-def test_run_sample_sanity_raises_listing_failed_bands(tmp_path: Path) -> None:
-    """The deploy gate raises an AssertionError naming every failed band."""
-
-    provider_path = tmp_path / "provider.yaml"
-    provider_path.write_text(
-        dedent(f"""
-            type: independent
-            asset_prices:
-              sp500:
-                kind: constant
-                value: {_SP500_LEVEL}
-        """),
-        encoding="utf-8",
-    )
-    spec = _spec_with_bands(_FAILING_BAND).model_copy(update={"provider_config_path": Path("provider.yaml")})
-
-    with pytest.raises(AssertionError) as excinfo:
-        run_sample_sanity(spec, base_dir=tmp_path)
-    message = str(excinfo.value)
-    assert "outside expected range" in message
-    assert "2000" in message
-    assert "3000" in message
 
 
 if __name__ == "__main__":

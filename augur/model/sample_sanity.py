@@ -3,33 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import yaml
-from pydantic import Field, TypeAdapter, model_validator
+from pydantic import Field, model_validator
 
-from augur.model.exogenous import (
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    Sampler,
-    level_series_request_channels,
-    validate_sample_satisfies_request,
-)
-from augur.model.provider_config import (
-    CompositeProviderConfig,
-    MirroringProviderConfig,
-    ProviderConfig,
-    StateSpaceProviderConfig,
-    TrainedPrivateEquityProviderConfig,
-    VecmProviderConfig,
-)
+from augur.model.exogenous import SampledExogenousBundle, Sampler
 from augur.model.schemas import FrozenModel
 from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
-from util.bazel.runfiles import get_required_path
-
-_ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
 class PercentileBound(FrozenModel):
@@ -184,7 +165,6 @@ class SampleSanitySpec(FrozenModel):
     by <preset>", not 400 the calibration tab.
     """
 
-    provider_config_path: Path
     horizon_months: int = Field(ge=0)
     rollout_seed_start: int = Field(default=1301, ge=0)
     rollout_count: int = Field(gt=0)
@@ -231,45 +211,9 @@ class SanityBandResult:
     observed_labels: tuple[str, ...]  # parallel labels, e.g. ("p1","p99") or ("p50",) or ("probability",)
     # `unmodeled` = the spec asked for this series/issuer but the deployment's preset can't
     # emit it (e.g. a state-space artifact not trained on `rent:vallejo_ca`). The calibration
-    # tab renders these distinctly; the offline deploy gate (`run_sample_sanity`) treats them
-    # as failures so a misconfigured spec can't ship silently.
+    # tab renders these distinctly, so a misconfigured spec surfaces rather than failing silently.
     status: Literal["pass", "fail", "skipped", "unmodeled"]
     detail: str  # "" when pass; failure/skip/unmodeled explanation otherwise
-
-
-def run_sample_sanity_file(path: Path) -> None:
-    spec = SampleSanitySpec.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
-    run_sample_sanity(spec, base_dir=path.parent)
-
-
-def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
-    """Deploy gate: sample the model and raise if any sanity band fails or is unmodeled.
-
-    `unmodeled` rows are deploy-blockers: the spec is documenting bands for a series the
-    preset can't emit, so something is misconfigured. The calibration tab is more lenient
-    (renders the band as "not modeled by <preset>" instead of 400-ing the page)."""
-
-    results = evaluate_sample_sanity(spec, base_dir=base_dir)
-    blockers = [result for result in results if result.status in {"fail", "unmodeled"}]
-    if blockers:
-        raise AssertionError("\n".join(f"{blocker.label}: {blocker.detail}" for blocker in blockers))
-
-
-def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[SanityBandResult]:
-    """Sample the spec's provider model and evaluate every sanity band against it."""
-
-    provider_config_path = _resolve_path(spec.provider_config_path, base_dir=base_dir)
-    provider = _load_provider_config(provider_config_path)
-    model = provider.realize_model()
-    sampled, unmodeled_level_keys, unmodeled_pe_issuers = sample_for_spec(spec, model)
-    return evaluate_sample_checks(
-        spec,
-        sampled,
-        rollout_count=spec.rollout_count,
-        horizon_months=spec.horizon_months,
-        unmodeled_level_keys=unmodeled_level_keys,
-        unmodeled_pe_issuers=unmodeled_pe_issuers,
-    )
 
 
 def partition_spec_coverage(
@@ -278,8 +222,8 @@ def partition_spec_coverage(
     """Partition a spec's attempted keys into (modeled_level, modeled_pe, unmodeled_level, unmodeled_pe).
 
     `modeled_*` is the subset the provider advertises it can emit and goes into the sampling
-    request; `unmodeled_*` becomes `status="unmodeled"` rows in the result. The caller (server
-    calibration_run or `sample_for_spec`) decides which to request — this split is pure."""
+    request; `unmodeled_*` becomes `status="unmodeled"` rows in the result. The caller (the
+    server's calibration run) decides which to request — this split is pure."""
 
     attempted_level = spec.attempted_level_keys
     attempted_pe = spec.attempted_private_equity_issuers
@@ -290,28 +234,6 @@ def partition_spec_coverage(
     unmodeled_level = attempted_level - emittable_level
     unmodeled_pe = attempted_pe - emittable_pe
     return modeled_level, modeled_pe, unmodeled_level, unmodeled_pe
-
-
-def sample_for_spec(
-    spec: SampleSanitySpec, model: Sampler
-) -> tuple[SampledExogenousBundle, frozenset[LevelSeriesKey], frozenset[IssuerId]]:
-    """Run one sampling pass that satisfies every modeled check in `spec`, plus the unmodeled split.
-
-    Returns the sampled bundle plus the unmodeled-level-keys / unmodeled-PE-issuers sets so the
-    evaluator can emit `status="unmodeled"` rows for the deferred checks. The bundle is asserted
-    against the modeled subset of the request (so a provider bug — emitting nothing for a series
-    it advertises — still raises, while a not-modeled series merely surfaces in the UI)."""
-
-    modeled_level, modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
-    request = ExogenousSamplingRequest(
-        horizon_months=spec.horizon_months,
-        rollout_seeds=spec.rollout_seeds,
-        **level_series_request_channels(modeled_level),
-        required_private_equity_issuers=modeled_pe,
-    )
-    sampled = model.sample(request)
-    validate_sample_satisfies_request(request, sampled)
-    return sampled, unmodeled_level, unmodeled_pe
 
 
 def evaluate_sample_checks(
@@ -664,43 +586,6 @@ def _evaluate_protocol_check(
             )
         )
     return results
-
-
-def _load_provider_config(path: Path) -> ProviderConfig:
-    provider = _ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
-    return _anchor_provider_paths(provider, base_dir=path.parent)
-
-
-def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:
-    if isinstance(provider, TrainedPrivateEquityProviderConfig):
-        trained_model_path = _resolve_path(provider.trained_model_path, base_dir=base_dir)
-        return provider.model_copy(update={"trained_model_path": trained_model_path})
-    if isinstance(provider, StateSpaceProviderConfig):
-        trained_artifact_path = _resolve_path(provider.trained_artifact_path, base_dir=base_dir)
-        return provider.model_copy(update={"trained_artifact_path": trained_artifact_path})
-    if isinstance(provider, VecmProviderConfig):
-        trained_blob = (
-            None if provider.trained_blob is None else _resolve_path(provider.trained_blob, base_dir=base_dir)
-        )
-        return provider.model_copy(update={"trained_blob": trained_blob})
-    if isinstance(provider, MirroringProviderConfig):
-        return provider.model_copy(update={"model": _anchor_provider_paths(provider.model, base_dir=base_dir)})
-    if isinstance(provider, CompositeProviderConfig):
-        return provider.model_copy(
-            update={
-                "macro": _anchor_provider_paths(provider.macro, base_dir=base_dir),
-                "private_equity": _anchor_provider_paths(provider.private_equity, base_dir=base_dir),
-            }
-        )
-    return provider
-
-
-def _resolve_path(path: Path, *, base_dir: Path) -> Path:
-    runfile_prefix = "runfile:"
-    path_text = str(path)
-    if path_text.startswith(runfile_prefix):
-        return get_required_path(path_text.removeprefix(runfile_prefix))
-    return path if path.is_absolute() else (base_dir / path).resolve()
 
 
 def _assert_finite(values: np.ndarray, *, series_id: str) -> None:

@@ -280,32 +280,22 @@ py_library(
     srcs = ["sample_sanity.py"],
     deps = [
         ":exogenous",
-        ":provider_config",
         ":schemas",
         ":series",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "sample_sanity_test",
     srcs = ["sample_sanity_test.py"],
-    data = [
-        "testdata/fixture_exogenous_provider.yaml",
-        "testdata/fixture_private_equity_model.json",
-        "testdata/fixture_sample_sanity.yaml",
-    ],
     deps = [
         ":exogenous",
         ":sample_sanity",
         ":series",
         ":testing",
         "//:conftest",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

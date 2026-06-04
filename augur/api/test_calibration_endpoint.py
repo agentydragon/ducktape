@@ -137,12 +137,11 @@ def test_run_calibration_without_sample_sanity_returns_empty_bands(client: TestC
 def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     """Fixture config whose `calibration_catalog.sample_sanity_path` points at a temp spec YAML.
 
-    The spec reuses the live `openai_pe` model (its own `provider_config_path` is a placeholder
-    the server never resolves): one level-series band on `sp500` (the macro block anchors it at
-    1.0) and one PE-mark band on the catalog issuer `openai` (anchored at its current mark 100.0).
+    The spec reuses the live `openai_pe` model: one level-series band on `sp500` (the macro block
+    anchors it at 1.0) and one PE-mark band on the catalog issuer `openai` (anchored at its current
+    mark 100.0).
     """
     spec = SampleSanitySpec(
-        provider_config_path=Path("unused.yaml"),
         horizon_months=24,
         rollout_count=16,
         level_checks=(LevelSeriesSanityCheck(key=SP500Key(), initial_value=1.0),),
