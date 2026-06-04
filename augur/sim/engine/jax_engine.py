@@ -18,12 +18,14 @@ Ported so far (in `_run_month_step` order):
 - liquidity-policy sales;
 - obligation accruals + settlement with failure tracking and `_zero_failed_state`, for the
   CONFIGURED_OBLIGATION, PROPERTY_TAX, and MORTGAGE_PAYMENT source kinds (incl. the mortgage
-  interest/principal split into liability state).
+  interest/principal split into liability state);
+- PE tenders (LNW-floor tender / public-market / forced-sale / forced-recovery sales + opportunity
+  trace).
 
-Not yet ported (no-op): property sale, depreciation, owner-occupied months, PE tenders, lifecycle,
-primary residence, the estimated-tax obligation source kinds, and the year-end tax machinery
-(accrual, SALT, MID, LTCG brackets, settlements) — so the property-tax/mortgage SALT/Schedule-E and
-MID deduction splits are also deferred until that lands.
+Not yet ported (no-op): property sale, depreciation, owner-occupied months, lifecycle, primary
+residence, the estimated-tax obligation source kinds, and the year-end tax machinery (accrual,
+SALT, MID, LTCG brackets, settlements) — so the property-tax/mortgage SALT/Schedule-E and MID
+deduction splits are also deferred until that lands.
 """
 
 from __future__ import annotations
@@ -33,12 +35,18 @@ from dataclasses import dataclass, replace
 import jax.numpy as jnp
 import numpy as np
 
+from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED
 from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
-from augur.sim.enums import CapitalGainClassification, ObligationSource
+from augur.sim.enums import (
+    CapitalGainClassification,
+    ObligationSource,
+    PrivateEquityDispositionKind,
+    PrivateEquityOpportunityOutcome,
+)
 from augur.sim.tensor_fifo import lot_order_for_pool
 
 
@@ -168,6 +176,20 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.obligations.paid[month] = np.asarray(ob_paid)
         buffers.obligations.shortfall[month] = np.asarray(ob_shortfall)
         buffers.obligations.failure_active[month] = np.asarray(ob_failure)
+
+        # PE tenders fire after settlement so the LNW floor compares against post-settlement cash.
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_tenders(
+            plan,
+            buffers,
+            cash,
+            lot_remaining,
+            capital_gain_active,
+            capital_gain_ytd,
+            ~failed,
+            external_values,
+            month,
+            r,
+        )
 
         keep = ~failed
         cash, lot_remaining, ordinary_ytd, capital_gain_ytd = (
@@ -798,3 +820,338 @@ def _apply_property_purchases(
         property_equity,
         liabilities,
     )
+
+
+def _compute_liquid_net_worth(
+    plan: CompiledSimulation,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    external_values: jnp.ndarray,
+    policy_idx: int,
+    month: int,
+) -> jnp.ndarray:
+    """Port of `phases._compute_liquid_net_worth`: owner cash + non-PE lot value at current marks."""
+    owner_cash_mask = jnp.asarray(plan.pe_policies.owner_cash_mask[policy_idx])
+    cash_total = (cash * owner_cash_mask[:, None]).sum(axis=0)
+    lot_mask = plan.pe_policies.owner_non_pe_lot_mask[policy_idx]
+    if not lot_mask.any():
+        return cash_total
+    lot_indices = np.flatnonzero(lot_mask)
+    series_indices = plan.lot_asset_series_index[lot_indices]
+    valid = series_indices >= 0
+    prices = external_values[np.where(valid, series_indices, 0), :, month]
+    prices = jnp.nan_to_num(jnp.where(jnp.asarray(valid)[:, None], prices, 0.0), nan=0.0)
+    lot_value = (lot_remaining[lot_indices, :] * prices).sum(axis=0)
+    return cash_total + lot_value
+
+
+def _record_pe_opportunity(
+    buffers: SimulationBuffers,
+    *,
+    month: int,
+    issuer_idx: int,
+    active: jnp.ndarray,
+    outcome: jnp.ndarray,
+    floor: jnp.ndarray,
+    liquid_net_worth: jnp.ndarray,
+    shortfall: jnp.ndarray,
+    units_held: jnp.ndarray,
+    sellable_units: jnp.ndarray,
+    target_units: jnp.ndarray,
+    proceeds: jnp.ndarray,
+) -> None:
+    """Port of `phases._record_pe_opportunity`: log the per-rollout tender opportunity trace.
+
+    Each (month, issuer) cell is written exactly once, so masking inactive rollouts to the buffer's
+    zero init matches the NumPy reference's active-only assignment.
+    """
+    dest = buffers.private_equity_opportunities
+    dest.active[month, issuer_idx] = np.asarray(active)
+    dest.outcome[month, issuer_idx] = np.asarray(jnp.where(active, outcome, 0))
+    dest.floor[month, issuer_idx] = np.asarray(jnp.where(active, floor, 0.0))
+    dest.liquid_net_worth[month, issuer_idx] = np.asarray(jnp.where(active, liquid_net_worth, 0.0))
+    dest.shortfall[month, issuer_idx] = np.asarray(jnp.where(active, shortfall, 0.0))
+    dest.units_held[month, issuer_idx] = np.asarray(jnp.where(active, units_held, 0.0))
+    dest.sellable_units[month, issuer_idx] = np.asarray(jnp.where(active, sellable_units, 0.0))
+    dest.target_units[month, issuer_idx] = np.asarray(jnp.where(active, target_units, 0.0))
+    dest.proceeds[month, issuer_idx] = np.asarray(jnp.where(active, proceeds, 0.0))
+
+
+def _apply_pe_sale_result(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    *,
+    month: int,
+    issuer_idx: int,
+    policy_idx: int,
+    disposition_kind: PrivateEquityDispositionKind,
+    sold_units: jnp.ndarray,
+    proceeds: jnp.ndarray,
+    basis: jnp.ndarray,
+    oversell: jnp.ndarray,
+    oversell_label: str,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._apply_pe_sale_result`: book a PE FIFO sale (cash, lots, cap gains, log)."""
+    if bool(oversell.any()):
+        raise ValueError(f"{oversell_label} attempted to sell more than available lots for a PE issuer")
+    lot_remaining = lot_remaining - sold_units.T
+    proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
+    if proceeds_slot >= 0:
+        cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
+    owner_code = int(plan.pe_policies.owner_agent[policy_idx])
+    capital_gain_active, capital_gain_ytd = _record_capital_gains(
+        plan, capital_gain_active, capital_gain_ytd, month, owner_code, sold_units, proceeds - basis
+    )
+    kind_idx = int(disposition_kind)
+    pe = buffers.lot_dispositions.pe
+    pe.active[month, issuer_idx, kind_idx] |= np.asarray((sold_units > 0.0).T)
+    pe.units[month, issuer_idx, kind_idx] += np.asarray(sold_units.T)
+    pe.basis[month, issuer_idx, kind_idx] += np.asarray(basis.T)
+    pe.proceeds[month, issuer_idx, kind_idx] += np.asarray(proceeds.T)
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+
+
+def _apply_pe_target_units_sale(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    *,
+    month: int,
+    issuer_idx: int,
+    policy_idx: int,
+    ordered_lots: np.ndarray,
+    mark: jnp.ndarray,
+    target_units: jnp.ndarray,
+    disposition_kind: PrivateEquityDispositionKind,
+    oversell_label: str,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._apply_pe_target_units_sale`: FIFO-sell a per-rollout unit target at the mark."""
+    if not bool((target_units > 0.0).any()):
+        return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+    sold_units, proceeds, basis, oversell = _fifo_sell_units(
+        lot_remaining.T, ordered_lots, target_units, mark, jnp.asarray(plan.lot_cost_basis_per_unit)
+    )
+    return _apply_pe_sale_result(
+        plan,
+        buffers,
+        cash,
+        lot_remaining,
+        capital_gain_active,
+        capital_gain_ytd,
+        month=month,
+        issuer_idx=issuer_idx,
+        policy_idx=policy_idx,
+        disposition_kind=disposition_kind,
+        sold_units=sold_units,
+        proceeds=proceeds,
+        basis=basis,
+        oversell=oversell,
+        oversell_label=oversell_label,
+    )
+
+
+def _apply_pe_tenders(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: int,
+    rollout_count: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_pe_tenders`: LNW-floor-driven private-equity tender sales."""
+    issuers = plan.pe_issuers
+    channels = plan.pe_channels
+    policies = plan.pe_policies
+    cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
+    for issuer_idx in range(issuers.codes.shape[0]):
+        if int(issuers.codes[issuer_idx]) < 0:
+            continue
+        policy_idx = int(issuers.policy_index[issuer_idx])
+        mark_np = channels.marks[issuer_idx, :, month]
+        if not np.isfinite(mark_np).all() or (mark_np < 0.0).any():
+            raise ValueError("private-equity mark series produced a negative or non-finite value")
+        mark = jnp.asarray(mark_np)
+        positive_mark = mark > 0.0
+        tender_active = jnp.asarray(channels.sale_opportunity_active[issuer_idx, :, month]) & active
+        public_market_active = jnp.asarray(channels.regime_codes[issuer_idx, :, month]) == int(
+            PrivateEquityRegimeCode.PUBLIC_MARKET
+        )
+        liquidity_blocked = jnp.asarray(channels.liquidity_blocked[issuer_idx, :, month])
+        forced_sale_fraction = jnp.asarray(channels.forced_sale_fractions[issuer_idx, :, month])
+        forced_recovery_cashout_usd_np = channels.forced_recovery_cashout_usd[issuer_idx, :, month]
+        if (forced_recovery_cashout_usd_np < 0.0).any():
+            raise ValueError("private-equity forced-recovery cashout series produced a negative value")
+        forced_recovery_cashout_usd = jnp.asarray(forced_recovery_cashout_usd_np)
+
+        lot_indices = np.flatnonzero(issuers.lot_mask[issuer_idx])
+        if lot_indices.size == 0:
+            continue
+        ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
+        sale_capacity_fraction = jnp.asarray(channels.sale_capacity_fractions[issuer_idx, :, month])
+        eligible_fraction = jnp.asarray(channels.eligible_fractions[issuer_idx, :, month])
+        units_held = lot_remaining[ordered_lots, :].sum(axis=0)
+
+        if policy_idx < 0:
+            _record_pe_opportunity(
+                buffers,
+                month=month,
+                issuer_idx=issuer_idx,
+                active=tender_active,
+                outcome=jnp.full(rollout_count, int(PrivateEquityOpportunityOutcome.NO_POLICY)),
+                floor=jnp.zeros(rollout_count),
+                liquid_net_worth=jnp.zeros(rollout_count),
+                shortfall=jnp.zeros(rollout_count),
+                units_held=units_held,
+                sellable_units=units_held * sale_capacity_fraction * eligible_fraction,
+                target_units=jnp.zeros(rollout_count),
+                proceeds=jnp.zeros(rollout_count),
+            )
+            continue
+
+        recovery_active = (forced_recovery_cashout_usd > 0.0) & active & (units_held > 0.0)
+        if bool(recovery_active.any()):
+            safe_units = jnp.where(units_held > 0.0, units_held, 1.0)
+            recovery_unit_price = jnp.where(units_held > 0.0, forced_recovery_cashout_usd / safe_units, 1.0)
+            sold_units, proceeds, basis, oversell = _fifo_sell_units(
+                lot_remaining.T,
+                ordered_lots,
+                jnp.where(recovery_active, units_held, 0.0),
+                recovery_unit_price,
+                cost_basis_per_unit,
+            )
+            cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_sale_result(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                disposition_kind=PrivateEquityDispositionKind.FORCED_RECOVERY,
+                sold_units=sold_units,
+                proceeds=proceeds,
+                basis=basis,
+                oversell=oversell,
+                oversell_label="PE forced recovery",
+            )
+
+        units_held = lot_remaining[ordered_lots, :].sum(axis=0)
+        forced_sale_active = (forced_sale_fraction > 0.0) & active & positive_mark & (units_held > 0.0)
+        if bool(forced_sale_active.any()):
+            sold_units, proceeds, basis, oversell = _fifo_sell_units(
+                lot_remaining.T,
+                ordered_lots,
+                jnp.where(forced_sale_active, units_held * forced_sale_fraction, 0.0),
+                mark,
+                cost_basis_per_unit,
+            )
+            cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_sale_result(
+                plan,
+                buffers,
+                cash,
+                lot_remaining,
+                capital_gain_active,
+                capital_gain_ytd,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                disposition_kind=PrivateEquityDispositionKind.FORCED_SALE,
+                sold_units=sold_units,
+                proceeds=proceeds,
+                basis=basis,
+                oversell=oversell,
+                oversell_label="PE forced sale",
+            )
+
+        floor = _amount_values(
+            amount_kind=int(policies.floor_kind[policy_idx]),
+            amount_fixed=float(policies.floor_fixed[policy_idx]),
+            amount_base=float(policies.floor_base[policy_idx]),
+            amount_series=int(policies.floor_series[policy_idx]),
+            amount_base_month=int(policies.floor_base_month[policy_idx]),
+            amount_period=int(policies.floor_period[policy_idx]),
+            external_values=external_values,
+            month=month,
+            rollout_count=rollout_count,
+        )
+        lnw = _compute_liquid_net_worth(plan, cash, lot_remaining, external_values, policy_idx, month)
+        shortfall = jnp.maximum(0.0, floor - lnw)
+        units_held = lot_remaining[ordered_lots, :].sum(axis=0)
+        sellable_units = units_held * sale_capacity_fraction * eligible_fraction
+        shortfall_units = jnp.where(positive_mark, shortfall / jnp.where(positive_mark, mark, 1.0), 0.0)
+        opportunity_active = (tender_active | public_market_active) & active & ~liquidity_blocked & positive_mark
+        target_units = jnp.where(opportunity_active, jnp.minimum(shortfall_units, sellable_units), 0.0)
+
+        outcome = jnp.full(rollout_count, int(PrivateEquityOpportunityOutcome.SOLD))
+        outcome = jnp.where(shortfall <= 0.0, int(PrivateEquityOpportunityOutcome.FLOOR_SATISFIED), outcome)
+        outcome = jnp.where(
+            (sale_capacity_fraction * eligible_fraction) <= 0.0,
+            int(PrivateEquityOpportunityOutcome.CAPACITY_ZERO),
+            outcome,
+        )
+        outcome = jnp.where(~positive_mark, int(PrivateEquityOpportunityOutcome.NONPOSITIVE_MARK), outcome)
+        outcome = jnp.where(liquidity_blocked, int(PrivateEquityOpportunityOutcome.LIQUIDITY_BLOCKED), outcome)
+        outcome = jnp.where(units_held <= 0.0, int(PrivateEquityOpportunityOutcome.NO_UNITS), outcome)
+        _record_pe_opportunity(
+            buffers,
+            month=month,
+            issuer_idx=issuer_idx,
+            active=tender_active,
+            outcome=outcome,
+            floor=floor,
+            liquid_net_worth=lnw,
+            shortfall=shortfall,
+            units_held=units_held,
+            sellable_units=sellable_units,
+            target_units=target_units,
+            proceeds=target_units * mark,
+        )
+        if not bool((target_units > 0.0).any()):
+            continue
+
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_target_units_sale(
+            plan,
+            buffers,
+            cash,
+            lot_remaining,
+            capital_gain_active,
+            capital_gain_ytd,
+            month=month,
+            issuer_idx=issuer_idx,
+            policy_idx=policy_idx,
+            ordered_lots=ordered_lots,
+            mark=mark,
+            target_units=jnp.where(tender_active & ~public_market_active, target_units, 0.0),
+            disposition_kind=PrivateEquityDispositionKind.TENDER,
+            oversell_label="PE tender",
+        )
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_pe_target_units_sale(
+            plan,
+            buffers,
+            cash,
+            lot_remaining,
+            capital_gain_active,
+            capital_gain_ytd,
+            month=month,
+            issuer_idx=issuer_idx,
+            policy_idx=policy_idx,
+            ordered_lots=ordered_lots,
+            mark=mark,
+            target_units=jnp.where(public_market_active, target_units, 0.0),
+            disposition_kind=PrivateEquityDispositionKind.PUBLIC_MARKET,
+            oversell_label="PE public market sale",
+        )
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd
