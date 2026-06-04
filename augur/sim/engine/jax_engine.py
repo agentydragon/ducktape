@@ -825,6 +825,60 @@ def _obligation_group_funded(
 _ESTIMATED_TAX_KINDS = (ObligationSource.ESTIMATED_TAX, ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP)
 
 
+@jax.jit
+def _settlement_core_jit(
+    from_slot: jnp.ndarray,
+    to_slot: jnp.ndarray,
+    deduction_profile: jnp.ndarray,
+    deductible_fraction: jnp.ndarray,
+    property_tax_profile: jnp.ndarray,
+    property_slot_idx: jnp.ndarray,
+    has_property_slot: jnp.ndarray,
+    has_property_tax_profile: jnp.ndarray,
+    has_deduction: jnp.ndarray,
+    accrual_active: jnp.ndarray,
+    accrual_due: jnp.ndarray,
+    funded: jnp.ndarray,
+    cash: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    property_tax_ytd: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    failed: jnp.ndarray,
+    failed_month: jnp.ndarray,
+    month: jnp.ndarray,
+) -> tuple[
+    jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+]:
+    """Branch-free core of obligation settlement: per-slot pay/fail, the funded cash move, the
+    property-tax owner-share YTD accumulation, and the Schedule-E/itemized deduction — all
+    vectorized over slots (duplicate from/to/profile indices accumulate via `_scatter_rows`).
+
+    Failure ordering is month-stable: every slot that fails this month would stamp the same
+    `month`, so the per-rollout first-failure month is `month` iff any slot fails and it had not
+    failed before. Mortgage liability updates and tax settlement are handled by the caller.
+    """
+    paid = accrual_active & funded
+    slot_failed = accrual_active & ~funded
+    paid_amount = jnp.where(paid, accrual_due, 0.0)
+    cash = _scatter_rows(cash, from_slot, -paid_amount)
+    cash = _scatter_rows(cash, to_slot, paid_amount)
+    rented = _gather_rows(property_rented_fraction, property_slot_idx)  # (slots, rollouts)
+    property_tax_ytd = _scatter_rows(
+        property_tax_ytd,
+        property_tax_profile,
+        jnp.where(has_property_tax_profile[:, None], paid_amount * (1.0 - rented), 0.0),
+    )
+    deductible = jnp.where(has_property_slot[:, None], rented, deductible_fraction[:, None])
+    ordinary_ytd = _scatter_rows(
+        ordinary_ytd, deduction_profile, jnp.where(has_deduction[:, None], -paid_amount * deductible, 0.0)
+    )
+    shortfall = jnp.where(slot_failed, accrual_due, 0.0)
+    failed_this = slot_failed.any(axis=0)
+    failed_month = jnp.where(failed_this & (failed_month < 0), month, failed_month)
+    failed = failed | failed_this
+    return paid, paid_amount, cash, ordinary_ytd, property_tax_ytd, shortfall, slot_failed, failed, failed_month
+
+
 def _apply_obligation_settlement(
     plan: CompiledSimulation,
     buffers: SimulationBuffers,
@@ -861,41 +915,53 @@ def _apply_obligation_settlement(
     """
     obligations = plan.obligations
     slot_count = accrual_active.shape[0]
-    paid_buffer = jnp.zeros_like(accrual_due)
-    shortfall_buffer = jnp.zeros_like(accrual_due)
-    failure_active = jnp.zeros_like(accrual_active)
-    # Tax-settlement candidates are float64 numpy (see `_actual_tax_for_profile_year`).
+    # Vectorized core: the per-slot cash move + Schedule-E/SALT deductions + failure tracking,
+    # branch-free over all slots (duplicate from/to/profile indices accumulate via `_scatter_rows`).
+    property_slot = obligations.property_slot[month]
+    # Annotated local: `jax.jit` types its wrapped callable as returning Any (mypy no-any-return).
+    core: tuple[
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+    ] = _settlement_core_jit(
+        jnp.asarray(obligations.from_slot[month]),
+        jnp.asarray(obligations.to_slot[month]),
+        jnp.asarray(obligations.deduction_profile[month]),
+        jnp.asarray(obligations.deductible_fraction[month]),
+        jnp.asarray(obligations.property_tax_profile[month]),
+        jnp.asarray(np.where(property_slot < 0, 0, property_slot)),
+        jnp.asarray(property_slot >= 0),
+        jnp.asarray(obligations.property_tax_profile[month] >= 0),
+        jnp.asarray(obligations.deduction_profile[month] >= 0),
+        accrual_active,
+        accrual_due,
+        funded,
+        cash,
+        ordinary_ytd,
+        property_tax_ytd,
+        property_rented_fraction,
+        failed,
+        failed_month,
+        jnp.asarray(month),
+    )
+    paid, paid_buffer, cash, ordinary_ytd, property_tax_ytd, shortfall_buffer, failure_active, failed, failed_month = (
+        core
+    )
+
+    # Mortgage payments (liability interest/principal split + buffers) and the tax-settlement
+    # machinery stay per-(few)-slot for now; both need branch-free forms before the lax.scan stage.
     candidate = np.zeros((tax_profile_count, rollout_count), dtype=np.float64)
     candidate_year_end = np.full((tax_profile_count, rollout_count), NO_CODE, dtype=np.int64)
     payment_failed = np.zeros((tax_profile_count, rollout_count), dtype=bool)
+    tax_year_end = (month // 12 - 1) * 12 + 11
     for slot in range(slot_count):
         source_kind = int(obligations.source_kind[month, slot])
-        if source_kind not in (
-            ObligationSource.CONFIGURED_OBLIGATION,
-            ObligationSource.PROPERTY_TAX,
-            ObligationSource.MORTGAGE_PAYMENT,
-            *_ESTIMATED_TAX_KINDS,
-        ):
-            continue
-        active_slot = accrual_active[slot]
-        if source_kind == ObligationSource.TAX_TRUE_UP:
-            profile = int(obligations.source_index[month, slot])
-            tax_year_end = (month // 12 - 1) * 12 + 11
-            actual = _actual_tax_for_profile_year(
-                plan, tax_liability, profile_index=profile, year_end_month=tax_year_end, rollout_count=rollout_count
-            )
-            active_slot_np = np.asarray(active_slot)
-            candidate[profile] = np.where(active_slot_np, actual, candidate[profile])
-            candidate_year_end[profile] = np.where(active_slot_np, tax_year_end, candidate_year_end[profile])
-        amount = accrual_due[slot]
-        paid = active_slot & funded[slot]
-        paid_buffer = paid_buffer.at[slot].set(jnp.where(paid, amount, 0.0))
-        from_slot = int(obligations.from_slot[month, slot])
-        if from_slot >= 0:
-            cash = cash.at[from_slot].add(jnp.where(paid, -amount, 0.0))
-        to_slot = int(obligations.to_slot[month, slot])
-        if to_slot >= 0:
-            cash = cash.at[to_slot].add(jnp.where(paid, amount, 0.0))
         if source_kind == ObligationSource.MORTGAGE_PAYMENT:
             liabilities = _apply_mortgage_payment(
                 plan,
@@ -904,38 +970,20 @@ def _apply_obligation_settlement(
                 property_rented_fraction,
                 month=month,
                 liability_slot=int(obligations.source_index[month, slot]),
-                paid=paid,
-                amount=amount,
+                paid=paid[slot],
+                amount=accrual_due[slot],
             )
-        # Property-tax payments accumulate (owner-use share) into the payer's YTD bucket for the
-        # year-end federal SALT pass; the rented share routes to Schedule E via deduction_profile.
-        property_tax_profile = int(obligations.property_tax_profile[month, slot])
-        property_slot = int(obligations.property_slot[month, slot])
-        if property_tax_profile >= 0:
-            owner_share = 1.0 - property_rented_fraction[property_slot]
-            property_tax_ytd = property_tax_ytd.at[property_tax_profile].add(jnp.where(paid, amount * owner_share, 0.0))
-        # Schedule E / itemized deduction: property-tax obligations use the runtime rented fraction;
-        # other deductible obligations use the compile-time deductible_fraction.
-        deduction_profile = int(obligations.deduction_profile[month, slot])
-        if deduction_profile >= 0:
-            if property_slot >= 0:
-                rented = property_rented_fraction[property_slot]
-                ordinary_ytd = ordinary_ytd.at[deduction_profile].add(jnp.where(paid, -amount * rented, 0.0))
-            else:
-                deductible_fraction = float(obligations.deductible_fraction[month, slot])
-                ordinary_ytd = ordinary_ytd.at[deduction_profile].add(
-                    jnp.where(paid, -amount * deductible_fraction, 0.0)
-                )
-
-        slot_failed = active_slot & ~funded[slot]
-        shortfall_buffer = shortfall_buffer.at[slot].set(jnp.where(slot_failed, amount, 0.0))
-        failure_active = failure_active.at[slot].set(slot_failed)
-        first_failure = slot_failed & (failed_month < 0)
-        failed_month = jnp.where(first_failure, month, failed_month)
-        failed = failed | slot_failed
+        elif source_kind == ObligationSource.TAX_TRUE_UP:
+            profile = int(obligations.source_index[month, slot])
+            actual = _actual_tax_for_profile_year(
+                plan, tax_liability, profile_index=profile, year_end_month=tax_year_end, rollout_count=rollout_count
+            )
+            active_slot_np = np.asarray(accrual_active[slot])
+            candidate[profile] = np.where(active_slot_np, actual, candidate[profile])
+            candidate_year_end[profile] = np.where(active_slot_np, tax_year_end, candidate_year_end[profile])
         if source_kind in _ESTIMATED_TAX_KINDS:
             profile = int(obligations.source_index[month, slot])
-            payment_failed[profile] = payment_failed[profile] | np.asarray(slot_failed)
+            payment_failed[profile] = payment_failed[profile] | np.asarray(failure_active[slot])
 
     tax_liability = _apply_tax_settlements(
         plan,
