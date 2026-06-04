@@ -6,6 +6,13 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Architecture / cutover
 
+- **Capital-loss netting + carryforward (TLH Piece 1).** The bracket walks in
+  `tax.py` clamp negative taxable amounts to zero and no cross-year capital
+  state exists, so realized losses evaporate. Add §1211/§1212 mechanics:
+  net ST/LT losses against gains, $3k/yr ordinary offset, per-`(rollout, agent)`
+  carryforward. Prerequisite for tax-loss-harvesting modeling and a correctness
+  fix for existing OpenAI/IBKR sales. See <plans/tax_loss_harvesting.md>.
+
 - Replace the `dense.decode()` → `SimulationRun` polars materialization
   step on the rollout-detail endpoint with `ProjectionRun` read models
   (`augur/sim/projections.py`). The metric-fan path already bypasses
