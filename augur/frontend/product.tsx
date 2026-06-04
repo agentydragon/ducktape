@@ -7,7 +7,7 @@ import { fmtMetricValue } from "./lib/chart.ts";
 import { toastFetchError } from "./lib/toast.ts";
 
 import { MetricFanChart } from "./fan_chart.tsx";
-import { TerminalDistributionHistogram } from "./histogram.tsx";
+import { TerminalDistributionChart } from "./terminal_distribution.tsx";
 import { TerminalMetricTable, TerminalScenarioComparison } from "./metric_table.tsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.tsx";
 import { ScenarioEditor, ScenarioInspector } from "./scenario_editor.tsx";
@@ -45,7 +45,8 @@ function RolloutResultsPanel({
   maxHorizonMonths,
   rolloutSummaries,
   selectedSeed,
-  onSelectSeed,
+  onSelectRollout,
+  onClearSelection,
   selectedRolloutLoading,
   fanSeries,
   percentiles,
@@ -63,8 +64,8 @@ function RolloutResultsPanel({
   const [candleBucketMonths, setCandleBucketMonths] = useState(6);
   // "Focus" collapses the overlay to just the active scenario, which the chart then renders as a
   // full single-scenario fan (inner+outer bands, edge lines) — the pre-comparison view, on demand,
-  // for reading one variant's timeline without the other scenarios' noise. Only the fan/candle chart
-  // overlays every scenario; the histogram, selected rollout, and tables already scope to active.
+  // for reading one variant's timeline without the other scenarios' noise. The fan/candle chart and
+  // the distribution chart overlay every scenario; the selected rollout and tables scope to active.
   const [focusActive, setFocusActive] = useState(false);
   const multipleScenarios = scenarios.length > 1;
   const activeScenario = fanSeries.find((entry) => entry.isActive) ?? fanSeries[0];
@@ -128,13 +129,16 @@ function RolloutResultsPanel({
           )}
         </div>
       </div>
-      <TerminalDistributionHistogram
-        summaries={rolloutSummaries}
+      <TerminalDistributionChart
+        scenarios={scenarios}
+        resultsById={resultsById}
+        activeId={activeId}
         metric={selectedMetric}
         metricScale={metricScale}
         selectedSeed={selectedSeed}
         loadingSeed={selectedRolloutLoading ? selectedSeed : null}
-        onSelect={onSelectSeed}
+        onSelectRollout={onSelectRollout}
+        onClear={onClearSelection}
       />
       {fanSeries.some((entry) => entry.rows.length > 0) ? (
         <div className="relative">
@@ -338,6 +342,13 @@ export function ProductProjectionWorkspace({
   const resetBase = () =>
     setScenarioSet((previous) => ({ ...previous, base: { ...previous.base, input: productInputDefaults(bootstrap) } }));
   const selectEntry = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
+  // Selecting a rollout in the distribution chart carries both coordinates: the line picks the
+  // variant (making it active), the X picks that variant's rank-th seed. Selection is the seed, which
+  // is shared across variants, so switching the active variant later relocates it without clearing.
+  const onSelectRollout = (variantId, seed) => {
+    selectEntry(variantId);
+    setSelectedSeed(seed);
+  };
   const renameEntry = (id, label) =>
     setScenarioSet((previous) =>
       id === "base"
@@ -571,7 +582,8 @@ export function ProductProjectionWorkspace({
             maxHorizonMonths={bootstrap.maxHorizonMonths}
             rolloutSummaries={rolloutSummaries}
             selectedSeed={selectedSeed}
-            onSelectSeed={setSelectedSeed}
+            onSelectRollout={onSelectRollout}
+            onClearSelection={() => setSelectedSeed(null)}
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
             percentiles={activeRequest.percentiles}

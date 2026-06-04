@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { scenarioColor } from "./input_helpers.ts";
 
 // The active scenario's visual identity (position color + name), reused by every panel that scopes
-// to the active scenario (histogram, selected-rollout overlay, events, terminal table) so they all
+// to the active scenario (selected-rollout overlay, events, terminal table) so they all
 // announce *which* variant they're showing — not just the chip selector. Color matches the chip and
 // chart legend (`scenarioColor`, by position), so the badge reads as the same entity everywhere.
 export function ScenarioBadge({ label, color, className = "" }) {
@@ -14,9 +14,9 @@ export function ScenarioBadge({ label, color, className = "" }) {
   );
 }
 
-// Chip selector for the Base + variant set. Clicking a chip makes that entry active — the rollout
-// histogram, selected-rollout overlay, events, and the detailed terminal table all scope to it,
-// while the fan chart overlays Base + every variant at once. Double-click a label to rename it
+// Chip selector for the Base + variant set. Clicking a chip makes that entry active — the
+// selected-rollout overlay, events, and the detailed terminal table all scope to it, while the fan
+// chart and the terminal-distribution chart overlay Base + every variant at once. Double-click a label to rename it
 // (names drive the chart legend and the per-variant comparison columns, e.g. "Rent" vs "Buy").
 // Color is assigned by position (`scenarioColor`, Base = index 0) so it stays put as the active
 // selection moves; the active chip is marked by its ring, not by hue. Base is the baseline every

@@ -106,14 +106,14 @@ js_library(
 )
 
 js_library(
-    name = "histogram",
-    srcs = ["histogram.tsx"],
+    name = "terminal_distribution",
+    srcs = ["terminal_distribution.tsx"],
     deps = [
         ":data_helpers",
+        ":hooks",
         ":input_helpers",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
-        "//augur/frontend/lib:format",
     ],
 )
 
@@ -222,13 +222,13 @@ js_library(
         ":events_panel",
         ":fan_chart",
         ":header",
-        ":histogram",
         ":hooks",
         ":input_helpers",
         ":metric_table",
         ":scenario_editor",
         ":scenario_tabs",
         ":skeleton",
+        ":terminal_distribution",
         "//:node_modules/@mantine/core",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
@@ -296,7 +296,6 @@ filegroup(
         "fan_chart.tsx",
         "forms.tsx",
         "header.tsx",
-        "histogram.tsx",
         "hooks.ts",
         "index.html",
         "input_helpers.ts",
@@ -307,6 +306,7 @@ filegroup(
         "scenario_editor.tsx",
         "scenario_tabs.tsx",
         "skeleton.tsx",
+        "terminal_distribution.tsx",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:controls",

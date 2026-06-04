@@ -203,23 +203,6 @@ export function rolloutStatusText(summary) {
   return "completed";
 }
 
-export function rolloutSliverColor(rankPercentile) {
-  const q = Math.max(0, Math.min(1, Number(rankPercentile) / 100));
-  const symmetric = 1 - 2 * Math.abs(q - 0.5);
-  const alpha = 0.2 + 0.58 * symmetric;
-  return `rgba(37, 99, 235, ${alpha.toFixed(3)})`;
-}
-
-export function blendWithTeal(color) {
-  const teal = { r: 15, g: 118, b: 110 };
-  const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!m) return SELECTED_ROLLOUT_COLOR;
-  const r = Math.round(+m[1] * 0.55 + teal.r * 0.45);
-  const g = Math.round(+m[2] * 0.55 + teal.g * 0.45);
-  const b = Math.round(+m[3] * 0.55 + teal.b * 0.45);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
 export function selectedRolloutMetricRows(detail, metric) {
   if (!detail?.rollout?.monthlyMetrics) return [];
   return rowsFrom(detail.rollout.monthlyMetrics)
@@ -481,32 +464,6 @@ export function eventDetailText(event, currencyDisplay) {
 
 export function eventTitle(event, currencyDisplay) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), currencyDisplay)}`;
-}
-
-export function terminalHistogramBins(
-  completedEntries,
-  binCount,
-  axisMin,
-  axisMax,
-  coordinateValue = (entry) => entry.value
-) {
-  const span = axisMax - axisMin;
-  const binWidth = span > 0 ? span / binCount : 1;
-  const bins = Array.from({ length: binCount }, (_, index) => ({
-    lo: axisMin + index * binWidth,
-    hi: axisMin + (index + 1) * binWidth,
-    rollouts: [],
-  }));
-  for (const entry of completedEntries) {
-    const coordinate = coordinateValue(entry);
-    if (!Number.isFinite(coordinate)) continue;
-    const idx = Math.min(binCount - 1, Math.max(0, Math.floor((coordinate - axisMin) / binWidth)));
-    bins[idx].rollouts.push(entry);
-  }
-  for (const bin of bins) {
-    bin.rollouts.sort((left, right) => left.value - right.value);
-  }
-  return bins;
 }
 
 export function portfolioHasBucket(portfolio, bucketName) {
