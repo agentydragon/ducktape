@@ -100,6 +100,12 @@ class _ScanState(NamedTuple):
     tax_liability_amount: jnp.ndarray
     failed: jnp.ndarray
     failed_month: jnp.ndarray
+    # Scheduled-sale dispositions accumulated in-carry (`(scheduled_sale, lot, R)`): each sale fires
+    # once, so accumulating at the firing month collapses the per-month horizon axis the old ys emitted.
+    sale_disp_units: jnp.ndarray
+    sale_disp_basis: jnp.ndarray
+    sale_disp_proceeds: jnp.ndarray
+    sale_oversell: jnp.ndarray  # () bool: any scheduled sale oversold its pool (post-scan hard error)
 
 
 @dataclass(frozen=True)
@@ -358,8 +364,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
         "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
     }
-    ys = program(jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan))
-    _scatter_ys_to_buffers(plan, buffers, meta, ys)
+    ys, sale_disp = program(jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan))
+    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
 def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
@@ -862,6 +868,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         capital_loss_carryforward, recapture_ytd = s.capital_loss_carryforward, s.recapture_section_1250_ytd
         taxliab_active, taxliab_amount = s.tax_liability_active, s.tax_liability_amount
         failed, failed_month = s.failed, s.failed_month
+        sale_disp_units, sale_disp_basis = s.sale_disp_units, s.sale_disp_basis
+        sale_disp_proceeds, sale_oversell = s.sale_disp_proceeds, s.sale_oversell
         active = ~failed
 
         # Primary-residence + lifecycle events (first in the month, eager order). Each event fires when
@@ -987,9 +995,9 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
 
         # Scheduled asset sales (before obligations, matching eager order: proceeds can fund the
         # month's obligations). Each real sale fires when its static month equals the traced month;
-        # `_fifo_sell_units` sells nothing when target_units is 0, so non-firing slots are no-ops.
-        disp_active, disp_units, disp_basis, disp_proceeds = [], [], [], []
-        oversells = []
+        # `_fifo_sell_units` sells nothing when target_units is 0, so non-firing slots are no-ops. The
+        # disposition `(sale, lot, R)` is accumulated into the carry at each sale's `buffer_index`: a
+        # sale fires once, so adding the per-month sells collapses the horizon axis (most months add 0).
         for fs in folded_sales:
             fires = month == fs.month
             target_units = jnp.where(active & fires, fs.quantity, 0.0)
@@ -1003,11 +1011,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             cg_active, cg_ytd, tlh = _record_capital_gains(
                 plan, cg_active, cg_ytd, tlh, lot_remaining, month, fs.agent_code, sold_units, proceeds - basis
             )
-            disp_active.append((sold_units > 0.0).T)
-            disp_units.append(sold_units.T)
-            disp_basis.append(basis.T)
-            disp_proceeds.append(proceeds.T)
-            oversells.append(oversell.any())
+            sale_disp_units = sale_disp_units.at[fs.buffer_index].add(sold_units.T)
+            sale_disp_basis = sale_disp_basis.at[fs.buffer_index].add(basis.T)
+            sale_disp_proceeds = sale_disp_proceeds.at[fs.buffer_index].add(proceeds.T)
+            sale_oversell = sale_oversell | oversell.any()
 
         # Obligation accrual — every source kind, branch-free. Static per-(month,slot) data is sliced
         # from the precomputed `acc` tables; the live property/liability/tax-liability state comes from
@@ -1430,6 +1437,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             tax_liability_amount=taxliab_amount,
             failed=failed,
             failed_month=failed_month,
+            sale_disp_units=sale_disp_units,
+            sale_disp_basis=sale_disp_basis,
+            sale_disp_proceeds=sale_disp_proceeds,
+            sale_oversell=sale_oversell,
         )
         base_ys = (
             cash,
@@ -1469,18 +1480,9 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             else ()
         )
         # Per-(sale, lot, rollout) disposition slabs (stacked over real sales) + a per-month oversell
-        # flag; all empty when there are no sales.
-        sale_ys = (
-            (
-                jnp.stack(disp_active),
-                jnp.stack(disp_units),
-                jnp.stack(disp_basis),
-                jnp.stack(disp_proceeds),
-                jnp.stack(oversells).any(),
-            )
-            if folded_sales
-            else ()
-        )
+        # Scheduled-sale dispositions are carried (accumulated at each sale's firing month), not emitted
+        # per-month — see `_ScanState.sale_disp_*`; the post-scan scatter reads them from the final carry.
+        sale_ys: tuple = ()
         # Tax slabs: 13 per-(link, rollout) breakdown buffers + the post-month tax-liability snapshot
         # (amount, active) for change-log reconstruction + the 3 per-(profile, rollout) settlement
         # event buffers. Only when the plan has tax links.
@@ -1558,6 +1560,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         tax_liability_amount=jnp.zeros((p.tax_liability_count, r)),
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
+        sale_disp_units=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
+        sale_disp_basis=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
+        sale_disp_proceeds=jnp.zeros((p.scheduled_sale_count, lot_axis, r)),
+        sale_oversell=jnp.zeros((), dtype=bool),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
 
@@ -1580,8 +1586,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             cash=jnp.broadcast_to(cfg_arg.cash_initial_balance[:, None], (p.cash_count, r)),
             lot_remaining=jnp.broadcast_to(cfg_arg.lot_initial_quantity[:, None], (p.lot_count, r)),
         )
-        _, ys = jax.lax.scan(step, init_traced, months)
-        return ys
+        final_carry, ys = jax.lax.scan(step, init_traced, months)
+        # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
+        return ys, (
+            final_carry.sale_disp_units,
+            final_carry.sale_disp_basis,
+            final_carry.sale_disp_proceeds,
+            final_carry.sale_oversell,
+        )
 
     meta = _ScanMeta(
         folded_sales=folded_sales,
@@ -1598,14 +1610,17 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     return jax.jit(_program_impl), meta
 
 
-def _scatter_ys_to_buffers(plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple) -> None:
+def _scatter_ys_to_buffers(
+    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple, sale_disp: tuple
+) -> None:
     """Scatter the stacked per-month `ys` from the compiled program back into the NumPy buffers (one
-    device->host transfer). Pure host code; uses `meta` for the structural scatter targets."""
+    device->host transfer). Pure host code; uses `meta` for the structural scatter targets. `sale_disp`
+    is the horizon-collapsed scheduled-sale disposition `(units, basis, proceeds, oversell)` carried out
+    of the scan (each `(scheduled_sale, lot, R)`)."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = meta.horizon
     link_count = meta.link_count
-    folded_sales = meta.folded_sales
     folded_purchases = meta.folded_purchases
     folded_liquidity = meta.folded_liquidity
     folded_pe = meta.folded_pe
@@ -1647,7 +1662,7 @@ def _scatter_ys_to_buffers(plan: CompiledSimulation, buffers: SimulationBuffers,
     # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
     # (18 = 13 breakdowns + 2 tax-liability snapshots + 3 settlement events, if any tax links), and
     # liquidity slabs (5 if any liquidity policies).
-    n_sale = 5 if folded_sales else 0
+    n_sale = 0  # scheduled-sale dispositions are carried out-of-band (`sale_disp`), not in `ys`
     n_purchase = 2 if folded_purchases else 0
     n_mortgage = 5 if p.liability_count > 0 else 0
     n_tax = 18 if link_count > 0 else 0
@@ -1663,8 +1678,7 @@ def _scatter_ys_to_buffers(plan: CompiledSimulation, buffers: SimulationBuffers,
     o6 = o5 + n_pe
     o7 = o6 + n_le_fired
     o8 = o7 + n_pr_fired
-    sale_h = rest[:o1]
-    purchase_h = rest[o1:o2]
+    purchase_h = rest[o1:o2]  # o1 == 0 (scheduled-sale dispositions are carried, not in `ys`)
     mortgage_h = rest[o2:o3]
     tax_h = rest[o3:o4]
     liquidity_h = rest[o4:o5]
@@ -1702,21 +1716,16 @@ def _scatter_ys_to_buffers(plan: CompiledSimulation, buffers: SimulationBuffers,
     buffers.obligations.paid[:] = np.asarray(ob_paid)
     buffers.obligations.shortfall[:] = np.asarray(ob_short)
     buffers.obligations.failure_active[:] = np.asarray(ob_fail)
-    if folded_sales:
-        disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = sale_h
-        # Match the eager engine's hard error (it raises mid-loop the first month a sale oversells).
-        if bool(np.asarray(oversell_h).any()):
-            raise ValueError("scheduled asset sale exceeds available lots")
-        # `sale_h` stacks are `(horizon, num_real_sales, L, R)`; scatter each real sale to its column.
-        disp = buffers.lot_dispositions.scheduled
-        disp_active_np, disp_units_np, disp_basis_np, disp_proceeds_np = (
-            np.asarray(a) for a in (disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h)
-        )
-        for i, fs in enumerate(folded_sales):
-            disp.active[:, fs.buffer_index] = disp_active_np[:, i]
-            disp.units[:, fs.buffer_index] = disp_units_np[:, i]
-            disp.basis[:, fs.buffer_index] = disp_basis_np[:, i]
-            disp.proceeds[:, fs.buffer_index] = disp_proceeds_np[:, i]
+    # Scheduled-sale dispositions: the carry holds `(scheduled_sale, lot, R)` already indexed by each
+    # sale's slot (the firing month is static — `plan.sales.month` — so the decoder re-derives it).
+    disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = sale_disp
+    if bool(np.asarray(oversell_h)):  # match the eager engine's hard error on the first oversell
+        raise ValueError("scheduled asset sale exceeds available lots")
+    disp = buffers.lot_dispositions.scheduled
+    disp.units[:] = np.asarray(disp_units_h)
+    disp.basis[:] = np.asarray(disp_basis_h)
+    disp.proceeds[:] = np.asarray(disp_proceeds_h)
+    disp.active[:] = disp.units > 0.0
     if folded_purchases:
         # Stacks are `(horizon, num_real_purchases, R)`; scatter each to its property column.
         purchase_active_np, transfer_active_np = (np.asarray(a) for a in purchase_h)
