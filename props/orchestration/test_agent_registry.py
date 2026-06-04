@@ -156,5 +156,25 @@ async def test_collect_run_cancellation_finalizes_as_cancelled(db: Database) -> 
         assert run.container_exit_code is None
 
 
+def _registry_with(db: Database, *, llm_base_url: str | None) -> AgentRegistry:
+    return AgentRegistry(
+        executor=cast(Any, _FakeExecutor()),
+        db=db,
+        db_config=DatabaseConfig(host="h", port=5432, database="d", user="u", password="p"),
+        backend_url="http://b:8000",
+        agent_base_env={},
+        registry_config=RegistryProxyConfig(host="reg", port=8000),
+        llm_base_url=llm_base_url,
+    )
+
+
+def test_llm_base_url_falls_back_to_backend_url(db: Database) -> None:
+    """Agents' OPENAI_BASE_URL derives from llm_base_url; an unset value falls back
+    to backend_url, so the proxy cutover can't silently strand agents without an
+    LLM endpoint."""
+    assert _registry_with(db, llm_base_url=None)._llm_base_url == "http://b:8000"
+    assert _registry_with(db, llm_base_url="http://proxy:8000")._llm_base_url == "http://proxy:8000"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

@@ -103,6 +103,9 @@ class PropsConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     backend_url: str
+    # Base URL agents use for the LLM proxy (split out of the backend); agents get
+    # OPENAI_BASE_URL = <llm_proxy_url>/v1. None falls back to backend_url.
+    llm_proxy_url: str | None = None
     grader_model: str | None = None
     agent_env: dict[str, str]
     upstreams: dict[str, UpstreamConfig] = {}

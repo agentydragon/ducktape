@@ -149,6 +149,7 @@ def _make_lifespan(deps: BackendDeps):
                 agent_base_env=deps.config.agent_env,
                 registry_config=deps.registry_proxy_config,
                 model_parallelism_limits=model_parallelism_limits,
+                llm_base_url=deps.config.llm_proxy_url,
             )
 
             if deps.grader_model:
