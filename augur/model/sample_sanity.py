@@ -25,6 +25,7 @@ from augur.model.provider_config import (
     TrainedPrivateEquityProviderConfig,
     VecmProviderConfig,
 )
+from augur.model.provider_includes import resolve_provider_includes
 from augur.model.schemas import FrozenModel
 from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode
 from util.bazel.runfiles import get_required_path
@@ -667,7 +668,8 @@ def _evaluate_protocol_check(
 
 
 def _load_provider_config(path: Path) -> ProviderConfig:
-    provider = _ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
+    raw = resolve_provider_includes(yaml.safe_load(path.read_text(encoding="utf-8")), base_dir=path.parent)
+    provider = _ADAPTER.validate_python(raw)
     return _anchor_provider_paths(provider, base_dir=path.parent)
 
 

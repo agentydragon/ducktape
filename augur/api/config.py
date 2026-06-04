@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import Field, HttpUrl, PositiveInt, model_validator
@@ -28,6 +29,7 @@ from augur.api.schemas import ApiModel
 from augur.api.wire import ActorRole, ProductInputDefaults
 from augur.budget.schema import BudgetConfig
 from augur.model.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
+from augur.model.provider_includes import resolve_provider_includes
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmProviderConfig
@@ -195,13 +197,31 @@ class Config(ApiModel):
 def load_augur_config(path: Path) -> Config:
     """Parse + validate a Config from a YAML file.
 
-    Relative deployment-owned file paths are anchored against the yaml's parent
-    directory — useful for ConfigMap mounts where the yaml and adjacent data live
-    side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
-    config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    Before validation, `{provider_config_path: <file>}` provider refs (e.g. the shared macro)
+    and a top-level `budget_path` are inlined from their sibling files, so large shared/split
+    sections live in one place. Relative deployment-owned file paths are then anchored against
+    the yaml's parent directory — useful for ConfigMap mounts where the yaml and adjacent data
+    live side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
+    raw = resolve_provider_includes(yaml.safe_load(path.read_text(encoding="utf-8")), base_dir=path.parent)
+    raw = _inline_budget_path(raw, base_dir=path.parent)
+    config = Config.model_validate(raw)
     config = _anchor_property_source_paths(config, base_dir=path.parent)
     config = _anchor_model_paths(config, base_dir=path.parent)
     return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
+
+
+def _inline_budget_path(raw: Any, *, base_dir: Path) -> Any:
+    """Inline a top-level `budget_path: <file>` into the `budget` key from its sibling file, so
+    the (large, per-deployment) transaction-categorization config can live in its own file."""
+    if not isinstance(raw, dict) or "budget_path" not in raw:
+        return raw
+    if raw.get("budget") is not None:
+        raise ValueError("config sets both `budget` and `budget_path`; provide exactly one")
+    raw = dict(raw)
+    budget_ref = Path(raw.pop("budget_path"))
+    budget_path = budget_ref if budget_ref.is_absolute() else base_dir / budget_ref
+    raw["budget"] = yaml.safe_load(budget_path.read_text(encoding="utf-8"))
+    return raw
 
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:

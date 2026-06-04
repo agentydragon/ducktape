@@ -276,11 +276,31 @@ py_library(
 )
 
 py_library(
+    name = "provider_includes",
+    srcs = ["provider_includes.py"],
+    deps = [
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "provider_includes_test",
+    srcs = ["provider_includes_test.py"],
+    deps = [
+        ":provider_includes",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "sample_sanity",
     srcs = ["sample_sanity.py"],
     deps = [
         ":exogenous",
         ":provider_config",
+        ":provider_includes",
         ":schemas",
         ":series",
         "//util/bazel:runfiles",

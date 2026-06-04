@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 from pydantic import ValidationError
 
 from augur.api.config import (
@@ -388,6 +389,58 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, 
         str(reloaded.property_source.property_assets[0].image_url)
         == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
+
+
+_MINIMAL_BUDGET = {
+    "source": {},
+    "buckets": [
+        {"id": "rent", "label": "Rent", "kind": "expense", "direction": "outflow"},
+        {"id": "income", "label": "Income", "kind": "income", "direction": "inflow"},
+    ],
+    "default_outflow_bucket_id": "rent",
+    "default_inflow_bucket_id": "income",
+    "include_default_rules": False,
+}
+
+
+def _write_config_with_raw_overrides(tmp_path: Path, minimal_config: MinimalConfig, **overrides: object) -> Path:
+    """Dump a minimal config to YAML, apply raw-dict overrides (to inject loader-only keys the
+    Pydantic model wouldn't accept, e.g. `budget_path`), and write it for `load_augur_config`."""
+    raw = yaml.safe_load(dump_augur_config_yaml(minimal_config()))
+    raw.update(overrides)
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return path
+
+
+def test_budget_path_inlines_budget_from_sibling_file(tmp_path: Path, minimal_config: MinimalConfig) -> None:
+    (tmp_path / "budget.yaml").write_text(yaml.safe_dump(_MINIMAL_BUDGET), encoding="utf-8")
+    path = _write_config_with_raw_overrides(tmp_path, minimal_config, budget_path="budget.yaml")
+
+    config = load_augur_config(path)
+    assert config.budget is not None
+    assert {bucket.id for bucket in config.budget.buckets} == {"rent", "income"}
+
+
+def test_budget_and_budget_path_are_mutually_exclusive(tmp_path: Path, minimal_config: MinimalConfig) -> None:
+    path = _write_config_with_raw_overrides(tmp_path, minimal_config, budget_path="budget.yaml", budget=_MINIMAL_BUDGET)
+    with pytest.raises(ValueError, match="both `budget` and `budget_path`"):
+        load_augur_config(path)
+
+
+def test_model_macro_provider_config_path_is_inlined(tmp_path: Path, minimal_config: MinimalConfig) -> None:
+    (tmp_path / "macro.yaml").write_text("type: independent\n", encoding="utf-8")
+    model = {
+        "type": "composite",
+        "macro": {"provider_config_path": "macro.yaml"},
+        "private_equity": {"type": "private_equity_risk", "issuers": {"acme": {"current_mark_usd": 10.0}}},
+    }
+    path = _write_config_with_raw_overrides(tmp_path, minimal_config, models={"current_model": model})
+
+    config = load_augur_config(path)
+    provider = config.models[config.default_model_id]
+    assert isinstance(provider, CompositeProviderConfig)
+    assert isinstance(provider.macro, IndependentProviderConfig)
 
 
 if __name__ == "__main__":

@@ -81,6 +81,7 @@ py_library(
         ":wire",
         "//augur/budget:schema",
         "//augur/model:provider_config",
+        "//augur/model:provider_includes",
         "//augur/product:wire",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -134,6 +135,8 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
