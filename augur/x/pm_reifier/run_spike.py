@@ -47,7 +47,7 @@ CANDIDATES = [
     (CODING, "glm-4.6"),  # $0.60 / $2.20 (last-resort known-good)
 ]
 
-HORIZON_MONTHS = 60  # dense monthly: index 0 = 2026-06, index 60 = 2031-06
+HORIZON_MONTHS = 57  # dense monthly: index 0 = 2026-06 .. index 57 = 2031-03 (just past the furthest market)
 LOC = "sf_ca"  # single location for home_value/rent in this prototype
 ANCHORS = (
     "Today is 2026-06 (month index 0). Anchor levels at month 0: CPI index 100.0, S&P 500 ~5300, "
@@ -82,7 +82,7 @@ MARKETS = [
 ]
 
 SCENARIOS_PER_CALL = 4
-N_CALLS = 6
+N_CALLS = 4
 
 # Markets only probe out to this month, so a path is evaluable if it covers index 0..MAX_MARKET_MONTH.
 # (Dense emission drifts in length — the model rarely lands exactly HORIZON_MONTHS+1 entries; we report
