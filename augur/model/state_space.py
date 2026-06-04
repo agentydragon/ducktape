@@ -281,7 +281,9 @@ class StateSpaceModel:
         return self.artifact.level_factors
 
     def emittable_level_keys(self) -> frozenset[LevelSeriesKey]:
-        return frozenset(self.artifact.level_factors) | {copy_key for copy_key, _ in self.artifact.emitted_copy_level_keys}
+        return frozenset(self.artifact.level_factors) | {
+            copy_key for copy_key, _ in self.artifact.emitted_copy_level_keys
+        }
 
     def emittable_private_equity_issuers(self) -> frozenset[IssuerId]:
         return frozenset(self.artifact.private_equity_factor_issuers)

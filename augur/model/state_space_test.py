@@ -206,9 +206,7 @@ def test_state_space_emits_chosen_factor_copies_with_identical_draws() -> None:
     assert {hv_mi, rent_mi} <= model.emittable_level_keys()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            rollout_seeds=(3, 4),
-            horizon_months=3,
-            **level_series_request_channels(frozenset({hv_mi, rent_mi})),
+            rollout_seeds=(3, 4), horizon_months=3, **level_series_request_channels(frozenset({hv_mi, rent_mi}))
         )
     )
     for copy_key, source_key in ((hv_mi, hv_sf), (rent_mi, rent_sf)):
