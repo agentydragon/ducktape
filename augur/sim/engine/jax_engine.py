@@ -91,6 +91,10 @@ class _ScanState(NamedTuple):
     liability_interest_ytd: jnp.ndarray
     liability_principal_ytd: jnp.ndarray
     liability_rental_interest_ytd: jnp.ndarray
+    capital_loss_carryforward: jnp.ndarray
+    recapture_section_1250_ytd: jnp.ndarray
+    tax_liability_active: jnp.ndarray
+    tax_liability_amount: jnp.ndarray
     failed: jnp.ndarray
     failed_month: jnp.ndarray
 
@@ -363,7 +367,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             s.liability_monthly_payment,
         )
         liab_interest_ytd, liab_principal_ytd = s.liability_interest_ytd, s.liability_principal_ytd
-        liab_rental_ytd, failed, failed_month = s.liability_rental_interest_ytd, s.failed, s.failed_month
+        liab_rental_ytd = s.liability_rental_interest_ytd
+        capital_loss_carryforward, recapture_ytd = s.capital_loss_carryforward, s.recapture_section_1250_ytd
+        taxliab_active, taxliab_amount = s.tax_liability_active, s.tax_liability_amount
+        failed, failed_month = s.failed, s.failed_month
         active = ~failed
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
@@ -591,6 +598,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             liability_interest_ytd=liab_interest_ytd,
             liability_principal_ytd=liab_principal_ytd,
             liability_rental_interest_ytd=liab_rental_ytd,
+            capital_loss_carryforward=capital_loss_carryforward,
+            recapture_section_1250_ytd=recapture_ytd,
+            tax_liability_active=taxliab_active,
+            tax_liability_amount=taxliab_amount,
             failed=failed,
             failed_month=failed_month,
         )
@@ -648,8 +659,6 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
 
     prop0 = jnp.zeros((p.property_count, r))
     liab0 = jnp.zeros((p.liability_count, r))
-    taxliab_active = jnp.zeros((p.tax_liability_count, r), dtype=bool)
-    taxliab_amount = jnp.zeros((p.tax_liability_count, r))
     init = _ScanState(
         cash=cash0,
         ordinary_ytd=ordinary0,
@@ -672,6 +681,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         liability_interest_ytd=liab0,
         liability_principal_ytd=liab0,
         liability_rental_interest_ytd=liab0,
+        capital_loss_carryforward=jnp.zeros((p.capital_gain_agent_count, r)),
+        recapture_section_1250_ytd=jnp.zeros((p.tax_profile_count, r)),
+        tax_liability_active=jnp.zeros((p.tax_liability_count, r), dtype=bool),
+        tax_liability_amount=jnp.zeros((p.tax_liability_count, r)),
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
     )
