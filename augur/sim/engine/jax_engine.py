@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from functools import partial
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -64,11 +65,28 @@ from augur.sim.tensor_fifo import lot_order_for_pool
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
 
-# `run_jax_scan`'s 9-element carry pytree: cash, ordinary_ytd, property_tax_ytd, lot_remaining,
-# capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest, failed, failed_month.
-_ScanCarry = tuple[
-    jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
-]
+
+class _ScanState(NamedTuple):
+    """`run_jax_scan`'s carry pytree (NamedTuple → native JAX pytree). Grown field-by-field as the
+    fold covers more phases; per-rollout state is `(entity, rollouts)` except the failure vectors."""
+
+    cash: jnp.ndarray
+    ordinary_ytd: jnp.ndarray
+    property_tax_ytd: jnp.ndarray
+    lot_remaining: jnp.ndarray
+    capital_gain_active: jnp.ndarray
+    capital_gain_ytd: jnp.ndarray
+    tlh: jnp.ndarray
+    property_active: jnp.ndarray
+    property_basis: jnp.ndarray
+    property_ownership: jnp.ndarray
+    property_contribution: jnp.ndarray
+    property_equity: jnp.ndarray
+    property_cumulative_depreciation: jnp.ndarray
+    property_owner_occupied_months: jnp.ndarray
+    property_depreciation_ytd: jnp.ndarray
+    failed: jnp.ndarray
+    failed_month: jnp.ndarray
 
 
 @dataclass(frozen=True)
@@ -111,6 +129,22 @@ class _FoldedSale:
     agent_code: int
 
 
+@dataclass(frozen=True)
+class _FoldedPurchase:
+    """One real cash property purchase, static data resolved host-side for the scan fold. `month` is
+    the (static) purchase month, compared against the traced scan index; `buffer_index` is the
+    property's column in the property-state and property-event buffers."""
+
+    buffer_index: int
+    month: int
+    adjusted_basis: float
+    ownership: float
+    stake_contribution: float
+    equity_ledger: float
+    buyer_slot: int
+    seller_slot: int
+
+
 def scan_supported(plan: CompiledSimulation) -> bool:
     """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
 
@@ -130,7 +164,7 @@ def scan_supported(plan: CompiledSimulation) -> bool:
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
         and plan.tax.profile_agent.shape[0] == 0  # no tax profiles (tax arrays are not padded)
-        and bool((plan.properties.month < 0).all())  # no real properties
+        and bool((plan.properties.mortgage_slot < 0).all())  # only cash property purchases (no mortgages)
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
     )
@@ -142,9 +176,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     transfer. Covers the phases in `scan_supported`; the carry is the per-rollout state pytree and
     each step gathers the month's plan rows by the traced scan index and runs the branch-free cores.
 
-    Covered: scheduled/recurring transfers, scheduled asset sales (FIFO lot matching + capital-gain
+    Covered: scheduled/recurring transfers, cash property purchases (+ §168 depreciation and the
+    §121 owner-occupied-month counter), scheduled asset sales (FIFO lot matching + capital-gain
     classification), and CONFIGURED obligations (accrual + group funding + settlement, with failure
-    tracking). Grown phase-by-phase (PE, tax, property)."""
+    tracking). Grown phase-by-phase (financed purchases/mortgages, PE, liquidity, year-end tax)."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
@@ -159,8 +194,34 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
     external_values = jnp.asarray(plan.external_values)
     cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
-    # State the obligation cores read but that this phase set never mutates (no properties/liabilities):
-    property_rented_fraction = jnp.zeros((p.property_count, r))
+    # Property statics. `rented_fraction`/`building_basis` are constant (lifecycle events that would
+    # mutate them are barred by `scan_supported`). `is_primary[prop]` marks a property as its owner's
+    # primary residence (static: no primary-residence events) — drives the §121 owner-occupied counter.
+    property_rented_fraction = jnp.asarray(
+        np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r))
+    )
+    property_building_basis = jnp.asarray(np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r)))
+    owner_agent = plan.property_owner_agent_index
+    primary_of_owner = _np_gather(
+        plan.initial_primary_residence_property_index, np.where(owner_agent < 0, 0, owner_agent), NO_CODE
+    )
+    property_is_primary = jnp.asarray((owner_agent >= 0) & (primary_of_owner == np.arange(owner_agent.shape[0])))
+    # Cash property purchases (financed purchases are barred — they need the liability/mortgage fold).
+    props = plan.properties
+    folded_purchases = [
+        _FoldedPurchase(
+            buffer_index=prop,
+            month=int(props.month[prop]),
+            adjusted_basis=float(props.adjusted_basis[prop]),
+            ownership=float(props.ownership[prop]),
+            stake_contribution=float(props.stake_contribution[prop]),
+            equity_ledger=float(props.equity_ledger[prop]),
+            buyer_slot=int(props.buyer_slot[prop]),
+            seller_slot=int(props.seller_slot[prop]),
+        )
+        for prop in range(props.month.shape[0])
+        if int(props.month[prop]) >= 0
+    ]
 
     # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
     # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
@@ -221,8 +282,17 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "property_slot": jnp.asarray(ob.property_slot),
     }
 
-    def step(carry: _ScanCarry, month: jnp.ndarray) -> tuple[_ScanCarry, tuple[jnp.ndarray, ...]]:
-        cash, ordinary, property_tax_ytd, lot_remaining, cg_active, cg_ytd, tlh, failed, failed_month = carry
+    def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
+        cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
+        cg_active, cg_ytd, tlh = s.capital_gain_active, s.capital_gain_ytd, s.tlh
+        property_active, property_basis = s.property_active, s.property_basis
+        property_ownership, property_contribution, property_equity = (
+            s.property_ownership,
+            s.property_contribution,
+            s.property_equity,
+        )
+        property_cum_dep, property_owner_occupied = s.property_cumulative_depreciation, s.property_owner_occupied_months
+        property_dep_ytd, failed, failed_month = s.property_depreciation_ytd, s.failed, s.failed_month
         active = ~failed
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
@@ -243,6 +313,37 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             external_values,
             month,
         )
+
+        # Cash property purchases (after transfers, before sales — eager order). Each real purchase
+        # fires when its static month equals the traced month, for the rollouts still active then;
+        # the down payment (stake_contribution) moves buyer->seller. Financed purchases are barred.
+        purchase_active_rows, transfer_active_rows = [], []
+        for fp in folded_purchases:
+            fires = month == fp.month
+            buy = fires & active  # (rollouts,)
+            property_active = property_active.at[fp.buffer_index].set(
+                jnp.where(buy, True, property_active[fp.buffer_index])
+            )
+            property_basis = property_basis.at[fp.buffer_index].set(
+                jnp.where(buy, fp.adjusted_basis, property_basis[fp.buffer_index])
+            )
+            property_ownership = property_ownership.at[fp.buffer_index].set(
+                jnp.where(buy, fp.ownership, property_ownership[fp.buffer_index])
+            )
+            property_contribution = property_contribution.at[fp.buffer_index].set(
+                jnp.where(buy, fp.stake_contribution, property_contribution[fp.buffer_index])
+            )
+            property_equity = property_equity.at[fp.buffer_index].set(
+                jnp.where(buy, fp.equity_ledger, property_equity[fp.buffer_index])
+            )
+            transfer_fires = buy if fp.stake_contribution > 0.0 else jnp.zeros_like(buy)
+            if fp.stake_contribution > 0.0:
+                if fp.buyer_slot >= 0:
+                    cash = cash.at[fp.buyer_slot].add(jnp.where(buy, -fp.stake_contribution, 0.0))
+                if fp.seller_slot >= 0:
+                    cash = cash.at[fp.seller_slot].add(jnp.where(buy, fp.stake_contribution, 0.0))
+            purchase_active_rows.append(buy)
+            transfer_active_rows.append(transfer_fires)
 
         # Scheduled asset sales (before obligations, matching eager order: proceeds can fund the
         # month's obligations). Each real sale fires when its static month equals the traced month;
@@ -318,18 +419,64 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             )
         )
 
+        # §121 owner-occupied-month counter then §168 depreciation accrual (eager order: after
+        # settlement, before the year-end tax pass that reads depreciation_ytd).
+        property_owner_occupied = _owner_occupied_jit(
+            property_active, property_rented_fraction, property_owner_occupied, property_is_primary, active
+        )
+        property_cum_dep, property_dep_ytd = _apply_depreciation_accrual(
+            property_active,
+            property_rented_fraction,
+            property_building_basis,
+            property_cum_dep,
+            property_dep_ytd,
+            failed,
+        )
+
         keep = ~failed
-        # `_zero_failed_state`: drain dollar-valued state for newly-failed rollouts (cg_active, the
-        # bool activity flags, is left intact — it matches the eager engine).
+        # `_zero_failed_state`: drain dollar-valued state for newly-failed rollouts. `cg_active`, the
+        # property activity flag, depreciation accumulators, and owner-occupied months are left intact
+        # (matches the eager engine, which zeros only dollar fields).
         cash, ordinary, lot_remaining = cash * keep, ordinary * keep, lot_remaining * keep
         cg_ytd, tlh = cg_ytd * keep[None, None, :], tlh * keep
-        carry = (cash, ordinary, property_tax_ytd, lot_remaining, cg_active, cg_ytd, tlh, failed, failed_month)
+        property_basis, property_ownership, property_contribution, property_equity = (
+            property_basis * keep,
+            property_ownership * keep,
+            property_contribution * keep,
+            property_equity * keep,
+        )
+        carry = _ScanState(
+            cash=cash,
+            ordinary_ytd=ordinary,
+            property_tax_ytd=property_tax_ytd,
+            lot_remaining=lot_remaining,
+            capital_gain_active=cg_active,
+            capital_gain_ytd=cg_ytd,
+            tlh=tlh,
+            property_active=property_active,
+            property_basis=property_basis,
+            property_ownership=property_ownership,
+            property_contribution=property_contribution,
+            property_equity=property_equity,
+            property_cumulative_depreciation=property_cum_dep,
+            property_owner_occupied_months=property_owner_occupied,
+            property_depreciation_ytd=property_dep_ytd,
+            failed=failed,
+            failed_month=failed_month,
+        )
         base_ys = (
             cash,
             ordinary,
             lot_remaining,
             cg_active,
             cg_ytd,
+            property_active,
+            property_basis,
+            property_ownership,
+            property_contribution,
+            property_equity,
+            property_cum_dep,
+            property_owner_occupied,
             failed,
             failed_month,
             transfer_active,
@@ -340,6 +487,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             shortfall,
             failure_active,
         )
+        # Per-month property-event slabs (stacked over real purchases); empty when no purchases.
+        purchase_ys = (jnp.stack(purchase_active_rows), jnp.stack(transfer_active_rows)) if folded_purchases else ()
         # Per-(sale, lot, rollout) disposition slabs (stacked over real sales) + a per-month oversell
         # flag; all empty when there are no sales.
         sale_ys = (
@@ -353,18 +502,27 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             if folded_sales
             else ()
         )
-        return carry, (*base_ys, *sale_ys)
+        return carry, (*base_ys, *sale_ys, *purchase_ys)
 
-    init = (
-        cash0,
-        ordinary0,
-        property_tax_ytd0,
-        lot0,
-        cg_active0,
-        cg_ytd0,
-        tlh0,
-        jnp.zeros(r, dtype=bool),
-        jnp.full(r, -1, dtype=jnp.int32),
+    prop0 = jnp.zeros((p.property_count, r))
+    init = _ScanState(
+        cash=cash0,
+        ordinary_ytd=ordinary0,
+        property_tax_ytd=property_tax_ytd0,
+        lot_remaining=lot0,
+        capital_gain_active=cg_active0,
+        capital_gain_ytd=cg_ytd0,
+        tlh=tlh0,
+        property_active=jnp.zeros((p.property_count, r), dtype=bool),
+        property_basis=prop0,
+        property_ownership=prop0,
+        property_contribution=prop0,
+        property_equity=prop0,
+        property_cumulative_depreciation=prop0,
+        property_owner_occupied_months=jnp.zeros((p.property_count, r), dtype=jnp.int32),
+        property_depreciation_ytd=prop0,
+        failed=jnp.zeros(r, dtype=bool),
+        failed_month=jnp.full(r, -1, dtype=jnp.int32),
     )
     _, ys = jax.lax.scan(step, init, jnp.arange(horizon, dtype=jnp.int32))
     (
@@ -373,6 +531,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         lot_h,
         cg_active_h,
         cg_ytd_h,
+        prop_active_h,
+        prop_basis_h,
+        prop_ownership_h,
+        prop_contribution_h,
+        prop_equity_h,
+        prop_cum_dep_h,
+        prop_occupied_h,
         failed_h,
         failed_month_h,
         t_active,
@@ -382,8 +547,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         ob_paid,
         ob_short,
         ob_fail,
-        *sale_h,
+        *rest,
     ) = ys
+    # The two variable-length tail groups: sale slabs (5 leaves if any sales) then property-event
+    # slabs (2 leaves if any purchases). Slice deterministically by their compile-time presence.
+    n_sale = 5 if folded_sales else 0
+    sale_h, purchase_h = rest[:n_sale], rest[n_sale:]
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
@@ -393,6 +562,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     buffers.state.lot_state[1:] = np.asarray(lot_h)
     buffers.state.capital_gain_active_state[1:] = np.asarray(cg_active_h)
     buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
+    buffers.state.property_active_state[1:] = np.asarray(prop_active_h)
+    buffers.state.property_basis_state[1:] = np.asarray(prop_basis_h)
+    buffers.state.property_ownership_state[1:] = np.asarray(prop_ownership_h)
+    buffers.state.property_contribution_state[1:] = np.asarray(prop_contribution_h)
+    buffers.state.property_equity_state[1:] = np.asarray(prop_equity_h)
+    buffers.state.property_cumulative_depreciation_state[1:] = np.asarray(prop_cum_dep_h)
+    buffers.state.property_owner_occupied_months_state[1:] = np.asarray(prop_occupied_h)
     buffers.state.rollout_failed_state[1:] = np.asarray(failed_h)
     buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
     buffers.transfers.active[:] = np.asarray(t_active)
@@ -417,6 +593,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             disp.units[:, fs.buffer_index] = disp_units_np[:, i]
             disp.basis[:, fs.buffer_index] = disp_basis_np[:, i]
             disp.proceeds[:, fs.buffer_index] = disp_proceeds_np[:, i]
+    if folded_purchases:
+        # Stacks are `(horizon, num_real_purchases, R)`; scatter each to its property column.
+        purchase_active_np, transfer_active_np = (np.asarray(a) for a in purchase_h)
+        for i, fp in enumerate(folded_purchases):
+            buffers.properties.purchase_active[:, fp.buffer_index] = purchase_active_np[:, i]
+            buffers.properties.transfer_active[:, fp.buffer_index] = transfer_active_np[:, i]
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
