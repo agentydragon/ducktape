@@ -313,6 +313,7 @@ export function TerminalDistributionChart({
                     r={entry.isActive ? 2.4 : 1.8}
                     fill={FAILED_ROLLOUT_COLOR}
                     opacity={entry.isActive ? 1 : 0.8}
+                    data-product-distribution-failed={point.seed}
                   />
                 ) : null
               )}

@@ -192,6 +192,19 @@ def _wait_for_property_panel(page: Page) -> None:
     page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
 
 
+def _wait_for_distribution_failures(page: Page) -> None:
+    """Wait for a scenario whose distribution includes failed rollouts, so the terminal-distribution
+    chart's red failure markers render."""
+    page.add_style_tag(content=deterministic_style())
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-distribution-series]").first.wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-distribution-failed]").first.wait_for(state="visible", timeout=30_000)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+    _wait_for_product_chart_geometry(page)
+
+
 def _wait_for_calibration_page(page: Page) -> None:
     """Wait for the calibration tab's auto-run to land (results, not just the form).
 
@@ -262,6 +275,19 @@ _COMPARISON_SCENARIOS = {
     ],
 }
 _COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})
+
+# A single Base scenario engineered to bust a chunk of its rollouts: a high monthly spend against the
+# fixture portfolio so weaker-market paths exhaust cash and holdings before the 10y horizon, while
+# stronger-market paths survive. This is the only fixture with a non-zero failure rate, so it
+# exercises the distribution chart's failed-rollout markers (red dots, pinned at the frozen-to-0
+# terminal value). `cashBufferSaleUsd` is raised so funding keeps pace with spend month-to-month —
+# a bust then means holdings genuinely ran out, which is market-path-dependent (hence partial).
+_FAILURE_SCENARIOS = {
+    "v": 2,
+    "base": {"label": "Aggressive drawdown", "input": {"monthlySpendUsd": 9000, "cashBufferSaleUsd": 40000}},
+    "variants": [],
+}
+_FAILURE_URL = "/product?" + urlencode({"scenarios": json.dumps(_FAILURE_SCENARIOS), "h": "120"})
 
 
 def _wait_for_scenario_comparison(page: Page) -> None:
@@ -352,6 +378,7 @@ VISUAL_CASES = (
         wait_ready=_wait_for_scenario_comparison,
         interact=_focus_active_scenario,
     ),
+    VisualCase(name="product_distribution_failures", path=_FAILURE_URL, wait_ready=_wait_for_distribution_failures),
     VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )
 
