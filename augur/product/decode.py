@@ -230,9 +230,9 @@ def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
     plan = dense.plan
     shortfall = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
     primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
-    shortfall[1:] = (
-        dense.buffers.obligations.shortfall * primary_obligations[:, :, None].astype(np.float64)
-    ).sum(axis=1)
+    shortfall[1:] = (dense.buffers.obligations.shortfall * primary_obligations[:, :, None].astype(np.float64)).sum(
+        axis=1
+    )
     return shortfall
 
 
