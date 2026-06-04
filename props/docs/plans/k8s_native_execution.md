@@ -99,10 +99,11 @@ earlier ones only where noted.
 - Extract `props/backend/routes/llm.py` (+ auth/budget/cost helpers) into a
   standalone `py_binary` + `oci_image` + Deployment + Service.
 - Repoint agents' `OPENAI_BASE_URL` at the proxy Service.
-- Extend the existing per-request logging to capture the full transcript
-  (request + response) keyed by `agent_run_id`.
+- Capture the full transcript (request + response) keyed by `agent_run_id` at
+  the proxy — **deferred to Stage 2** (it pairs with the transcript endpoint).
 - **Done when:** rolling the API server does not interrupt an in-flight agent's
-  LLM calls; transcripts are queryable from the DB.
+  LLM calls. ✅ Met — agents talk to the `props-llm-proxy` Service, not the
+  dashboard.
 - **Risk:** low. Pure extraction of an existing chokepoint.
 - **TODO — split the config.** The proxy needs only `upstreams` (+ DB and the
   upstream API-key envs). `backend_url`, `grader_model`, `executor`,
@@ -113,10 +114,17 @@ earlier ones only where noted.
   up by carving `PropsConfig` into shared / proxy-only / api-only shapes so each
   service gets a minimal config (the proxy ideally just `upstreams`), and mount
   the proxy a slimmer `config.toml`.
-- **Sub-PRs:** (1) the standalone proxy app + `oci_image` + test (no deploy);
-  (2) deploy (Deployment + Service + image automation + `push-images` row),
-  running but unused; (3) cutover — repoint `OPENAI_BASE_URL` via a new
-  `llm_proxy_url` and drop the `/v1` mount from the backend.
+- **Status (2026-06-04): landed and live.**
+  - #1886 — standalone proxy app + `oci_image` + deploy (Deployment + Service +
+    Flux image automation + `push-images` row).
+  - #1892 — fix the proxy CLI so `serve` is a real subcommand (the container
+    crash-looped otherwise).
+  - #1890 — cutover: agents' `OPENAI_BASE_URL` derives from `llm_proxy_url` (the
+    `props-llm-proxy` Service), with the backend `/v1` kept as a fallback.
+  - This PR — drop the backend `/v1` mount now that agents are on the proxy.
+  - Tangential fixes the rollout surfaced: graders now reconcile against the k8s
+    API (#1882) and the executor SA can `list` pods (#1891), so the grader
+    controller maintains one labeled grader per snapshot.
 
 ### Stage 2 — Agent-readable logs (transcript + Loki)
 

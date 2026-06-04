@@ -59,7 +59,6 @@ py_library(
         "//props/backend/routes:agent_definitions",
         "//props/backend/routes:auth_routes",
         "//props/backend/routes:ground_truth",
-        "//props/backend/routes:llm",
         "//props/backend/routes:model_metadata",
         "//props/backend/routes:registry",
         "//props/backend/routes:runs",

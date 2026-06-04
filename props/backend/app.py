@@ -1,10 +1,11 @@
 """FastAPI application for props backend - unified dashboard, proxy, and run APIs.
 
-This is the unified props backend that includes:
+This is the props backend that includes:
 - Dashboard API: /api/stats, /api/runs, /api/gt
-- LLM Proxy: /v1/responses
 - Registry Proxy: /v2/*
 - Critic Run API: /api/runs/critic
+
+The LLM proxy (/v1/responses) is now a separate service — see props/llm_proxy.
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
 view directly, not as a REST endpoint.
@@ -28,16 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from props.backend.oidc import build_oauth, load_oidc_settings
-from props.backend.routes import (
-    agent_definitions,
-    auth_routes,
-    ground_truth,
-    llm,
-    model_metadata,
-    registry,
-    runs,
-    stats,
-)
+from props.backend.routes import agent_definitions, auth_routes, ground_truth, model_metadata, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -246,7 +238,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
     app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
     app.include_router(model_metadata.router, prefix="/api/model_metadata", tags=["model_metadata"])
-    app.include_router(llm.router, tags=["llm_proxy"])
     app.include_router(registry.router, tags=["registry_proxy"])
 
     @app.get("/health")
