@@ -64,9 +64,19 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, Snapshot
 from props.orchestration.agent_credentials import ensure_agent_role
-from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, TimedOut
+from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, PodPhase, TimedOut
 
 logger = logging.getLogger(__name__)
+
+# Pod metadata keys. The supervisor reconciles graders by listing pods with
+# these labels, so it survives backend restarts (no in-memory source of truth).
+LABEL_PROJECT = "adgn.project"
+LABEL_AGENT_RUN_ID = "adgn.agent_run_id"
+LABEL_AGENT_TYPE = "adgn.agent_type"
+LABEL_SNAPSHOT = "adgn.snapshot"  # sanitized slug (label-safe); for kubectl filtering
+# Exact slug — kept in an annotation because a slug ("repo/version") is not a
+# valid k8s label value. (Docker folds annotations into labels; see DockerExecutor.)
+ANNOTATION_SNAPSHOT_SLUG = "adgn.snapshot_slug"
 
 
 # --- Exceptions ---
@@ -137,6 +147,17 @@ class ResolvedImage:
 
     digest: str
     oci_ref: str
+
+
+@dataclass(frozen=True)
+class GraderPodInfo:
+    """A grader pod as observed from the runtime (via labels), for reconciliation."""
+
+    name: str
+    agent_run_id: UUID
+    snapshot_slug: SnapshotSlug
+    image_ref: str
+    phase: PodPhase
 
 
 # --- Agent Run View ---
@@ -288,7 +309,15 @@ class AgentRegistry:
         oci_ref = self._registry_config.build_oci_reference(agent_type, digest)
         return ResolvedImage(digest=digest, oci_ref=oci_ref)
 
-    async def _create_container(self, agent_run_id: UUID, *, image: str, name: str) -> ContainerHandle:
+    async def _create_container(
+        self,
+        agent_run_id: UUID,
+        *,
+        image: str,
+        name: str,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
+    ) -> ContainerHandle:
         """Ensure image, create DB role, create and start an agent container."""
         image_id = await self._pull_image(image)
         logger.info("Using image %s from %s", image_id[:19], image)
@@ -312,7 +341,8 @@ class AgentRegistry:
             name=name,
             image_id=image_id,
             env=env,
-            labels={"adgn.project": "props", "adgn.agent_run_id": str(agent_run_id)},
+            labels={LABEL_PROJECT: "props", LABEL_AGENT_RUN_ID: str(agent_run_id), **(extra_labels or {})},
+            annotations=annotations,
         )
 
     async def _collect_run(
@@ -383,7 +413,14 @@ class AgentRegistry:
             logger.info("Updated %s status to %s", agent_run_id, status)
 
     async def _start_agent(
-        self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None, name: str
+        self,
+        agent_run_id: UUID,
+        *,
+        image: str,
+        timeout_seconds: int | None = None,
+        name: str,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
         """Create and start agent container, returning a handle that manages its lifecycle.
 
@@ -391,7 +428,9 @@ class AgentRegistry:
         and updates DB status. Await the returned handle to block until completion;
         call kill_and_delete() to stop early.
         """
-        handle = await self._create_container(agent_run_id, image=image, name=name)
+        handle = await self._create_container(
+            agent_run_id, image=image, name=name, extra_labels=extra_labels, annotations=annotations
+        )
         task = asyncio.create_task(self._collect_run(agent_run_id, handle, timeout_seconds))
         return AgentRunHandle(task, handle.name, agent_run_id)
 
@@ -459,6 +498,8 @@ class AgentRegistry:
         verify_snapshot: SnapshotSlug | None = None,
         container_name: str,
         timeout_seconds: int | None = None,
+        extra_labels: dict[str, str] | None = None,
+        annotations: dict[str, str] | None = None,
     ) -> AgentRunHandle:
         """Create DB record and start container, returning a handle."""
         self._create_run(
@@ -470,7 +511,14 @@ class AgentRegistry:
             parent_run_id=parent_run_id,
             verify_snapshot=verify_snapshot,
         )
-        return await self._start_agent(agent_run_id, image=image.oci_ref, name=container_name)
+        return await self._start_agent(
+            agent_run_id,
+            image=image.oci_ref,
+            name=container_name,
+            timeout_seconds=timeout_seconds,
+            extra_labels=extra_labels,
+            annotations=annotations,
+        )
 
     async def run_critic(
         self,
@@ -660,4 +708,72 @@ class AgentRegistry:
             budget_usd=10_000.0,
             verify_snapshot=snapshot_slug,
             container_name=container_name,
+            extra_labels={LABEL_AGENT_TYPE: str(AgentType.GRADER), LABEL_SNAPSHOT: slug_seg},
+            annotations={ANNOTATION_SNAPSHOT_SLUG: str(snapshot_slug)},
         )
+
+    # --- Grader pod reconciliation (used by GraderSupervisor) ---
+
+    async def list_grader_pods(self) -> list[GraderPodInfo]:
+        """List grader pods currently known to the runtime, by label.
+
+        This is the supervisor's source of truth for actual state — it reflects
+        graders started by any backend instance, not just this process.
+        """
+        pods = await self._executor.list_pods({LABEL_PROJECT: "props", LABEL_AGENT_TYPE: str(AgentType.GRADER)})
+        graders: list[GraderPodInfo] = []
+        for p in pods:
+            run_id = p.labels.get(LABEL_AGENT_RUN_ID)
+            # k8s keeps the exact slug in an annotation; Docker folds it into labels.
+            slug = p.annotations.get(ANNOTATION_SNAPSHOT_SLUG) or p.labels.get(ANNOTATION_SNAPSHOT_SLUG)
+            if run_id is None or slug is None:
+                logger.warning("Grader pod %s missing run-id/slug metadata; ignoring", p.name)
+                continue
+            graders.append(
+                GraderPodInfo(
+                    name=p.name,
+                    agent_run_id=UUID(run_id),
+                    snapshot_slug=SnapshotSlug(slug),
+                    image_ref=p.image,
+                    phase=p.phase,
+                )
+            )
+        return graders
+
+    def adopt_grader_pod(self, pod: GraderPodInfo) -> AgentRunHandle:
+        """Resume ownership of an already-running grader pod (e.g. one started by
+        a previous backend instance): attach a collector task that captures logs
+        and finalizes the run when the pod exits or is killed."""
+        handle = self._executor.handle_for(pod.name)
+        task = asyncio.create_task(self._collect_run(pod.agent_run_id, handle, None))
+        logger.info("Adopted grader pod %s for %s", pod.name, pod.snapshot_slug)
+        return AgentRunHandle(task, pod.name, pod.agent_run_id)
+
+    async def reap_grader_pod(self, pod: GraderPodInfo, *, reason: str) -> None:
+        """Delete an unwanted grader pod (duplicate, orphan, removed snapshot, or
+        wrong image) and finalize its run as CANCELLED if it's still in progress."""
+        logger.info("Reaping grader pod %s (snapshot=%s, reason=%s)", pod.name, pod.snapshot_slug, reason)
+        logs = await self._executor.read_logs(pod.name)
+        self._finalize_run_if_in_progress(
+            pod.agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None, stdout=logs
+        )
+        await self._executor.handle_for(pod.name).kill_and_delete()
+
+    def _finalize_run_if_in_progress(
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None, stdout: str
+    ) -> None:
+        """Set a grader run's terminal status + logs, but only if it's still
+        IN_PROGRESS — idempotent across reconciles and safe for orphan runs that
+        another path may already have finalized."""
+        with self._db.session() as session:
+            run = session.get(AgentRun, agent_run_id)
+            if run is None:
+                logger.warning("Grader run %s not found while finalizing; deleting pod anyway", agent_run_id)
+                return
+            if run.status != AgentRunStatus.IN_PROGRESS:
+                return
+            run.status = status
+            run.container_exit_code = container_exit_code
+            run.container_stdout = stdout or None
+            session.commit()
+            logger.info("Finalized grader run %s -> %s", agent_run_id, status)

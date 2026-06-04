@@ -93,7 +93,6 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_registry",
-        ":executor",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:oci_utils",
@@ -127,6 +126,8 @@ py_test(
         "test_grader_supervisor.py",
     ],
     deps = [
+        ":agent_registry",
+        ":executor",
         ":grader_supervisor",
         "//props/core:ids",
         "@pypi//pytest",

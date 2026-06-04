@@ -23,9 +23,17 @@ from kubernetes_asyncio.client import (
     V1PodSpec,
 )
 
-from props.orchestration.executor import ContainerResult, Exited, TimedOut
+from props.orchestration.executor import ContainerResult, Exited, PodInfo, PodPhase, TimedOut
 
 logger = logging.getLogger(__name__)
+
+# k8s pod.status.phase -> runtime-agnostic PodPhase.
+_PHASE_MAP: dict[str, PodPhase] = {
+    "Pending": "pending",
+    "Running": "running",
+    "Succeeded": "succeeded",
+    "Failed": "failed",
+}
 
 
 @dataclass
@@ -115,7 +123,13 @@ class K8sExecutor:
         return image_ref
 
     async def run_container(
-        self, *, name: str, image_id: str, env: dict[str, str], labels: dict[str, str]
+        self,
+        *,
+        name: str,
+        image_id: str,
+        env: dict[str, str],
+        labels: dict[str, str],
+        annotations: dict[str, str] | None = None,
     ) -> K8sPodHandle:
         """Create and start a pod in the configured namespace."""
         v1 = self._core_v1
@@ -127,11 +141,40 @@ class K8sExecutor:
         if self._image_pull_secret:
             pod_spec.image_pull_secrets = [client.V1LocalObjectReference(name=self._image_pull_secret)]
 
-        pod = V1Pod(metadata=V1ObjectMeta(name=name, namespace=self._namespace, labels=labels), spec=pod_spec)
+        meta = V1ObjectMeta(name=name, namespace=self._namespace, labels=labels, annotations=annotations or None)
+        pod = V1Pod(metadata=meta, spec=pod_spec)
 
         await v1.create_namespaced_pod(namespace=self._namespace, body=pod)
         logger.info("Created pod %s in namespace %s", name, self._namespace)
         return K8sPodHandle(name=name, namespace=self._namespace, core_v1=self._core_v1)
+
+    async def list_pods(self, label_selector: dict[str, str]) -> list[PodInfo]:
+        selector = ",".join(f"{k}={v}" for k, v in label_selector.items())
+        resp = await self._core_v1.list_namespaced_pod(namespace=self._namespace, label_selector=selector)
+        pods: list[PodInfo] = []
+        for pod in resp.items:
+            phase: PodPhase = _PHASE_MAP.get(pod.status.phase if pod.status else "", "unknown")
+            image = pod.spec.containers[0].image if pod.spec and pod.spec.containers else ""
+            pods.append(
+                PodInfo(
+                    name=pod.metadata.name,
+                    image=image,
+                    phase=phase,
+                    labels=pod.metadata.labels or {},
+                    annotations=pod.metadata.annotations or {},
+                )
+            )
+        return pods
+
+    def handle_for(self, name: str) -> K8sPodHandle:
+        return K8sPodHandle(name=name, namespace=self._namespace, core_v1=self._core_v1)
+
+    async def read_logs(self, name: str) -> str:
+        try:
+            return str(await self._core_v1.read_namespaced_pod_log(name=name, namespace=self._namespace))
+        except ApiException as e:
+            logger.warning("Failed to read logs for pod %s: %s", name, e)
+            return ""
 
     async def close(self) -> None:
         """Close the k8s API client."""
