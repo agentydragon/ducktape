@@ -348,6 +348,11 @@ class AgentRegistry:
                 raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
+            # Persist the captured container logs so failures are visible in the
+            # run record (GET /api/runs/{id}) instead of only in the orchestrator's
+            # own stdout — the pod is deleted above, so this is the only durable copy.
+            found_run.container_stdout = result.stdout or None
+            found_run.container_stderr = result.stderr or None
             session.commit()
             logger.info(f"Updated {agent_run_id} status to {status}")
         return status

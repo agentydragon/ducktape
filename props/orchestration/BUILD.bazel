@@ -133,3 +133,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_agent_registry",
+    srcs = [
+        "conftest.py",
+        "test_agent_registry.py",
+    ],
+    deps = [
+        ":agent_registry",
+        ":executor",
+        "//props/core:oci_utils",
+        "//props/db:config",
+        "//props/db:models",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
