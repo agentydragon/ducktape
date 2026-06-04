@@ -1,16 +1,10 @@
 import React, { useState } from "react";
 import { Button } from "@mantine/core";
 import { NumberField, NativeSelectField } from "./lib/controls.tsx";
-import { fmtUsd } from "./lib/format.ts";
+import { fmtUsd, fmtNumber } from "./lib/format.ts";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
-import {
-  SellOrderControl,
-  ProductPortfolioPanel,
-  LifecycleEventsEditor,
-  PropertyDetails,
-  propertyLabel,
-} from "./forms.tsx";
+import { SellOrderControl, ProductPortfolioPanel, LifecycleEventsEditor, propertyLabel } from "./forms.tsx";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -138,6 +132,28 @@ const KNOBS = [
   { key: "peIndexFloorToInflation", label: "PE floor index", kind: "boolIndex", group: "Private equity" },
 ];
 
+// The chosen house's read-only facts, surfaced as comparison rows (one cell per scenario, "—" when a
+// scenario buys nothing). They describe the property and aren't edited here, so they live in their
+// own collapsible "House facts" group rather than among the editable knobs.
+const usdOrDash = (value) => (value == null ? "—" : fmtUsd(value));
+const numOrDash = (value) => (value == null ? "—" : fmtNumber(value));
+const HOUSE_FACTS = [
+  { label: "Type", value: (property) => property.type || "—" },
+  {
+    label: "Beds / baths",
+    value: (property) =>
+      property.beds == null && property.baths == null
+        ? "—"
+        : `${numOrDash(property.beds)} / ${numOrDash(property.baths)}`,
+  },
+  { label: "Sqft", value: (property) => numOrDash(property.sqft) },
+  { label: "Year built", value: (property) => property.yearBuilt ?? "—" },
+  { label: "Price", value: (property) => usdOrDash(property.priceUsd) },
+  { label: "HOA / mo", value: (property) => usdOrDash(property.hoaMonthlyUsd) },
+  { label: "Property tax / yr", value: (property) => usdOrDash(property.annualTaxOnListUsd) },
+  { label: "Rent estimate", value: (property) => usdOrDash(property.rentEstimateUsd) },
+];
+
 function propertyOptions(bootstrap) {
   const properties = bootstrap.properties ?? [];
   return [
@@ -151,6 +167,11 @@ function locationOptions(bootstrap) {
     { value: "", label: "(default)" },
     ...bootstrap.locations.map((location) => ({ value: location.id, label: location.label })),
   ];
+}
+
+function findProperty(bootstrap, propertyId) {
+  if (propertyId == null) return null;
+  return (bootstrap.properties ?? []).find((property) => property.id === propertyId) ?? null;
 }
 
 // Whether a knob applies to a single resolved scenario. Gates both the row (shown when it applies
@@ -180,7 +201,7 @@ function knobApplies(knob, input) {
 // estimate, so "" and "$0" mean different things. Other knobs have no placeholder.
 function cellPlaceholder(knob, input, bootstrap) {
   if (knob.key !== "rentalFullPropertyMonthlyUsd") return undefined;
-  const property = (bootstrap.properties ?? []).find((entry) => entry.id === input.propertyId);
+  const property = findProperty(bootstrap, input.propertyId);
   const estimate = Number(property?.rentEstimateUsd);
   return estimate > 0 ? `${fmtUsd(estimate)} (property default)` : "(required)";
 }
@@ -346,16 +367,60 @@ export function ScenarioEditor({
   const resolvedInputs = [base.input, ...variants.map((v) => resolveVariant(base.input, v.overrides))];
   const visibleKnobs = KNOBS.filter((knob) => resolvedInputs.some((input) => knobApplies(knob, input)));
 
-  // Scenarios that buy a property get, below the grid, a property-details card + a lifecycle timeline
-  // (both blob/list-shaped, so they don't fit table cells) — each its own collapsible group. A
-  // variant's events inherit Base until edited (creating a revertable `propertyLifecycleEvents`
-  // override). The index into `entries` keeps the dot color aligned with the chart + column headers.
-  const propertyDetailsCollapsed = collapsed.has("Property details");
+  // Scenarios that buy a property get a lifecycle timeline below the grid (list-shaped, so it doesn't
+  // fit a table cell). A variant's events inherit Base until edited (creating a revertable
+  // `propertyLifecycleEvents` override). The index into `entries` keeps the dot color aligned with the
+  // chart + column headers. The chosen house's read-only facts render as their own collapsible "House
+  // facts" row group (`houseFactsGroup`), inserted after the editable Property group.
   const timelineCollapsed = collapsed.has("Timeline");
   const owningScenarios = [
     { id: "base", label: base.label, input: base.input, variant: null },
     ...variants.map((v) => ({ id: v.id, label: v.label, input: resolveVariant(base.input, v.overrides), variant: v })),
   ].filter((entry) => entry.input.propertyId != null);
+
+  // Read-only "House facts" group: one row per surfaced property attribute, one cell per scenario (its
+  // resolved property, or "—" when it buys nothing). Collapsible via the same group toggle as the
+  // editable groups; rendered only when some scenario actually buys.
+  const houseFactsCollapsed = collapsed.has("House facts");
+  const houseFactsGroup =
+    owningScenarios.length > 0 ? (
+      <>
+        <tr>
+          <th colSpan={1 + entries.length} className="bg-slate-50 p-0 dark:bg-slate-900">
+            <button
+              type="button"
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              aria-expanded={!houseFactsCollapsed}
+              data-product-group-toggle="House facts"
+              onClick={() => toggleCollapsed("House facts")}
+            >
+              <span
+                aria-hidden="true"
+                className={`text-[8px] transition-transform ${houseFactsCollapsed ? "" : "rotate-90"}`}
+              >
+                ▶
+              </span>
+              House facts
+              {houseFactsCollapsed && <span className="ml-1 normal-case augur-muted">{HOUSE_FACTS.length} rows</span>}
+            </button>
+          </th>
+        </tr>
+        {!houseFactsCollapsed &&
+          HOUSE_FACTS.map((fact) => (
+            <tr key={fact.label} data-product-house-fact={fact.label}>
+              <th className="whitespace-nowrap px-3 py-1.5 text-left font-medium augur-strong">{fact.label}</th>
+              {entries.map((entry, index) => {
+                const property = findProperty(bootstrap, resolvedInputs[index].propertyId);
+                return (
+                  <td key={entry.id} className="px-3 py-1.5 text-right augur-tabular">
+                    {property ? fact.value(property) : <span className="augur-muted">—</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+      </>
+    ) : null;
 
   return (
     <details
@@ -491,6 +556,7 @@ export function ScenarioEditor({
                               ))}
                             </tr>
                           ))}
+                        {group === "Property" && houseFactsGroup}
                       </React.Fragment>
                     );
                   })}
@@ -503,47 +569,6 @@ export function ScenarioEditor({
               onChange={(sellOrder) => onSetBaseField("sellOrder", sellOrder)}
             />
           </div>
-
-          {owningScenarios.length > 0 && (
-            <div className="px-4 py-3" data-product-property-details="">
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                aria-expanded={!propertyDetailsCollapsed}
-                data-product-group-toggle="Property details"
-                onClick={() => toggleCollapsed("Property details")}
-              >
-                <span
-                  aria-hidden="true"
-                  className={`text-[8px] transition-transform ${propertyDetailsCollapsed ? "" : "rotate-90"}`}
-                >
-                  ▶
-                </span>
-                Property details
-              </button>
-              {!propertyDetailsCollapsed && (
-                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {owningScenarios.map((entry) => {
-                    const index = entries.findIndex((e) => e.id === entry.id);
-                    const property = (bootstrap.properties ?? []).find((p) => p.id === entry.input.propertyId);
-                    return (
-                      <div key={entry.id}>
-                        <div className="augur-field-label mb-1 flex items-center gap-1.5">
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: scenarioColor(index) }}
-                            aria-hidden="true"
-                          />
-                          {entry.label}
-                        </div>
-                        <PropertyDetails property={property} />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
           {owningScenarios.length > 0 && (
             <div className="px-4 py-3" data-product-timeline="">
