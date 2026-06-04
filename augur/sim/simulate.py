@@ -89,9 +89,7 @@ def _validate_series_indexed_amounts(
         # rollout coverage with a columnar group/count instead of materializing a
         # per-(series, month, rollout) Python dict over the full external frame.
         required_months = sorted({base_month, *(amount._reset_month(month) for month in months)})
-        series_rows = relevant.filter(
-            (pl.col("series_id") == wire_id) & pl.col("month_index").is_in(required_months)
-        )
+        series_rows = relevant.filter((pl.col("series_id") == wire_id) & pl.col("month_index").is_in(required_months))
         present_count = dict(
             series_rows.filter(pl.col("value").is_not_null())
             .group_by("month_index")
