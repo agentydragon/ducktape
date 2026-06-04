@@ -32,11 +32,7 @@ def test_retries_transient_then_succeeds() -> None:
         return "ok"
 
     result = with_retry(
-        fetch,
-        what="thing",
-        retry_on=httpx.HTTPError,
-        is_transient=httpx_is_transient,
-        sleep=slept.append,
+        fetch, what="thing", retry_on=httpx.HTTPError, is_transient=httpx_is_transient, sleep=slept.append
     )
     assert result == "ok"
     assert attempts["n"] == 3
