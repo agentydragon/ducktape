@@ -258,7 +258,6 @@ markets:
   #   xAI:          0x570b4ad4562404728eefc2876a930f5a1aa79e
   #   Anduril:      0xce76a9d7a778beb2907c288a2df477e68abc43
   #   Databricks:   0xfa0166f81f49ec29802bec6eabd71bd73aa24e
-
   # ============================================================================
   # EXACT -- pre_ipo_failure  (absorbing COLLAPSED/ACQUIRED before any IPO)
   # ============================================================================
