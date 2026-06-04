@@ -17,6 +17,7 @@ from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
@@ -260,6 +261,57 @@ def test_cash_property_purchase_scan_parity() -> None:
     assert _cash(run, "alice", 2) == pytest.approx(600_000.0)  # before purchase
     assert _cash(run, "alice", 3) == pytest.approx(600_000.0 - 510_000.0)
     assert _cash(run, "seller", 3) == pytest.approx(510_000.0)
+
+
+def test_property_tax_scan_parity() -> None:
+    # Cash home purchase at month 0 + a property-tax policy (owner has no tax profile, so no SALT /
+    # year-end pass): the monthly ad-valorem tax (assessed 500k × 1.2% / 12 = $500) is a PROPERTY_TAX
+    # obligation the scan now accrues + settles, starting the month after purchase. Routes through the
+    # scan (no tax profile, no mortgage).
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="county")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="county", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="sf",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,
+                buyer_closing_cost_usd=0.0,
+                rented_fraction=0.0,
+            )
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id="home", owner_agent_id="alice", tax_authority_agent_id="county", annual_tax_rate=0.012
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=4,
+    )
+    locations = {
+        "sf": Location(
+            location_id="sf",
+            display_name="SF",
+            jurisdiction_ids=["federal_us", "california"],
+            annual_property_tax_rate=0.0118,
+        )
+    }
+    run = simulate(scenario, rollout_count=4, locations=locations)
+
+    # After month 0: 500k purchase, no tax yet (accrues only once owned). Then $500/mo for months 1-3.
+    assert _cash(run, "alice", 1) == pytest.approx(100_000.0)
+    assert _cash(run, "alice", 4) == pytest.approx(100_000.0 - 3 * 500.0)
+    assert _cash(run, "county", 4) == pytest.approx(3 * 500.0)
 
 
 if __name__ == "__main__":

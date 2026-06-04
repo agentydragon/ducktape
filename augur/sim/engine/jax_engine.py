@@ -158,8 +158,12 @@ def scan_supported(plan: CompiledSimulation) -> bool:
     # on the padded sentinel property slot (with `cause = NO_CODE`), so gate on `cause`, not on
     # `source_kind` alone — only *real* obligations must be CONFIGURED for the scan to handle them.
     real_obligation = obligation.cause >= 0
+    handled_kind = (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION) | (
+        obligation.source_kind == ObligationSource.PROPERTY_TAX
+    )
     return (
-        bool((~real_obligation | (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION)).all())
+        # real obligations must be CONFIGURED or PROPERTY_TAX — mortgage/estimated kinds aren't folded
+        bool((~real_obligation | handled_kind).all())
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
@@ -281,6 +285,21 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "property_tax_profile": jnp.asarray(ob.property_tax_profile),
         "property_slot": jnp.asarray(ob.property_slot),
     }
+    # Property-tax obligation amounts, per (month, slot), static: monthly ad-valorem on the assessed
+    # value (rate = the obligation's amount_fixed, or the location reference rate when NaN) plus the
+    # flat special assessment / 12. `prop_idx` indexes the obligation's property; `prop_month` is that
+    # property's purchase month (the tax accrues only once it's been bought).
+    pt_prop_idx_np = np.where(ob.source_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)
+    pt_rate_np = np.where(np.isnan(ob.amount_fixed), props.location_tax_rate[pt_prop_idx_np], ob.amount_fixed)
+    pt_amount_np = (
+        props.initial_assessed_value[pt_prop_idx_np] * pt_rate_np / 12.0
+        + props.special_assessment_annual_usd[pt_prop_idx_np] / 12.0
+    )
+    pt = {
+        "amount": jnp.asarray(pt_amount_np),
+        "prop_idx": jnp.asarray(pt_prop_idx_np),
+        "prop_month": jnp.asarray(props.month[pt_prop_idx_np]),
+    }
 
     def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
@@ -382,13 +401,27 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             month,
             r,
         )
-        slot_active = (
-            (og["cause"][month] >= 0)[:, None]
+        real_slot = og["cause"][month] >= 0
+        configured_active = (
+            real_slot[:, None]
             & active[None, :]
             & (og["source_kind"][month] == ObligationSource.CONFIGURED_OBLIGATION)[:, None]
             & (amount > 0.0)
         )
-        accrual_due = jnp.where(slot_active, amount, 0.0)
+        # Property-tax accrual: monthly ad-valorem, active once the property is owned (its purchase
+        # month has passed) and the rollout still holds it. `cause >= 0` excludes the padded sentinel
+        # property slot, which carries source_kind == PROPERTY_TAX but no real obligation.
+        pt_amount_row = pt["amount"][month]
+        pt_active = (
+            real_slot[:, None]
+            & (og["source_kind"][month] == ObligationSource.PROPERTY_TAX)[:, None]
+            & active[None, :]
+            & _gather_rows(property_active, pt["prop_idx"][month])
+            & (pt["prop_month"][month] < month)[:, None]
+            & (pt_amount_row > 0.0)[:, None]
+        )
+        slot_active = configured_active | pt_active
+        accrual_due = jnp.where(configured_active, amount, 0.0) + jnp.where(pt_active, pt_amount_row[:, None], 0.0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
