@@ -11,7 +11,6 @@ They differ in what they run on that JSON:
 """
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@hey-api/openapi-ts/package_json.bzl", openapi_ts_bin = "bin")
 load("@npm_ducktape//:openapi-typescript/package_json.bzl", openapi_typescript_bin = "bin")
 
@@ -116,10 +115,15 @@ def js_openapi_zod(name, generator, out = "api/schema.zod.mjs", visibility = Non
     )
 
     if out.endswith(".ts") or out.endswith(".mts"):
-        copy_file(
+        # A real content copy, not `copy_file`'s symlink: esbuild resolves imported modules to
+        # their realpath, and the gen-dir `zod.gen.ts` the symlink points at is not an input of
+        # downstream bundle actions, so a symlinked `out` makes esbuild fail with
+        # "Could not read from file .../zod.gen.ts".
+        native.genrule(
             name = "_" + name + "_emit",
-            src = ":_" + name + "_generate_ts",
-            out = out,
+            srcs = [":_" + name + "_generate_ts"],
+            outs = [out],
+            cmd = "cp $< $@",
         )
         emit = ":_" + name + "_emit"
     else:
