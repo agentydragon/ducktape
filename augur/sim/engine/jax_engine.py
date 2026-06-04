@@ -64,6 +64,12 @@ from augur.sim.tensor_fifo import lot_order_for_pool
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
 
+# `run_jax_scan`'s 9-element carry pytree: cash, ordinary_ytd, property_tax_ytd, lot_remaining,
+# capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest, failed, failed_month.
+_ScanCarry = tuple[
+    jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray
+]
+
 
 @dataclass(frozen=True)
 class LiabilityState:
@@ -89,19 +95,34 @@ class TaxLiabilityState:
     amount: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class _FoldedSale:
+    """One real scheduled sale, with its static FIFO data resolved host-side for the scan fold.
+
+    `ordered_lots` is the FIFO lot order for the sale's (agent, account, asset) pool (a static index
+    array); `buffer_index` is the sale's column in the `lot_dispositions.scheduled` buffers; `month`
+    is the (static) month it fires, compared against the traced scan index inside the step."""
+
+    buffer_index: int
+    month: int
+    ordered_lots: np.ndarray
+    quantity: float
+    proceeds_slot: int
+    agent_code: int
+
+
 def scan_supported(plan: CompiledSimulation) -> bool:
     """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
 
-    The scan fold is being grown phase-by-phase; it currently handles scheduled/recurring transfers
-    and CONFIGURED obligations (income/rent-style accruals), so route a scenario to it iff it uses no
-    other phase. Anything else falls back to the eager `run_jax`. Conservative by construction — a
-    missing feature here only costs the fast path, never correctness (the dual-backend suite gates
-    both routes)."""
+    The scan fold is being grown phase-by-phase; it currently handles scheduled/recurring transfers,
+    scheduled asset sales (FIFO + capital gains), and CONFIGURED obligations (income/rent-style
+    accruals), so route a scenario to it iff it uses no other phase. Anything else falls back to the
+    eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
+    never correctness (the dual-backend suite gates both routes)."""
     obligation_kind = plan.obligations.source_kind
     return (
         # only CONFIGURED obligations (or empty sentinel slots) — no property-tax/mortgage/estimated
         bool(((obligation_kind < 0) | (obligation_kind == ObligationSource.CONFIGURED_OBLIGATION)).all())
-        and bool((plan.sales.month < 0).all())  # no scheduled asset sales
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
@@ -118,17 +139,50 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     transfer. Covers the phases in `scan_supported`; the carry is the per-rollout state pytree and
     each step gathers the month's plan rows by the traced scan index and runs the branch-free cores.
 
-    Covered: scheduled/recurring transfers and CONFIGURED obligations (accrual + group funding +
-    settlement, with failure tracking). Grown phase-by-phase (sales, PE, tax, property)."""
+    Covered: scheduled/recurring transfers, scheduled asset sales (FIFO lot matching + capital-gain
+    classification), and CONFIGURED obligations (accrual + group funding + settlement, with failure
+    tracking). Grown phase-by-phase (PE, tax, property)."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
     cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
     ordinary0 = jnp.zeros((p.tax_profile_count, r))
     property_tax_ytd0 = jnp.zeros((p.tax_profile_count, r))
+    lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
+    cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
+    cg_ytd0 = jnp.zeros((p.capital_gain_agent_count, 2, r))
+    # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
+    # capital-gains core threads it, so carry a zeroed copy.
+    tlh0 = jnp.zeros((p.harvest_policy_count, r))
     external_values = jnp.asarray(plan.external_values)
+    cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
     # State the obligation cores read but that this phase set never mutates (no properties/liabilities):
     property_rented_fraction = jnp.zeros((p.property_count, r))
+
+    # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
+    # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
+    sales = plan.sales
+    folded_sales = [
+        _FoldedSale(
+            buffer_index=s,
+            month=int(sales.month[s]),
+            ordered_lots=lot_order_for_pool(
+                lot_agent_codes=plan.lot_agent_codes,
+                lot_account_codes=plan.lot_account_codes,
+                lot_asset_codes=plan.lot_asset_codes,
+                lot_purchase_month=plan.lot_purchase_month,
+                lot_id_codes=plan.lot_id_codes,
+                agent_code=int(sales.agent[s]),
+                account_code=int(sales.source_account[s]),
+                asset_code=int(sales.asset[s]),
+            ),
+            quantity=float(sales.quantity[s]),
+            proceeds_slot=int(sales.proceeds_slot[s]),
+            agent_code=int(sales.agent[s]),
+        )
+        for s in range(sales.month.shape[0])
+        if int(sales.month[s]) >= 0
+    ]
     # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
     # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
     t = plan.transfers
@@ -164,10 +218,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "property_slot": jnp.asarray(ob.property_slot),
     }
 
-    def step(
-        carry: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], month: jnp.ndarray
-    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, ...]]:
-        cash, ordinary, property_tax_ytd, failed, failed_month = carry
+    def step(carry: _ScanCarry, month: jnp.ndarray) -> tuple[_ScanCarry, tuple[jnp.ndarray, ...]]:
+        cash, ordinary, property_tax_ytd, lot_remaining, cg_active, cg_ytd, tlh, failed, failed_month = carry
         active = ~failed
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
@@ -188,6 +240,28 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             external_values,
             month,
         )
+
+        # Scheduled asset sales (before obligations, matching eager order: proceeds can fund the
+        # month's obligations). Each real sale fires when its static month equals the traced month;
+        # `_fifo_sell_units` sells nothing when target_units is 0, so non-firing slots are no-ops.
+        disp_active, disp_units, disp_basis, disp_proceeds = [], [], [], []
+        for fs in folded_sales:
+            fires = month == fs.month
+            target_units = jnp.where(active & fires, fs.quantity, 0.0)
+            unit_price = _sale_unit_price(sales, external_values, month, fs.buffer_index, r)
+            sold_units, proceeds, basis, _oversell = _fifo_sell_units(
+                lot_remaining.T, fs.ordered_lots, target_units, unit_price, cost_basis_per_unit
+            )
+            lot_remaining = lot_remaining - sold_units.T
+            if fs.proceeds_slot >= 0:
+                cash = cash.at[fs.proceeds_slot].add(proceeds.sum(axis=1))
+            cg_active, cg_ytd, tlh = _record_capital_gains(
+                plan, cg_active, cg_ytd, tlh, lot_remaining, month, fs.agent_code, sold_units, proceeds - basis
+            )
+            disp_active.append((sold_units > 0.0).T)
+            disp_units.append(sold_units.T)
+            disp_basis.append(basis.T)
+            disp_proceeds.append(proceeds.T)
 
         # CONFIGURED-obligation accrual (the only kind `scan_supported` admits): a fixed/series amount,
         # active where scheduled and positive. Property-tax/mortgage/estimated kinds are excluded by the gate.
@@ -240,11 +314,17 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
 
         keep = ~failed
-        cash, ordinary = cash * keep, ordinary * keep
-        carry = (cash, ordinary, property_tax_ytd, failed, failed_month)
-        ys = (
+        # `_zero_failed_state`: drain dollar-valued state for newly-failed rollouts (cg_active, the
+        # bool activity flags, is left intact — it matches the eager engine).
+        cash, ordinary, lot_remaining = cash * keep, ordinary * keep, lot_remaining * keep
+        cg_ytd, tlh = cg_ytd * keep[None, None, :], tlh * keep
+        carry = (cash, ordinary, property_tax_ytd, lot_remaining, cg_active, cg_ytd, tlh, failed, failed_month)
+        base_ys = (
             cash,
             ordinary,
+            lot_remaining,
+            cg_active,
+            cg_ytd,
             failed,
             failed_month,
             transfer_active,
@@ -255,13 +335,32 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             shortfall,
             failure_active,
         )
-        return carry, ys
+        # Per-(sale, lot, rollout) disposition slabs, stacked over the real sales; empty when no sales.
+        sale_ys = (
+            (jnp.stack(disp_active), jnp.stack(disp_units), jnp.stack(disp_basis), jnp.stack(disp_proceeds))
+            if folded_sales
+            else ()
+        )
+        return carry, (*base_ys, *sale_ys)
 
-    init = (cash0, ordinary0, property_tax_ytd0, jnp.zeros(r, dtype=bool), jnp.full(r, -1, dtype=jnp.int32))
+    init = (
+        cash0,
+        ordinary0,
+        property_tax_ytd0,
+        lot0,
+        cg_active0,
+        cg_ytd0,
+        tlh0,
+        jnp.zeros(r, dtype=bool),
+        jnp.full(r, -1, dtype=jnp.int32),
+    )
     _, ys = jax.lax.scan(step, init, jnp.arange(horizon, dtype=jnp.int32))
     (
         cash_h,
         ordinary_h,
+        lot_h,
+        cg_active_h,
+        cg_ytd_h,
         failed_h,
         failed_month_h,
         t_active,
@@ -271,18 +370,17 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         ob_paid,
         ob_short,
         ob_fail,
+        *sale_h,
     ) = ys
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
-    failed_np = np.asarray(failed_h)  # (horizon, r); monotonic — True from the failure month on
-    lot_full = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))  # constant: no sales/PE
     buffers.state.cash_state[0] = np.asarray(cash0)
     buffers.state.cash_state[1:] = np.asarray(cash_h)
     buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)
-    buffers.state.lot_state[0] = lot_full
-    # Lots never change without sales/PE (both barred by `scan_supported`), but `_zero_failed_state`
-    # drains them for failed rollouts, so mask each month by that month's survival.
-    buffers.state.lot_state[1:] = lot_full[None] * (~failed_np)[:, None, :]
+    buffers.state.lot_state[0] = np.asarray(lot0)
+    buffers.state.lot_state[1:] = np.asarray(lot_h)
+    buffers.state.capital_gain_active_state[1:] = np.asarray(cg_active_h)
+    buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
     buffers.state.rollout_failed_state[1:] = np.asarray(failed_h)
     buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
     buffers.transfers.active[:] = np.asarray(t_active)
@@ -292,6 +390,15 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     buffers.obligations.paid[:] = np.asarray(ob_paid)
     buffers.obligations.shortfall[:] = np.asarray(ob_short)
     buffers.obligations.failure_active[:] = np.asarray(ob_fail)
+    if folded_sales:
+        # `sale_h` stacks are `(horizon, num_real_sales, L, R)`; scatter each real sale to its column.
+        disp = buffers.lot_dispositions.scheduled
+        disp_active_h, disp_units_h, disp_basis_h, disp_proceeds_h = (np.asarray(a) for a in sale_h[0])
+        for i, fs in enumerate(folded_sales):
+            disp.active[:, fs.buffer_index] = disp_active_h[:, i]
+            disp.units[:, fs.buffer_index] = disp_units_h[:, i]
+            disp.basis[:, fs.buffer_index] = disp_basis_h[:, i]
+            disp.proceeds[:, fs.buffer_index] = disp_proceeds_h[:, i]
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -813,7 +920,9 @@ def _apply_scheduled_asset_sales(
     return cash, lot_remaining, capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
 
 
-def _sale_unit_price(sales, external_values: jnp.ndarray, month: int, sale: int, rollout_count: int) -> jnp.ndarray:
+def _sale_unit_price(
+    sales, external_values: jnp.ndarray, month: int | jnp.ndarray, sale: int, rollout_count: int
+) -> jnp.ndarray:
     fixed_price = float(sales.price_fixed[sale])
     if not np.isnan(fixed_price):
         return jnp.full(rollout_count, fixed_price)
@@ -885,7 +994,7 @@ def _record_capital_gains(
     capital_gain_ytd: jnp.ndarray,
     tlh_cumulative_harvest: jnp.ndarray,
     lot_remaining: jnp.ndarray,
-    month: int,
+    month: int | jnp.ndarray,
     agent_code: int,
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,

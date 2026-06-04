@@ -364,6 +364,7 @@ py_test(
         ":conftest",
         ":scenario",
         ":simulate",
+        "//augur/product:asset_key",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
