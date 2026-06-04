@@ -125,17 +125,45 @@ The calibration loss is `Σ_m D(p̂_θ(m) ‖ price(m))`. (With the optional clo
 macro/level rows may instead use the exact Gaussian CDF for lower variance — but you do not have
 to, and the discrete rows always go through rollouts.)
 
+## The split: one train/eval partition, defined once and enforced
+
+The foundation — worth doing on its own, ahead of any new objective — is a **single, explicit
+train/eval split** that every fitter and every scorer reads from one place, so "what is training
+data" and "what is held out" are defined once and cannot drift or leak.
+
+The split partitions **both** kinds of evidence:
+
+- **historical series, by section.** For each series (`sp500`, `crypto:btc`/`eth`, `home_value:*`,
+  `rent:*`, `inflation`) the split names which date range(s) are training vs evaluation — e.g. train
+  through a per-series cutoff, evaluate the held-out tail. Per-series because the series start at
+  different dates and have different lengths.
+- **prediction markets, by set.** Which catalog markets a model may be _fit against_ (train) and
+  which are _held out_ for honest calibration scoring (eval).
+
+It is **enforced, not conventional**:
+
+- one split spec is the only way fitters and scorers obtain data: a fitter is handed the **train**
+  view and structurally cannot see eval; a scorer reports **train and eval separately**. No code
+  path scores on its own training data by accident (today's resubstitution).
+- a model artifact records the slice it was trained on — which series, through which date; which PM
+  train set — so "what did this model see?" is answerable, not folklore (see "Surfacing").
+
+Start with a **single fixed split** (one cutoff per series, one train/eval PM partition). Rolling
+origin is a later refinement layered on the same spec — explicitly **not** the starting point.
+
 ## Staged plan
 
-### Stage 0 — eval discipline first (cheap, worth doing regardless)
+### Stage 0 — define the split and apply it to the existing models (start here)
 
-- Add a real **held-out tail split** plus **some rolling-origin** to `augur/fit/metrics_report.py`,
-  scored at multiple horizons. Every-month origins are ideal but `#origins × fit_cost` adds up, so
-  start with a handful of origins and expand as the budget allows.
-- Put the **deployed** `state_space` macro into the active list so we benchmark what we ship (today
-  it scores VECM + Independent only).
-- Independently useful: you cannot tell whether the joint fit helped without an out-of-sample
-  yardstick.
+- Implement the split spec above (series sections + PM train/eval sets) as the one enforced source
+  of "what is training data," consumed by `augur/fit/` and the scorers.
+- Re-fit and re-score the **existing** models (`state_space`, `vecm`, the PE channel) under it: fit
+  on train, report predictive log-density / CRPS on the held-out series tail and calibration on the
+  held-out PM set — with the deployed `state_space` macro in the battery (today it scores VECM +
+  Independent only).
+- This is valuable on its own and needs no new objective: it gives honest, comparable baselines for
+  what we already ship, and turns resubstitution into real out-of-sample numbers. Single fixed
+  split; rolling origin deferred.
 
 ### Stage 1 — macro joint fit by MC scoring
 
@@ -156,6 +184,18 @@ to, and the discrete rows always go through rollouts.)
 - This retires the hand-pasted dilution path: the dilution / hazard scalars become part of the
   jointly-fit `θ`, with provenance, instead of OLS/NUTS output copied into the config by hand.
 
+## Surfacing the split (calibration page + model provenance)
+
+Once a model is fit against PMs, the partition must be visible, not buried:
+
+- **calibration page**: badge each market **trained-on** (fit against) vs **held-out** (eval) so a
+  reader knows which scores are genuinely out-of-sample. Held-out calibration is the honest number;
+  trained-on calibration only confirms the fit took.
+- **model provenance**: each model surfaces its training set — the series and the cutoff date(s) it
+  was trained through, plus its PM train set — so "what did this model see?" is answerable from the
+  UI / artifact rather than folklore. This is the same provenance the split spec records on the
+  artifact.
+
 ## What this fixes (coherence wins)
 
 - **deployed = fitted** — the macro artifact (drifts, vols, _and_ conditioning) comes out of one fit
@@ -163,9 +203,12 @@ to, and the discrete rows always go through rollouts.)
 - **calibration becomes an objective with a knob** (`λ`), not a post-hoc scoreboard.
 - **one dilution fit** — Stage 2 folds dilution/hazards into `θ`, retiring the blocked M2.2-A OLS
   path (`derive_dilution_prior.py`, ~8000× 10y mark) and the hand-copy step.
-- **honest eval** — Stage 0 replaces resubstitution with a held-out + rolling-origin split that
-  includes the deployed model.
-- **provenance** — a fit run ties artifact → evidence → params, replacing "paste this YAML block."
+- **honest eval, defined once** — Stage 0 replaces resubstitution with a single enforced train/eval
+  split (series sections + PM sets) that fitters and scorers all read, with the deployed model in
+  the battery. No code path can score on its own training data.
+- **provenance** — a fit run ties artifact → evidence → params and records the split slice it
+  trained on, replacing "paste this YAML block" and making the training set legible (incl. on the
+  calibration page).
 
 ## Obstacles and open questions
 
@@ -184,8 +227,9 @@ to, and the discrete rows always go through rollouts.)
   against _current prices_, not outcomes — it teaches the model to agree with the crowd, not to be
   right. Useful (the crowd is a strong prior) but state it plainly; never conflate with backtested
   accuracy.
-- **Compute budget.** `#optimizer-steps × N × #rolling-origins`. Budget the rolling-origin count
-  and `N`; CRN keeps the per-step variance low enough that modest `N` works.
+- **Compute budget.** With the single fixed split it is `#optimizer-steps × N`; rolling origin
+  (deferred) multiplies by `#origins`, so budget that when it lands. CRN keeps per-step variance low
+  enough that a modest `N` works.
 
 ## Non-goals
 
