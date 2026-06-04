@@ -41,14 +41,13 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass, fields, is_dataclass, replace
+from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from numpy.typing import NDArray
 
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
@@ -226,61 +225,51 @@ _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
 )
 
 
-def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
-    """The swept numeric-config arrays passed to the compiled program as traced inputs. Mirrors the
-    fields excluded from the fingerprint, so a sweep over these values reuses the compiled program
-    instead of recompiling. Tax-value fields rebuild a hybrid plan for the cores (`_hybrid_plan`);
-    the transfer-amount and cost-basis arrays are consumed directly by the step closure."""
-    return {
-        "link_standard_deduction": jnp.asarray(plan.tax.link_standard_deduction),
-        "link_ordinary_upper": jnp.asarray(plan.tax.link_ordinary_upper),
-        "link_ordinary_rate": jnp.asarray(plan.tax.link_ordinary_rate),
-        "link_ltcg_upper": jnp.asarray(plan.tax.link_ltcg_upper),
-        "link_ltcg_rate": jnp.asarray(plan.tax.link_ltcg_rate),
-        "mid_principal_ratio": jnp.asarray(plan.mid.principal_ratio),
-        "transfer_amount_fixed": jnp.asarray(plan.transfers.amount_fixed),
-        "transfer_amount_base": jnp.asarray(plan.transfers.amount_base),
-        "cost_basis_per_unit": jnp.asarray(plan.lot_cost_basis_per_unit),
-        "cash_initial_balance": jnp.asarray(plan.cash_initial_balance),
-        "lot_initial_quantity": jnp.asarray(plan.lot_initial_quantity),
-        "property_adjusted_basis": jnp.asarray(plan.properties.adjusted_basis),
-        "property_ownership": jnp.asarray(plan.properties.ownership),
-        "property_equity_ledger": jnp.asarray(plan.properties.equity_ledger),
-        "liability_principal": jnp.asarray(plan.liabilities.principal),
-        "liability_monthly_payment": jnp.asarray(plan.liabilities.monthly_payment),
-    }
+class _TracedConfig(NamedTuple):
+    """JAX-native typed bundle of the swept numeric config the compiled program takes as TRACED inputs
+    (a NamedTuple → native JAX pytree, so it passes through `jax.jit` typed). The cores read VALUES from
+    here (`jax.Array`s) while reading structure / feature flags / counts / slot indices from the
+    concrete `plan` — so nothing puns a traced array into the compiler's NumPy-typed plan fields. Each
+    field mirrors a `_FINGERPRINT_EXCLUDE` entry, so a sweep over these values reuses the program."""
+
+    link_standard_deduction: jnp.ndarray
+    link_ordinary_upper: jnp.ndarray
+    link_ordinary_rate: jnp.ndarray
+    link_ltcg_upper: jnp.ndarray
+    link_ltcg_rate: jnp.ndarray
+    mid_principal_ratio: jnp.ndarray
+    transfer_amount_fixed: jnp.ndarray
+    transfer_amount_base: jnp.ndarray
+    cost_basis_per_unit: jnp.ndarray
+    cash_initial_balance: jnp.ndarray
+    lot_initial_quantity: jnp.ndarray
+    property_adjusted_basis: jnp.ndarray
+    property_ownership: jnp.ndarray
+    property_equity_ledger: jnp.ndarray
+    liability_principal: jnp.ndarray
+    liability_monthly_payment: jnp.ndarray
 
 
-def _hybrid_plan(plan: CompiledSimulation, cfg: dict[str, jnp.ndarray]) -> CompiledSimulation:
-    """A plan whose swept numeric-config fields (tax values, MID ratio, property purchase basis /
-    ownership / equity, mortgage principal / payment) are the traced `cfg` arrays and whose every other
-    field is the original concrete (numpy) value. The cores read values from the traced fields and
-    structural feature flags / counts / slot indices from the concrete fields, via the same `plan`."""
-
-    # The compile-output dataclasses are typed with NumPy arrays (they are built by the compiler); the
-    # hybrid deliberately stores the traced jax arrays in those slots, so cast at the boundary.
-    def a(key: str) -> NDArray[np.float64]:
-        return cast("NDArray[np.float64]", cfg[key])
-
-    tax = replace(
-        plan.tax,
-        link_standard_deduction=a("link_standard_deduction"),
-        link_ordinary_upper=a("link_ordinary_upper"),
-        link_ordinary_rate=a("link_ordinary_rate"),
-        link_ltcg_upper=a("link_ltcg_upper"),
-        link_ltcg_rate=a("link_ltcg_rate"),
+def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
+    """Build the traced-config bundle from the (concrete) plan. Mirrors the fingerprint exclusions."""
+    return _TracedConfig(
+        link_standard_deduction=jnp.asarray(plan.tax.link_standard_deduction),
+        link_ordinary_upper=jnp.asarray(plan.tax.link_ordinary_upper),
+        link_ordinary_rate=jnp.asarray(plan.tax.link_ordinary_rate),
+        link_ltcg_upper=jnp.asarray(plan.tax.link_ltcg_upper),
+        link_ltcg_rate=jnp.asarray(plan.tax.link_ltcg_rate),
+        mid_principal_ratio=jnp.asarray(plan.mid.principal_ratio),
+        transfer_amount_fixed=jnp.asarray(plan.transfers.amount_fixed),
+        transfer_amount_base=jnp.asarray(plan.transfers.amount_base),
+        cost_basis_per_unit=jnp.asarray(plan.lot_cost_basis_per_unit),
+        cash_initial_balance=jnp.asarray(plan.cash_initial_balance),
+        lot_initial_quantity=jnp.asarray(plan.lot_initial_quantity),
+        property_adjusted_basis=jnp.asarray(plan.properties.adjusted_basis),
+        property_ownership=jnp.asarray(plan.properties.ownership),
+        property_equity_ledger=jnp.asarray(plan.properties.equity_ledger),
+        liability_principal=jnp.asarray(plan.liabilities.principal),
+        liability_monthly_payment=jnp.asarray(plan.liabilities.monthly_payment),
     )
-    mid = replace(plan.mid, principal_ratio=a("mid_principal_ratio"))
-    properties = replace(
-        plan.properties,
-        adjusted_basis=a("property_adjusted_basis"),
-        ownership=a("property_ownership"),
-        equity_ledger=a("property_equity_ledger"),
-    )
-    liabilities = replace(
-        plan.liabilities, principal=a("liability_principal"), monthly_payment=a("liability_monthly_payment")
-    )
-    return replace(plan, tax=tax, mid=mid, properties=properties, liabilities=liabilities)
 
 
 def _fingerprint_into(h: Any, obj: Any) -> None:
@@ -395,11 +384,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
     # capital-gains core threads it, so carry a zeroed copy.
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
-    # Seed-varying traced inputs: placeholders here, rebound (via `nonlocal`) to the traced arguments
-    # inside `_program_impl`. `step` closes over these names and reads the traced values at trace time.
+    # Traced inputs: placeholders here, rebound (via `nonlocal`) to the traced arguments inside
+    # `_program_impl`. `step` / `december_tax` close over these names and read the traced values at
+    # trace time. `tcfg` carries the swept numeric VALUES; `plan` stays the concrete structure.
     external_values: jnp.ndarray = None  # type: ignore[assignment]
     pe_ch: dict[str, jnp.ndarray] = None  # type: ignore[assignment]
-    cost_basis_per_unit: jnp.ndarray = None  # type: ignore[assignment]  # traced; set in `_program_impl`
+    cost_basis_per_unit: jnp.ndarray = None  # type: ignore[assignment]
+    tcfg: _TracedConfig = None  # type: ignore[assignment]
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
     # events), so they're carry state initialized from the compile-time broadcast.
@@ -768,7 +759,15 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
 
         def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
-                plan, ordinary, cg_ytd, recapture, liabs_view, link=link, salt_deduction=salt_deduction, rollout_count=r
+                plan,
+                tcfg,
+                ordinary,
+                cg_ytd,
+                recapture,
+                liabs_view,
+                link=link,
+                salt_deduction=salt_deduction,
+                rollout_count=r,
             )
             profile = int(taxc.link_profile[link])
             gp = int(plan.tax_profile_capital_gain_index[profile])
@@ -779,7 +778,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
                 jnp.where(dec, ordinary[profile], 0.0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.LONG_TERM], 0.0),
                 jnp.where(dec, cg_ytd[gp, CapitalGainClassification.SHORT_TERM], 0.0),
-                jnp.where(dec, plan.tax.link_standard_deduction[link], 0.0),  # traced (hybrid plan)
+                jnp.where(dec, tcfg.link_standard_deduction[link], 0.0),  # traced value
                 jnp.where(dec, mid, 0.0),
                 jnp.where(dec, salt_deduction, 0.0),
                 jnp.where(dec, itemized, 0.0),
@@ -947,18 +946,18 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             property_active = property_active.at[fp.buffer_index].set(
                 jnp.where(buy, True, property_active[fp.buffer_index])
             )
-            # Pure-value purchase amounts read as traced inputs from the (hybrid) plan by index.
+            # Pure-value purchase amounts read as traced inputs from `tcfg` by index.
             property_basis = property_basis.at[fp.buffer_index].set(
-                jnp.where(buy, plan.properties.adjusted_basis[fp.buffer_index], property_basis[fp.buffer_index])
+                jnp.where(buy, tcfg.property_adjusted_basis[fp.buffer_index], property_basis[fp.buffer_index])
             )
             property_ownership = property_ownership.at[fp.buffer_index].set(
-                jnp.where(buy, plan.properties.ownership[fp.buffer_index], property_ownership[fp.buffer_index])
+                jnp.where(buy, tcfg.property_ownership[fp.buffer_index], property_ownership[fp.buffer_index])
             )
             property_contribution = property_contribution.at[fp.buffer_index].set(
                 jnp.where(buy, fp.stake_contribution, property_contribution[fp.buffer_index])
             )
             property_equity = property_equity.at[fp.buffer_index].set(
-                jnp.where(buy, plan.properties.equity_ledger[fp.buffer_index], property_equity[fp.buffer_index])
+                jnp.where(buy, tcfg.property_equity_ledger[fp.buffer_index], property_equity[fp.buffer_index])
             )
             transfer_fires = buy if fp.stake_contribution > 0.0 else jnp.zeros_like(buy)
             if fp.stake_contribution > 0.0:
@@ -970,10 +969,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
                 ms = fp.mortgage_slot
                 liab_active = liab_active.at[ms].set(jnp.where(buy, True, liab_active[ms]))
                 liab_principal = liab_principal.at[ms].set(
-                    jnp.where(buy, plan.liabilities.principal[ms], liab_principal[ms])
+                    jnp.where(buy, tcfg.liability_principal[ms], liab_principal[ms])
                 )
                 liab_monthly = liab_monthly.at[ms].set(
-                    jnp.where(buy, plan.liabilities.monthly_payment[ms], liab_monthly[ms])
+                    jnp.where(buy, tcfg.liability_monthly_payment[ms], liab_monthly[ms])
                 )
                 liab_interest_ytd = liab_interest_ytd.at[ms].set(jnp.where(buy, 0.0, liab_interest_ytd[ms]))
                 liab_principal_ytd = liab_principal_ytd.at[ms].set(jnp.where(buy, 0.0, liab_principal_ytd[ms]))
@@ -1558,23 +1557,23 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     months = jnp.arange(horizon, dtype=jnp.int32)
 
     def _program_impl(
-        external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray], cfg_arg: dict[str, jnp.ndarray]
+        external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray], cfg_arg: _TracedConfig
     ) -> tuple:
-        # Rebind the traced placeholders to this draw's arguments; `step` and the cores read them from
-        # the enclosing scope, so they trace against the traced inputs. `plan` is swapped for the hybrid
-        # whose swept tax-value fields are the traced `cfg` arrays (structural fields stay concrete); the
-        # transfer-amount entries of the (closed-over, mutable) `tr` table are overwritten in place.
-        nonlocal external_values, pe_ch, plan, cost_basis_per_unit
+        # Rebind the traced placeholders to this draw's arguments; `step`, `december_tax` and the cores
+        # read them from the enclosing scope (`tcfg` holds the swept numeric VALUES; `plan` stays the
+        # concrete structure). The transfer-amount entries of the (closed-over, mutable) `tr` table are
+        # overwritten in place.
+        nonlocal external_values, pe_ch, cost_basis_per_unit, tcfg
         external_values = external_values_arg
         pe_ch = pe_ch_arg
-        cost_basis_per_unit = cfg_arg["cost_basis_per_unit"]
-        plan = _hybrid_plan(plan, cfg_arg)
-        tr["fixed"] = cfg_arg["transfer_amount_fixed"]
-        tr["base"] = cfg_arg["transfer_amount_base"]
+        tcfg = cfg_arg
+        cost_basis_per_unit = cfg_arg.cost_basis_per_unit
+        tr["fixed"] = cfg_arg.transfer_amount_fixed
+        tr["base"] = cfg_arg.transfer_amount_base
         # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
         init_traced = init._replace(
-            cash=jnp.broadcast_to(cfg_arg["cash_initial_balance"][:, None], (p.cash_count, r)),
-            lot_remaining=jnp.broadcast_to(cfg_arg["lot_initial_quantity"][:, None], (p.lot_count, r)),
+            cash=jnp.broadcast_to(cfg_arg.cash_initial_balance[:, None], (p.cash_count, r)),
+            lot_remaining=jnp.broadcast_to(cfg_arg.lot_initial_quantity[:, None], (p.lot_count, r)),
         )
         _, ys = jax.lax.scan(step, init_traced, months)
         return ys
@@ -2334,7 +2333,7 @@ def _tlh_harvest_policy_jit(
     return capital_gain_ytd, capital_gain_active, cumulative + gross
 
 
-def _apply_brackets(amount: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> jnp.ndarray:
+def _apply_brackets(amount: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int) -> jnp.ndarray:
     """Port of `phases._apply_brackets`: progressive bracket tax on `amount`."""
     if count <= 0:
         return jnp.zeros_like(amount)
@@ -2347,7 +2346,7 @@ def _apply_brackets(amount: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray,
 
 
 def _apply_ltcg_brackets(
-    ltcg_amount: jnp.ndarray, ordinary_taxable: jnp.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int
+    ltcg_amount: jnp.ndarray, ordinary_taxable: jnp.ndarray, *, upper: jnp.ndarray, rate: jnp.ndarray, count: int
 ) -> jnp.ndarray:
     """Port of `phases._apply_ltcg_brackets`: LTCG stacked on top of ordinary taxable income."""
     if count <= 0:
@@ -2388,6 +2387,7 @@ def _net_capital_gains_jnp(
 
 def _compute_tax_for_link(
     plan: CompiledSimulation,
+    tcfg: _TracedConfig,
     ordinary_ytd: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
     recapture_section_1250_ytd: jnp.ndarray,
@@ -2397,7 +2397,9 @@ def _compute_tax_for_link(
     salt_deduction: jnp.ndarray,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._compute_tax_for_link`: one link's bracket math (MID + SALT + §1250 + LTCG)."""
+    """Port of `phases._compute_tax_for_link`: one link's bracket math (MID + SALT + §1250 + LTCG).
+    Bracket values / rates / deduction / MID ratio come from the traced `tcfg`; feature flags, counts
+    and the §1250 style rate are read from the concrete `plan`."""
     t = plan.tax
     profile = int(t.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
@@ -2406,10 +2408,10 @@ def _compute_tax_for_link(
     stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
     recapture = recapture_section_1250_ytd[profile]
     section_1250_rate = float(t.link_section_1250_rate[link])
-    standard_deduction = t.link_standard_deduction[link]  # traced value (hybrid plan); de-scalared
+    standard_deduction = tcfg.link_standard_deduction[link]
     if bool(plan.mid.link_active[link]):
         owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
-        mortgage_interest_deduction = jnp.asarray(plan.mid.principal_ratio[link]) @ owner_interest_ytd
+        mortgage_interest_deduction = tcfg.mid_principal_ratio[link] @ owner_interest_ytd
     else:
         mortgage_interest_deduction = jnp.zeros(rollout_count)
     itemized_deduction = mortgage_interest_deduction + salt_deduction
@@ -2418,8 +2420,8 @@ def _compute_tax_for_link(
     federal_style_section_1250 = section_1250_rate > 0.0
     ordinary_for_brackets = ordinary if federal_style_section_1250 else ordinary + recapture
 
-    ordinary_upper = t.link_ordinary_upper[link]
-    ordinary_rate = t.link_ordinary_rate[link]
+    ordinary_upper = tcfg.link_ordinary_upper[link]
+    ordinary_rate = tcfg.link_ordinary_rate[link]
     ordinary_count = int(t.link_ordinary_count[link])
     if int(t.link_has_ltcg[link]) == 1:
         ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
@@ -2428,8 +2430,8 @@ def _compute_tax_for_link(
         ltcg_tax = _apply_ltcg_brackets(
             ltcg,
             ordinary_taxable,
-            upper=t.link_ltcg_upper[link],
-            rate=t.link_ltcg_rate[link],
+            upper=tcfg.link_ltcg_upper[link],
+            rate=tcfg.link_ltcg_rate[link],
             count=int(t.link_ltcg_count[link]),
         )
     else:
