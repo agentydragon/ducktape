@@ -59,6 +59,9 @@ from augur.sim.enums import (
 from augur.sim.tax import net_capital_gains_with_carryforward
 from augur.sim.tensor_fifo import lot_order_for_pool
 
+SECTION_121_LOOKBACK_MONTHS = 60
+SECTION_121_MIN_QUALIFYING_MONTHS = 24
+
 
 @dataclass(frozen=True)
 class LiabilityState:
@@ -138,9 +141,34 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         active = ~failed
 
         _apply_primary_residence_events(plan, buffers, agent_primary_residence_property, failed, month)
-        cash, property_rented_fraction, property_building_basis = _apply_lifecycle_events(
-            plan, buffers, cash, property_active, property_rented_fraction, property_building_basis, failed, month
+        lifecycle_state = _apply_lifecycle_events(
+            plan,
+            buffers,
+            _LifecycleState(
+                cash=cash,
+                property_active=property_active,
+                property_rented_fraction=property_rented_fraction,
+                property_building_basis=property_building_basis,
+                liabilities=liabilities,
+                recapture_section_1250_ytd=recapture_section_1250_ytd,
+                capital_gain_active=capital_gain_active,
+                capital_gain_ytd=capital_gain_ytd,
+            ),
+            property_cumulative_depreciation,
+            property_owner_occupied_months,
+            agent_primary_residence_property,
+            external_values,
+            failed,
+            month,
         )
+        cash = lifecycle_state.cash
+        property_active = lifecycle_state.property_active
+        property_rented_fraction = lifecycle_state.property_rented_fraction
+        property_building_basis = lifecycle_state.property_building_basis
+        liabilities = lifecycle_state.liabilities
+        recapture_section_1250_ytd = lifecycle_state.recapture_section_1250_ytd
+        capital_gain_active = lifecycle_state.capital_gain_active
+        capital_gain_ytd = lifecycle_state.capital_gain_ytd
 
         cash, ordinary_ytd, transfer_active, transfer_amount = _apply_scheduled_transfers(
             plan.transfers, cash, ordinary_ytd, active, external_values, month, r
@@ -1803,49 +1831,196 @@ def _apply_primary_residence_events(
         buffers.primary_residence.fired[event_index] = active
 
 
+@dataclass(frozen=True)
+class _LifecycleState:
+    """The engine state mutated by lifecycle events (FRACTION/CAPITAL_IMPROVEMENT/SALE), threaded
+    as one bundle to keep the run-loop call site readable."""
+
+    cash: jnp.ndarray
+    property_active: jnp.ndarray
+    property_rented_fraction: jnp.ndarray
+    property_building_basis: jnp.ndarray
+    liabilities: LiabilityState
+    recapture_section_1250_ytd: jnp.ndarray
+    capital_gain_active: jnp.ndarray
+    capital_gain_ytd: jnp.ndarray
+
+
 def _apply_lifecycle_events(
     plan: CompiledSimulation,
     buffers: SimulationBuffers,
-    cash: jnp.ndarray,
-    property_active: jnp.ndarray,
-    property_rented_fraction: jnp.ndarray,
-    property_building_basis: jnp.ndarray,
+    state: _LifecycleState,
+    property_cumulative_depreciation: jnp.ndarray,
+    property_owner_occupied_months: jnp.ndarray,
+    agent_primary_residence_property: np.ndarray,
+    external_values: jnp.ndarray,
     failed: jnp.ndarray,
     month: int,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_lifecycle_events` (FRACTION + CAPITAL_IMPROVEMENT).
-
-    The §1250/§121 SALE kind is not yet ported (raises NotImplementedError) — it is the last
-    remaining engine path.
-    """
+) -> _LifecycleState:
+    """Functional port of `phases._apply_lifecycle_events` (FRACTION + CAPITAL_IMPROVEMENT + SALE)."""
     starts = plan.lifecycle_events.month_starts
     if month + 1 >= starts.shape[0]:
-        return cash, property_rented_fraction, property_building_basis
+        return state
     begin, end = int(starts[month]), int(starts[month + 1])
     active_rollout = ~failed
     if begin == end or not bool(active_rollout.any()):
-        return cash, property_rented_fraction, property_building_basis
+        return state
     le = plan.lifecycle_events
     for i in range(begin, end):
         prop = int(le.property_slot[i])
         kind = int(le.kind[i])
-        active_property = active_rollout & property_active[prop]
+        active_property = active_rollout & state.property_active[prop]
         if not bool(active_property.any()):
             continue
         if kind == LifecycleKind.FRACTION:
-            property_rented_fraction = property_rented_fraction.at[prop].set(
-                jnp.where(active_property, float(le.rented_fraction[i]), property_rented_fraction[prop])
+            state = replace(
+                state,
+                property_rented_fraction=state.property_rented_fraction.at[prop].set(
+                    jnp.where(active_property, float(le.rented_fraction[i]), state.property_rented_fraction[prop])
+                ),
             )
         elif kind == LifecycleKind.CAPITAL_IMPROVEMENT:
             amount = float(le.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
+            cash = state.cash
             if owner_cash_slot >= 0:
                 cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0.0))
-            property_building_basis = property_building_basis.at[prop].add(jnp.where(active_property, amount, 0.0))
+            state = replace(
+                state,
+                cash=cash,
+                property_building_basis=state.property_building_basis.at[prop].add(
+                    jnp.where(active_property, amount, 0.0)
+                ),
+            )
         elif kind == LifecycleKind.SALE:
-            raise NotImplementedError("property sale (§1250/§121) is not yet ported to the JAX engine")
+            state = _apply_property_sale(
+                plan,
+                buffers,
+                state,
+                property_cumulative_depreciation,
+                property_owner_occupied_months,
+                agent_primary_residence_property,
+                external_values,
+                month=month,
+                event_index=i,
+                prop=prop,
+                closing_cost_pct=float(le.amount[i]),
+                active_property=active_property,
+            )
         buffers.lifecycle.fired[i] = np.asarray(active_property)
-    return cash, property_rented_fraction, property_building_basis
+    return state
+
+
+def _apply_property_sale(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    state: _LifecycleState,
+    property_cumulative_depreciation: jnp.ndarray,
+    property_owner_occupied_months: jnp.ndarray,
+    agent_primary_residence_property: np.ndarray,
+    external_values: jnp.ndarray,
+    *,
+    month: int,
+    event_index: int,
+    prop: int,
+    closing_cost_pct: float,
+    active_property: jnp.ndarray,
+) -> _LifecycleState:
+    """Port of `phases._apply_property_sale`: market value, §1250 recapture, §121 exclusion, payoff."""
+    rollout_count = state.cash.shape[1]
+    series_idx = int(plan.property_home_value_series_index[prop])
+    if series_idx < 0:
+        raise RuntimeError("property sale reached the engine without a home-value series")
+    market_value = (
+        float(plan.properties.purchase_price[prop])
+        * external_values[series_idx, :, month]
+        / (external_values[series_idx, :, 0])
+    )
+    gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
+
+    capex = state.property_building_basis[prop] - float(plan.property_building_basis[prop])
+    cum_dep = property_cumulative_depreciation[prop]
+    realized_gain = gross_proceeds - (float(plan.properties.purchase_price[prop]) + capex - cum_dep)
+    recapture = jnp.minimum(jnp.maximum(realized_gain, 0.0), cum_dep)
+    post_recapture_gain = jnp.maximum(realized_gain - recapture, 0.0)
+
+    # §121 ownership/use test: owner-occupied months strictly inside the 60-month lookback window.
+    # `property_owner_occupied_months` is the pre-this-month cumulative (incremented later), and the
+    # lookback snapshot is the cumulative as of `month - 60`.
+    current_cum = np.asarray(property_owner_occupied_months[prop])
+    lookback = max(0, month - SECTION_121_LOOKBACK_MONTHS)
+    snapshot_cum = buffers.state.property_owner_occupied_months_state[lookback, prop].astype(np.int64)
+    qualifies = jnp.asarray((current_cum - snapshot_cum) >= SECTION_121_MIN_QUALIFYING_MONTHS)
+    owner_profile = int(plan.property_owner_profile_index[prop])
+    exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
+    section_121_exclusion = jnp.where(qualifies, jnp.minimum(post_recapture_gain, exclusion_cap), 0.0)
+    ltcg = post_recapture_gain - section_121_exclusion
+
+    # Pay off any outstanding mortgage on this property (all rollouts; matches the reference), then
+    # net cash to the owner is gross minus payoff for the selling rollouts.
+    liabilities = state.liabilities
+    mortgage_payoff = jnp.zeros(rollout_count)
+    for lia in range(plan.liabilities.property_slot.shape[0]):
+        if int(plan.liabilities.property_slot[lia]) == prop:
+            mortgage_payoff = mortgage_payoff + liabilities.principal[lia]
+            liabilities = replace(
+                liabilities,
+                principal=liabilities.principal.at[lia].set(jnp.zeros(rollout_count)),
+                active=liabilities.active.at[lia].set(jnp.zeros(rollout_count, dtype=bool)),
+            )
+    net_cash = gross_proceeds - mortgage_payoff
+    cash = state.cash
+    owner_cash_slot = int(plan.properties.buyer_slot[prop])
+    if owner_cash_slot >= 0:
+        cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0.0))
+
+    recapture_ytd = state.recapture_section_1250_ytd
+    capital_gain_active = state.capital_gain_active
+    capital_gain_ytd = state.capital_gain_ytd
+    if owner_profile >= 0:
+        recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0.0))
+        gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
+        if gain_profile >= 0:
+            lt = CapitalGainClassification.LONG_TERM
+            capital_gain_ytd = capital_gain_ytd.at[gain_profile, lt].add(jnp.where(active_property, ltcg, 0.0))
+            capital_gain_active = capital_gain_active.at[gain_profile, lt].set(
+                capital_gain_active[gain_profile, lt] | active_property
+            )
+
+    # Freeze the property for the selling rollouts; cumulative depreciation is preserved as record.
+    property_active = state.property_active.at[prop].set(state.property_active[prop] & ~active_property)
+    property_rented_fraction = state.property_rented_fraction.at[prop].set(
+        jnp.where(active_property, 0.0, state.property_rented_fraction[prop])
+    )
+    property_building_basis = state.property_building_basis.at[prop].set(
+        jnp.where(active_property, 0.0, state.property_building_basis[prop])
+    )
+    owner_agent_slot = int(plan.property_owner_agent_index[prop])
+    if owner_agent_slot >= 0 and int(agent_primary_residence_property[owner_agent_slot]) == prop:
+        agent_primary_residence_property[owner_agent_slot] = NO_CODE
+
+    lifecycle = buffers.lifecycle
+    lifecycle.sale_gross_proceeds[event_index] = np.asarray(jnp.where(active_property, gross_proceeds, 0.0))
+    lifecycle.sale_mortgage_payoff[event_index] = np.asarray(jnp.where(active_property, mortgage_payoff, 0.0))
+    lifecycle.sale_net_cash[event_index] = np.asarray(jnp.where(active_property, net_cash, 0.0))
+    lifecycle.sale_realized_gain[event_index] = np.asarray(jnp.where(active_property, realized_gain, 0.0))
+    lifecycle.sale_recapture[event_index] = np.asarray(jnp.where(active_property, recapture, 0.0))
+    lifecycle.sale_section_121_exclusion[event_index] = np.asarray(
+        jnp.where(active_property, section_121_exclusion, 0.0)
+    )
+    lifecycle.sale_long_term_gain[event_index] = np.asarray(jnp.where(active_property, ltcg, 0.0))
+
+    return replace(
+        state,
+        cash=cash,
+        property_active=property_active,
+        property_rented_fraction=property_rented_fraction,
+        property_building_basis=property_building_basis,
+        liabilities=liabilities,
+        recapture_section_1250_ytd=recapture_ytd,
+        capital_gain_active=capital_gain_active,
+        capital_gain_ytd=capital_gain_ytd,
+    )
 
 
 def _apply_owner_occupied_month(
