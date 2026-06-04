@@ -92,12 +92,15 @@ class TaxLiabilityState:
 def scan_supported(plan: CompiledSimulation) -> bool:
     """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
 
-    The scan fold is being grown phase-by-phase; it currently handles only scheduled/recurring
-    transfers, so route a scenario to it iff it uses no other phase. Anything else falls back to the
-    eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
-    never correctness (the dual-backend suite gates both routes)."""
+    The scan fold is being grown phase-by-phase; it currently handles scheduled/recurring transfers
+    and CONFIGURED obligations (income/rent-style accruals), so route a scenario to it iff it uses no
+    other phase. Anything else falls back to the eager `run_jax`. Conservative by construction — a
+    missing feature here only costs the fast path, never correctness (the dual-backend suite gates
+    both routes)."""
+    obligation_kind = plan.obligations.source_kind
     return (
-        bool((plan.obligations.cause < 0).all())  # no real obligations in any month
+        # only CONFIGURED obligations (or empty sentinel slots) — no property-tax/mortgage/estimated
+        bool(((obligation_kind < 0) | (obligation_kind == ObligationSource.CONFIGURED_OBLIGATION)).all())
         and bool((plan.sales.month < 0).all())  # no scheduled asset sales
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
@@ -115,66 +118,122 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     transfer. Covers the phases in `scan_supported`; the carry is the per-rollout state pytree and
     each step gathers the month's plan rows by the traced scan index and runs the branch-free cores.
 
-    First slice: scheduled/recurring transfers. Grown phase-by-phase (obligations, sales, …)."""
+    Covered: scheduled/recurring transfers and CONFIGURED obligations (accrual + group funding +
+    settlement, with failure tracking). Grown phase-by-phase (sales, PE, tax, property)."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
     cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
     ordinary0 = jnp.zeros((p.tax_profile_count, r))
+    property_tax_ytd0 = jnp.zeros((p.tax_profile_count, r))
     external_values = jnp.asarray(plan.external_values)
+    # State the obligation cores read but that this phase set never mutates (no properties/liabilities):
+    property_rented_fraction = jnp.zeros((p.property_count, r))
+    # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
+    # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
     t = plan.transfers
-    # Month-indexed transfer plan arrays, device-resident; the scan step gathers row `month`.
-    cause, kind, fixed, base, base_month = (
-        jnp.asarray(t.cause),
-        jnp.asarray(t.amount_kind),
-        jnp.asarray(t.amount_fixed),
-        jnp.asarray(t.amount_base),
-        jnp.asarray(t.amount_base_month),
-    )
-    series, period, from_slot, to_slot, income_profile, deduction_profile = (
-        jnp.asarray(t.amount_series),
-        jnp.asarray(t.amount_period),
-        jnp.asarray(t.from_slot),
-        jnp.asarray(t.to_slot),
-        jnp.asarray(t.income_profile),
-        jnp.asarray(t.deduction_profile),
-    )
-    active = jnp.ones(r, dtype=bool)  # transfers never fail a rollout
+    tr = {
+        "cause": jnp.asarray(t.cause),
+        "kind": jnp.asarray(t.amount_kind),
+        "fixed": jnp.asarray(t.amount_fixed),
+        "base": jnp.asarray(t.amount_base),
+        "series": jnp.asarray(t.amount_series),
+        "base_month": jnp.asarray(t.amount_base_month),
+        "period": jnp.asarray(t.amount_period),
+        "from_slot": jnp.asarray(t.from_slot),
+        "to_slot": jnp.asarray(t.to_slot),
+        "income_profile": jnp.asarray(t.income_profile),
+        "deduction_profile": jnp.asarray(t.deduction_profile),
+    }
+    ob = plan.obligations
+    og = {
+        "cause": jnp.asarray(ob.cause),
+        "source_kind": jnp.asarray(ob.source_kind),
+        "amount_kind": jnp.asarray(ob.amount_kind),
+        "amount_fixed": jnp.asarray(ob.amount_fixed),
+        "amount_base": jnp.asarray(ob.amount_base),
+        "amount_series": jnp.asarray(ob.amount_series),
+        "amount_base_month": jnp.asarray(ob.amount_base_month),
+        "amount_period": jnp.asarray(ob.amount_period),
+        "agent": jnp.asarray(ob.agent),
+        "from_slot": jnp.asarray(ob.from_slot),
+        "to_slot": jnp.asarray(ob.to_slot),
+        "deduction_profile": jnp.asarray(ob.deduction_profile),
+        "deductible_fraction": jnp.asarray(ob.deductible_fraction),
+        "property_tax_profile": jnp.asarray(ob.property_tax_profile),
+        "property_slot": jnp.asarray(ob.property_slot),
+    }
 
     def step(
-        carry: tuple[jnp.ndarray, jnp.ndarray], month: jnp.ndarray
-    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]]:
-        cash, ordinary = carry
-        cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
-            cause[month],
-            kind[month],
-            fixed[month],
-            base[month],
-            series[month],
-            base_month[month],
-            period[month],
-            from_slot[month],
-            to_slot[month],
-            income_profile[month],
-            deduction_profile[month],
-            cash,
-            ordinary,
-            active,
-            external_values,
-            month,
-        )
-        return (cash, ordinary), (cash, ordinary, transfer_active, transfer_amount)
+        carry: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], month: jnp.ndarray
+    ) -> tuple[tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], tuple[jnp.ndarray, ...]]:
+        cash, ordinary, property_tax_ytd, failed, failed_month = carry
+        active = ~failed
 
-    (_, _), ys = jax.lax.scan(step, (cash0, ordinary0), jnp.arange(horizon, dtype=jnp.int32))
-    cash_hist, ordinary_hist, transfer_active, transfer_amount = ys  # each leads with the month axis
+        cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
+            tr["cause"][month], tr["kind"][month], tr["fixed"][month], tr["base"][month], tr["series"][month],
+            tr["base_month"][month], tr["period"][month], tr["from_slot"][month], tr["to_slot"][month],
+            tr["income_profile"][month], tr["deduction_profile"][month], cash, ordinary, active, external_values, month,
+        )
+
+        # CONFIGURED-obligation accrual (the only kind `scan_supported` admits): a fixed/series amount,
+        # active where scheduled and positive. Property-tax/mortgage/estimated kinds are excluded by the gate.
+        amount = _amount_values_vec(
+            og["amount_kind"][month], og["amount_fixed"][month], og["amount_base"][month], og["amount_series"][month],
+            og["amount_base_month"][month], og["amount_period"][month], external_values, month, r,
+        )
+        slot_active = (
+            (og["cause"][month] >= 0)[:, None]
+            & active[None, :]
+            & (og["source_kind"][month] == ObligationSource.CONFIGURED_OBLIGATION)[:, None]
+            & (amount > 0.0)
+        )
+        accrual_due = jnp.where(slot_active, amount, 0.0)
+
+        agent_row, from_row = og["agent"][month], og["from_slot"][month]
+        group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
+        funded = _obligation_group_funded_jit(group_matrix, from_row, cash, slot_active, accrual_due)
+
+        property_slot = og["property_slot"][month]
+        _, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
+            _settlement_core_jit(
+                from_row, og["to_slot"][month], og["deduction_profile"][month], og["deductible_fraction"][month],
+                og["property_tax_profile"][month], jnp.where(property_slot < 0, 0, property_slot),
+                property_slot >= 0, og["property_tax_profile"][month] >= 0, og["deduction_profile"][month] >= 0,
+                slot_active, accrual_due, funded, cash, ordinary, property_tax_ytd, property_rented_fraction,
+                failed, failed_month, month,
+            )
+        )
+
+        keep = ~failed
+        cash, ordinary = cash * keep, ordinary * keep
+        carry = (cash, ordinary, property_tax_ytd, failed, failed_month)
+        ys = (cash, ordinary, failed, failed_month, transfer_active, transfer_amount, slot_active, accrual_due, paid_buffer, shortfall, failure_active)
+        return carry, ys
+
+    init = (cash0, ordinary0, property_tax_ytd0, jnp.zeros(r, dtype=bool), jnp.full(r, -1, dtype=jnp.int32))
+    _, ys = jax.lax.scan(step, init, jnp.arange(horizon, dtype=jnp.int32))
+    (cash_h, ordinary_h, failed_h, failed_month_h, t_active, t_amount, ob_active, ob_due, ob_paid, ob_short, ob_fail) = ys
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
+    failed_np = np.asarray(failed_h)  # (horizon, r); monotonic — True from the failure month on
+    lot_full = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))  # constant: no sales/PE
     buffers.state.cash_state[0] = np.asarray(cash0)
-    buffers.state.cash_state[1:] = np.asarray(cash_hist)
-    buffers.state.lot_state[0] = np.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
-    buffers.state.ordinary_state[1:] = np.asarray(ordinary_hist)
-    buffers.transfers.active[:] = np.asarray(transfer_active)
-    buffers.transfers.amount[:] = np.asarray(transfer_amount)
+    buffers.state.cash_state[1:] = np.asarray(cash_h)
+    buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)
+    buffers.state.lot_state[0] = lot_full
+    # Lots never change without sales/PE (both barred by `scan_supported`), but `_zero_failed_state`
+    # drains them for failed rollouts, so mask each month by that month's survival.
+    buffers.state.lot_state[1:] = lot_full[None] * (~failed_np)[:, None, :]
+    buffers.state.rollout_failed_state[1:] = np.asarray(failed_h)
+    buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
+    buffers.transfers.active[:] = np.asarray(t_active)
+    buffers.transfers.amount[:] = np.asarray(t_amount)
+    buffers.obligations.active[:] = np.asarray(ob_active)
+    buffers.obligations.due[:] = np.asarray(ob_due)
+    buffers.obligations.paid[:] = np.asarray(ob_paid)
+    buffers.obligations.shortfall[:] = np.asarray(ob_short)
+    buffers.obligations.failure_active[:] = np.asarray(ob_fail)
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
