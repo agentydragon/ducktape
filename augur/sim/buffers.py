@@ -464,7 +464,7 @@ class LotDispositionEventBuffers:
         h = plan.event_months
         r = plan.rollout_count
         lot_axis = max(1, plan.lot_count)
-        self.scheduled.validate("scheduled", (h, plan.scheduled_sale_count, lot_axis, r))
+        self.scheduled.validate("scheduled", (plan.scheduled_sale_count, lot_axis, r))
         self.liquidity.validate(
             "liquidity", (h, plan.liquidity_policy_count, plan.max_liquidity_policy_assets, lot_axis, r)
         )

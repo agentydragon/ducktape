@@ -63,12 +63,14 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
 
 
 def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.lot_dispositions.scheduled.active  # (M, sale, lot, R)
+    active = buffers.lot_dispositions.scheduled.active  # (sale, lot, R) — horizon collapsed
     if active.any():
-        months, sales, lots, rollouts = np.argwhere(active).T
+        sales, lots, rollouts = np.argwhere(active).T
     else:
-        months = sales = lots = rollouts = np.array([], dtype=np.int64)
-    cause_ids = codes_to_strings(plan, plan.sales.cause)[months, sales]
+        sales = lots = rollouts = np.array([], dtype=np.int64)
+    # Each sale fires once, at its static month; recover it from the plan rather than a stored axis.
+    months = plan.sales.month[sales]
+    cause_ids = codes_to_strings(plan, plan.sales.cause)[months, sales]  # `cause` is (month, sale)
     return _lot_disposition_frame(
         plan=plan,
         rollouts=rollouts,
@@ -78,9 +80,9 @@ def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffe
         source_account_codes=plan.sales.source_account[sales],
         asset_codes=plan.sales.asset[sales],
         lots=lots,
-        units=buffers.lot_dispositions.scheduled.units[months, sales, lots, rollouts],
-        basis=buffers.lot_dispositions.scheduled.basis[months, sales, lots, rollouts],
-        proceeds=buffers.lot_dispositions.scheduled.proceeds[months, sales, lots, rollouts],
+        units=buffers.lot_dispositions.scheduled.units[sales, lots, rollouts],
+        basis=buffers.lot_dispositions.scheduled.basis[sales, lots, rollouts],
+        proceeds=buffers.lot_dispositions.scheduled.proceeds[sales, lots, rollouts],
         proceeds_account_codes=plan.sales.proceeds_account[sales],
     )
 

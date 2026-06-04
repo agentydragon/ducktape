@@ -1213,11 +1213,13 @@ def _apply_scheduled_asset_sales(
             sold_units=result.sold_units,
             gains=result.proceeds - result.cost_basis_consumed,
         )
+        # Horizon-collapsed disposition: each scheduled sale fires once, so write to its slot directly
+        # (the firing month is static — `plan.sales.month` — and recovered at decode time).
         sale_active = result.sold_units > 0.0
-        buffers.lot_dispositions.scheduled.active[month, sale] = sale_active.T
-        buffers.lot_dispositions.scheduled.units[month, sale] += result.sold_units.T
-        buffers.lot_dispositions.scheduled.basis[month, sale] += result.cost_basis_consumed.T
-        buffers.lot_dispositions.scheduled.proceeds[month, sale] += result.proceeds.T
+        buffers.lot_dispositions.scheduled.active[sale] = sale_active.T
+        buffers.lot_dispositions.scheduled.units[sale] += result.sold_units.T
+        buffers.lot_dispositions.scheduled.basis[sale] += result.cost_basis_consumed.T
+        buffers.lot_dispositions.scheduled.proceeds[sale] += result.proceeds.T
 
 
 def _apply_liquidity_policy_sales(

@@ -251,12 +251,13 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             mortgage_payment_total=np.zeros((h, liability_event_axis, r), dtype=np.float64),
         ),
         lot_dispositions=LotDispositionEventBuffers(
-            # scheduled disposition buffers[H, D, max(1, L), R]
+            # scheduled disposition buffers[D, max(1, L), R] — each sale fires once, so the horizon axis
+            # is collapsed; the firing month is recovered from `plan.sales.month` at decode time.
             scheduled=DispositionGroup(
-                active=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
-                units=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-                basis=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-                proceeds=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                active=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
+                units=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                basis=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                proceeds=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
             ),
             # liquidity disposition buffers[H, Q, A, max(1, L), R]
             liquidity=DispositionGroup(
