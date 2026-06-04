@@ -361,6 +361,7 @@ py_test(
     size = "medium",
     srcs = ["tlh_harvest_engine_test.py"],
     deps = [
+        ":conftest",
         ":external_series",
         ":scenario",
         ":simulate",
