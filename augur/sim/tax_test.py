@@ -168,9 +168,7 @@ def test_net_capital_gains_vectorized_independent_rollouts() -> None:
     """One call over multiple rollouts: a gain year, a carryforward-consumed year, and a
     net-loss year each resolve independently."""
     net_st, net_lt, offset, carry_out = net_capital_gains_with_carryforward(
-        np.array([4_000.0, 1_000.0, -2_000.0]),
-        np.array([10_000.0, 1_000.0, -6_000.0]),
-        np.array([0.0, 0.0, 0.0]),
+        np.array([4_000.0, 1_000.0, -2_000.0]), np.array([10_000.0, 1_000.0, -6_000.0]), np.array([0.0, 0.0, 0.0])
     )
     assert np.allclose(net_st, [4_000.0, 1_000.0, 0.0])
     assert np.allclose(net_lt, [10_000.0, 1_000.0, 0.0])

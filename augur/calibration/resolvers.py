@@ -216,7 +216,9 @@ def level_by_date_counts(
     if by_month < 0:
         return ResolutionCounts(yes=0, no=0, unresolved=n)
     window = matrix[:, : min(by_month, horizon_months) + 1]
-    reached = np.any(window >= threshold, axis=1) if direction is Direction.ABOVE else np.any(window < threshold, axis=1)
+    reached = (
+        np.any(window >= threshold, axis=1) if direction is Direction.ABOVE else np.any(window < threshold, axis=1)
+    )
     yes = int(np.count_nonzero(reached))
     if by_month <= horizon_months:
         return ResolutionCounts(yes=yes, no=n - yes, unresolved=0)

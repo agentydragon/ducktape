@@ -42,7 +42,7 @@ expensive:
    per-name idiosyncratic vol, rebalancing, wash-sale tracking. **Avoid.** This
    is whole-market modeling: it forces a correlation structure into Augur's
    exogenous engine (which samples series independently today) and a large
-   surface of *unobservable* parameters to reproduce a quantity we can measure
+   surface of _unobservable_ parameters to reproduce a quantity we can measure
    directly from the 1099-B. Mechanistic fidelity we cannot calibrate is worse
    than a simple form we can.
 
@@ -81,7 +81,7 @@ Attach an optional harvest process to a holding. Each tax period:
   Split output into ST/LT (mostly ST early; seed from the holding-period
   buckets).
 - **Basis feedback (the one real state element):** harvesting realizes a loss
-  *and* resets that slice's basis to current market (sell-underwater + rebuy).
+  _and_ resets that slice's basis to current market (sell-underwater + rebuy).
   So the process (a) books the loss into Piece 1, and (b) lowers the position's
   tracked cost basis, which raises the embedded-gain ratio and **decays future
   yield**. A scalar basis update per position — no per-stock state.
@@ -96,7 +96,7 @@ Attach an optional harvest process to a holding. Each tax period:
   parameter. Needs prior-year 1099-Bs (TY2022–24) to fit. Until then, mark it
   `[HEURISTIC]` and keep it conservative — a flat 5%/yr extrapolated 10 years
   would massively overstate the benefit.
-- Generic process + calibration *schema* live in ducktape; the account's fitted
+- Generic process + calibration _schema_ live in ducktape; the account's fitted
   numbers live in `gaffer-private/gaffer_augur/wealthfront/`.
 
 ## Open inputs
