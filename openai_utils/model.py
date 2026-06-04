@@ -145,7 +145,16 @@ class ReasoningContentItem(BaseModel):
     """Content item within a reasoning block (contains actual reasoning text)."""
 
     text: str
-    type: Literal["reasoning_text"] = "reasoning_text"
+    # OpenAI tags reasoning content "reasoning_text". z.ai's GLM models (e.g.
+    # glm-4.6) bridged to the Responses API by our in-cluster LiteLLM
+    # (chat/completions -> Responses) instead put the chain-of-thought in a
+    # reasoning item whose content parts are tagged "output_text". Verified
+    # against the live stack: the actual answer and tool calls still arrive as
+    # separate `message` / `function_call` output items, so this is purely a
+    # mislabel of the reasoning text — accept "output_text" here so
+    # ResponsesResult.from_sdk (and the backend's LLMRequestInfo, which 500s on
+    # the same mismatch) don't reject the GLM stack's reasoning items.
+    type: Literal["reasoning_text", "output_text"] = "reasoning_text"
 
 
 class ReasoningItem(BaseModel):
