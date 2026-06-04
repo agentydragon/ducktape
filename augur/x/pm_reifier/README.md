@@ -39,16 +39,16 @@ values (a coherent monotone ladder), not pulled live.
   reweighting — the cloud genuinely covers the market-implied regions.
 - after reweighting, all 8 markets land on the crowd prices (units-corrected):
 
-  | market              | price | raw (uncond.) | reweighted |
-  | ------------------- | ----: | ------------: | ---------: |
-  | sp500>6000@2027     |  0.55 |          0.29 |       0.47 |
-  | sp500>8000@2030     |  0.45 |          0.24 |       0.41 |
-  | sp500>10000@2032    |  0.38 |          0.20 |       0.38 |
-  | btc>150k@2027       |  0.50 |          0.23 |       0.42 |
-  | btc>500k@2030       |  0.30 |          0.09 |       0.25 |
-  | openai_ipo<=2027    |  0.30 |          0.41 |       0.43 |
-  | openai_ipo<=2029    |  0.65 |          0.64 |       0.65 |
-  | openai_val>1T@2030  |  0.55 |          0.60 |       0.60 |
+  | market             | price | raw (uncond.) | reweighted |
+  | ------------------ | ----: | ------------: | ---------: |
+  | sp500>6000@2027    |  0.55 |          0.29 |       0.47 |
+  | sp500>8000@2030    |  0.45 |          0.24 |       0.41 |
+  | sp500>10000@2032   |  0.38 |          0.20 |       0.38 |
+  | btc>150k@2027      |  0.50 |          0.23 |       0.42 |
+  | btc>500k@2030      |  0.30 |          0.09 |       0.25 |
+  | openai_ipo<=2027   |  0.30 |          0.41 |       0.43 |
+  | openai_ipo<=2029   |  0.65 |          0.64 |       0.65 |
+  | openai_val>1T@2030 |  0.55 |          0.60 |       0.60 |
 
 - **conditioning helps**: shown the prices, the LLM self-calibrates — raw marginals move much closer
   to target (e.g. sp500>6000 0.29 → 0.42), so less tilt is needed and ESS rises (57% → 76%).

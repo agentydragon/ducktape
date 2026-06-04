@@ -47,7 +47,14 @@ MARKETS = [
     {"id": "openai_ipo<=2029", "kind": "ipo_by", "month": 42, "price": 0.65},
     # FINDING: despite the "in USD" schema, GLM-4.6 emits OpenAI valuations in TRILLIONS (e.g. 2.8,
     # 12.5 = $2.8T, $12.5T). So ">$1T" is threshold 1.0 here, not 1e12. See README "units" finding.
-    {"id": "openai_val>1T@2030", "kind": "ge", "series": "openai_valuation_usd_year_end", "year": "2030", "thr": 1.0, "price": 0.55},
+    {
+        "id": "openai_val>1T@2030",
+        "kind": "ge",
+        "series": "openai_valuation_usd_year_end",
+        "year": "2030",
+        "thr": 1.0,
+        "price": 0.55,
+    },
 ]
 
 SCHEMA = (
@@ -95,7 +102,7 @@ def quota() -> dict[str, float]:
 def market_prompt(conditioned: bool, nonce: int) -> list[dict]:
     sys = (
         "You generate plausible future macro/market SCENARIOS as structured numeric JSON. "
-        "Output ONLY a JSON object {\"scenarios\": [ ... ]} and nothing else. "
+        'Output ONLY a JSON object {"scenarios": [ ... ]} and nothing else. '
         f"Produce exactly {SCENARIOS_PER_CALL} DIVERSE scenarios spanning the full plausible range — "
         "optimistic, median, AND pessimistic, explicitly including tail outcomes (market crashes, "
         "AI-driven booms, OpenAI never IPOing, OpenAI IPOing huge). Each scenario must be internally "
