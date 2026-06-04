@@ -70,10 +70,11 @@ done) and split the agent **data plane** (the LLM proxy + DB) from the dashboard
 
 Two distinct things, both readable by critic_dev for the agents it launches:
 
-- **Transcript** (LLM turns / tool calls / findings) — captured at the **LLM
-  proxy** (it already logs per-request rows keyed by `agent_run_id`; extend to
-  the full request/response), stored structured in the DB, RLS-scoped. Survives
-  pod deletion and crashes.
+- **Transcript** (LLM turns / tool calls / findings) — the **LLM proxy** already
+  writes one `llm_requests` row per call (full request + response, keyed by
+  `agent_run_id`), so the transcript is structured per-turn rows in the DB,
+  RLS-scoped, surviving pod deletion. critic_dev reads it via
+  `GET /api/runs/{id}/llm_requests` (Stage 2).
 - **Raw stdout/stderr** (tooling/container issues) — shipped to **Loki** by
   Promtail. Exposed to agents through a scoped `GET /api/runs/{id}/logs`
   endpoint that queries Loki by the run's pod label and **enforces RBAC**:
@@ -266,8 +267,6 @@ differing only in lifecycle (graders: one-per-snapshot, respawned; critics: one-
 - **Budget enforcement under native workloads:** keep enforcement at the proxy
   (deny over-budget calls → agent errors out) rather than killing pods; confirm
   that's sufficient vs. an active reaper for runaway-but-idle pods.
-- **Transcript schema:** one row per LLM turn vs. a single blob per run; how the
-  dashboard + critic_dev consume it.
 - **Controller home:** fold into the API server vs. its own Deployment. A brief
   controller gap is safe — the reconcile loop is level-triggered (the next
   `snapshot_created`/periodic tick re-derives desired state) and existing grader
