@@ -22,6 +22,11 @@ function orderedRollouts(summaries, metric) {
     .sort((left, right) => left.value - right.value);
 }
 
+// A click whose nearest line is farther than this (in px, on the Y axis) clears an existing
+// selection instead of selecting — "click away to deselect". Gated on an existing selection so a
+// first click anywhere still selects the nearest rollout.
+const DESELECT_DISTANCE_PX = 30;
+
 export function TerminalDistributionChart({
   scenarios,
   resultsById,
@@ -89,7 +94,8 @@ export function TerminalDistributionChart({
 
   // Pick which variant a click/hover binds to: the line nearest the cursor in Y at the cursor's
   // percentile, breaking ties toward the active variant (drawn on top) so overlapping failed floors
-  // resolve to the variant you're already inspecting.
+  // resolve to the variant you're already inspecting. `bestDist` is the distance to the genuinely
+  // nearest line (pre-tie-break), used by the click-away-to-deselect check.
   const pickVariant = (percentile, cursorY) => {
     let best = null;
     let bestDist = Infinity;
@@ -107,7 +113,7 @@ export function TerminalDistributionChart({
         best = entry;
       }
     }
-    return active && activeDist - bestDist <= 8 ? active : best;
+    return { entry: active && activeDist - bestDist <= 8 ? active : best, bestDist };
   };
 
   const localPoint = (event) => {
@@ -118,7 +124,9 @@ export function TerminalDistributionChart({
   };
 
   const selectAt = (percentile, cursorY, variantId) => {
-    const entry = variantId ? series.find((candidate) => candidate.id === variantId) : pickVariant(percentile, cursorY);
+    const entry = variantId
+      ? series.find((candidate) => candidate.id === variantId)
+      : pickVariant(percentile, cursorY).entry;
     if (!entry) return null;
     const seed = entry.ordered[indexAtPercentile(entry, percentile)].seed;
     onSelectRollout(entry.id, seed);
@@ -130,6 +138,13 @@ export function TerminalDistributionChart({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const { percentile, cursorY } = localPoint(event);
+    // Click well clear of every line clears an existing selection. Gated on `selectedSeed` so a
+    // first click anywhere still selects the nearest rollout (no dead zones until something's picked).
+    if (selectedSeed != null && pickVariant(percentile, cursorY).bestDist > DESELECT_DISTANCE_PX) {
+      onClear();
+      dragVariantRef.current = { dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false };
+      return;
+    }
     const variantId = selectAt(percentile, cursorY, null);
     dragVariantRef.current = {
       dragging: true,

@@ -178,5 +178,23 @@ def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: P
         assert page.locator(f"[data-product-rollout-event-marker='{event_kind}']").count() == 0
 
 
+def test_distribution_click_away_clears_selection(page: Page, augur_server: str) -> None:
+    """Selecting a rollout from the distribution chart and then clicking well clear of the line
+    clears the selection (click-away-to-deselect)."""
+    page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    # A first click selects the nearest rollout regardless of distance — the marker appears.
+    plot.click(position={"x": box["width"] * 0.6, "y": box["height"] * 0.5})
+    page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
+    # A click in the empty top-left (far above the rising net-worth curve) clears the selection.
+    plot.click(position={"x": box["width"] * 0.05, "y": box["height"] * 0.06})
+    page.locator("[data-product-distribution-selected]").wait_for(state="detached", timeout=30_000)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
