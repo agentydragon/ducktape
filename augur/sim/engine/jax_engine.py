@@ -38,9 +38,12 @@ precision alone, not logic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -172,16 +175,133 @@ class _FoldedLiquidity:
     pools: tuple[_LiquidityPool, ...]
 
 
-def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
-    """JITed `lax.scan` engine: the whole month loop compiles into a single XLA program (one
-    dispatch for all months, not one-per-month), filling the NumPy buffers in a single post-scan
-    transfer. Covers the phases in `scan_supported`; the carry is the per-rollout state pytree and
-    each step gathers the month's plan rows by the traced scan index and runs the branch-free cores.
+@dataclass(frozen=True)
+class _ScanMeta:
+    """Structural (rollout-value-independent) data the post-scan host code needs to scatter the
+    stacked `ys` back into the NumPy buffers. Carried alongside the compiled program in the cache so
+    a cache hit needs no recompute — these are pure functions of the plan's *structure*."""
 
-    Covered: scheduled/recurring transfers, cash property purchases (+ §168 depreciation and the
-    §121 owner-occupied-month counter), scheduled asset sales (FIFO lot matching + capital-gain
-    classification), and CONFIGURED obligations (accrual + group funding + settlement, with failure
-    tracking). Grown phase-by-phase (financed purchases/mortgages, PE, liquidity, year-end tax)."""
+    folded_sales: list
+    folded_purchases: list
+    folded_lifecycle: list
+    folded_pr: list
+    folded_sale_events: list
+    folded_liquidity: list
+    folded_pe: list
+    link_count: int
+    liability_count: int
+    horizon: int
+
+
+# The seed-varying inputs (`external_values`, the PE channel arrays) are traced arguments of the
+# compiled program, so they are EXCLUDED from the fingerprint: the same compiled program is reused
+# across rollout draws that differ only in those inputs. Everything else the program bakes as a
+# constant IS fingerprinted, so a cache hit guarantees byte-identical baked config (correct reuse).
+_FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
+    {("CompiledSimulation", "external_values"), ("CompiledSimulation", "pe_channels")}
+)
+
+
+def _fingerprint_into(h: Any, obj: Any) -> None:
+    if is_dataclass(obj) and not isinstance(obj, type):
+        h.update(b"D")
+        h.update(type(obj).__name__.encode())
+        for f in fields(obj):
+            if (type(obj).__name__, f.name) in _FINGERPRINT_EXCLUDE:
+                continue
+            h.update(f.name.encode())
+            _fingerprint_into(h, getattr(obj, f.name))
+    elif isinstance(obj, np.ndarray):
+        h.update(b"A")
+        h.update(str(obj.dtype).encode())
+        h.update(repr(obj.shape).encode())
+        h.update(np.ascontiguousarray(obj).tobytes())
+    elif isinstance(obj, (list, tuple)):
+        h.update(b"L")
+        h.update(str(len(obj)).encode())
+        for x in obj:
+            _fingerprint_into(h, x)
+    elif isinstance(obj, dict):
+        h.update(b"M")
+        for k in sorted(obj, key=repr):
+            h.update(repr(k).encode())
+            _fingerprint_into(h, obj[k])
+    else:
+        # Scalars, enums, AssetKey/LevelSeriesKey (frozen value objects): stable repr captures content.
+        h.update(b"S")
+        h.update(repr(obj).encode())
+
+
+def _plan_fingerprint(plan: CompiledSimulation) -> bytes:
+    """Content hash of everything the compiled scan program bakes as a constant (all of `plan` except
+    the seed-varying traced inputs). Two plans with the same fingerprint produce byte-identical
+    programs, so the compiled executable can be safely reused."""
+    h = hashlib.blake2b(digest_size=16)
+    _fingerprint_into(h, plan)
+    return h.digest()
+
+
+# Compiled scan programs, keyed by plan fingerprint (LRU-bounded). Each entry is the jitted device
+# program plus the structural `_ScanMeta` for post-scan scatter. Bounded so a long-lived process that
+# simulates many distinct structures doesn't retain every executable.
+_PROGRAM_CACHE: OrderedDict[bytes, tuple[Callable, _ScanMeta]] = OrderedDict()
+_PROGRAM_CACHE_MAX = 32
+
+
+def _get_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
+    key = _plan_fingerprint(plan)
+    cached = _PROGRAM_CACHE.get(key)
+    if cached is not None:
+        _PROGRAM_CACHE.move_to_end(key)
+        return cached
+    result = _build_program(plan)
+    _PROGRAM_CACHE[key] = result
+    if len(_PROGRAM_CACHE) > _PROGRAM_CACHE_MAX:
+        _PROGRAM_CACHE.popitem(last=False)
+    return result
+
+
+def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
+    """Cached single-program `lax.scan` engine: the whole month loop compiles into one XLA program
+    (one dispatch for all months) whose only traced inputs are the seed-varying series. The traced
+    program is cached by plan fingerprint, so repeated simulations of the same scenario structure
+    (e.g. a Monte-Carlo sweep over rollout draws) pay tracing + XLA compilation once, not per call.
+
+    The first call for a structure builds + compiles the program (`_build_program`); subsequent calls
+    reuse the cached executable, passing the new draw's `external_values` / PE channel arrays."""
+    # PE-mark validation is seed-dependent (the marks are a sampled series), so it runs every call on
+    # the concrete plan — the in-scan path can't raise.
+    pe_channels = plan.pe_channels
+    if pe_channels.marks.size and (not np.isfinite(pe_channels.marks).all() or (pe_channels.marks < 0.0).any()):
+        raise ValueError("private-equity mark series produced a negative or non-finite value")
+    if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
+        raise ValueError("private-equity forced-recovery cashout series produced a negative value")
+
+    program, meta = _get_program(plan)
+    pe_ch_dyn = {
+        "marks": jnp.asarray(pe_channels.marks),
+        "regime": jnp.asarray(pe_channels.regime_codes),
+        "sale_opp": jnp.asarray(pe_channels.sale_opportunity_active),
+        "capacity": jnp.asarray(pe_channels.sale_capacity_fractions),
+        "eligible": jnp.asarray(pe_channels.eligible_fractions),
+        "forced_sale": jnp.asarray(pe_channels.forced_sale_fractions),
+        "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
+        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
+    }
+    ys = program(jnp.asarray(plan.external_values), pe_ch_dyn)
+    _scatter_ys_to_buffers(plan, buffers, meta, ys)
+
+
+def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
+    """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
+    jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
+    `_ScanMeta`. Called once per fingerprint; the result is cached by `_get_program`.
+
+    All numeric config is baked as XLA constants here; only the seed-varying series are traced, so the
+    compiled executable is reusable across rollout draws of the same scenario structure. The carry is
+    the per-rollout `_ScanState` pytree; each step gathers the month's plan rows by the traced scan
+    index and runs the branch-free cores (transfers, purchases/mortgages, sales, obligations, TLH,
+    private equity, §121/§168 property accrual, year-end tax)."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
@@ -194,7 +314,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
     # capital-gains core threads it, so carry a zeroed copy.
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
-    external_values = jnp.asarray(plan.external_values)
+    # Seed-varying traced inputs: placeholders here, rebound (via `nonlocal`) to the traced arguments
+    # inside `_program_impl`. `step` closes over these names and reads the traced values at trace time.
+    external_values: jnp.ndarray = None  # type: ignore[assignment]
+    pe_ch: dict[str, jnp.ndarray] = None  # type: ignore[assignment]
     cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
@@ -435,17 +558,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
     lot_axis = max(1, p.lot_count)
 
-    # Private-equity tenders: per-issuer static FIFO data + channel device tables (issuer × R × month,
-    # indexed by the traced month). Marks are validated once host-side (can't raise inside the scan).
+    # Private-equity tenders: per-issuer static FIFO data. The channel device tables (marks, regimes,
+    # capacities, ...) are seed-varying, so they arrive as the traced `pe_ch` dict (see `_program_impl`)
+    # rather than baked here; mark validation lives in `run_jax_scan` (it runs on every draw).
     pe_issuers = plan.pe_issuers
-    pe_channels = plan.pe_channels
     pe_policies = plan.pe_policies
     pe_issuer_count = int(pe_issuers.codes.shape[0])
     n_pe_kinds = len(PrivateEquityDispositionKind)
-    if pe_channels.marks.size and (not np.isfinite(pe_channels.marks).all() or (pe_channels.marks < 0.0).any()):
-        raise ValueError("private-equity mark series produced a negative or non-finite value")
-    if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
-        raise ValueError("private-equity forced-recovery cashout series produced a negative value")
     folded_pe: list[tuple[int, int, np.ndarray]] = []
     for issuer_idx in range(pe_issuer_count):
         if int(pe_issuers.codes[issuer_idx]) < 0:
@@ -455,16 +574,6 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             continue
         ordered = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
         folded_pe.append((issuer_idx, int(pe_issuers.policy_index[issuer_idx]), ordered))
-    pe_ch = {
-        "marks": jnp.asarray(pe_channels.marks),
-        "regime": jnp.asarray(pe_channels.regime_codes),
-        "sale_opp": jnp.asarray(pe_channels.sale_opportunity_active),
-        "capacity": jnp.asarray(pe_channels.sale_capacity_fractions),
-        "eligible": jnp.asarray(pe_channels.eligible_fractions),
-        "forced_sale": jnp.asarray(pe_channels.forced_sale_fractions),
-        "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
-        "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
-    }
 
     # TLH harvest policies: per-policy static data (the jitted core books a calibrated capital loss).
     harvest = plan.harvest_policies
@@ -1372,7 +1481,50 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
     )
-    _, ys = jax.lax.scan(step, init, jnp.arange(horizon, dtype=jnp.int32))
+    months = jnp.arange(horizon, dtype=jnp.int32)
+
+    def _program_impl(external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray]) -> tuple:
+        # Rebind the seed-varying placeholders to this draw's traced arguments; `step`/the cores read
+        # them from the enclosing scope, so they trace against the traced inputs.
+        nonlocal external_values, pe_ch
+        external_values = external_values_arg
+        pe_ch = pe_ch_arg
+        _, ys = jax.lax.scan(step, init, months)
+        return ys
+
+    meta = _ScanMeta(
+        folded_sales=folded_sales,
+        folded_purchases=folded_purchases,
+        folded_lifecycle=folded_lifecycle,
+        folded_pr=folded_pr,
+        folded_sale_events=folded_sale_events,
+        folded_liquidity=folded_liquidity,
+        folded_pe=folded_pe,
+        link_count=link_count,
+        liability_count=p.liability_count,
+        horizon=horizon,
+    )
+    return jax.jit(_program_impl), meta
+
+
+def _scatter_ys_to_buffers(
+    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple
+) -> None:
+    """Scatter the stacked per-month `ys` from the compiled program back into the NumPy buffers (one
+    device->host transfer). Pure host code; uses `meta` for the structural scatter targets."""
+    p = plan.slot_plan
+    r = p.rollout_count
+    horizon = meta.horizon
+    link_count = meta.link_count
+    folded_sales = meta.folded_sales
+    folded_purchases = meta.folded_purchases
+    folded_liquidity = meta.folded_liquidity
+    folded_pe = meta.folded_pe
+    folded_lifecycle = meta.folded_lifecycle
+    folded_pr = meta.folded_pr
+    folded_sale_events = meta.folded_sale_events
+    cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
+    lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
     (
         cash_h,
         ordinary_h,

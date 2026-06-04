@@ -471,6 +471,7 @@ py_binary(
         ":scenario",
         ":simulate",
         "//augur/model:sim_backend",
+        "@pypi//jax",
     ],
 )
 

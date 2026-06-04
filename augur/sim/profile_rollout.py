@@ -23,6 +23,8 @@ import io
 import pstats
 import time
 
+import jax
+
 from augur.model.sim_backend import SimBackend, use_backend
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.external_series import materialize_external_series
@@ -142,6 +144,15 @@ def main() -> None:
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
     parser.add_argument(
+        "--trace-out", default=None, help="capture a JAX/XLA perfetto execution trace to this dir (jax backend)"
+    )
+    parser.add_argument(
+        "--repeat-timed",
+        type=int,
+        default=0,
+        help="time N back-to-back runs (no warmup) to expose per-call recompilation cost",
+    )
+    parser.add_argument(
         "--dense-only",
         action="store_true",
         help="run the dense engine (compile + month loop) and skip the Polars decode, to isolate "
@@ -208,10 +219,25 @@ def main() -> None:
         run(args.rollouts, backend)
         return time.perf_counter() - t0
 
+    if args.repeat_timed:
+        backend = SimBackend(args.backend) if args.backend != "both" else SimBackend.JAX
+        for i in range(args.repeat_timed):
+            t0 = time.perf_counter()
+            run(args.rollouts, backend)
+            print(f"run[{i}] {backend.value} wall_clock_sec={time.perf_counter() - t0:.3f}")
+        return
+
     print(
         f"rollouts={args.rollouts} horizon_months={args.horizon_months} "
         f"dense_only={args.dense_only} materialize={args.materialize}"
     )
+
+    if args.trace_out is not None:
+        run(args.rollouts, SimBackend.JAX)  # warm up / compile outside the trace
+        with jax.profiler.trace(args.trace_out, create_perfetto_trace=True):
+            run(args.rollouts, SimBackend.JAX)
+        print(f"trace written to {args.trace_out}")
+        return
 
     if args.backend == "both":
         numpy_sec = timed(SimBackend.NUMPY)
