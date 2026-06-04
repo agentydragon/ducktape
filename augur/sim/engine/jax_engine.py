@@ -43,6 +43,11 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     ordinary_ytd = jnp.zeros((p.tax_profile_count, r))
     capital_gain_active = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     capital_gain_ytd = jnp.zeros((p.capital_gain_agent_count, 2, r))
+    property_active = jnp.zeros((p.property_count, r), dtype=bool)
+    property_basis = jnp.zeros((p.property_count, r))
+    property_ownership = jnp.zeros((p.property_count, r))
+    property_contribution = jnp.zeros((p.property_count, r))
+    property_equity = jnp.zeros((p.property_count, r))
     failed = jnp.zeros(r, dtype=bool)
     failed_month = jnp.full(r, -1, dtype=jnp.int64)
     external_values = jnp.asarray(plan.external_values)
@@ -60,6 +65,21 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
         buffers.transfers.active[month] = np.asarray(transfer_active)
         buffers.transfers.amount[month] = np.asarray(transfer_amount)
+
+        cash, property_active, property_basis, property_ownership, property_contribution, property_equity = (
+            _apply_property_purchases(
+                plan,
+                buffers,
+                cash,
+                property_active,
+                property_basis,
+                property_ownership,
+                property_contribution,
+                property_equity,
+                active,
+                month,
+            )
+        )
 
         cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_scheduled_asset_sales(
             plan, buffers, cash, lot_remaining, capital_gain_active, capital_gain_ytd, active, external_values, month
@@ -90,8 +110,19 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.obligations.shortfall[month] = np.asarray(ob_shortfall)
         buffers.obligations.failure_active[month] = np.asarray(ob_failure)
 
-        cash, lot_remaining, ordinary_ytd, capital_gain_ytd = _zero_failed_state(
-            cash, lot_remaining, ordinary_ytd, capital_gain_ytd, failed
+        keep = ~failed
+        cash, lot_remaining, ordinary_ytd, capital_gain_ytd = (
+            cash * keep,
+            lot_remaining * keep,
+            ordinary_ytd * keep,
+            capital_gain_ytd * keep[None, None, :],
+        )
+        # `_zero_failed_state` zeros property dollar fields (but not property_active) for failed rollouts.
+        property_basis, property_ownership, property_contribution, property_equity = (
+            property_basis * keep,
+            property_ownership * keep,
+            property_contribution * keep,
+            property_equity * keep,
         )
 
         buffers.state.cash_state[month + 1] = np.asarray(cash)
@@ -99,20 +130,13 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.state.ordinary_state[month + 1] = np.asarray(ordinary_ytd)
         buffers.state.capital_gain_active_state[month + 1] = np.asarray(capital_gain_active)
         buffers.state.capital_gain_state[month + 1] = np.asarray(capital_gain_ytd)
+        buffers.state.property_active_state[month + 1] = np.asarray(property_active)
+        buffers.state.property_basis_state[month + 1] = np.asarray(property_basis)
+        buffers.state.property_ownership_state[month + 1] = np.asarray(property_ownership)
+        buffers.state.property_contribution_state[month + 1] = np.asarray(property_contribution)
+        buffers.state.property_equity_state[month + 1] = np.asarray(property_equity)
         buffers.state.rollout_failed_state[month + 1] = np.asarray(failed)
         buffers.state.rollout_failed_month_state[month + 1] = np.asarray(failed_month)
-
-
-def _zero_failed_state(
-    cash: jnp.ndarray,
-    lot_remaining: jnp.ndarray,
-    ordinary_ytd: jnp.ndarray,
-    capital_gain_ytd: jnp.ndarray,
-    failed: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Port of `_zero_failed_state` for the currently-modelled fields."""
-    keep = ~failed
-    return cash * keep, lot_remaining * keep, ordinary_ytd * keep, capital_gain_ytd * keep[None, None, :]
 
 
 def _amount_values(
@@ -537,3 +561,48 @@ def _apply_liquidity_policy_sales(
                 disposition.proceeds[month, policy, asset_idx] += np.asarray(proceeds.T)
                 remaining_target = jnp.maximum(remaining_target - total_proceeds, 0.0)
     return cash, lot_remaining, capital_gain_active, capital_gain_ytd
+
+
+def _apply_property_purchases(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    property_active: jnp.ndarray,
+    property_basis: jnp.ndarray,
+    property_ownership: jnp.ndarray,
+    property_contribution: jnp.ndarray,
+    property_equity: jnp.ndarray,
+    active: jnp.ndarray,
+    month: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_property_purchases` (cash purchases; mortgages not yet ported)."""
+    properties = plan.properties
+    for prop in range(properties.month.shape[0]):
+        if int(properties.month[prop]) != month:
+            continue
+        if int(properties.mortgage_slot[prop]) >= 0:
+            raise NotImplementedError("mortgaged property purchase is not yet ported to the JAX engine")
+        buffers.properties.purchase_active[month, prop] = np.asarray(active)
+        property_active = property_active.at[prop].set(active | property_active[prop])
+        property_basis = property_basis.at[prop].set(
+            jnp.where(active, float(properties.adjusted_basis[prop]), property_basis[prop])
+        )
+        property_ownership = property_ownership.at[prop].set(
+            jnp.where(active, float(properties.ownership[prop]), property_ownership[prop])
+        )
+        property_contribution = property_contribution.at[prop].set(
+            jnp.where(active, float(properties.stake_contribution[prop]), property_contribution[prop])
+        )
+        property_equity = property_equity.at[prop].set(
+            jnp.where(active, float(properties.equity_ledger[prop]), property_equity[prop])
+        )
+        buyer_cash = float(properties.stake_contribution[prop])
+        if buyer_cash > 0.0:
+            buffers.properties.transfer_active[month, prop] = np.asarray(active)
+            buyer_slot = int(properties.buyer_slot[prop])
+            if buyer_slot >= 0:
+                cash = cash.at[buyer_slot].add(jnp.where(active, -buyer_cash, 0.0))
+            seller_slot = int(properties.seller_slot[prop])
+            if seller_slot >= 0:
+                cash = cash.at[seller_slot].add(jnp.where(active, buyer_cash, 0.0))
+    return cash, property_active, property_basis, property_ownership, property_contribution, property_equity

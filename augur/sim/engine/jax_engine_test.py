@@ -16,6 +16,7 @@ from augur.model.sim_backend import SimBackend, use_backend
 from augur.product.asset_key import CryptoAssetKey
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_external_series
+from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -24,29 +25,49 @@ from augur.sim.scenario import (
     RecurringObligation,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
 )
 from augur.sim.simulate import simulate_dense_with_external_series
 
 
-def _simulate(scenario: Scenario, backend: SimBackend, *, rollout_count: int) -> DenseSimulationResult:
+def _simulate(
+    scenario: Scenario, backend: SimBackend, *, rollout_count: int, locations: dict[str, Location]
+) -> DenseSimulationResult:
     external_series = materialize_external_series(
         scenario.external_series, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
     with use_backend(backend):
         return simulate_dense_with_external_series(
-            scenario, rollout_count=rollout_count, external_series=external_series, locations={}
+            scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
         )
 
 
-def _assert_engine_parity(scenario: Scenario, *, rollout_count: int = 4) -> None:
-    numpy_result = _simulate(scenario, SimBackend.NUMPY, rollout_count=rollout_count)
-    jax_result = _simulate(scenario, SimBackend.JAX, rollout_count=rollout_count)
+def _assert_engine_parity(
+    scenario: Scenario, *, rollout_count: int = 4, locations: dict[str, Location] | None = None
+) -> None:
+    locations = locations or {}
+    numpy_result = _simulate(scenario, SimBackend.NUMPY, rollout_count=rollout_count, locations=locations)
+    jax_result = _simulate(scenario, SimBackend.JAX, rollout_count=rollout_count, locations=locations)
 
     numpy_state, jax_state = numpy_result.buffers.state, jax_result.buffers.state
-    for name in ("cash_state", "ordinary_state", "lot_state", "capital_gain_state"):
+    for name in (
+        "cash_state",
+        "ordinary_state",
+        "lot_state",
+        "capital_gain_state",
+        "property_basis_state",
+        "property_ownership_state",
+        "property_contribution_state",
+        "property_equity_state",
+    ):
         np.testing.assert_allclose(getattr(jax_state, name), getattr(numpy_state, name), rtol=1e-5, atol=1e-5)
-    for name in ("capital_gain_active_state", "rollout_failed_state", "rollout_failed_month_state"):
+    for name in (
+        "capital_gain_active_state",
+        "property_active_state",
+        "rollout_failed_state",
+        "rollout_failed_month_state",
+    ):
         np.testing.assert_array_equal(getattr(jax_state, name), getattr(numpy_state, name))
 
     numpy_ob, jax_ob = numpy_result.buffers.obligations, jax_result.buffers.obligations
@@ -270,6 +291,52 @@ def test_liquidity_policy_sale_engine_parity() -> None:
             tax_profiles=[],
             horizon_months=3,
         )
+    )
+
+
+def test_property_purchase_engine_parity() -> None:
+    # alice makes two all-cash property purchases (no mortgage ⇒ JAX cash-only path) in month 0:
+    # distinct prices, ownership, and down payments. Exercises property-state recording
+    # (active/basis/ownership/contribution/equity), the buyer→seller cash transfer, and the
+    # per-property purchase/transfer disposition logging — across multiple property slots.
+    location = Location(location_id="loc", display_name="Loc", jurisdiction_ids=[], annual_property_tax_rate=0.0)
+    _assert_engine_parity(
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="property_seller")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=2_000_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="buy_p1",
+                    property_id="p1",
+                    location_id="loc",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=1_000_000.0,
+                    down_payment_usd=200_000.0,
+                    ownership_pct=1.0,
+                ),
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="buy_p2",
+                    property_id="p2",
+                    location_id="loc",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=500_000.0,
+                    ownership_pct=0.6,
+                ),
+            ],
+            tax_profiles=[],
+            horizon_months=3,
+        ),
+        locations={"loc": location},
     )
 
 
