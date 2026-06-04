@@ -16,7 +16,8 @@ from augur.sim.simulate import simulate
 
 
 def _cash(run, agent_id: str, month_index: int) -> float:
-    return (
+    # `.item()` is typed Any; coerce so the lint aspect's mypy doesn't flag no-any-return.
+    return float(
         run.cash_balances.filter(
             (pl.col("agent_id") == agent_id) & (pl.col("month_index") == month_index) & (pl.col("rollout_index") == 0)
         )
