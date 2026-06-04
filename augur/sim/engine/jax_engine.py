@@ -354,6 +354,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
     program, meta = _get_program(plan)
+    ys, sale_disp = program(*_program_inputs(plan))
+    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
+
+
+def _program_inputs(plan: CompiledSimulation) -> tuple:
+    """The three traced arguments the compiled program takes: the external-series cube, the
+    seed-varying PE channel dict, and the swept-numeric `_TracedConfig`."""
+    pe_channels = plan.pe_channels
     pe_ch_dyn = {
         "marks": jnp.asarray(pe_channels.marks),
         "regime": jnp.asarray(pe_channels.regime_codes),
@@ -364,8 +372,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "liq_blocked": jnp.asarray(pe_channels.liquidity_blocked),
         "forced_recovery": jnp.asarray(pe_channels.forced_recovery_cashout_usd),
     }
-    ys, sale_disp = program(jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan))
-    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
+    return jnp.asarray(plan.external_values), pe_ch_dyn, _traced_config(plan)
+
+
+def compiled_hlo_text(plan: CompiledSimulation) -> str:
+    """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
+    program, _ = _get_program(plan)
+    return program.lower(*_program_inputs(plan)).compile().as_text()
+
 
 
 def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
@@ -532,6 +546,18 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         for prop in range(props.month.shape[0])
         if int(props.month[prop]) >= 0
     ]
+    # Static per-purchase plan columns (folded order). Purchases are independent — each fires on its
+    # own month into its own property buffer — so the month-step applies them as batched scatters
+    # (over these arrays) instead of a Python loop over entities. `pur_mort_rows`/`pur_mort_idx`
+    # select the financed subset (distinct liability slots) for mortgage origination.
+    pur_buf = np.array([fp.buffer_index for fp in folded_purchases], dtype=np.int64)
+    pur_month = np.array([fp.month for fp in folded_purchases], dtype=np.int64)
+    pur_stake = np.array([fp.stake_contribution for fp in folded_purchases], dtype=np.float32)
+    pur_buyer = np.array([fp.buyer_slot for fp in folded_purchases], dtype=np.int64)
+    pur_seller = np.array([fp.seller_slot for fp in folded_purchases], dtype=np.int64)
+    pur_mort = np.array([fp.mortgage_slot for fp in folded_purchases], dtype=np.int64)
+    pur_mort_rows = np.flatnonzero(pur_mort >= 0)
+    pur_mort_idx = pur_mort[pur_mort_rows]
     # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
     # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
     t = plan.transfers
@@ -993,51 +1019,54 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             month,
         )
 
-        # Property purchases (after transfers, before sales — eager order). Each real purchase fires
-        # when its static month equals the traced month, for the rollouts still active then; the down
-        # payment (stake_contribution) moves buyer->seller and, when financed, the mortgage liability
-        # is originated (principal + monthly payment set, YTD interest/principal reset).
-        purchase_active_rows, transfer_active_rows = [], []
-        mortgage_origination_rows: dict[int, jnp.ndarray] = {}
-        for fp in folded_purchases:
-            fires = month == fp.month
-            buy = fires & active  # (rollouts,)
-            property_active = property_active.at[fp.buffer_index].set(
-                jnp.where(buy, True, property_active[fp.buffer_index])
+        # Property purchases (after transfers, before sales — eager order). Vectorized over all real
+        # purchases at once (no Python loop): each fires when its static month equals the traced month
+        # for the rollouts still active then, into its own property buffer (distinct indices, no
+        # cross-purchase dependency). Pure-value purchase amounts are gathered from `tcfg` by index.
+        # The down payment (stake_contribution) moves buyer->seller via sentinel-aware scatter-add
+        # (shared/absent cash slots fall out, duplicates accumulate); financed purchases originate the
+        # mortgage liability (principal + monthly payment set, YTD interest/principal reset).
+        mort_orig_rows = jnp.zeros((liab_active.shape[0], r), dtype=bool)
+        purchase_active_rows = transfer_active_rows = None
+        if folded_purchases:
+            fires = (month == pur_month)[:, None] & active[None, :]  # (P, R)
+            stake_pos = (pur_stake > 0.0)[:, None]  # (P, 1) static
+            # Gathered `tcfg` columns are 1-D per-entity (P,)/(M,) -> `[:, None]` to broadcast over R.
+            property_active = property_active.at[pur_buf].set(jnp.where(fires, True, property_active[pur_buf]))
+            property_basis = property_basis.at[pur_buf].set(
+                jnp.where(fires, tcfg.property_adjusted_basis[pur_buf][:, None], property_basis[pur_buf])
             )
-            # Pure-value purchase amounts read as traced inputs from `tcfg` by index.
-            property_basis = property_basis.at[fp.buffer_index].set(
-                jnp.where(buy, tcfg.property_adjusted_basis[fp.buffer_index], property_basis[fp.buffer_index])
+            property_ownership = property_ownership.at[pur_buf].set(
+                jnp.where(fires, tcfg.property_ownership[pur_buf][:, None], property_ownership[pur_buf])
             )
-            property_ownership = property_ownership.at[fp.buffer_index].set(
-                jnp.where(buy, tcfg.property_ownership[fp.buffer_index], property_ownership[fp.buffer_index])
+            property_contribution = property_contribution.at[pur_buf].set(
+                jnp.where(fires, pur_stake[:, None], property_contribution[pur_buf])
             )
-            property_contribution = property_contribution.at[fp.buffer_index].set(
-                jnp.where(buy, fp.stake_contribution, property_contribution[fp.buffer_index])
+            property_equity = property_equity.at[pur_buf].set(
+                jnp.where(fires, tcfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
             )
-            property_equity = property_equity.at[fp.buffer_index].set(
-                jnp.where(buy, tcfg.property_equity_ledger[fp.buffer_index], property_equity[fp.buffer_index])
+            stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0.0)  # (P, R)
+            cash = _scatter_rows(cash, pur_buyer, -stake_flow)
+            cash = _scatter_rows(cash, pur_seller, stake_flow)
+            # Mortgage origination: financed subset only (distinct liability slots -> plain scatter-set).
+            mfires = fires[pur_mort_rows]  # (M, R)
+            liab_active = liab_active.at[pur_mort_idx].set(jnp.where(mfires, True, liab_active[pur_mort_idx]))
+            liab_principal = liab_principal.at[pur_mort_idx].set(
+                jnp.where(mfires, tcfg.liability_principal[pur_mort_idx][:, None], liab_principal[pur_mort_idx])
             )
-            transfer_fires = buy if fp.stake_contribution > 0.0 else jnp.zeros_like(buy)
-            if fp.stake_contribution > 0.0:
-                if fp.buyer_slot >= 0:
-                    cash = cash.at[fp.buyer_slot].add(jnp.where(buy, -fp.stake_contribution, 0.0))
-                if fp.seller_slot >= 0:
-                    cash = cash.at[fp.seller_slot].add(jnp.where(buy, fp.stake_contribution, 0.0))
-            if fp.mortgage_slot >= 0:
-                ms = fp.mortgage_slot
-                liab_active = liab_active.at[ms].set(jnp.where(buy, True, liab_active[ms]))
-                liab_principal = liab_principal.at[ms].set(
-                    jnp.where(buy, tcfg.liability_principal[ms], liab_principal[ms])
-                )
-                liab_monthly = liab_monthly.at[ms].set(
-                    jnp.where(buy, tcfg.liability_monthly_payment[ms], liab_monthly[ms])
-                )
-                liab_interest_ytd = liab_interest_ytd.at[ms].set(jnp.where(buy, 0.0, liab_interest_ytd[ms]))
-                liab_principal_ytd = liab_principal_ytd.at[ms].set(jnp.where(buy, 0.0, liab_principal_ytd[ms]))
-                mortgage_origination_rows[ms] = buy
-            purchase_active_rows.append(buy)
-            transfer_active_rows.append(transfer_fires)
+            liab_monthly = liab_monthly.at[pur_mort_idx].set(
+                jnp.where(mfires, tcfg.liability_monthly_payment[pur_mort_idx][:, None], liab_monthly[pur_mort_idx])
+            )
+            liab_interest_ytd = liab_interest_ytd.at[pur_mort_idx].set(
+                jnp.where(mfires, 0.0, liab_interest_ytd[pur_mort_idx])
+            )
+            liab_principal_ytd = liab_principal_ytd.at[pur_mort_idx].set(
+                jnp.where(mfires, 0.0, liab_principal_ytd[pur_mort_idx])
+            )
+            mort_orig_rows = mort_orig_rows.at[pur_mort_idx].set(mfires)
+            # Per-purchase event rows for `ys` (folded order): purchase fired; transfer fired (stake>0).
+            purchase_active_rows = fires
+            transfer_active_rows = fires & stake_pos
 
         # Scheduled asset sales (before obligations: proceeds can fund the month's obligations).
         # Vectorized over ALL sales at once — no Python loop. The across-sales FIFO is one
@@ -1246,9 +1275,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         mort_pay_total = _scatter_rows(
             jnp.zeros((liab_count, r)), mort_liab_idx, jnp.where(mort_paid, paid_buffer, 0.0)
         )
-        mort_orig = jnp.zeros((liab_count, r), dtype=bool)
-        for ms, buy in mortgage_origination_rows.items():
-            mort_orig = mort_orig.at[ms].set(buy)
+        mort_orig = mort_orig_rows
 
         # Tax-liability settlement: a paid TAX_TRUE_UP fully clears its profile-year's liability (the
         # estimated prepayments covered the rest). `trueup_sel` maps each true-up obligation slot to
@@ -1572,7 +1599,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             failure_active,
         )
         # Per-month property-event slabs (stacked over real purchases); empty when no purchases.
-        purchase_ys = (jnp.stack(purchase_active_rows), jnp.stack(transfer_active_rows)) if folded_purchases else ()
+        purchase_ys = (purchase_active_rows, transfer_active_rows) if folded_purchases else ()
         # Mortgage event slabs (per-liability), only when the plan has liabilities (event buffers are
         # padded to max(1, liability_count), so a 0-row emit can't be scattered into them).
         mortgage_ys = (
