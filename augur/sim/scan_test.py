@@ -379,10 +379,10 @@ def _federal_tax(run) -> float:
 
 
 def test_year_end_tax_scan_parity() -> None:
-    # W-2 income for one calendar year + a single tax profile: the December year-end pass computes the
-    # federal + CA tax and accrues a tax liability. prior_year_tax=0 and a 12-month horizon mean no
-    # estimated-tax/true-up obligations are generated, so the scenario routes through the scan. Runs
-    # both backends explicitly and asserts the JAX scan's tax liability equals the NumPy reference.
+    # Multi-year W-2 income + a tax profile with a prior-year tax: the December year-end pass accrues a
+    # federal + CA liability, and the following year's estimated-tax + true-up obligations settle it.
+    # Exercises the scan's full tax machinery (accrual + two-pass SALT + estimated/true-up settlement).
+    # Runs both backends explicitly and asserts the JAX scan matches the NumPy reference.
     scenario = Scenario(
         agents=[Agent(agent_id="payroll"), Agent(agent_id="alice"), Agent(agent_id="irs")],
         initial_cash=[
@@ -393,7 +393,7 @@ def test_year_end_tax_scan_parity() -> None:
         recurring_transfers=[
             RecurringTransfer(
                 start_month=0,
-                end_month=11,
+                end_month=35,
                 cause_id="alice_paycheck",
                 from_agent_id="payroll",
                 from_account_id="checking",
@@ -409,10 +409,10 @@ def test_year_end_tax_scan_parity() -> None:
                 filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
-                prior_year_tax_usd=0.0,
+                prior_year_tax_usd=15_000.0,  # > 0 -> quarterly estimated-tax obligations next year
             )
         ],
-        horizon_months=12,
+        horizon_months=36,
     )
     with use_backend(SimBackend.NUMPY):
         numpy_tax = _federal_tax(simulate(scenario, rollout_count=2, locations={}))
