@@ -23,6 +23,7 @@ import io
 import pstats
 import time
 
+from augur.model.sim_backend import SimBackend, use_backend
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
@@ -99,6 +100,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="augur rollout profiler")
     parser.add_argument("--rollouts", type=int, default=4000)
     parser.add_argument("--horizon-months", type=int, default=1200)
+    parser.add_argument(
+        "--backend",
+        choices=[*[b.value for b in SimBackend], "both"],
+        default="both",
+        help="which sim backend(s) to run: a single backend, or 'both' for a numpy-vs-jax comparison",
+    )
     parser.add_argument("--sort", choices=["cumulative", "tottime", "both"], default="both")
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
@@ -143,40 +150,54 @@ def main() -> None:
         ):
             getattr(result, frame)
 
-    def run(rollout_count: int) -> None:
-        if args.dense_only:
-            external_series = materialize_external_series(
-                scenario.external_series,
-                rollout_seeds=tuple(range(rollout_count)),
-                horizon_months=int(scenario.horizon_months),
-            )
-            simulate_dense_with_external_series(
-                scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
-            )
-        else:
-            _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
+    def run(rollout_count: int, backend: SimBackend) -> None:
+        with use_backend(backend):
+            if args.dense_only:
+                external_series = materialize_external_series(
+                    scenario.external_series,
+                    rollout_seeds=tuple(range(rollout_count)),
+                    horizon_months=int(scenario.horizon_months),
+                )
+                simulate_dense_with_external_series(
+                    scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
+                )
+            else:
+                _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
 
-    # Warm-up tiny run to pay one-time import / JIT-ish costs outside the timed region.
-    run(2)
+    def timed(backend: SimBackend) -> float:
+        run(2, backend)  # warm-up: pay one-time import / trace costs outside the timed region
+        t0 = time.perf_counter()
+        run(args.rollouts, backend)
+        return time.perf_counter() - t0
 
     print(
         f"rollouts={args.rollouts} horizon_months={args.horizon_months} "
         f"dense_only={args.dense_only} materialize={args.materialize}"
     )
 
-    if args.no_profile:
-        t0 = time.perf_counter()
-        run(args.rollouts)
-        print(f"wall_clock_sec={time.perf_counter() - t0:.3f}")
+    if args.backend == "both":
+        numpy_sec = timed(SimBackend.NUMPY)
+        jax_sec = timed(SimBackend.JAX)
+        print(f"numpy_wall_clock_sec={numpy_sec:.3f}")
+        print(f"jax_wall_clock_sec={jax_sec:.3f}")
+        faster, slower = ("jax", "numpy") if jax_sec < numpy_sec else ("numpy", "jax")
+        print(
+            f"faster={faster} speedup={max(numpy_sec, jax_sec) / min(numpy_sec, jax_sec):.2f}x ({slower} is the baseline)"
+        )
         return
 
+    backend = SimBackend(args.backend)
+    if args.no_profile:
+        print(f"backend={backend.value} wall_clock_sec={timed(backend):.3f}")
+        return
+
+    run(2, backend)  # warm-up outside the profiled region
     profiler = cProfile.Profile()
     t0 = time.perf_counter()
     profiler.enable()
-    run(args.rollouts)
+    run(args.rollouts, backend)
     profiler.disable()
-    elapsed = time.perf_counter() - t0
-    print(f"wall_clock_sec={elapsed:.3f}")
+    print(f"backend={backend.value} wall_clock_sec={time.perf_counter() - t0:.3f}")
 
     sort_keys = ("cumulative", "tottime") if args.sort == "both" else (args.sort,)
     for sort_key in sort_keys:
