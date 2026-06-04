@@ -450,6 +450,7 @@ py_binary(
         ":locations",
         ":scenario",
         ":simulate",
+        "//augur/model:sim_backend",
     ],
 )
 
