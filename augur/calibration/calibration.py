@@ -395,9 +395,10 @@ def build_anchored_level_paths(
 
     Only series the preset actually emits are returned (others are left out so the
     caller surfaces those markets as unmodeled). Each emitted series is rescaled so
-    every rollout's month-0 value matches its catalog spot anchor — required for any
-    threshold against a real index to be meaningful. A referenced+emitted series with
-    no anchor is a catalog error and raises.
+    every rollout's month-0 value matches its resolved spot anchor (a catalog override
+    or, by default, the vendored evidence via `macro_anchors.resolve_anchors`) — required
+    for any threshold against a real index to be meaningful. A referenced+emitted series
+    with no resolved anchor raises.
     """
     emitted = level_keys_in_bundle(sampled)
     keys = {parse_level_series_key(wire) for wire in requested_wire_ids} & emitted
@@ -405,7 +406,8 @@ def build_anchored_level_paths(
     for key in keys:
         if key.wire_id not in anchors:
             raise ValueError(
-                f"catalog scores level series {key.wire_id!r} but metadata.anchors has no spot value for it"
+                f"catalog scores level series {key.wire_id!r} but no anchor spot was resolved for it "
+                "(catalog override or vendored evidence)"
             )
         anchor_map[key] = anchors[key.wire_id]
     anchored = anchor_sampled_series_levels(sampled, level_series_anchors=anchor_map) if anchor_map else sampled
@@ -521,6 +523,7 @@ def run_calibration(
     price_clients: Mapping[Platform, PriceClient],
     bundle: PrivateEquityBundle,
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]] | None = None,
+    inflation_history: list[float] | None = None,
 ) -> CalibrationResult:
     """Score a whole-model rollout against a curated prediction-market catalog.
 
@@ -531,13 +534,14 @@ def run_calibration(
     surfaces as `unmodeled` rather than failing. Each market's `p_market` is fetched LIVE per
     market via the platform-appropriate client from `price_clients` (a real client by default,
     whose TTL cache absorbs rapid auto-refreshes; tests inject hermetic clients).
+
+    `inflation_history` is the real CPI-U for the months before month 0, anchoring the
+    denominator of near-term `inflation_yoy` markets (see `macro_anchors.resolve_anchors`).
     """
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     paths = dict(level_paths) if level_paths is not None else {}
-    inflation_history = (
-        np.array(catalog.metadata.inflation_history, dtype=np.float64) if catalog.metadata.inflation_history else None
-    )
+    inflation_history_array = np.array(inflation_history, dtype=np.float64) if inflation_history else None
     # Per-issuer trajectory slices for every catalog-referenced issuer the bundle actually carries;
     # markets on an absent issuer surface as `unmodeled`.
     emitted_issuers = {str(issuer) for issuer in bundle.issuer_ids()}
@@ -575,7 +579,7 @@ def run_calibration(
             market,
             trajectories_by_issuer=trajectories_by_issuer,
             level_paths=paths,
-            inflation_history=inflation_history,
+            inflation_history=inflation_history_array,
             as_of=as_of,
             horizon_months=horizon_months,
         )

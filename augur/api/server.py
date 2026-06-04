@@ -38,6 +38,7 @@ from augur.budget.wire import (
 from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
+from augur.calibration.macro_anchors import resolve_anchors
 from augur.calibration.platform import Platform, PriceClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
@@ -205,9 +206,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity
+        anchors = resolve_anchors(loaded.catalog)
         level_paths = build_anchored_level_paths(
             sampled,
-            anchors=loaded.catalog.metadata.anchors,
+            anchors=anchors.anchors,
             requested_wire_ids=loaded.catalog.referenced_level_series(),
             rollout_count=request.rollouts,
             horizon_months=request.horizon_months,
@@ -219,6 +221,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             price_clients=config.price_clients,
             bundle=bundle,
             level_paths=level_paths,
+            inflation_history=anchors.inflation_history,
         )
         # One mark fan per scored issuer; valuation fan only for issuers whose opt-in channel is on.
         mark_fans = [

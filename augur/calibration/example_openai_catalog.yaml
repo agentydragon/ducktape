@@ -19,23 +19,11 @@ metadata:
   augur_model_as_of: "2026-05-27"
   augur_sim_horizon_months: 120 # from as_of -> ~2036-05; later-resolving markets flagged
 
-  # Live spot of each macro level series at model_anchor_date, keyed by wire id. Macro markets
-  # are scored against the sampled path ANCHORED to this spot (month 0 == spot). REFRESH these to
-  # the real ^GSPC close / CPI-U index at model_anchor_date alongside the catalog; a stale anchor
-  # biases every macro threshold. (Representative example values.)
-  anchors:
-    sp500: 5900.0
-    # CPI-U index level at model_anchor_date (month 0). Together with `inflation_history` below
-    # this puts the inflation path on the real CPI scale so inflation_yoy markets score.
-    inflation: 327.22
-    # Live BTC spot (USD). Refresh alongside the catalog; crypto thresholds compare against
-    # the sampled crypto:btc path anchored to this.
-    "crypto:btc": 63645.0
-
-  # Real CPI-U (all items) index for the 12 months BEFORE model_anchor_date (2025-05 .. 2026-04,
-  # oldest first; the last entry is the month before as_of). Lets near-term inflation_yoy markets
-  # look back to real data instead of resolving UNRESOLVED. REFRESH with actual CPI-U releases.
-  inflation_history: [318.0, 318.76, 319.52, 320.28, 321.04, 321.81, 322.58, 323.35, 324.12, 324.89, 325.67, 326.44]
+  # No `anchors` / `inflation_history` block: each macro level series is anchored to its real spot
+  # at model_anchor_date (and the pre-anchor CPI history for near-term inflation_yoy markets is
+  # taken) from the vendored evidence in augur/data/ -- the single source of truth shared with the
+  # model fit (see augur/calibration/macro_anchors.py). A catalog MAY still pin explicit
+  # `anchors:` / `inflation_history:` here to override the derived values.
 
   # `mappability` -- how the market relates to a modeled augur quantity:
   #   exact      A resolver scores it apples-to-apples from per-rollout output
@@ -559,8 +547,8 @@ markets:
 
   # CPI YoY: augur emits a monthly inflation index; YoY needs the index 12 months before
   # `at_date`. The path starts at model_anchor_date, so a 2026 year-ending date looks back
-  # past as_of -- the look-back is served from metadata.inflation_history (real CPI-U for the
-  # months preceding the anchor), so the market scores instead of resolving UNRESOLVED.
+  # past as_of -- the look-back is served from the pre-anchor CPI history derived from vendored
+  # evidence (see macro_anchors.py), so the market scores instead of resolving UNRESOLVED.
   - platform: kalshi
     kalshi_id: KXCPIYOY-26JUL-T3.0
     question: "Will CPI inflation be above 3.0% for the year ending July 2026?"
@@ -569,7 +557,7 @@ markets:
     mappability: exact
     mapping: { kind: inflation_yoy, series: inflation, threshold: 0.03, direction: above, at_date: "2026-07-31" }
     resolution_criterion_text: "YES if YoY CPI-U (all items) for the year ending July 2026 exceeds 3.0%."
-    notes: "Trailing-12mo window looks back past as_of; the denominator comes from metadata.inflation_history (real pre-anchor CPI-U)."
+    notes: "Trailing-12mo window looks back past as_of; the denominator is the vendored pre-anchor CPI-U."
 
   # ============================================================================
   # EXACT -- crypto markets (scored against the model's crypto:btc level channel).

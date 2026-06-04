@@ -23,6 +23,7 @@ from augur.api.config import load_augur_config
 from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
+from augur.calibration.macro_anchors import resolve_anchors
 from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId, parse_level_series_key
@@ -62,9 +63,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     sampled = model.sample(sampling)
     bundle = sampled.private_equity
+    anchors = resolve_anchors(catalog)
     level_paths = build_anchored_level_paths(
         sampled,
-        anchors=catalog.metadata.anchors,
+        anchors=anchors.anchors,
         requested_wire_ids=catalog.referenced_level_series(),
         rollout_count=args.rollouts,
         horizon_months=args.horizon,
@@ -79,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             price_clients=price_clients,
             bundle=bundle,
             level_paths=level_paths,
+            inflation_history=anchors.inflation_history,
         )
     finally:
         for client in price_clients.values():

@@ -104,16 +104,18 @@ class CatalogMetadata(BaseModel):
 
     as_of: date
     augur_model_as_of: date | None = None
-    # Live spot value of each macro level series at `model_anchor_date`, keyed by the
-    # series wire id ("sp500", "inflation"). Macro markets are scored against the
-    # sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
-    # meaningless unless month 0 of the path is today's real index level. Refreshed
-    # alongside the catalog (data, not model).
+    # OPTIONAL per-series override of the live spot each macro level series is anchored to at
+    # `model_anchor_date`, keyed by wire id ("sp500", "inflation"). Macro markets are scored
+    # against the sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
+    # meaningless unless month 0 of the path is today's real index level. When a referenced
+    # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the vendored
+    # evidence (`augur/data/`), the single source of truth shared with the model fit.
     anchors: dict[str, float] = Field(default_factory=dict)
-    # Real CPI-U index for the months immediately BEFORE `model_anchor_date`, oldest first
-    # (the last entry is the month before as_of; the month-0 value is `anchors.inflation`, same
-    # units). Lets an `inflation_yoy` market whose year-ending date is within a year of as_of look
-    # back to real data instead of resolving UNRESOLVED. Refreshed alongside the catalog.
+    # OPTIONAL override of the real CPI-U index for the months immediately BEFORE
+    # `model_anchor_date`, oldest first (last entry = the month before the anchor observation;
+    # the anchor value is `anchors.inflation`, same units). Lets an `inflation_yoy` market whose
+    # year-ending date is within a year of as_of look back to real data instead of resolving
+    # UNRESOLVED. When empty, derived from the vendored CPI series by `resolve_anchors`.
     inflation_history: list[float] = Field(default_factory=list)
 
     @property

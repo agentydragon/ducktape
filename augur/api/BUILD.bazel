@@ -306,6 +306,7 @@ py_library(
         "//augur/calibration",
         "//augur/calibration:catalog",
         "//augur/calibration:default_clients",
+        "//augur/calibration:macro_anchors",
         "//augur/model:exogenous",
         "//augur/model:sample_sanity",
         "//augur/model:series",

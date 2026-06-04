@@ -3,8 +3,9 @@ from __future__ import annotations
 import csv
 import json
 import math
+from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -394,3 +395,39 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         current_mortgage30_rate_pct=float(mortgage30.iloc[-1]),
         latest_observations=latest_observations,
     )
+
+
+@dataclass(frozen=True)
+class MonthlyLevel:
+    month: date  # first day of the calendar month the observation falls in
+    value: float
+
+
+def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[MonthlyLevel]]:
+    """Vendored absolute monthly level series (last observation per calendar month, oldest
+    first) for each requested macro level wire id, on its real published scale.
+
+    These read the same source files the exogenous evidence fits against, but at their
+    absolute level rather than as log-returns, so calibration can anchor a sampled path's
+    month 0 to the real spot. Raises `KeyError` for a wire id with no vendored absolute
+    source (e.g. home-value series, which are not anchored against today)."""
+    out: dict[str, list[MonthlyLevel]] = {}
+    for wire in wire_ids:
+        match wire:
+            case "sp500":
+                raw = _read_fred_series(_source_path(FRED_SP500_CSV), "SP500")
+            case "inflation":
+                raw = _read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL")
+            case "crypto:btc":
+                raw = _read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON))
+            case "crypto:eth":
+                raw = _read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON))
+            case "rent:san_francisco_ca":
+                raw = _read_fred_series(_source_path(FRED_SF_RENT_CPI_CSV), "CUURA422SEHA")
+            case _:
+                raise KeyError(f"no vendored absolute level series for level wire id {wire!r}")
+        monthly = _monthly_last(raw)
+        out[wire] = [
+            MonthlyLevel(month=period.to_timestamp().date(), value=float(value)) for period, value in monthly.items()
+        ]
+    return out
