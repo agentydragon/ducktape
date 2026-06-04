@@ -55,6 +55,7 @@ py_test(
         ":level_series_groups",
         ":series",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -78,6 +79,7 @@ py_test(
         ":series",
         ":state_space_factor",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -114,6 +116,7 @@ py_test(
     deps = [
         ":series",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -133,6 +136,8 @@ py_library(
     name = "gbm",
     srcs = ["gbm.py"],
     deps = [
+        ":sim_backend",
+        "@pypi//jax",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -172,7 +177,6 @@ py_library(
         ":exogenous",
         ":gbm",
         ":level_series_groups",
-        ":schemas",
         ":series",
         ":series_model",
         "//augur/model/path_models:scenarios",
@@ -234,6 +238,7 @@ py_test(
         ":series",
         ":vecm",
         "//:conftest",
+        "//augur:conftest",
         "//augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -252,6 +257,7 @@ py_test(
         ":state_space",
         ":trained_private_equity",
         "//:conftest",
+        "//augur:conftest",
         "//augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -296,6 +302,9 @@ py_test(
         ":series",
         ":testing",
         "//:conftest",
+        "//augur:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -324,6 +333,7 @@ py_test(
         ":series_model",
         ":testing",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
@@ -340,6 +350,7 @@ py_test(
         ":provider_config",
         ":series",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -353,9 +364,9 @@ py_library(
         ":exogenous",
         ":private_equity_protocol",
         ":schemas",
+        ":series",
         ":series_model",
         "//augur:dates",
-        "//augur:frames",
         "@pypi//numpy",
         "@pypi//pydantic",
     ],
@@ -370,7 +381,9 @@ py_test(
         ":private_equity_risk",
         ":provider_config",
         ":series",
+        ":series_model",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -384,6 +397,7 @@ py_library(
     deps = [
         ":exogenous",
         ":private_equity_bundle",
+        ":series",
     ],
 )
 
@@ -423,6 +437,7 @@ py_test(
         ":private_equity_protocol",
         ":series",
         "//:conftest",
+        "//augur:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -436,6 +451,7 @@ py_library(
         ":exogenous",
         ":private_equity_bundle",
         ":private_equity_protocol",
+        ":series",
         "@pypi//numpy",
     ],
 )
@@ -445,10 +461,10 @@ py_test(
     srcs = ["private_equity_trajectories_test.py"],
     deps = [
         ":exogenous",
-        ":private_equity_bundle",
         ":private_equity_trajectories",
         ":series",
         "//:conftest",
+        "//augur:conftest",
         "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -470,4 +486,23 @@ py_library(
 py_library(
     name = "provenance",
     srcs = ["provenance.py"],
+)
+
+py_library(
+    name = "sim_backend",
+    srcs = ["sim_backend.py"],
+)
+
+py_test(
+    name = "gbm_test",
+    srcs = ["gbm_test.py"],
+    deps = [
+        ":gbm",
+        ":sim_backend",
+        "//:conftest",
+        "//augur:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
