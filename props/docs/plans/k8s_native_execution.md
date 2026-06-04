@@ -180,6 +180,33 @@ backend registry proxy for now. The rest of this stage stands as the eventual de
 - **Done when:** e2e tests run the real flow against a real k8s API.
 - **Rationale:** prerequisite for testing Stages 5–6 (controller-managed
   grader/critic pods) against a real k8s API + RBAC.
+- **Spike (2026-06-04): BLOCKED on BuildBuddy RBE — the Firecracker guest kernel
+  lacks `CONFIG_KEYS`.** Under the default `workload-isolation-type: firecracker`,
+  kind comes most of the way up (privileged containers, cgroup v2, registry egress,
+  and `kind load image-archive` of a Bazel `oci_image` all work; kubeadm gets through
+  certs + static pods), but the kubelet crash-loops in `setupKernelTunables`:
+  `open /proc/sys/kernel/keys/root_maxkeys: no such file or directory` — the microVM
+  kernel (5.15) has no kernel-keyring subsystem, so the control plane never comes up.
+  - **Switching isolation doesn't help — it swaps blockers.** Under
+    `workload-isolation-type: oci` the action runs on the executor _host_ kernel
+    (6.16, `/proc/sys/kernel/keys/root_maxkeys` present), but unprivileged
+    (`uid=1001`, `CapEff=0`, no Docker — `dockerd` refuses, "needs root privileges").
+    Firecracker = root in a stripped-kernel VM; oci = real kernel but no privilege.
+    No isolation type offers both.
+  - **Paths forward** (kind needs both the keyring _and_ privilege; only firecracker
+    provides the privilege half):
+    1. Get `CONFIG_KEYS=y` into the Firecracker guest kernel (BuildBuddy-platform
+       change). The single missing piece — everything else already works under
+       firecracker. Cleanest; no per-k8s-version maintenance.
+    2. Custom `kindest/node` with a kubelet patched to drop the `root_maxkeys` /
+       `root_maxbytes` tunables — works under firecracker today, but build + maintain
+       a node image per k8s version.
+    3. Hybrid: `envtest` (apiserver + etcd, no kubelet → no `CONFIG_KEYS`) for the
+       `k8s_executor` Pod-spec/reconcile logic + keep Docker/testcontainers for "the
+       agent container actually runs." Unblocks real k8s-API testing now but does
+       **not** remove Docker.
+  - **Until one of these lands, Stage 4 (and the Docker removal it would enable) is
+    parked; the Docker/testcontainers harness stays.**
 
 ### Stage 5 — Keep grader Pods controller-managed (no Deployments)
 
