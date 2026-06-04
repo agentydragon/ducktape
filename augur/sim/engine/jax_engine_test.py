@@ -11,6 +11,7 @@ import numpy as np
 import pytest_bazel
 
 from augur.model.series import CryptoSymbol
+from augur.model.series_model import SeriesModelBundle
 from augur.model.sim_backend import SimBackend, use_backend
 from augur.product.asset_key import CryptoAssetKey
 from augur.sim.codec.plan import DenseSimulationResult
@@ -19,6 +20,7 @@ from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    LiquidityPolicy,
     RecurringObligation,
     Scenario,
     ScheduledAssetSale,
@@ -52,14 +54,14 @@ def _assert_engine_parity(scenario: Scenario, *, rollout_count: int = 4) -> None
         np.testing.assert_allclose(getattr(jax_ob, name), getattr(numpy_ob, name), rtol=1e-5, atol=1e-5)
     np.testing.assert_array_equal(jax_ob.active, numpy_ob.active)
     np.testing.assert_array_equal(jax_ob.failure_active, numpy_ob.failure_active)
+    np.testing.assert_array_equal(jax_ob.attempt_policy, numpy_ob.attempt_policy)
 
-    numpy_disp, jax_disp = (
-        numpy_result.buffers.lot_dispositions.scheduled,
-        jax_result.buffers.lot_dispositions.scheduled,
-    )
-    for name in ("units", "basis", "proceeds"):
-        np.testing.assert_allclose(getattr(jax_disp, name), getattr(numpy_disp, name), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(jax_disp.active, numpy_disp.active)
+    for group in ("scheduled", "liquidity"):
+        numpy_disp = getattr(numpy_result.buffers.lot_dispositions, group)
+        jax_disp = getattr(jax_result.buffers.lot_dispositions, group)
+        for name in ("units", "basis", "proceeds"):
+            np.testing.assert_allclose(getattr(jax_disp, name), getattr(numpy_disp, name), rtol=1e-5, atol=1e-5)
+        np.testing.assert_array_equal(jax_disp.active, numpy_disp.active)
 
     np.testing.assert_allclose(
         jax_result.buffers.transfers.amount, numpy_result.buffers.transfers.amount, rtol=1e-5, atol=1e-5
@@ -212,6 +214,61 @@ def test_combined_phases_engine_parity() -> None:
             ],
             tax_profiles=[],
             horizon_months=5,
+        )
+    )
+
+
+def test_liquidity_policy_sale_engine_parity() -> None:
+    # alice owes $500/mo rent but holds only $100 cash; a liquidity policy sells VTI (priced $60 by a
+    # constant series) FIFO each month to fund the obligation — exercising hard-demand sizing, the
+    # dollar-target FIFO with ceiling rounding, attempt_policy tagging, and the liquidity disposition log.
+    _assert_engine_parity(
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
+                InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            ],
+            initial_lots=[
+                InitialLot(
+                    lot_id="vti",
+                    agent_id="alice",
+                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    purchase_month_index=-24,
+                    quantity=100.0,
+                    cost_basis_per_unit_usd=50.0,
+                )
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=0,
+                    obligation_id="rent",
+                    obligation_type="outside_rent",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="landlord",
+                    to_account_id="checking",
+                    amount_due_usd=500.0,
+                )
+            ],
+            liquidity_policies=[
+                LiquidityPolicy(
+                    agent_id="alice",
+                    account_id="checking",
+                    source_account_ids=("checking",),
+                    asset_preference_chain=[CryptoAssetKey(symbol=CryptoSymbol("vti"))],
+                )
+            ],
+            external_series=SeriesModelBundle.model_validate(
+                {
+                    "model": {
+                        "kind": "independent",
+                        "asset_prices": {"crypto": {"vti": {"kind": "constant", "value": 60.0}}},
+                    }
+                }
+            ),
+            tax_profiles=[],
+            horizon_months=3,
         )
     )
 

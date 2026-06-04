@@ -66,6 +66,20 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
 
         ob_active, ob_due = _apply_obligation_accruals(plan.obligations, active, external_values, month, r)
+        cash, lot_remaining, capital_gain_active, capital_gain_ytd = _apply_liquidity_policy_sales(
+            plan,
+            buffers,
+            cash,
+            lot_remaining,
+            capital_gain_active,
+            capital_gain_ytd,
+            ob_active,
+            ob_due,
+            active,
+            external_values,
+            month,
+            r,
+        )
         funded = _obligation_group_funded(plan.obligations, cash, ob_active, ob_due, month, r)
         cash, ordinary_ytd, failed, failed_month, ob_paid, ob_shortfall, ob_failure = _apply_obligation_settlement(
             plan.obligations, cash, ordinary_ytd, failed, failed_month, ob_active, ob_due, funded, month
@@ -374,3 +388,152 @@ def _apply_obligation_settlement(
         failed_month = jnp.where(first_failure, month, failed_month)
         failed = failed | slot_failed
     return cash, ordinary_ytd, failed, failed_month, paid_buffer, shortfall_buffer, failure_active
+
+
+def _fifo_sell_dollars(
+    lot_remaining: jnp.ndarray,
+    ordered_lots: np.ndarray,
+    target_dollars: jnp.ndarray,
+    unit_price: jnp.ndarray,
+    cost_basis_per_unit: jnp.ndarray,
+    epsilon: float = 1e-9,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Port of `tensor_fifo.fifo_sell_dollars`: FIFO sell a dollar target, ceiling-rounding units."""
+    ordered_quantity = lot_remaining[:, ordered_lots]
+    available_value = ordered_quantity * unit_price[:, None]
+    oversell = target_dollars > available_value.sum(axis=1) + epsilon
+    effective_target = jnp.where(oversell, 0.0, target_dollars)
+    before_value = jnp.cumsum(available_value, axis=1) - available_value
+    sold_value_ordered = jnp.clip(effective_target[:, None] - before_value, 0.0, available_value)
+    price_col = unit_price[:, None]
+    sold_units_ordered = jnp.clip(
+        jnp.ceil(jnp.where(price_col > 0.0, sold_value_ordered / jnp.where(price_col > 0.0, price_col, 1.0), 0.0)),
+        0.0,
+        ordered_quantity,
+    )
+    proceeds_ordered = sold_units_ordered * price_col
+    basis_ordered = sold_units_ordered * cost_basis_per_unit[ordered_lots][None, :]
+    zeros = jnp.zeros_like(lot_remaining)
+    sold_units = zeros.at[:, ordered_lots].set(sold_units_ordered)
+    proceeds = zeros.at[:, ordered_lots].set(proceeds_ordered)
+    basis = zeros.at[:, ordered_lots].set(basis_ordered)
+    return sold_units, proceeds, basis, oversell
+
+
+def _apply_liquidity_policy_sales(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    lot_remaining: jnp.ndarray,
+    capital_gain_active: jnp.ndarray,
+    capital_gain_ytd: jnp.ndarray,
+    obligation_active: jnp.ndarray,
+    obligation_due: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: int,
+    rollout_count: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_liquidity_policy_sales`: sell assets FIFO to fund cash needs."""
+    policies = plan.liquidity_policies
+    cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
+    for policy in range(policies.agent.shape[0]):
+        policy_agent = int(policies.agent[policy])
+        policy_cash_slot = int(policies.cash_slot[policy])
+
+        matching_obligations = np.flatnonzero(
+            (plan.obligations.agent[month] == policy_agent) & (plan.obligations.from_slot[month] == policy_cash_slot)
+        )
+        if matching_obligations.size:
+            matching_active = obligation_active[matching_obligations]
+            hard_demand = jnp.where(matching_active, obligation_due[matching_obligations], 0.0).sum(axis=0)
+            for row, slot in enumerate(matching_obligations):
+                prior = buffers.obligations.attempt_policy[month, slot]
+                buffers.obligations.attempt_policy[month, slot] = np.where(
+                    np.asarray(matching_active[row]), policy, prior
+                )
+        else:
+            hard_demand = jnp.zeros(rollout_count)
+
+        cash_balance = cash[policy_cash_slot] if policy_cash_slot >= 0 else jnp.zeros(rollout_count)
+        required_sale = jnp.maximum(hard_demand - cash_balance, 0.0)
+        post_required_cash = cash_balance + required_sale - hard_demand
+        buffer_trigger_values = _amount_values(
+            amount_kind=int(policies.trigger_kind[policy]),
+            amount_fixed=float(policies.trigger_fixed[policy]),
+            amount_base=float(policies.trigger_base[policy]),
+            amount_series=int(policies.trigger_series[policy]),
+            amount_base_month=int(policies.trigger_base_month[policy]),
+            amount_period=int(policies.trigger_period[policy]),
+            external_values=external_values,
+            month=month,
+            rollout_count=rollout_count,
+        )
+        buffer_sale_values = _amount_values(
+            amount_kind=int(policies.sale_kind[policy]),
+            amount_fixed=float(policies.sale_fixed[policy]),
+            amount_base=float(policies.sale_base[policy]),
+            amount_series=int(policies.sale_series[policy]),
+            amount_base_month=int(policies.sale_base_month[policy]),
+            amount_period=int(policies.sale_period[policy]),
+            external_values=external_values,
+            month=month,
+            rollout_count=rollout_count,
+        )
+        buffer_sale = jnp.where(
+            (buffer_sale_values > 0.0) & (post_required_cash < buffer_trigger_values), buffer_sale_values, 0.0
+        )
+        remaining_target = jnp.where(active, required_sale + buffer_sale, 0.0)
+        if not bool(jnp.any((hard_demand > 0.0) | (remaining_target > 0.0))):
+            continue
+
+        for asset_idx in range(policies.assets.shape[1]):
+            asset_code = int(policies.assets[policy, asset_idx])
+            series_index = int(policies.asset_series[policy, asset_idx])
+            if asset_code < 0 or series_index < 0 or not bool(jnp.any(remaining_target > 0.0)):
+                continue
+            raw_price = external_values[series_index, :, month]
+            valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
+            unit_price = jnp.where(valid_price, raw_price, 0.0)
+
+            for source_account in policies.source_accounts[policy]:
+                source_account_code = int(source_account)
+                if source_account_code < 0 or not bool(jnp.any(remaining_target > 0.0)):
+                    continue
+                ordered_lots = lot_order_for_pool(
+                    lot_agent_codes=plan.lot_agent_codes,
+                    lot_account_codes=plan.lot_account_codes,
+                    lot_asset_codes=plan.lot_asset_codes,
+                    lot_purchase_month=plan.lot_purchase_month,
+                    lot_id_codes=plan.lot_id_codes,
+                    agent_code=policy_agent,
+                    account_code=source_account_code,
+                    asset_code=asset_code,
+                )
+                if ordered_lots.size == 0:
+                    continue
+                available_value = lot_remaining[ordered_lots, :].sum(axis=0) * unit_price
+                target_dollars = jnp.where(
+                    valid_price & active, jnp.minimum(jnp.maximum(remaining_target, 0.0), available_value), 0.0
+                )
+                if not bool(jnp.any(target_dollars > 0.0)):
+                    continue
+                sold_units, proceeds, basis, oversell = _fifo_sell_dollars(
+                    lot_remaining.T, ordered_lots, target_dollars, unit_price, cost_basis_per_unit
+                )
+                if bool(oversell.any()):
+                    raise ValueError("liquidity policy attempted to sell more than available lots")
+                lot_remaining = lot_remaining - sold_units.T
+                total_proceeds = proceeds.sum(axis=1)
+                if policy_cash_slot >= 0:
+                    cash = cash.at[policy_cash_slot].add(total_proceeds)
+                capital_gain_active, capital_gain_ytd = _record_capital_gains(
+                    plan, capital_gain_active, capital_gain_ytd, month, policy_agent, sold_units, proceeds - basis
+                )
+                disposition = buffers.lot_dispositions.liquidity
+                disposition.active[month, policy, asset_idx] |= np.asarray((sold_units > 0.0).T)
+                disposition.units[month, policy, asset_idx] += np.asarray(sold_units.T)
+                disposition.basis[month, policy, asset_idx] += np.asarray(basis.T)
+                disposition.proceeds[month, policy, asset_idx] += np.asarray(proceeds.T)
+                remaining_target = jnp.maximum(remaining_target - total_proceeds, 0.0)
+    return cash, lot_remaining, capital_gain_active, capital_gain_ytd

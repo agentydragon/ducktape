@@ -316,6 +316,7 @@ py_test(
         "//:conftest",
         "//augur:conftest",
         "//augur/model:series",
+        "//augur/model:series_model",
         "//augur/model:sim_backend",
         "//augur/product:asset_key",
         "@pypi//numpy",
