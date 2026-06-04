@@ -138,19 +138,19 @@ class _FoldedSale:
 class _FoldedPurchase:
     """One real cash property purchase, static data resolved host-side for the scan fold. `month` is
     the (static) purchase month, compared against the traced scan index; `buffer_index` is the
-    property's column in the property-state and property-event buffers."""
+    property's column in the property-state and property-event buffers.
+
+    The pure-value purchase/mortgage amounts (basis, ownership, equity, mortgage principal/payment) are
+    NOT carried here: the step reads them as traced inputs from the (hybrid) plan by `buffer_index` /
+    `mortgage_slot`, so a sweep over those values reuses the compiled program. `stake_contribution`
+    stays (it gates a Python `if > 0`, a baked feature)."""
 
     buffer_index: int
     month: int
-    adjusted_basis: float
-    ownership: float
     stake_contribution: float
-    equity_ledger: float
     buyer_slot: int
     seller_slot: int
     mortgage_slot: int  # NO_CODE for cash purchases; else the liability slot to originate
-    mortgage_principal: float
-    mortgage_monthly_payment: float
 
 
 @dataclass(frozen=True)
@@ -216,6 +216,11 @@ _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
         ("MIDCompileOutput", "principal_ratio"),
         ("TransferCompileOutput", "amount_fixed"),
         ("TransferCompileOutput", "amount_base"),
+        ("PropertyCompileOutput", "adjusted_basis"),
+        ("PropertyCompileOutput", "ownership"),
+        ("PropertyCompileOutput", "equity_ledger"),
+        ("LiabilityCompileOutput", "principal"),
+        ("LiabilityCompileOutput", "monthly_payment"),
     }
 )
 
@@ -237,13 +242,19 @@ def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
         "cost_basis_per_unit": jnp.asarray(plan.lot_cost_basis_per_unit),
         "cash_initial_balance": jnp.asarray(plan.cash_initial_balance),
         "lot_initial_quantity": jnp.asarray(plan.lot_initial_quantity),
+        "property_adjusted_basis": jnp.asarray(plan.properties.adjusted_basis),
+        "property_ownership": jnp.asarray(plan.properties.ownership),
+        "property_equity_ledger": jnp.asarray(plan.properties.equity_ledger),
+        "liability_principal": jnp.asarray(plan.liabilities.principal),
+        "liability_monthly_payment": jnp.asarray(plan.liabilities.monthly_payment),
     }
 
 
 def _hybrid_plan(plan: CompiledSimulation, cfg: dict[str, jnp.ndarray]) -> CompiledSimulation:
-    """A plan whose swept numeric-config fields are the traced `cfg` arrays and whose every other
-    field is the original concrete (numpy) value. The cores read tax values from the traced fields and
-    structural feature flags / counts from the concrete fields, both via the same `plan` object."""
+    """A plan whose swept numeric-config fields (tax values, MID ratio, property purchase basis /
+    ownership / equity, mortgage principal / payment) are the traced `cfg` arrays and whose every other
+    field is the original concrete (numpy) value. The cores read values from the traced fields and
+    structural feature flags / counts / slot indices from the concrete fields, via the same `plan`."""
     tax = replace(
         plan.tax,
         link_standard_deduction=cfg["link_standard_deduction"],
@@ -253,7 +264,18 @@ def _hybrid_plan(plan: CompiledSimulation, cfg: dict[str, jnp.ndarray]) -> Compi
         link_ltcg_rate=cfg["link_ltcg_rate"],
     )
     mid = replace(plan.mid, principal_ratio=cfg["mid_principal_ratio"])
-    return replace(plan, tax=tax, mid=mid)
+    properties = replace(
+        plan.properties,
+        adjusted_basis=cfg["property_adjusted_basis"],
+        ownership=cfg["property_ownership"],
+        equity_ledger=cfg["property_equity_ledger"],
+    )
+    liabilities = replace(
+        plan.liabilities,
+        principal=cfg["liability_principal"],
+        monthly_payment=cfg["liability_monthly_payment"],
+    )
+    return replace(plan, tax=tax, mid=mid, properties=properties, liabilities=liabilities)
 
 
 def _fingerprint_into(h: Any, obj: Any) -> None:
@@ -450,26 +472,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         for s in range(sales.month.shape[0])
         if int(sales.month[s]) >= 0
     ]
-    _liabs = plan.liabilities
     folded_purchases = [
         _FoldedPurchase(
             buffer_index=prop,
             month=int(props.month[prop]),
-            adjusted_basis=float(props.adjusted_basis[prop]),
-            ownership=float(props.ownership[prop]),
             stake_contribution=float(props.stake_contribution[prop]),
-            equity_ledger=float(props.equity_ledger[prop]),
             buyer_slot=int(props.buyer_slot[prop]),
             seller_slot=int(props.seller_slot[prop]),
             mortgage_slot=int(props.mortgage_slot[prop]),
-            mortgage_principal=(
-                float(_liabs.principal[int(props.mortgage_slot[prop])]) if int(props.mortgage_slot[prop]) >= 0 else 0.0
-            ),
-            mortgage_monthly_payment=(
-                float(_liabs.monthly_payment[int(props.mortgage_slot[prop])])
-                if int(props.mortgage_slot[prop]) >= 0
-                else 0.0
-            ),
         )
         for prop in range(props.month.shape[0])
         if int(props.month[prop]) >= 0
@@ -932,17 +942,18 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             property_active = property_active.at[fp.buffer_index].set(
                 jnp.where(buy, True, property_active[fp.buffer_index])
             )
+            # Pure-value purchase amounts read as traced inputs from the (hybrid) plan by index.
             property_basis = property_basis.at[fp.buffer_index].set(
-                jnp.where(buy, fp.adjusted_basis, property_basis[fp.buffer_index])
+                jnp.where(buy, plan.properties.adjusted_basis[fp.buffer_index], property_basis[fp.buffer_index])
             )
             property_ownership = property_ownership.at[fp.buffer_index].set(
-                jnp.where(buy, fp.ownership, property_ownership[fp.buffer_index])
+                jnp.where(buy, plan.properties.ownership[fp.buffer_index], property_ownership[fp.buffer_index])
             )
             property_contribution = property_contribution.at[fp.buffer_index].set(
                 jnp.where(buy, fp.stake_contribution, property_contribution[fp.buffer_index])
             )
             property_equity = property_equity.at[fp.buffer_index].set(
-                jnp.where(buy, fp.equity_ledger, property_equity[fp.buffer_index])
+                jnp.where(buy, plan.properties.equity_ledger[fp.buffer_index], property_equity[fp.buffer_index])
             )
             transfer_fires = buy if fp.stake_contribution > 0.0 else jnp.zeros_like(buy)
             if fp.stake_contribution > 0.0:
@@ -953,8 +964,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             if fp.mortgage_slot >= 0:
                 ms = fp.mortgage_slot
                 liab_active = liab_active.at[ms].set(jnp.where(buy, True, liab_active[ms]))
-                liab_principal = liab_principal.at[ms].set(jnp.where(buy, fp.mortgage_principal, liab_principal[ms]))
-                liab_monthly = liab_monthly.at[ms].set(jnp.where(buy, fp.mortgage_monthly_payment, liab_monthly[ms]))
+                liab_principal = liab_principal.at[ms].set(
+                    jnp.where(buy, plan.liabilities.principal[ms], liab_principal[ms])
+                )
+                liab_monthly = liab_monthly.at[ms].set(
+                    jnp.where(buy, plan.liabilities.monthly_payment[ms], liab_monthly[ms])
+                )
                 liab_interest_ytd = liab_interest_ytd.at[ms].set(jnp.where(buy, 0.0, liab_interest_ytd[ms]))
                 liab_principal_ytd = liab_principal_ytd.at[ms].set(jnp.where(buy, 0.0, liab_principal_ytd[ms]))
                 mortgage_origination_rows[ms] = buy

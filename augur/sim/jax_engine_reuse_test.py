@@ -26,17 +26,26 @@ from augur.sim.compiler.plan import CompiledSimulation
 from augur.sim.engine import _allocate_buffers, _allocate_current_state, _run_month_step, _snapshot_current_state
 from augur.sim.engine.jax_engine import _plan_fingerprint, run_jax_scan
 from augur.sim.external_series import materialize_external_series
+from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
 from augur.sim.scenario import (
     Agent,
     FilingStatus,
     InitialAccountBalance,
     InitialLot,
+    MortgageFinancing,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledPropertyPurchase,
     TaxProfile,
 )
+
+_SF = {
+    "sf": Location(
+        location_id="sf", display_name="SF", jurisdiction_ids=["federal_us"], annual_property_tax_rate=0.0118
+    )
+}
 
 
 def _tax_scenario() -> Scenario:
@@ -108,18 +117,16 @@ def _sale_scenario() -> Scenario:
     )
 
 
-def _compile(scenario: Scenario, *, rollout_count: int) -> CompiledSimulation:
+def _compile(scenario: Scenario, *, rollout_count: int, locations: dict[str, Location]) -> CompiledSimulation:
     external_series = materialize_external_series(
-        scenario.external_series,
-        rollout_seeds=tuple(range(rollout_count)),
-        horizon_months=int(scenario.horizon_months),
+        scenario.external_series, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
     return compile_simulation(
         scenario,
         rollout_count=rollout_count,
         external_series=external_series,
         jurisdictions=load_jurisdictions_for(scenario),
-        locations={},
+        locations=locations,
     )
 
 
@@ -142,11 +149,13 @@ def _assert_value_sweep_reuses(
     scenario: Scenario,
     perturb: Callable[[CompiledSimulation], CompiledSimulation],
     extract: Callable[[SimulationBuffers], NDArray[np.float64]],
+    *,
+    locations: dict[str, Location] | None = None,
 ) -> None:
     """Cache plan A, perturb a traced value into plan B, and assert B reuses A's program (same
     fingerprint) yet still matches the NumPy reference for B — and that the perturbation moved the
     output (so the reuse path isn't vacuously correct)."""
-    plan_a = _compile(scenario, rollout_count=2)
+    plan_a = _compile(scenario, rollout_count=2, locations=locations or {})
     out_a = extract(_run_jax(plan_a)).copy()  # warms the program cache for this structure
 
     plan_b = perturb(plan_a)
@@ -170,7 +179,9 @@ def test_transfer_amount_sweep_reuses_program_correctly() -> None:
     # Bump the (fixed) paycheck amount; NaN entries (non-fixed slots) are left untouched.
     def perturb(p: CompiledSimulation) -> CompiledSimulation:
         fixed = p.transfers.amount_fixed
-        return replace(p, transfers=replace(p.transfers, amount_fixed=np.where(np.isnan(fixed), fixed, fixed + 1_000.0)))
+        return replace(
+            p, transfers=replace(p.transfers, amount_fixed=np.where(np.isnan(fixed), fixed, fixed + 1_000.0))
+        )
 
     _assert_value_sweep_reuses(_tax_scenario(), perturb, lambda b: b.taxes.accrual_amount)
 
@@ -191,10 +202,65 @@ def test_initial_balance_sweep_reuses_program_correctly() -> None:
     )
 
 
+def _financed_purchase_scenario() -> Scenario:
+    """A mortgage-financed home purchase: the property basis and the originated mortgage principal /
+    payment drive the property + liability state."""
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="sf",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=100_000.0,
+                buyer_closing_cost_usd=0.0,
+                rented_fraction=0.0,
+                mortgage=MortgageFinancing(
+                    liability_id="alice_mortgage",
+                    lender_agent_id="lender",
+                    principal_usd=400_000.0,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=3,
+    )
+
+
+def test_property_basis_sweep_reuses_program_correctly() -> None:
+    _assert_value_sweep_reuses(
+        _financed_purchase_scenario(),
+        lambda p: replace(p, properties=replace(p.properties, adjusted_basis=p.properties.adjusted_basis * 1.2)),
+        lambda b: b.state.property_basis_state,
+        locations=_SF,
+    )
+
+
+def test_mortgage_principal_sweep_reuses_program_correctly() -> None:
+    _assert_value_sweep_reuses(
+        _financed_purchase_scenario(),
+        lambda p: replace(p, liabilities=replace(p.liabilities, principal=p.liabilities.principal * 1.1)),
+        lambda b: b.state.liability_principal_state,
+        locations=_SF,
+    )
+
+
 def test_structural_change_busts_the_fingerprint() -> None:
     # A baked (non-traced) structural field IS fingerprinted, so changing it forces a recompile rather
     # than incorrect reuse. `link_ordinary_count` (active bracket count) is such a baked feature.
-    plan_a = _compile(_tax_scenario(), rollout_count=2)
+    plan_a = _compile(_tax_scenario(), rollout_count=2, locations={})
     plan_c = replace(plan_a, tax=replace(plan_a.tax, link_ordinary_count=plan_a.tax.link_ordinary_count + 1))
     assert _plan_fingerprint(plan_c) != _plan_fingerprint(plan_a)
 
