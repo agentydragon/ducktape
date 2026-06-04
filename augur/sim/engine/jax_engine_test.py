@@ -10,10 +10,20 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
+from augur.model.series import CryptoSymbol
 from augur.model.sim_backend import SimBackend, use_backend
+from augur.product.asset_key import CryptoAssetKey
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_external_series
-from augur.sim.scenario import Agent, InitialAccountBalance, RecurringObligation, Scenario, ScheduledTransfer
+from augur.sim.scenario import (
+    Agent,
+    InitialAccountBalance,
+    InitialLot,
+    RecurringObligation,
+    Scenario,
+    ScheduledAssetSale,
+    ScheduledTransfer,
+)
 from augur.sim.simulate import simulate_dense_with_external_series
 
 
@@ -32,16 +42,24 @@ def _assert_engine_parity(scenario: Scenario, *, rollout_count: int = 4) -> None
     jax_result = _simulate(scenario, SimBackend.JAX, rollout_count=rollout_count)
 
     numpy_state, jax_state = numpy_result.buffers.state, jax_result.buffers.state
-    for name in ("cash_state", "ordinary_state"):
+    for name in ("cash_state", "ordinary_state", "lot_state", "capital_gain_state"):
         np.testing.assert_allclose(getattr(jax_state, name), getattr(numpy_state, name), rtol=1e-5, atol=1e-5)
-    np.testing.assert_array_equal(jax_state.rollout_failed_state, numpy_state.rollout_failed_state)
-    np.testing.assert_array_equal(jax_state.rollout_failed_month_state, numpy_state.rollout_failed_month_state)
+    for name in ("capital_gain_active_state", "rollout_failed_state", "rollout_failed_month_state"):
+        np.testing.assert_array_equal(getattr(jax_state, name), getattr(numpy_state, name))
 
     numpy_ob, jax_ob = numpy_result.buffers.obligations, jax_result.buffers.obligations
     for name in ("due", "paid", "shortfall"):
         np.testing.assert_allclose(getattr(jax_ob, name), getattr(numpy_ob, name), rtol=1e-5, atol=1e-5)
     np.testing.assert_array_equal(jax_ob.active, numpy_ob.active)
     np.testing.assert_array_equal(jax_ob.failure_active, numpy_ob.failure_active)
+
+    numpy_disp, jax_disp = (
+        numpy_result.buffers.lot_dispositions.scheduled,
+        jax_result.buffers.lot_dispositions.scheduled,
+    )
+    for name in ("units", "basis", "proceeds"):
+        np.testing.assert_allclose(getattr(jax_disp, name), getattr(numpy_disp, name), rtol=1e-5, atol=1e-5)
+    np.testing.assert_array_equal(jax_disp.active, numpy_disp.active)
 
     np.testing.assert_allclose(
         jax_result.buffers.transfers.amount, numpy_result.buffers.transfers.amount, rtol=1e-5, atol=1e-5
@@ -98,6 +116,41 @@ def test_obligation_settlement_and_failure_engine_parity() -> None:
             ],
             tax_profiles=[],
             horizon_months=4,
+        )
+    )
+
+
+def test_scheduled_asset_sale_engine_parity() -> None:
+    # alice owns 100 units of VTI (long-term: bought 24 months pre-horizon) and sells 40 at $60 in
+    # month 0 — exercising FIFO lot consumption, proceeds to cash, the long-term capital-gain accrual,
+    # and the lot-disposition log.
+    _assert_engine_parity(
+        Scenario(
+            agents=[Agent(agent_id="alice")],
+            initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+            initial_lots=[
+                InitialLot(
+                    lot_id="vti",
+                    agent_id="alice",
+                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    purchase_month_index=-24,
+                    quantity=100.0,
+                    cost_basis_per_unit_usd=50.0,
+                )
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=0,
+                    cause_id="sell40",
+                    agent_id="alice",
+                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    quantity=40.0,
+                    proceeds_account_id="checking",
+                    price_per_unit_usd=60.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
         )
     )
 
