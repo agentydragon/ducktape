@@ -311,6 +311,7 @@ py_test(
         ":codec",
         ":engine",
         ":external_series",
+        ":locations",
         ":scenario",
         ":simulate",
         "//:conftest",
