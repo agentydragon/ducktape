@@ -76,7 +76,12 @@ class SubmitArgs(OpenAIStrictModeBaseModel):
 
 
 class ReportFailureArgs(OpenAIStrictModeBaseModel):
-    message: str = Field(..., description="Description of why the critique could not be completed")
+    message: str = Field(
+        ...,
+        description="What is blocking you: the broken tool/environment/validation and what you tried "
+        "(e.g. 'exec returns a validation error for every command', 'cannot read the files in scope', "
+        "'submit keeps rejecting valid issues').",
+    )
 
 
 # --- Tool response models ---
@@ -243,7 +248,10 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
 
     @provider.tool
     def report_failure(args: ReportFailureArgs) -> str:
-        """Report that the critique could not be completed due to blocking issues (e.g., no files in scope)."""
+        """Escape hatch: you are BLOCKED by tooling/environment/validation and cannot complete the
+        review — e.g. `exec` errors on every command, you cannot read the files in scope,
+        `insert_issue`/`submit` keep failing, or validation rejects input you believe is legitimate.
+        Do NOT use this because you cannot run or build the code: review it statically by reading it."""
         with db.session() as session:
             get_current_agent_run(session)
 

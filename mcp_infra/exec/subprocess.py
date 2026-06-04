@@ -8,7 +8,6 @@ from pydantic import Field
 
 from mcp_infra.exec.models import (
     BaseExecResult,
-    EnvVar,
     ExecArgsBase,
     ExecOutcome,
     ExecOutput,
@@ -86,28 +85,11 @@ class DirectExecArgs(ExecArgsBase):
     """Arguments for direct command execution."""
 
     cmd: list[str] = Field(min_length=1)
-    env: list[EnvVar] | None = Field(
-        default=None,
-        description="Environment variables as ['NAME=value', ...]. "
-        "Merged into the inherited environment by default (see inherit_env).",
-    )
-    inherit_env: bool = Field(
-        default=True,
-        description="If true (default), env vars are merged into the process's inherited environment. "
-        "If false, only the provided env vars are used (clean environment).",
-    )
-
-
-def _parse_env_list(env_list: list[str] | None) -> dict[str, str] | None:
-    if not env_list:
-        return None
-    result: dict[str, str] = {}
-    for entry in env_list:
-        name, sep, value = entry.partition("=")
-        if not sep:
-            raise ValueError(f"invalid env var (missing '='): {entry!r}")
-        result[name] = value
-    return result
+    # No env / inherit_env knob: direct exec always inherits the ambient environment.
+    # Exposing an optional `list[EnvVar] | None` broke tool-calling for models that
+    # serialize optional args as JSON strings (e.g. glm-4.6 sent env="null" / "[]"),
+    # which strict list validation rejected — failing 100% of exec calls.
+    # See props/debug/glm46_exec_env_stringification.md.
 
 
 async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
@@ -125,12 +107,5 @@ async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = N
         cwd_val = default_cwd
 
     timeout_s = max(0.001, input.timeout_ms / 1000.0)
-    outcome = await run_proc(
-        input.cmd,
-        timeout_s,
-        cwd=cwd_val,
-        stdin=input.stdin_text,
-        env=_parse_env_list(input.env),
-        inherit_env=input.inherit_env,
-    )
+    outcome = await run_proc(input.cmd, timeout_s, cwd=cwd_val, stdin=input.stdin_text)
     return render_outcome_to_result(outcome, input.max_bytes)
