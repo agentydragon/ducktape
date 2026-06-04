@@ -362,6 +362,7 @@ py_test(
     srcs = ["scan_test.py"],
     deps = [
         ":conftest",
+        ":locations",
         ":scenario",
         ":simulate",
         "//augur/product:asset_key",
