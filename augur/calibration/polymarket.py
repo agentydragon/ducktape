@@ -16,9 +16,29 @@ from decimal import Decimal
 
 from polymarket import PublicClient
 
+# `TimeoutError` / `TransportError` are aliased to avoid shadowing the builtins of the same
+# name; these are the SDK's wait-timeout / transport failures, distinct from
+# `builtins.TimeoutError` and `httpx.TransportError`.
+from polymarket.errors import (
+    PolymarketError,
+    RateLimitError,
+    RequestRejectedError,
+    TimeoutError as PolymarketTimeoutError,
+    TransportError as PolymarketTransportError,
+)
+
 from augur.calibration.platform import Market
+from augur.calibration.transient_retry import with_retry
 
 _POLYMARKET_BASE_URL = "https://polymarket.com/event"
+
+
+def _polymarket_is_transient(exc: BaseException) -> bool:
+    """A Polymarket SDK failure worth retrying: a 5xx server rejection, a rate-limit, or a
+    transport/wait-timeout error. Input-validation and unexpected-shape errors are not."""
+    if isinstance(exc, RequestRejectedError):
+        return exc.status >= 500
+    return isinstance(exc, RateLimitError | PolymarketTransportError | PolymarketTimeoutError)
 
 
 def _yes_price_to_probability(price: Decimal | None) -> float | None:
@@ -38,22 +58,36 @@ class PolymarketClient:
         *,
         cache_ttl_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
         sdk_client: PublicClient | None = None,
     ) -> None:
         self._sdk = sdk_client if sdk_client is not None else PublicClient()
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
+        self._sleep = sleep
         self._cache: dict[str, tuple[Market, float]] = {}
 
     def get_market(self, market_id: str) -> Market:
         """One market's current state, served from the TTL cache when still fresh.
 
         ``market_id`` is the Polymarket condition_id passed to
-        ``PublicClient.get_market(id=...)``.
+        ``PublicClient.get_market(id=...)``. A transient 5xx/rate-limit/timeout is retried
+        with backoff before propagating.
         """
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
+        market = with_retry(
+            lambda: self._fetch(market_id),
+            what=f"polymarket market {market_id!r}",
+            retry_on=PolymarketError,
+            is_transient=_polymarket_is_transient,
+            sleep=self._sleep,
+        )
+        self._cache[market_id] = (market, now)
+        return market
+
+    def _fetch(self, market_id: str) -> Market:
         pm_market = self._sdk.get_market(id=market_id)
         probability = _yes_price_to_probability(
             pm_market.outcomes.yes.price if pm_market.outcomes is not None else None
@@ -62,7 +96,7 @@ class PolymarketClient:
         # All-time traded volume in USD per the gamma `metrics.volume` field. The SDK's
         # Market.metrics is non-optional but each volume sub-field is.
         volume = float(pm_market.metrics.volume) if pm_market.metrics.volume is not None else None
-        market = Market(
+        return Market(
             id=market_id,
             url=f"{_POLYMARKET_BASE_URL}/{slug}",
             probability=probability,
@@ -71,8 +105,6 @@ class PolymarketClient:
             title=pm_market.question,
             rules=pm_market.description,
         )
-        self._cache[market_id] = (market, now)
-        return market
 
     def fetch_yes_probability(self, market_id: str) -> float:
         return self.get_market(market_id).require_probability()

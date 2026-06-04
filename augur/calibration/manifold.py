@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from augur.calibration.platform import Market
+from augur.calibration.transient_retry import httpx_is_transient, with_retry
 
 _MARKET_ENDPOINT = "https://api.manifold.markets/v0/market/"
 _USER_AGENT = "augur-pm-calibration/1.0"
@@ -70,25 +71,41 @@ class ManifoldClient:
         timeout: float = 30.0,
         cache_ttl_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
         client: httpx.Client | None = None,
     ) -> None:
         self._client = client if client is not None else httpx.Client(headers=_headers(), timeout=timeout)
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
+        self._sleep = sleep
         # market id -> (last fetched market state, monotonic timestamp of that fetch).
         self._cache: dict[str, tuple[Market, float]] = {}
 
     def get_market(self, market_id: str) -> Market:
-        """One market's current state, served from the TTL cache when still fresh."""
+        """One market's current state, served from the TTL cache when still fresh.
+
+        A transient 5xx/timeout is retried with backoff before propagating.
+        """
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
+        market = with_retry(
+            lambda: self._fetch(market_id),
+            what=f"manifold market {market_id!r}",
+            retry_on=httpx.HTTPError,
+            is_transient=httpx_is_transient,
+            sleep=self._sleep,
+        )
+        self._cache[market_id] = (market, now)
+        return market
+
+    def _fetch(self, market_id: str) -> Market:
         response = self._client.get(f"{_MARKET_ENDPOINT}{market_id}")
         response.raise_for_status()
         raw = _ManifoldResponse.model_validate(response.json())
         # Manifold's brand symbol for mana is double-struck capital M (U+1D544); RUF001 flags
         # it as ambiguous with plain capital M, but the resemblance is intentional.
-        market = Market(
+        return Market(
             id=raw.id,
             url=raw.url,
             probability=raw.probability,
@@ -97,8 +114,6 @@ class ManifoldClient:
             title=raw.question,
             rules=raw.text_description,
         )
-        self._cache[market_id] = (market, now)
-        return market
 
     def fetch_yes_probability(self, market_id: str) -> float:
         """Current YES probability for one binary market; raises if it carries none."""

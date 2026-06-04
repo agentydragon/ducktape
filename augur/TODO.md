@@ -54,6 +54,17 @@ Remaining:
       (today's `mark_fan` is PE-only).
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
       rollups of per-market KL once the weighting policy is decided.
+- [ ] **Split prediction-market fetching into a separate syncer with a local store.**
+      Today the server fetches every catalog market live from Manifold / Kalshi /
+      Polymarket on each calibration run, mitigated only by a per-process TTL cache
+      (`augur/calibration/default_clients.py`) and inline retry-with-backoff
+      (`augur/calibration/transient_retry.py`). This still couples calibration latency and
+      availability to the upstreams' flakiness — Kalshi flaps `503` per-ticker, and a cold
+      cache after a pod restart drops whatever fails its first fetch until a later run
+      catches it. Replace the inline path with a small separate program that continuously
+      synchronizes PM states into a local store (DB/keyed file) with a bounded max
+      staleness, and have the server read snapshots from that store. Decouples scoring from
+      the PM APIs entirely; the inline cache + retry are the stopgap until this lands.
 
 ## Exogenous Models & Evidence
 
