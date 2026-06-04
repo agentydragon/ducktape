@@ -1,9 +1,16 @@
 """LLM-as-base-measure spike for the prediction-market reifier (augur/x, throwaway).
 
 Question: can an LLM act as the base measure Q in the "reify PM marginals into trajectories"
-plan — i.e. emit a diverse cloud of typed numeric scenarios whose marginals, after one
-max-ent reweight to the market prices, snap to those prices without the effective sample
-size collapsing? See augur/plans/interpolating_prediction_markets.md.
+plan — i.e. emit a diverse cloud of trajectories *in augur's native shape* whose marginals,
+after one max-ent reweight to the market prices, snap to those prices without the effective
+sample size collapsing? See augur/plans/interpolating_prediction_markets.md.
+
+augur's native trajectory (augur/model/state_space.py): a DENSE MONTHLY level path per factor,
+shape (rollout, horizon_months+1, factors). Factors are augur wire-ids: `inflation` (CPI index),
+`sp500`, `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. So the
+LLM emits dense monthly paths over exactly those series (no annual knots, no post-hoc
+interpolation — month resolution end to end) plus one PE issuer (OpenAI: valuation path + IPO
+month). Market thresholds are then evaluated at specific MONTH indices on the dense paths.
 
 Pure stdlib (no numpy on the host). Every request/response is written to transcripts/.
 Run: python3 augur/x/pm_reifier/run_spike.py
@@ -25,66 +32,114 @@ RESULTS = HERE / "results"
 # Key from $ZAI_API_KEY, else /tmp/zai_key (mirrored from the claude-sandbox `zai-api-key` secret).
 KEY = (os.environ.get("ZAI_API_KEY") or pathlib.Path("/tmp/zai_key").read_text()).strip()
 
-ENDPOINT = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+GENERAL = "https://api.z.ai/api/paas/v4/chat/completions"
+CODING = "https://api.z.ai/api/coding/paas/v4/chat/completions"
 QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
-MODEL = "glm-4.6"
-SCENARIOS_PER_CALL = 10
-N_CALLS = 8
 
-# Knot years the LLM fills (year-end values); "today" is 2026-06 = month index 0.
-YEARS = ["2026", "2027", "2028", "2029", "2030", "2031", "2032"]
-ANCHORS = "Today is 2026-06. S&P 500 ~ 5300. BTC ~ 95,000 USD. OpenAI last private round ~ $0.85T."
-
-# Illustrative-but-plausible crowd marginals (a coherent monotone ladder per underlying).
-# kind: "ge" (series year-end >= threshold) or "ipo_by" (openai ipo_month_index <= month).
-MARKETS = [
-    {"id": "sp500>6000@2027", "kind": "ge", "series": "sp500_year_end", "year": "2027", "thr": 6000, "price": 0.55},
-    {"id": "sp500>8000@2030", "kind": "ge", "series": "sp500_year_end", "year": "2030", "thr": 8000, "price": 0.45},
-    {"id": "sp500>10000@2032", "kind": "ge", "series": "sp500_year_end", "year": "2032", "thr": 10000, "price": 0.38},
-    {"id": "btc>150k@2027", "kind": "ge", "series": "btc_usd_year_end", "year": "2027", "thr": 150_000, "price": 0.50},
-    {"id": "btc>500k@2030", "kind": "ge", "series": "btc_usd_year_end", "year": "2030", "thr": 500_000, "price": 0.30},
-    {"id": "openai_ipo<=2027", "kind": "ipo_by", "month": 18, "price": 0.30},
-    {"id": "openai_ipo<=2029", "kind": "ipo_by", "month": 42, "price": 0.65},
-    # FINDING: despite the "in USD" schema, GLM-4.6 emits OpenAI valuations in TRILLIONS (e.g. 2.8,
-    # 12.5 = $2.8T, $12.5T). So ">$1T" is threshold 1.0 here, not 1e12. See README "units" finding.
-    {
-        "id": "openai_val>1T@2030",
-        "kind": "ge",
-        "series": "openai_valuation_usd_year_end",
-        "year": "2030",
-        "thr": 1.0,
-        "price": 0.55,
-    },
+# Cheapness-ordered model candidates (per z.ai pricing, $/1M in/out): the free Flash tiers first,
+# then the cheap FlashX, then known-good coding-plan models. The coding-plan key may 429 on the
+# general endpoint ("insufficient balance"); pick_model() probes and uses the first that answers.
+CANDIDATES = [
+    (GENERAL, "glm-4.7-flash"),  # free
+    (GENERAL, "glm-4.5-flash"),  # free
+    (CODING, "glm-4.7-flashx"),  # $0.07 / $0.40
+    (CODING, "glm-4.5-air"),  # $0.20 / $1.10
+    (CODING, "glm-4.6"),  # $0.60 / $2.20 (last-resort known-good)
 ]
 
-SCHEMA = (
-    "Each scenario is an object with EXACTLY these keys:\n"
-    '  "label": short string,\n'
-    '  "sp500_year_end": {"2026":int,...,"2032":int}  (S&P 500 index level at each year end),\n'
-    '  "btc_usd_year_end": {"2026":int,...,"2032":int}  (BTC price in USD),\n'
-    '  "openai_ipo_month_index": int or null  (months from 2026-06 until OpenAI IPOs; null = no IPO by 2032),\n'
-    '  "openai_valuation_usd_year_end": {"2026":number,...,"2032":number}  (OpenAI enterprise value in USD).\n'
-    "All seven years 2026..2032 must be present in every year-end map."
+HORIZON_MONTHS = 60  # dense monthly: index 0 = 2026-06, index 60 = 2031-06
+LOC = "sf_ca"  # single location for home_value/rent in this prototype
+ANCHORS = (
+    "Today is 2026-06 (month index 0). Anchor levels at month 0: CPI index 100.0, S&P 500 ~5300, "
+    "BTC ~95,000 USD, SF home-price index 100.0, SF market-rent index 100.0, "
+    "OpenAI enterprise value ~0.85 (trillions USD)."
 )
 
+# augur factor wire-ids -> the dense monthly level path the LLM fills (length HORIZON_MONTHS+1, m0 anchored).
+LEVEL_SERIES = {
+    "inflation": "CPI index (100.0 at month 0)",
+    "sp500": "S&P 500 index level",
+    "crypto:BTC": "BTC price in USD",
+    f"home_value:{LOC}": "SF home-price index (100.0 at month 0)",
+    f"rent:{LOC}": "SF market-rent index (100.0 at month 0)",
+}
 
-def _post(body: dict, tag: str) -> dict:
+# Illustrative-but-plausible crowd marginals on the DENSE paths. Month indices: 2027-12=m18,
+# 2029-12=m42, 2030-12=m54 (all <= HORIZON_MONTHS).
+#   kind "ge_at":   level_series[month] >= thr
+#   kind "ipo_by":  openai.ipo_month_index <= month  (null IPO counts as 0)
+#   kind "oval_at": openai.valuation_usd_trillions[month] >= thr
+MARKETS = [
+    {"id": "sp500>6000@2027-12", "kind": "ge_at", "series": "sp500", "month": 18, "thr": 6000, "price": 0.55},
+    {"id": "sp500>7500@2030-12", "kind": "ge_at", "series": "sp500", "month": 54, "thr": 7500, "price": 0.42},
+    {"id": "btc>150k@2027-12", "kind": "ge_at", "series": "crypto:BTC", "month": 18, "thr": 150_000, "price": 0.50},
+    {"id": "btc>300k@2030-12", "kind": "ge_at", "series": "crypto:BTC", "month": 54, "thr": 300_000, "price": 0.32},
+    {"id": "cpi>110@2029-12", "kind": "ge_at", "series": "inflation", "month": 42, "thr": 110.0, "price": 0.60},
+    {"id": "sfhome>115@2030-12", "kind": "ge_at", "series": f"home_value:{LOC}", "month": 54, "thr": 115.0, "price": 0.45},
+    {"id": "sfrent>112@2029-12", "kind": "ge_at", "series": f"rent:{LOC}", "month": 42, "thr": 112.0, "price": 0.55},
+    {"id": "openai_ipo<=2029-12", "kind": "ipo_by", "month": 42, "price": 0.55},
+    {"id": "openai_val>2T@2030-12", "kind": "oval_at", "month": 54, "thr": 2.0, "price": 0.50},
+]
+
+SCENARIOS_PER_CALL = 4
+N_CALLS = 6
+
+# Markets only probe out to this month, so a path is evaluable if it covers index 0..MAX_MARKET_MONTH.
+# (Dense emission drifts in length — the model rarely lands exactly HORIZON_MONTHS+1 entries; we report
+# that as a finding but don't require the full horizon just to score the marginals.)
+MAX_MARKET_MONTH = max(m["month"] for m in MARKETS)
+
+
+def _schema() -> str:
+    series_lines = "\n".join(f'    "{k}": [{HORIZON_MONTHS + 1} numbers],  // {desc}' for k, desc in LEVEL_SERIES.items())
+    return (
+        f"Each scenario is one internally-consistent monthly trajectory. EXACTLY these keys:\n"
+        f'  "label": short string,\n'
+        f'  "paths": {{   // each array has EXACTLY {HORIZON_MONTHS + 1} entries, monthly from 2026-06 (index 0) to 2031-06 (index {HORIZON_MONTHS}); index 0 = the anchor level\n'
+        f"{series_lines}\n"
+        f"  }},\n"
+        f'  "openai": {{\n'
+        f'    "ipo_month_index": int or null,  // months from 2026-06 until OpenAI IPOs; null = no IPO within horizon\n'
+        f'    "valuation_usd_trillions": [{HORIZON_MONTHS + 1} numbers]  // OpenAI enterprise value in TRILLIONS USD, monthly\n'
+        f"  }}\n"
+        f"Every array must have exactly {HORIZON_MONTHS + 1} numeric entries. Paths must be smooth month-to-month "
+        f"(no teleporting); crashes/booms span several months. Correlated assets co-move (a risk-off month hits "
+        f"equities and crypto together; high inflation drags rents and home prices up)."
+    )
+
+
+def _post(endpoint: str, body: dict, tag: str) -> dict:
     req = urllib.request.Request(
-        ENDPOINT,
+        endpoint,
         data=json.dumps(body).encode(),
         headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"},
     )
     t0 = time.time()
     try:
-        resp = json.loads(urllib.request.urlopen(req, timeout=120).read())
+        resp = json.loads(urllib.request.urlopen(req, timeout=180).read())
         err = None
     except urllib.error.HTTPError as e:
         resp, err = {"error": e.read().decode()[:1000], "code": e.code}, e.code
     dt = time.time() - t0
-    (TRANSCRIPTS / f"{tag}.json").write_text(json.dumps({"request": body, "response": resp, "latency_s": dt}, indent=2))
+    (TRANSCRIPTS / f"{tag}.json").write_text(
+        json.dumps({"endpoint": endpoint, "request": body, "response": resp, "latency_s": dt}, indent=2) + "\n"
+    )
     if err is not None:
         raise RuntimeError(f"HTTP {err} for {tag}: {resp}")
     return resp
+
+
+def pick_model() -> tuple[str, str]:
+    """Probe CANDIDATES cheapest-first with a 1-token smoke call; return the first (endpoint, model) that answers."""
+    for endpoint, model in CANDIDATES:
+        body = {"model": model, "messages": [{"role": "user", "content": "reply ok"}], "max_tokens": 4}
+        try:
+            _post(endpoint, body, f"probe_{model}")
+            print(f"picked model={model} endpoint={'general' if endpoint == GENERAL else 'coding'}")
+            return endpoint, model
+        except RuntimeError as e:
+            print(f"  probe {model} unavailable: {e}")
+    raise RuntimeError("no candidate model answered")
 
 
 def quota() -> dict[str, float]:
@@ -101,21 +156,16 @@ def quota() -> dict[str, float]:
 
 def market_prompt(conditioned: bool, nonce: int) -> list[dict]:
     sys = (
-        "You generate plausible future macro/market SCENARIOS as structured numeric JSON. "
+        "You generate plausible future macro/market SCENARIOS as dense monthly numeric JSON trajectories. "
         'Output ONLY a JSON object {"scenarios": [ ... ]} and nothing else. '
         f"Produce exactly {SCENARIOS_PER_CALL} DIVERSE scenarios spanning the full plausible range — "
-        "optimistic, median, AND pessimistic, explicitly including tail outcomes (market crashes, "
+        "optimistic, median, AND pessimistic, explicitly including tail outcomes (multi-month crashes, "
         "AI-driven booms, OpenAI never IPOing, OpenAI IPOing huge). Each scenario must be internally "
-        "consistent across series and over time (correlated assets move together; a crash year hits "
-        "equities and crypto together; valuations and IPO timing cohere)."
+        "consistent across series and smooth over time."
     )
-    user = f"{ANCHORS}\n\n{SCHEMA}\n\n(diversity seed {nonce}: make these scenarios different from a typical run.)"
+    user = f"{ANCHORS}\n\n{_schema()}\n\n(diversity seed {nonce}: make these scenarios different from a typical run.)"
     if conditioned:
-        lines = "\n".join(
-            f"  - {m['id']}: probability {m['price']:.2f}"
-            + (f"  (S&P {m['year']} year-end ≥ {m['thr']:,})" if m["kind"] == "ge" and "sp500" in m["series"] else "")
-            for m in MARKETS
-        )
+        lines = "\n".join(f"  - {m['id']}: probability {m['price']:.2f}" for m in MARKETS)
         user += (
             "\n\nCrowd prediction-market probabilities to honor IN DISTRIBUTION (the fraction of your "
             f"scenarios satisfying each should roughly match):\n{lines}"
@@ -123,19 +173,19 @@ def market_prompt(conditioned: bool, nonce: int) -> list[dict]:
     return [{"role": "system", "content": sys}, {"role": "user", "content": user}]
 
 
-def generate(conditioned: bool) -> tuple[list[dict], int]:
+def generate(endpoint: str, model: str, conditioned: bool) -> tuple[list[dict], int]:
     variant = "conditioned" if conditioned else "unconditioned"
     scenarios: list[dict] = []
     tokens = 0
     for i in range(N_CALLS):
         body = {
-            "model": MODEL,
+            "model": model,
             "temperature": 1.1,
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"},
             "messages": market_prompt(conditioned, nonce=i),
         }
-        resp = _post(body, f"{variant}_call{i:02d}")
+        resp = _post(endpoint, body, f"{variant}_call{i:02d}")
         tokens += resp.get("usage", {}).get("total_tokens", 0)
         content = resp["choices"][0]["message"]["content"]
         try:
@@ -147,24 +197,63 @@ def generate(conditioned: bool) -> tuple[list[dict], int]:
     return scenarios, tokens
 
 
-def _get(scn: dict, series: str, year: str) -> float | None:
-    try:
-        return float(scn[series][year])
-    except (KeyError, TypeError, ValueError):
+def _path(scn: dict, series: str) -> list[float] | None:
+    """Return the dense monthly path for `series` if structurally valid (right length, finite, positive), else None."""
+    paths = scn.get("paths")
+    if not isinstance(paths, dict):
         return None
+    arr = paths.get(series)
+    if not isinstance(arr, list) or len(arr) <= MAX_MARKET_MONTH:
+        return None
+    try:
+        vals = [float(x) for x in arr]
+    except (TypeError, ValueError):
+        return None
+    return vals if all(math.isfinite(v) and v > 0 for v in vals) else None
+
+
+def _oval(scn: dict) -> list[float] | None:
+    oa = scn.get("openai")
+    if not isinstance(oa, dict):
+        return None
+    arr = oa.get("valuation_usd_trillions")
+    if not isinstance(arr, list) or len(arr) <= MAX_MARKET_MONTH:
+        return None
+    try:
+        vals = [float(x) for x in arr]
+    except (TypeError, ValueError):
+        return None
+    return vals if all(math.isfinite(v) and v > 0 for v in vals) else None
 
 
 def indicator(scn: dict, m: dict) -> int | None:
-    """1/0 if the scenario satisfies the market; None if the scenario lacks the field."""
-    if m["kind"] == "ge":
-        v = _get(scn, m["series"], m["year"])
-        return None if v is None else int(v >= m["thr"])
+    """1/0 if the scenario satisfies the market; None if the scenario lacks a well-formed field."""
+    if m["kind"] == "ge_at":
+        p = _path(scn, m["series"])
+        return None if p is None else int(p[m["month"]] >= m["thr"])
+    if m["kind"] == "oval_at":
+        p = _oval(scn)
+        return None if p is None else int(p[m["month"]] >= m["thr"])
     if m["kind"] == "ipo_by":
-        if "openai_ipo_month_index" not in scn:
+        oa = scn.get("openai")
+        if not isinstance(oa, dict) or "ipo_month_index" not in oa:
             return None
-        ipo = scn["openai_ipo_month_index"]
-        return 0 if ipo is None else int(ipo <= m["month"])
+        ipo = oa["ipo_month_index"]
+        if ipo is None:
+            return 0
+        return int(ipo <= m["month"]) if isinstance(ipo, int) else None
     raise ValueError(m["kind"])
+
+
+def max_monthly_log_jump(scn: dict) -> float | None:
+    """Largest absolute month-over-month log return across the level series — a smoothness/teleport diagnostic."""
+    worst = 0.0
+    for series in LEVEL_SERIES:
+        p = _path(scn, series)
+        if p is None:
+            return None
+        worst = max(worst, max(abs(math.log(p[t + 1] / p[t])) for t in range(len(p) - 1)))
+    return worst
 
 
 def reweight(g: list[list[int]], targets: list[float], ridge: float = 0.05, steps: int = 2000, lr: float = 0.5):
@@ -185,13 +274,25 @@ def reweight(g: list[list[int]], targets: list[float], ridge: float = 0.05, step
     return w, marg, ess
 
 
+def _path_lengths(scn: dict) -> list[int]:
+    paths = scn.get("paths")
+    return [len(v) for v in paths.values() if isinstance(v, list)] if isinstance(paths, dict) else []
+
+
 def evaluate(scenarios: list[dict], variant: str) -> dict:
     valid = []
+    jumps = []
+    all_lengths: list[int] = []
     for scn in scenarios:
+        all_lengths.extend(_path_lengths(scn))
         inds = [indicator(scn, m) for m in MARKETS]
         if all(v is not None for v in inds):
             valid.append([int(v) for v in inds])
+            jump = max_monthly_log_jump(scn)
+            if jump is not None:
+                jumps.append(jump)
     n = len(valid)
+    full = sum(length == HORIZON_MONTHS + 1 for length in all_lengths)
     targets = [m["price"] for m in MARKETS]
     raw = [sum(row[m] for row in valid) / n for m in range(len(MARKETS))] if n else []
     _weights, post, ess = reweight(valid, targets) if n else ([], [], 0.0)
@@ -201,6 +302,13 @@ def evaluate(scenarios: list[dict], variant: str) -> dict:
         "scenarios_valid": n,
         "ess": ess,
         "ess_frac": ess / n if n else 0.0,
+        "horizon_months_expected": HORIZON_MONTHS + 1,
+        "paths_total": len(all_lengths),
+        "paths_full_length": full,
+        "path_len_min": min(all_lengths) if all_lengths else None,
+        "path_len_median": sorted(all_lengths)[len(all_lengths) // 2] if all_lengths else None,
+        "max_monthly_log_jump_mean": (sum(jumps) / len(jumps)) if jumps else None,
+        "max_monthly_log_jump_p95": (sorted(jumps)[int(0.95 * (len(jumps) - 1))]) if jumps else None,
         "markets": [
             {"id": MARKETS[m]["id"], "price": targets[m], "raw": round(raw[m], 3), "reweighted": round(post[m], 3)}
             for m in range(len(MARKETS))
@@ -209,6 +317,12 @@ def evaluate(scenarios: list[dict], variant: str) -> dict:
         else [],
     }
     print(f"\n=== {variant}: {n}/{len(scenarios)} valid | ESS {ess:.1f} ({report['ess_frac'] * 100:.0f}% of valid) ===")
+    print(
+        f"  length discipline: {full}/{len(all_lengths)} paths hit full {HORIZON_MONTHS + 1} "
+        f"(min {report['path_len_min']}, median {report['path_len_median']})"
+    )
+    if jumps:
+        print(f"  smoothness: mean max monthly |log-return| {report['max_monthly_log_jump_mean']:.2f}")
     print(f"  {'market':22} {'price':>6} {'raw':>6} {'reweighted':>11}")
     for row in report["markets"]:
         print(f"  {row['id']:22} {row['price']:>6.2f} {row['raw']:>6.2f} {row['reweighted']:>11.2f}")
@@ -220,27 +334,30 @@ def main() -> None:
     RESULTS.mkdir(exist_ok=True)
     q0 = quota()
     print(f"quota before: weekly={q0.get('weekly_7d_pct')}% short5h={q0.get('short_5h_pct')}%")
+    endpoint, model = pick_model()
     total_tokens = 0
     reports = []
     for conditioned in (False, True):
         variant = "conditioned" if conditioned else "unconditioned"
         print(f"\n--- generating {variant} ({N_CALLS} calls x {SCENARIOS_PER_CALL}) ---")
-        scenarios, tokens = generate(conditioned)
+        scenarios, tokens = generate(endpoint, model, conditioned)
         total_tokens += tokens
-        (RESULTS / f"{variant}_scenarios.json").write_text(json.dumps(scenarios, indent=2))
+        (RESULTS / f"{variant}_scenarios.json").write_text(json.dumps(scenarios, indent=2) + "\n")
         reports.append(evaluate(scenarios, variant))
     q1 = quota()
     summary = {
-        "model": MODEL,
+        "model": model,
+        "endpoint": "general" if endpoint == GENERAL else "coding",
+        "horizon_months": HORIZON_MONTHS,
         "total_tokens": total_tokens,
         "quota_before": q0,
         "quota_after": q1,
         "weekly_pct_delta": (q1.get("weekly_7d_pct") or 0) - (q0.get("weekly_7d_pct") or 0),
         "reports": reports,
     }
-    (RESULTS / "summary.json").write_text(json.dumps(summary, indent=2))
+    (RESULTS / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(
-        f"\n=== cost: {total_tokens} tokens | weekly quota {q0.get('weekly_7d_pct')}% -> "
+        f"\n=== model {model} | {total_tokens} tokens | weekly quota {q0.get('weekly_7d_pct')}% -> "
         f"{q1.get('weekly_7d_pct')}% (delta {summary['weekly_pct_delta']}pp) ==="
     )
 
