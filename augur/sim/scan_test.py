@@ -13,10 +13,12 @@ import pytest_bazel
 
 from augur.product.asset_key import SP500AssetKey
 from augur.sim.locations import Location
+from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    MortgageFinancing,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -312,6 +314,58 @@ def test_property_tax_scan_parity() -> None:
     assert _cash(run, "alice", 1) == pytest.approx(100_000.0)
     assert _cash(run, "alice", 4) == pytest.approx(100_000.0 - 3 * 500.0)
     assert _cash(run, "county", 4) == pytest.approx(3 * 500.0)
+
+
+def test_financed_purchase_scan_parity() -> None:
+    # A mortgage-financed home purchase: month 0 originates the loan (down payment moves buyer ->
+    # seller, liability principal set), then monthly mortgage-payment obligations (interest/principal
+    # split) settle buyer -> lender from month 1. No tax profile, so it routes through the scan.
+    principal = 400_000.0
+    payment = mortgage_monthly_payment_usd(principal, 0.06, 360)
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="sf",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=100_000.0,
+                buyer_closing_cost_usd=0.0,
+                rented_fraction=0.0,
+                mortgage=MortgageFinancing(
+                    liability_id="alice_mortgage",
+                    lender_agent_id="lender",
+                    principal_usd=principal,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=3,
+    )
+    locations = {
+        "sf": Location(
+            location_id="sf", display_name="SF", jurisdiction_ids=["federal_us"], annual_property_tax_rate=0.0118
+        )
+    }
+    run = simulate(scenario, rollout_count=4, locations=locations)
+
+    # After month 0: down payment only (mortgage payments start the month after origination).
+    assert _cash(run, "alice", 1) == pytest.approx(300_000.0 - 100_000.0)
+    # Months 1 & 2 each pay one mortgage bill to the lender; alice's cash nets both off.
+    assert _cash(run, "lender", 3) == pytest.approx(2 * payment)
+    assert _cash(run, "alice", 3) == pytest.approx(300_000.0 - 100_000.0 - 2 * payment)
 
 
 if __name__ == "__main__":

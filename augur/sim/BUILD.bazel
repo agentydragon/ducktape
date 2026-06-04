@@ -363,6 +363,7 @@ py_test(
     deps = [
         ":conftest",
         ":locations",
+        ":runtime",
         ":scenario",
         ":simulate",
         "//augur/product:asset_key",
