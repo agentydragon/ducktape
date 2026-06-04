@@ -16,8 +16,8 @@ Monte-Carlo compute, and the two things that would actually move it are exactly 
    to draw from `R` independently-seeded generators in one vectorized call. JAX does:
    `vmap(lambda key: random.normal(key, (M,)))(keys)` with `keys = vmap(random.fold_in, (None, 0))(base, seeds)`.
    This is the literal "vector of `R` independent seeded states" — correct per-seed semantics, vectorized.
-2. **A fused month loop.** The engine (<augur/sim/engine/**init**.py>) runs `for month in
-range(horizon): _run_month_step(...)` — Python dispatch over `H` months × ~12 phases, each
+2. **A fused month loop.** The engine driver (`augur/sim/engine/__init__.py`) runs
+   `for month in range(horizon): _run_month_step(...)` — Python dispatch over `H` months × ~12 phases, each
    allocating intermediates. `lax.scan` over months with the whole step as the scan body fuses this
    into one XLA kernel (no per-step Python, no intermediate allocs), and runs on GPU/TPU at scale.
 
