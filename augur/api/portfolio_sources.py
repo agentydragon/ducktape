@@ -117,7 +117,7 @@ async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url:
             )
         )
         holdings.append(_sp500_proxy_holding(group, group_holdings))
-        if group.harvest is not None:
+        if group.tlh_model is not None:
             harvest_policies.append(_harvest_policy(group))
 
     captured = [balance.captured_at for balance in cash_balances] + [
@@ -142,16 +142,17 @@ def _harvest_policy(group: PlaidSp500ProxyGroupConfig) -> HarvestPolicy:
     all short-term, matching the TY2025 1099-B).
     """
 
-    assert group.harvest is not None  # caller guards
-    if group.harvest.short_term_fraction is not None:
-        short_term_fraction = group.harvest.short_term_fraction
+    assert group.tlh_model is not None  # caller guards
+    tlh_model = group.tlh_model
+    if tlh_model.short_term_fraction is not None:
+        short_term_fraction = tlh_model.short_term_fraction
     else:
         short_term_fraction = _bucket_short_term_fraction(group)
     return HarvestPolicy(
         owner_agent_id=group.owner_agent_id,
         account_id=group.portfolio_account_id,
         asset=SP500AssetKey(),
-        yield_params=group.harvest.yield_params,
+        yield_params=tlh_model.yield_params,
         short_term_fraction=short_term_fraction,
     )
 
