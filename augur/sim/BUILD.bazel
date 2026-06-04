@@ -357,6 +357,20 @@ py_test(
 )
 
 py_test(
+    name = "scan_test",
+    size = "small",
+    srcs = ["scan_test.py"],
+    deps = [
+        ":conftest",
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "tlh_harvest_engine_test",
     size = "medium",
     srcs = ["tlh_harvest_engine_test.py"],
