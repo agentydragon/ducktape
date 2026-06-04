@@ -1,13 +1,15 @@
 # Tax-loss harvesting (TLH) in Augur
 
-Status: 2026-06-04. Piece 1 (capital-loss netting + carryforward) landed
-(ducktape #1846). Piece 2: Step 2a (yield core, `augur/sim/tlh_harvest.py`) landed; Step 2b
-(engine integration) implemented — config `HarvestProcessConfig` →
-`Scenario.harvest_policies` → compiled `harvest_policies` table (`augur/sim/compiler/tlh_harvest.py`)
-→ engine phase `_apply_tlh_harvest` + sale-time basis give-back in
-`_record_capital_gains` (`augur/sim/engine/phases.py`), with the per-(policy, rollout)
-`tlh_cumulative_harvest` scalar in `augur/sim/buffers.py`. The basis-reset design fork below
-was resolved as option **(B)** (scalar, not extra lot slots).
+Status: 2026-06-04. **Pieces 1 & 2 shipped.** Piece 1 (capital-loss netting +
+carryforward, ducktape #1846). Piece 2 (reduced-form harvest, ducktape #1881):
+yield core `augur/sim/tlh_harvest.py` → `reduced_form_tlh` config (`tlh_model`) →
+`Scenario.harvest_policies` → compiled table (`augur/sim/compiler/tlh_harvest.py`) →
+engine phase `_apply_tlh_harvest` + sale-time basis give-back in `_record_capital_gains`
+(`augur/sim/engine/phases.py`), threaded through the product path; the per-(policy,
+rollout) `tlh_cumulative_harvest` scalar lives in `augur/sim/buffers.py`. The basis-reset
+design fork below was resolved as option **(B)** (scalar, not extra lot slots). The live
+Wealthfront sleeve is wired in gaffer-private (#244). Remaining follow-ups now tracked in
+<../sim/TODO.md>.
 
 ## Motivation
 

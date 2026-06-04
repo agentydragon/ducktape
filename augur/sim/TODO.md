@@ -6,12 +6,24 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Architecture / cutover
 
-- **Capital-loss netting + carryforward (TLH Piece 1).** The bracket walks in
-  `tax.py` clamp negative taxable amounts to zero and no cross-year capital
-  state exists, so realized losses evaporate. Add §1211/§1212 mechanics:
-  net ST/LT losses against gains, $3k/yr ordinary offset, per-`(rollout, agent)`
-  carryforward. Prerequisite for tax-loss-harvesting modeling and a correctness
-  fix for existing OpenAI/IBKR sales. See <plans/tax_loss_harvesting.md>.
+- **TLH follow-ups.** Pieces 1 (capital-loss netting + carryforward, #1846) and 2
+  (reduced-form harvest process, #1881) shipped. Remaining, in rough priority:
+  - **Re-fit the decay annually.** The `reduced_form_tlh` decay params are
+    `[HEURISTIC]` — the account opened in 2025, so there's no prior-year 1099-B to
+    fit decay; the curve shape is an external prior ([VANGUARD-2024]). As TY2026+
+    forms arrive, fit the decay; replace the heuristic with a fitted rate once ≥2
+    forms exist. See <plans/tax_loss_harvesting.md>.
+  - **`representative_sleeve_tlh` variant (plan option #3 — the honest model).**
+    A sibling of the `reduced_form_tlh` discriminator: ~5–10 representative sleeves
+    (index factor + scaled idiosyncratic noise) running real FIFO harvesting on
+    sub-lots, so losses emerge from actual below-basis names instead of a calibrated
+    yield. Build only if a decision turns on harvesting behavior in a regime unlike
+    the TY2025 calibration window. (Never build option #4, the full factor model.)
+  - **Surface `tlh_cumulative_harvest` in output frames.** It's internal engine
+    state today (the per-`(policy, rollout)` basis give-back accumulator); add a
+    codec/decoder if we want harvested-loss visibility in the rollout detail / UI.
+  - **Wash-sale gate.** Not modeled — TY2025 had zero wash sales, so the continuous
+    replacement-buying assumption holds; revisit if the sleeve's behavior changes.
 
 - Replace the `dense.decode()` → `SimulationRun` polars materialization
   step on the rollout-detail endpoint with `ProjectionRun` read models
