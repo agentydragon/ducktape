@@ -20,6 +20,7 @@ from augur.sim.enums import (
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
 )
+from augur.sim.tax import net_capital_gains_with_carryforward
 from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
 
 
@@ -806,6 +807,34 @@ def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateB
         current.property_depreciation_ytd[prop, active_for_property] += monthly_dep[active_for_property]
 
 
+def _apply_capital_loss_netting(
+    plan: CompiledSimulation, current: CurrentStateBuffers, active_rollout: np.ndarray
+) -> None:
+    """Year-end §1211/§1212 netting, run once per capital-gain agent before the per-link bracket
+    walks. Replaces this year's raw ST/LT YTD gains with the post-netting figures the walks then
+    tax, reduces ordinary_ytd by the (≤$3k) capital-loss offset, and persists the residual loss in
+    `capital_loss_carryforward` for future years. Only active rollouts are mutated."""
+    processed: set[int] = set()
+    for profile in range(current.ordinary_ytd.shape[0]):
+        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+        if gain_profile < 0 or gain_profile in processed:
+            continue
+        processed.add(gain_profile)
+        net_short_term, net_long_term, ordinary_offset, carryforward_out = net_capital_gains_with_carryforward(
+            current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, :],
+            current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, :],
+            current.capital_loss_carryforward[gain_profile, :],
+        )
+        current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, active_rollout] = net_short_term[
+            active_rollout
+        ]
+        current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, active_rollout] = net_long_term[
+            active_rollout
+        ]
+        current.ordinary_ytd[profile, active_rollout] -= ordinary_offset[active_rollout]
+        current.capital_loss_carryforward[gain_profile, active_rollout] = carryforward_out[active_rollout]
+
+
 def _apply_tax_accruals(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
@@ -839,6 +868,11 @@ def _apply_tax_accruals(
             continue
         current.ordinary_ytd[profile, active_rollout] -= ytd[active_rollout]
     current.property_depreciation_ytd[:, active_rollout] = 0.0
+
+    # Capital-loss netting + carryforward (§1211/§1212). Must run before the bracket walks so the
+    # netted ST/LT gains and the $3k ordinary-income offset are reflected in every jurisdiction
+    # link's computation (each link reads capital_gain_ytd / ordinary_ytd directly).
+    _apply_capital_loss_netting(plan, current, active_rollout)
 
     link_count = plan.tax.link_profile.shape[0]
     # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so

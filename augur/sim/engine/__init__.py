@@ -72,6 +72,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         ordinary_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
         capital_gain_active=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.bool_),
         capital_gain_ytd=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.float64),
+        capital_loss_carryforward=np.zeros((p.capital_gain_agent_count, r), dtype=np.float64),
         tax_liability_active=np.zeros((p.tax_liability_count, r), dtype=np.bool_),
         tax_liability_amount=np.zeros((p.tax_liability_count, r), dtype=np.float64),
         property_active=np.zeros((p.property_count, r), dtype=np.bool_),
@@ -135,6 +136,7 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
     current.lot_remaining[:, failed] = 0.0
     current.ordinary_ytd[:, failed] = 0.0
     current.capital_gain_ytd[:, :, failed] = 0.0
+    current.capital_loss_carryforward[:, failed] = 0.0
     current.tax_liability_amount[:, failed] = 0.0
     current.property_basis[:, failed] = 0.0
     current.property_ownership[:, failed] = 0.0

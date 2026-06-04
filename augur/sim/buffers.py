@@ -151,6 +151,11 @@ class CurrentStateBuffers:
     ordinary_ytd: NDArray[np.float64]
     capital_gain_active: NDArray[np.bool_]
     capital_gain_ytd: NDArray[np.float64]
+    # Pooled unused capital-loss carryforward per (capital-gain agent, rollout), >= 0. Updated at
+    # year-end by the §1211/§1212 netting: this year's net capital loss, less the portion applied
+    # against ordinary income ($3k cap), carries here into future years. Unlike the YTD gain
+    # buffers it is NOT zeroed at year-end — it persists across tax years by design.
+    capital_loss_carryforward: NDArray[np.float64]
     tax_liability_active: NDArray[np.bool_]
     tax_liability_amount: NDArray[np.float64]
     property_active: NDArray[np.bool_]
@@ -221,6 +226,12 @@ class CurrentStateBuffers:
             "current capital_gain_ytd",
             self.capital_gain_ytd,
             shape=(plan.capital_gain_agent_count, 2, r),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current capital_loss_carryforward",
+            self.capital_loss_carryforward,
+            shape=(plan.capital_gain_agent_count, r),
             dtype=np.float64,
         )
         _expect_array(

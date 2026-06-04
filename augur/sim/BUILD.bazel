@@ -269,6 +269,7 @@ py_library(
         ":external_series",
         ":runtime",
         ":scenario",
+        ":tax",
         ":tensor_fifo",
         "//augur/model:series",
         "@pypi//numpy",
