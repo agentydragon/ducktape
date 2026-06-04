@@ -1105,7 +1105,10 @@ def _public_market_marginal_cdf(issuer: PrivateEquityRiskIssuerConfig, *, horizo
         survival_ratio = (1.0 - anchor.cumulative_probability) / max(1.0 - prev_cum, 1e-12)
         # Per-month survival factor that interpolates the anchor CDF exactly.
         per_month_survival = survival_ratio ** (1.0 / span)
-        for t in range(prev_month + 1, anchor.month + 1):
+        # Clamp to the horizon: an anchor month past `horizon_months` (e.g. a 31-month anchor on
+        # a 12-month projection) must not index past the `horizon_months + 1`-length array. The
+        # partial span up to the horizon is still interpolated correctly off this anchor's rate.
+        for t in range(prev_month + 1, min(anchor.month, horizon_months) + 1):
             cdf[t] = 1.0 - (1.0 - prev_cum) * per_month_survival ** (t - prev_month)
         prev_month, prev_cum = anchor.month, anchor.cumulative_probability
     # Flat tail past the last anchor.

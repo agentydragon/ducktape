@@ -1146,6 +1146,32 @@ def test_public_market_marginal_cdf_without_anchors_is_flat_hazard() -> None:
     assert cdf[12] == pytest.approx(expected_cdf_12, rel=1e-9)
 
 
+def test_public_market_marginal_cdf_horizon_shorter_than_last_anchor() -> None:
+    """A horizon shorter than the last anchor month must not index past the CDF array.
+
+    Regression: the openai anchors are at months 7/19/31, but a 12-month projection only has a
+    13-element CDF; the anchors past the horizon previously overran the array (IndexError),
+    crashing any short-horizon sample of the mint-streams model.
+    """
+
+    issuer = _mint_streams_issuer(
+        public_market_cdf_anchors=(
+            PublicMarketCdfAnchor(month=7, cumulative_probability=0.75),
+            PublicMarketCdfAnchor(month=19, cumulative_probability=0.89),
+            PublicMarketCdfAnchor(month=31, cumulative_probability=0.93),
+        ),
+        annual_public_market_probability=0.07,
+    )
+    cdf = _public_market_marginal_cdf(issuer, horizon_months=12)
+    assert cdf.shape == (13,)
+    assert cdf[0] == 0.0
+    # The in-horizon anchor is hit exactly; months past it interpolate off that anchor's rate
+    # into the (7, 19] span — strictly increasing, still below the next (past-horizon) anchor.
+    assert cdf[7] == pytest.approx(0.75, abs=1e-9)
+    assert cdf[7] < cdf[12] < 0.89
+    assert np.all(np.diff(cdf) >= 0.0)
+
+
 def test_legacy_bayesian_central_trajectory_collapses() -> None:
     """Documents the defect that motivated the mint-streams model: with a flat 28%/yr smooth
     dilution + scale-reverting V drift, the central 10y per-share mark collapses despite V
