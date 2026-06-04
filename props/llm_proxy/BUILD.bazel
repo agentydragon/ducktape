@@ -39,10 +39,12 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
+        ":cli",
         "//props:config",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
+        "@pypi//typer",
     ],
 )
 

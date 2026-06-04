@@ -9,7 +9,15 @@ import uvicorn
 
 from props.llm_proxy.app import create_app
 
-cli = typer.Typer()
+cli = typer.Typer(help="props LLM proxy")
+
+
+# A callback forces typer to treat `serve` as a required subcommand. Without it a
+# single-command Typer collapses into a no-subcommand app and rejects the `serve`
+# argument the image entrypoint passes ("Got unexpected extra argument (serve)").
+@cli.callback()
+def _root() -> None:
+    """props LLM proxy — the agent data plane (/v1/responses)."""
 
 
 @cli.command()

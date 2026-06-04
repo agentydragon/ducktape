@@ -11,9 +11,11 @@ from unittest.mock import MagicMock
 
 import pytest_bazel
 from fastapi.testclient import TestClient
+from typer.testing import CliRunner
 
 from props.config import PropsConfig
 from props.llm_proxy.app import create_app
+from props.llm_proxy.cli import cli
 
 
 def _client() -> TestClient:
@@ -34,6 +36,14 @@ def test_responses_requires_auth() -> None:
     with _client() as client:
         resp = client.post("/v1/responses", json={"model": "x", "input": "hi"})
         assert resp.status_code == 401
+
+
+def test_serve_is_a_subcommand() -> None:
+    """The image entrypoint runs `serve <args>`; a single-command Typer (no
+    callback) rejects `serve` as an unexpected argument — the prod crash this
+    guards against."""
+    result = CliRunner().invoke(cli, ["serve", "--help"])
+    assert result.exit_code == 0, result.output
 
 
 if __name__ == "__main__":
