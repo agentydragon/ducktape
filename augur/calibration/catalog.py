@@ -136,13 +136,13 @@ class _MarketBase(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    # The market's `question`/title and verbatim resolution criterion are NOT stored here: they are
-    # fetched live alongside the price (see Market.title / Market.rules) so they can never drift
-    # from the platform. The catalog carries only the stable mapping + provenance.
+    # The catalog stores ONLY the stable mapping + provenance. A market's human-readable text
+    # (`question`/title, verbatim resolution criterion) and its platform metadata (`outcome_type`,
+    # `close_date`) are NOT stored here -- they are fetched live alongside the price (Market.title /
+    # Market.rules / ...) so they can never drift from the platform.
     platform_ref: PlatformRef
-    outcome_type: str
-    close_date: date | None = None
-    # Date the YES condition must occur by; often differs from `close_date`.
+    # Date the YES condition must occur by (used by the IPO-correlate context). Kept because the
+    # model needs the deadline as a month index; it isn't reliably derivable from the live market.
     resolution_deadline: date | None = None
     notes: str | None = None
 

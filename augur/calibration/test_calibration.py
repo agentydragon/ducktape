@@ -75,18 +75,12 @@ def catalog() -> MarketCatalog:
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="AAA"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
-            ExactMarket(
-                platform_ref=ManifoldRef(manifold_id="BBB"),
-                outcome_type="BINARY",
-                mapping=PreIpoFailureMapping(issuer=_ISSUER),
-            ),
+            ExactMarket(platform_ref=ManifoldRef(manifold_id="BBB"), mapping=PreIpoFailureMapping(issuer=_ISSUER)),
             CorrelateMarket(
                 platform_ref=ManifoldRef(manifold_id="CCC"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 correlate_of="ipo_by_date",
                 issuer=_ISSUER,
@@ -214,7 +208,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 mapping=LevelAtDateMapping(
                     series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
@@ -222,7 +215,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
             ),
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="SPX-TOUCH"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 mapping=LevelByDateMapping(
                     series="sp500", threshold=7500.0, direction=Direction.ABOVE, by_date=date(2026, 12, 31)
@@ -230,7 +222,6 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
             ),
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="CPI"),
-                outcome_type="BINARY",
                 mapping=InflationYoyMapping(
                     series="inflation", threshold=0.03, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
@@ -357,7 +348,6 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
         markets=[
             ExactMarket(
                 platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
-                outcome_type="BINARY",
                 mapping=LevelAtDateMapping(
                     series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
@@ -424,13 +414,11 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
         markets=[
             ExactMarket(
                 platform_ref=ManifoldRef(manifold_id="M1"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2026, 9, 1),
                 mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2026, 9, 1)),
             ),

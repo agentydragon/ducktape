@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{r.kl_bits:+.3f}" if r.kl_bits is not None else "n/a",
             r.platform,
             r.market_id,
-            r.question[:60],
+            (r.question or "")[:60],
         ]
         for r in clean_rows
     ]
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     print(tabulate(clean_table, headers=["p_model", "p_market", "KL_bits", "platform", "market_id", "question"]))
 
     surfaced_table = [
-        [f"{r.p_market:.3f}", r.platform, r.mappability, r.market_id, r.question[:60]] for r in result.surfaced
+        [f"{r.p_market:.3f}", r.platform, r.mappability, r.market_id, (r.question or "")[:60]] for r in result.surfaced
     ]
     print("\nSURFACED MARKETS (not scored, context only)")
     print(tabulate(surfaced_table, headers=["p_market", "platform", "mappability", "market_id", "question"]))

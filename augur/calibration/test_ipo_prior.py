@@ -24,7 +24,6 @@ from augur.model.private_equity_risk import PrivateEquityRiskIssuerConfig
 def _ipo_market(manifold_id: str, by_date: str) -> ExactMarket:
     return ExactMarket(
         platform_ref=ManifoldRef(manifold_id=manifold_id),
-        outcome_type="BINARY",
         mapping=IpoByDateMapping(issuer="openai", by_date=date.fromisoformat(by_date)),
     )
 
