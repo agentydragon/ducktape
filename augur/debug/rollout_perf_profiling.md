@@ -305,18 +305,44 @@ The two valid levers landed:
    amount's reset anchors with a columnar `group_by`/`n_unique`. Was ~8 s (its share at this scale);
    no longer a hotspot.
 
-With both, `metric_fan` is dominated by `simulate_dense_with_external_series` itself — the actual
-rollout compute plus exogenous sampling (`composite.sample`), i.e. real work rather than marshaling.
+Both landed (#1858, #1859 merged). With slicing gone, `metric_fan` is dominated by
+`simulate_dense_with_external_series` itself — the actual rollout compute plus exogenous sampling
+— i.e. real work rather than marshaling.
 
-### Remaining levers
+### Current hotspots (all six passes landed)
 
-- **Exogenous sampling (`composite.sample`, ~5 s).** PE-risk + level-series draws; the deterministic
-  parts may be cacheable across requests, the stochastic parts are not.
-- **Structural compile split.** The seed-independent part of `compile_simulation` (string/asset tables,
-  tax/transfer/property slots) _could_ be cached per scenario, rebuilding only `external_values_cube`
-  per request — but that part is a small slice of compile, so the payoff is modest.
-- **Process-level chunking** of the R axis (below) for memory bounding and multi-core, once the
-  per-request boundaries are this thin.
+10k rollouts × 100-month horizon, `profile_metric_fan`, cProfile (**15.2 s**, down from the
+slicing-dominated ~30 s wall):
+
+| Stage                                         | Time   | %   | What                                              |
+| --------------------------------------------- | ------ | --- | ------------------------------------------------- |
+| `composite.sample` (exogenous sampling)       | 5.4 s  | 36% | GBM level draws + PE-risk sampling                |
+| ↳ `gbm.sample_levels` (×6 blocks)             | 2.3 s  |     | geometric-Brownian-motion level paths             |
+| ↳ `private_equity_risk.sample`                | 1.9 s  |     | PE trajectory + tender draws                      |
+| `simulate_dense` (compile + month loop)       | 5.6 s  | 37% | the rollout engine                                |
+| ↳ `compile_simulation`                        | 2.1 s  |     | plan + `external_values_cube` (seed-dependent)    |
+| ↳ `_run_month_step` ×240                      | 3.4 s  |     | dense NumPy month loop                            |
+| &nbsp;&nbsp;↳ `_apply_liquidity_policy_sales` | 1.75 s |     | per-month liquidity sales                         |
+| `monthly_metric_arrays` ×10 000 (reductions)  | 2.6 s  | 17% | per-rollout column reads (`_lot_value_by_month`)  |
+| polars `collect` ×103                         | 2.5 s  |     | inside sampling/compile (was ×20 k under slicing) |
+
+The polars `collect` count fell from ~20 000 (slicing's per-rollout relabel) to **103** — those
+remaining collects live in GBM/PE sampling and compile, not the hot path.
+
+### Remaining levers (highest impact first)
+
+1. **Vectorize the reduction loop (~2.6 s, the last marshaling cost).** `_decoded_rollouts` still
+   calls `monthly_metric_arrays` once per rollout (10 k Python iterations, each looping over lots in
+   `_lot_value_by_month`). The shared batch makes a true `(…, R)`-vectorized reduction possible —
+   reduce all rollouts in one pass over the batch arrays instead of a per-rollout Python loop.
+   Collapses the 10 k-iteration loop to a handful of array ops.
+2. **Exogenous sampling (~5.4 s).** GBM + PE draws are the largest block and inherent stochastic
+   work; the deterministic setup may be cacheable across requests, the draws are not.
+3. **`_apply_liquidity_policy_sales` (~1.75 s) in the month loop.** Per-month Python work in the
+   otherwise-NumPy loop — candidate for the same fast-path / vectorization treatment as the other
+   phases (interventions 7–8 above).
+4. **Process-level chunking** of the R axis for memory bounding and multi-core, now that the
+   per-request boundaries are this thin.
 
 ## Note on parallelism
 
