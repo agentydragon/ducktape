@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: props-llm-proxy
+  namespace: props
+  annotations:
+    reloader.stakater.com/auto: "true"
+    description: >-
+      LLM proxy data plane — serves /v1/responses for agents (auth + budget +
+      cost + upstream routing), split out of the props backend so the
+      dashboard/API can roll without disrupting in-flight agents.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: props
+      app.kubernetes.io/name: props-llm-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: llm-proxy
+        app.kubernetes.io/instance: props
+        app.kubernetes.io/name: props-llm-proxy
+    spec:
+      # The proxy never touches the k8s API (unlike the backend's orchestration).
+      automountServiceAccountToken: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      containers:
+        - name: llm-proxy
+          image: ghcr.io/agentydragon/props-llm-proxy:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:props-llm-proxy"}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PROPS_CONFIG_FILE
+              value: /etc/props/config.toml
+            - name: PGHOST
+              value: props-db-rw
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: eval_results
+            - name: PGUSER
+              value: props
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-db-app
+                  key: password
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: props-openai-api-key
+                  key: api-key
+            - name: OLLAMA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+            # Auth for the in-cluster LiteLLM upstream (config.toml [upstreams.litellm]).
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+          volumeMounts:
+            - name: config
+              mountPath: /etc/props
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          # No slow startup (just DB + config wiring), so readiness is immediate.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: props-config

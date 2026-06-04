@@ -14,5 +14,7 @@ resources:
   - rbac-executor.yaml
   - deployment.yaml
   - service.yaml
+  - llm-proxy-deployment.yaml
+  - llm-proxy-service.yaml
   - httproute.yaml
   - rolebinding-ollama-consumer.yaml

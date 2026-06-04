@@ -80,6 +80,7 @@ jobs:
             }
           - { image: "//mcp_infra/exec:direct_image", image_name: exec-backend, test_target: "//mcp_infra/exec/..." }
           - { image: "//props/backend:image", image_name: props-backend, test_target: "//props/backend/..." }
+          - { image: "//props/llm_proxy:image", image_name: props-llm-proxy, test_target: "//props/llm_proxy/..." }
           - { image: "//tana/firebase_resigner:image", image_name: tana-firebase-resigner, test_target: "" }
           - {
               image: "//x/mcp_oauth_facade:image",
