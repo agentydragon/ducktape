@@ -48,7 +48,6 @@ it isn't fully isolated.)
 - **Removed the `env` / `inherit_env` knob from `DirectExecArgs`** (`mcp_infra/exec/subprocess.py`).
   Direct exec now always inherits the ambient environment; nothing set `env` on direct exec, and
   agents reviewing code never need it. The model no longer sees the field, so it can't trip on it.
-  Regression test: `mcp_infra/exec/test_direct.py::test_direct_exec_omits_env_knob`.
 - **Generalized the critic's `report_failure`** into an explicit escape hatch (tool docstring +
   `prompt.md.mako`): call it when blocked by tooling/environment/validation instead of hallucinating
   or submitting a partial critique. (Not for "can't run/build the code" — review is static.)
