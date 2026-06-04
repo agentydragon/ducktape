@@ -206,6 +206,8 @@ _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
         ("CompiledSimulation", "external_values"),
         ("CompiledSimulation", "pe_channels"),
         ("CompiledSimulation", "lot_cost_basis_per_unit"),
+        ("CompiledSimulation", "cash_initial_balance"),
+        ("CompiledSimulation", "lot_initial_quantity"),
         ("TaxCompileOutput", "link_standard_deduction"),
         ("TaxCompileOutput", "link_ordinary_upper"),
         ("TaxCompileOutput", "link_ordinary_rate"),
@@ -233,6 +235,8 @@ def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
         "transfer_amount_fixed": jnp.asarray(plan.transfers.amount_fixed),
         "transfer_amount_base": jnp.asarray(plan.transfers.amount_base),
         "cost_basis_per_unit": jnp.asarray(plan.lot_cost_basis_per_unit),
+        "cash_initial_balance": jnp.asarray(plan.cash_initial_balance),
+        "lot_initial_quantity": jnp.asarray(plan.lot_initial_quantity),
     }
 
 
@@ -1547,7 +1551,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
         plan = _hybrid_plan(plan, cfg_arg)
         tr["fixed"] = cfg_arg["transfer_amount_fixed"]
         tr["base"] = cfg_arg["transfer_amount_base"]
-        _, ys = jax.lax.scan(step, init, months)
+        # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
+        init_traced = init._replace(
+            cash=jnp.broadcast_to(cfg_arg["cash_initial_balance"][:, None], (p.cash_count, r)),
+            lot_remaining=jnp.broadcast_to(cfg_arg["lot_initial_quantity"][:, None], (p.lot_count, r)),
+        )
+        _, ys = jax.lax.scan(step, init_traced, months)
         return ys
 
     meta = _ScanMeta(

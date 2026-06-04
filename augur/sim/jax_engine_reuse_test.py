@@ -183,6 +183,14 @@ def test_cost_basis_sweep_reuses_program_correctly() -> None:
     )
 
 
+def test_initial_balance_sweep_reuses_program_correctly() -> None:
+    _assert_value_sweep_reuses(
+        _tax_scenario(),
+        lambda p: replace(p, cash_initial_balance=p.cash_initial_balance + 50_000.0),
+        lambda b: b.state.cash_state,
+    )
+
+
 def test_structural_change_busts_the_fingerprint() -> None:
     # A baked (non-traced) structural field IS fingerprinted, so changing it forces a recompile rather
     # than incorrect reuse. `link_ordinary_count` (active bracket count) is such a baked feature.
