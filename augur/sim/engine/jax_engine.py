@@ -720,37 +720,42 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
             rental_interest_ytd=liab_rental_ytd,
         )
 
-        # Schedule E: rented-share mortgage interest (handled via MID below) + §168 depreciation.
-        for prop in range(property_dep_ytd.shape[0]):
-            profile = int(plan.property_owner_profile_index[prop])
-            if profile >= 0:
-                ordinary = ordinary.at[profile].add(-jnp.where(dec, property_dep_ytd[prop], 0.0))
-        for lia in range(liab_rental_ytd.shape[0]):
-            profile = int(plan.liability_owner_profile_index[lia])
-            if profile >= 0:
-                ordinary = ordinary.at[profile].add(-jnp.where(dec, liab_rental_ytd[lia], 0.0))
+        # Schedule E: §168 depreciation + rented-share mortgage interest, deducted from each entity's
+        # owner tax profile. Vectorized over the property / liability axis: scatter-add the (December-
+        # masked) amounts to their owner-profile rows; entities with no owner profile (index < 0) route
+        # to `_scatter_rows`'s dump row and contribute nothing.
+        dec_col = dec[None, :]
+        ordinary = ordinary + _scatter_rows(
+            jnp.zeros_like(ordinary),
+            jnp.asarray(plan.property_owner_profile_index),
+            -jnp.where(dec_col, property_dep_ytd, 0.0),
+        )
+        ordinary = ordinary + _scatter_rows(
+            jnp.zeros_like(ordinary),
+            jnp.asarray(plan.liability_owner_profile_index),
+            -jnp.where(dec_col, liab_rental_ytd, 0.0),
+        )
 
-        # §1211/§1212 netting per capital-gain agent.
-        seen: set[int] = set()
-        for profile in range(profile_count):
-            gp = int(plan.tax_profile_capital_gain_index[profile])
-            if gp < 0 or gp in seen:
-                continue
-            seen.add(gp)
-            net_st, net_lt, ord_offset, carry_out = _net_capital_gains_jnp(
-                cg_ytd[gp, CapitalGainClassification.SHORT_TERM],
-                cg_ytd[gp, CapitalGainClassification.LONG_TERM],
-                carryforward[gp],
-            )
-            cg_ytd = cg_ytd.at[gp, CapitalGainClassification.SHORT_TERM].set(
-                jnp.where(dec, net_st, cg_ytd[gp, CapitalGainClassification.SHORT_TERM])
-            )
-            cg_ytd = cg_ytd.at[gp, CapitalGainClassification.LONG_TERM].set(
-                jnp.where(dec, net_lt, cg_ytd[gp, CapitalGainClassification.LONG_TERM])
-            )
-            rep = int(cg_rep_profile[gp])
-            ordinary = ordinary.at[rep].add(-jnp.where(dec, ord_offset, 0.0))
-            carryforward = carryforward.at[gp].set(jnp.where(dec, carry_out, carryforward[gp]))
+        # §1211/§1212 netting, vectorized over the capital-gain-agent axis (each agent netted once).
+        # Only agents reachable from a tax profile (`cg_rep_profile >= 0`) are netted — matching the
+        # per-profile loop — and the ordinary offset scatters to each agent's representative profile.
+        net_st, net_lt, ord_offset, carry_out = _net_capital_gains_jnp(
+            cg_ytd[:, CapitalGainClassification.SHORT_TERM, :],
+            cg_ytd[:, CapitalGainClassification.LONG_TERM, :],
+            carryforward,
+        )
+        # `cg_rep_profile` is padded to `max(1, count)`; align it to the actual cap-gain-agent axis
+        # (which may be 0 when the scenario has no tax profiles).
+        cg_rep = jnp.asarray(cg_rep_profile[: cg_ytd.shape[0]])
+        do_net = dec_col & (cg_rep >= 0)[:, None]
+        cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].set(
+            jnp.where(do_net, net_st, cg_ytd[:, CapitalGainClassification.SHORT_TERM, :])
+        )
+        cg_ytd = cg_ytd.at[:, CapitalGainClassification.LONG_TERM, :].set(
+            jnp.where(do_net, net_lt, cg_ytd[:, CapitalGainClassification.LONG_TERM, :])
+        )
+        carryforward = jnp.where(do_net, carry_out, carryforward)
+        ordinary = ordinary + _scatter_rows(jnp.zeros_like(ordinary), cg_rep, -jnp.where(do_net, ord_offset, 0.0))
 
         # Two-pass SALT bracket math; collect per-link tax + breakdown slabs.
         annual_tax_by_link = jnp.zeros((r, max(1, link_count)))
