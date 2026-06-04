@@ -18,9 +18,12 @@ from augur.sim.external_series import ExternalSeriesContext
 def slice_dense_results(dense: DenseSimulationResult, rollout_indices: Sequence[int]) -> list[DenseSimulationResult]:
     """Slice a batched result into one R=1 result per requested rollout.
 
-    The exogenous Polars frames (`series_values`, the PE bundle) are partitioned by
-    `rollout_index` **once** up front, so slicing all R rollouts is O(R) rather than the
-    O(R²) of filtering the whole batch frame per rollout."""
+    Each dense array field is split across all requested rollouts in a single pass
+    (`_split_dc`/`_split_array`), so the buffer dataclass structure is walked once
+    rather than once per rollout. The exogenous Polars frames (`series_values`, the PE
+    bundle) are likewise partitioned by `rollout_index` once up front, keeping the whole
+    operation O(R) instead of the O(R²) of filtering the batch frame per rollout."""
+    indices = list(rollout_indices)
     series_by_rollout = _partition_by_rollout(dense.external_series.series_values)
     pe_by_rollout = (
         None
@@ -28,57 +31,59 @@ def slice_dense_results(dense: DenseSimulationResult, rollout_indices: Sequence[
         else _partition_by_rollout(dense.external_series.private_equity.frame)
     )
     series_schema = dense.external_series.series_values.clear()
-    return [
-        _slice_one(dense, rollout_index, series_by_rollout, pe_by_rollout, series_schema)
-        for rollout_index in rollout_indices
-    ]
+
+    external_values = _split_array(dense.plan.external_values, axis=1, indices=indices)
+    pe_channels = _split_dc(dense.plan.pe_channels, axis=1, indices=indices)
+    state = _split_dc(dense.buffers.state, axis=-1, indices=indices)
+    transfers = _split_dc(dense.buffers.transfers, axis=-1, indices=indices)
+    properties = _split_dc(dense.buffers.properties, axis=-1, indices=indices)
+    lot_dispositions = _split_dc(dense.buffers.lot_dispositions, axis=-1, indices=indices)
+    private_equity_opportunities = _split_dc(dense.buffers.private_equity_opportunities, axis=-1, indices=indices)
+    taxes = _split_dc(dense.buffers.taxes, axis=-1, indices=indices)
+    obligations = _split_dc(dense.buffers.obligations, axis=-1, indices=indices)
+    primary_residence = _split_dc(dense.buffers.primary_residence, axis=-1, indices=indices)
+    lifecycle = _split_dc(dense.buffers.lifecycle, axis=-1, indices=indices)
+
+    results: list[DenseSimulationResult] = []
+    for pos, rollout_index in enumerate(indices):
+        plan = dataclasses.replace(
+            dense.plan,
+            rollout_count=1,
+            slot_plan=dataclasses.replace(dense.plan.slot_plan, rollout_count=1),
+            external_values=external_values[pos],
+            pe_channels=pe_channels[pos],
+        )
+        buffers = SimulationBuffers(
+            state=state[pos],
+            transfers=transfers[pos],
+            properties=properties[pos],
+            lot_dispositions=lot_dispositions[pos],
+            private_equity_opportunities=private_equity_opportunities[pos],
+            taxes=taxes[pos],
+            obligations=obligations[pos],
+            primary_residence=primary_residence[pos],
+            lifecycle=lifecycle[pos],
+            tax_liability_changes=_slice_tax_liability_changes(dense.buffers.tax_liability_changes, rollout_index),
+        )
+        series_values = series_by_rollout.get(rollout_index, series_schema).with_columns(
+            rollout_index=pl.lit(0, dtype=pl.Int64)
+        )
+        if pe_by_rollout is None:
+            private_equity = dense.external_series.private_equity
+        else:
+            pe_frame = pe_by_rollout.get(rollout_index, dense.external_series.private_equity.frame.clear())
+            private_equity = PrivateEquityBundle(frame=pe_frame.with_columns(rollout_index=pl.lit(0, dtype=pl.Int64)))
+        external_series = ExternalSeriesContext(series_values=series_values, private_equity=private_equity)
+        results.append(DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series))
+    return results
 
 
 def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> DenseSimulationResult:
     """Return an R=1 DenseSimulationResult for one rollout of a batched result.
 
-    The cached slice owns its own memory (via `.copy()` on every array) so the
-    source batch can be released."""
+    The cached slice owns its own contiguous memory (via `.copy()` on every array) so the
+    source batch can be released and the per-rollout LRU can evict each slice independently."""
     return slice_dense_results(dense, (rollout_index,))[0]
-
-
-def _slice_one(
-    dense: DenseSimulationResult,
-    rollout_index: int,
-    series_by_rollout: dict[int, pl.DataFrame],
-    pe_by_rollout: dict[int, pl.DataFrame] | None,
-    series_schema: pl.DataFrame,
-) -> DenseSimulationResult:
-    sliced_pe_channels = _take_dc(dense.plan.pe_channels, rollout_index, axis=1)
-    plan = dataclasses.replace(
-        dense.plan,
-        rollout_count=1,
-        slot_plan=dataclasses.replace(dense.plan.slot_plan, rollout_count=1),
-        external_values=dense.plan.external_values[:, rollout_index : rollout_index + 1, :].copy(),
-        pe_channels=sliced_pe_channels,
-    )
-    buffers = SimulationBuffers(
-        state=_take_dc(dense.buffers.state, rollout_index, axis=-1),
-        transfers=_take_dc(dense.buffers.transfers, rollout_index, axis=-1),
-        properties=_take_dc(dense.buffers.properties, rollout_index, axis=-1),
-        lot_dispositions=_take_dc(dense.buffers.lot_dispositions, rollout_index, axis=-1),
-        private_equity_opportunities=_take_dc(dense.buffers.private_equity_opportunities, rollout_index, axis=-1),
-        taxes=_take_dc(dense.buffers.taxes, rollout_index, axis=-1),
-        obligations=_take_dc(dense.buffers.obligations, rollout_index, axis=-1),
-        primary_residence=_take_dc(dense.buffers.primary_residence, rollout_index, axis=-1),
-        lifecycle=_take_dc(dense.buffers.lifecycle, rollout_index, axis=-1),
-        tax_liability_changes=_slice_tax_liability_changes(dense.buffers.tax_liability_changes, rollout_index),
-    )
-    series_values = series_by_rollout.get(rollout_index, series_schema).with_columns(
-        rollout_index=pl.lit(0, dtype=pl.Int64)
-    )
-    if pe_by_rollout is None:
-        private_equity = dense.external_series.private_equity
-    else:
-        pe_frame = pe_by_rollout.get(rollout_index, dense.external_series.private_equity.frame.clear())
-        private_equity = PrivateEquityBundle(frame=pe_frame.with_columns(rollout_index=pl.lit(0, dtype=pl.Int64)))
-    external_series = ExternalSeriesContext(series_values=series_values, private_equity=private_equity)
-    return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
 
 
 def _partition_by_rollout(frame: pl.DataFrame) -> dict[int, pl.DataFrame]:
@@ -105,13 +110,30 @@ def _slice_tax_liability_changes(log: TaxLiabilityChangeLog, rollout_index: int)
     )
 
 
-def _take_dc[T](obj: T, rollout_index: int, *, axis: int) -> T:
-    fields = dataclasses.fields(obj)  # type: ignore[arg-type]
-    sliced: dict[str, Any] = {}
-    for field in fields:
+def _split_array(arr: np.ndarray, *, axis: int, indices: Sequence[int]) -> list[np.ndarray]:
+    """Split `arr` along `axis` into one owning, contiguous R=1 array per requested rollout.
+
+    Uses basic slicing (`arr[..., i : i + 1, ...]`, a view) plus a single `.copy()`. This is
+    both cheaper than a fancy `np.take(arr, [i], axis=...)` (basic slicing avoids the
+    fancy-index slow path) and drops the redundant second copy that `np.take(...).copy()`
+    performed — `take` already returns a fresh owning array."""
+    selector: list[Any] = [slice(None)] * arr.ndim
+    chunks: list[np.ndarray] = []
+    for rollout_index in indices:
+        selector[axis] = slice(rollout_index, rollout_index + 1)
+        chunks.append(arr[tuple(selector)].copy())
+    return chunks
+
+
+def _split_dc[T](obj: T, *, axis: int, indices: Sequence[int]) -> list[T]:
+    """Split every array field of a (possibly nested) dataclass along `axis`, returning one
+    reconstructed R=1 dataclass per requested rollout. Walks the field structure once."""
+    field_chunks: dict[str, list[Any]] = {}
+    for field in dataclasses.fields(obj):  # type: ignore[arg-type]
         val = getattr(obj, field.name)
         if dataclasses.is_dataclass(val) and not isinstance(val, type):
-            sliced[field.name] = _take_dc(val, rollout_index, axis=axis)
+            field_chunks[field.name] = _split_dc(val, axis=axis, indices=indices)
         else:
-            sliced[field.name] = np.take(val, [rollout_index], axis=axis).copy()
-    return type(obj)(**sliced)
+            field_chunks[field.name] = _split_array(val, axis=axis, indices=indices)
+    cls = type(obj)
+    return [cls(**{name: chunks[pos] for name, chunks in field_chunks.items()}) for pos in range(len(indices))]
