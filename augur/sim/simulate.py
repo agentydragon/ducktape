@@ -69,16 +69,10 @@ def _validate_series_indexed_amounts(
         # that dict is millions of entries built from a Python row loop, all for nothing.
         return
 
-    # Only the referenced series matter; filtering first keeps the lookup small even when the
+    # Only the referenced series matter; filtering first keeps the work small even when the
     # external frame carries many unrelated series (asset prices, etc.).
     needed_wire_ids = {amount.series.wire_id for _, amount, _ in uses}
     relevant = external_series.series_values.filter(pl.col("series_id").is_in(list(needed_wire_ids)))
-    series_levels: dict[tuple[str, int, int], float | None] = {}
-    for row in relevant.iter_rows(named=True):
-        value = row["value"]
-        series_levels[(str(row["series_id"]), int(row["month_index"]), int(row["rollout_index"]))] = (
-            None if value is None else float(value)
-        )
 
     for label, amount, months in uses:
         before_base = [month for month in months if month < amount.base_month_index]
@@ -87,26 +81,40 @@ def _validate_series_indexed_amounts(
                 f"series-indexed amount {label} is active at month {before_base[0]} "
                 f"before base month {amount.base_month_index}"
             )
-        # series_levels is keyed by the frame's wire-string series_id (typed in a later phase).
+        # `relevant` carries the wire-string series_id (typed in a later phase).
         wire_id = amount.series.wire_id
-        required_months = {int(amount.base_month_index)}
-        required_months.update(amount._reset_month(month) for month in months)
-        for month in sorted(required_months):
-            missing_rollouts = [
-                rollout_index
-                for rollout_index in range(rollout_count)
-                if series_levels.get((wire_id, month, rollout_index)) is None
-            ]
-            if missing_rollouts:
+        base_month = int(amount.base_month_index)
+        # An amount only indexes into its reset anchors (one per adjustment period) plus its base
+        # month — a handful of months, not the whole horizon. Restrict to those rows and check
+        # rollout coverage with a columnar group/count instead of materializing a
+        # per-(series, month, rollout) Python dict over the full external frame.
+        required_months = sorted({base_month, *(amount._reset_month(month) for month in months)})
+        series_rows = relevant.filter(
+            (pl.col("series_id") == wire_id) & pl.col("month_index").is_in(required_months)
+        )
+        present_count = dict(
+            series_rows.filter(pl.col("value").is_not_null())
+            .group_by("month_index")
+            .agg(pl.col("rollout_index").n_unique().alias("present"))
+            .iter_rows()
+        )
+        for month in required_months:
+            if present_count.get(month, 0) < rollout_count:
+                present_rollouts = set(
+                    series_rows.filter((pl.col("month_index") == month) & pl.col("value").is_not_null())
+                    .get_column("rollout_index")
+                    .to_list()
+                )
+                missing_rollouts = [rollout for rollout in range(rollout_count) if rollout not in present_rollouts]
                 raise KeyError(
                     f"series-indexed amount {label} references external series {wire_id!r} "
                     f"at month {month}, but it is missing rollout(s): {_format_rollout_sample(missing_rollouts)}"
                 )
-        zero_base_rollouts = [
-            rollout_index
-            for rollout_index in range(rollout_count)
-            if series_levels[(wire_id, int(amount.base_month_index), rollout_index)] == 0.0
-        ]
+        zero_base_rollouts = sorted(
+            series_rows.filter((pl.col("month_index") == base_month) & (pl.col("value") == 0.0))
+            .get_column("rollout_index")
+            .to_list()
+        )
         if zero_base_rollouts:
             raise ValueError(
                 f"external series {wire_id!r} has zero base level at month "
