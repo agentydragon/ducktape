@@ -51,6 +51,7 @@ from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
 from augur.sim.enums import (
     CapitalGainClassification,
+    LifecycleKind,
     ObligationSource,
     PrivateEquityDispositionKind,
     PrivateEquityOpportunityOutcome,
@@ -93,8 +94,8 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     capital_gain_active = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     capital_gain_ytd = jnp.zeros((p.capital_gain_agent_count, 2, r))
     capital_loss_carryforward = jnp.zeros((p.capital_gain_agent_count, r))
-    # Tax YTD buckets the year-end pass reads; fed by property-tax settlement, depreciation, and
-    # property sale (the latter two not yet ported, so these stay zero for non-rental scenarios).
+    # Tax YTD buckets the year-end pass reads; property_tax_ytd is fed by property-tax settlement,
+    # property_depreciation_ytd by the depreciation accrual, recapture by property sale (not yet ported).
     property_tax_ytd = jnp.zeros((p.tax_profile_count, r))
     property_depreciation_ytd = jnp.zeros((p.property_count, r))
     recapture_section_1250_ytd = jnp.zeros((p.tax_profile_count, r))
@@ -109,6 +110,11 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     property_rented_fraction = jnp.asarray(
         np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r))
     )
+    property_building_basis = jnp.asarray(np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r)))
+    property_cumulative_depreciation = jnp.zeros((p.property_count, r))
+    property_owner_occupied_months = jnp.zeros((p.property_count, r), dtype=jnp.int32)
+    # Per-agent (rollout-independent) primary-residence assignment; mutated in place by events.
+    agent_primary_residence_property = np.array(plan.initial_primary_residence_property_index, dtype=np.int64)
     liabilities = LiabilityState(
         active=jnp.zeros((p.liability_count, r), dtype=bool),
         principal=jnp.zeros((p.liability_count, r)),
@@ -130,6 +136,11 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
 
     for month in range(plan.horizon_months):
         active = ~failed
+
+        _apply_primary_residence_events(plan, buffers, agent_primary_residence_property, failed, month)
+        cash, property_rented_fraction, property_building_basis = _apply_lifecycle_events(
+            plan, buffers, cash, property_active, property_rented_fraction, property_building_basis, failed, month
+        )
 
         cash, ordinary_ytd, transfer_active, transfer_amount = _apply_scheduled_transfers(
             plan.transfers, cash, ordinary_ytd, active, external_values, month, r
@@ -230,6 +241,26 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             r,
         )
 
+        # Owner-occupied-month counter (§121) then §168 depreciation accrual — both before the
+        # year-end tax pass so December's depreciation lands in the Schedule-E YTD it reads.
+        property_owner_occupied_months = _apply_owner_occupied_month(
+            plan,
+            property_active,
+            property_rented_fraction,
+            agent_primary_residence_property,
+            property_owner_occupied_months,
+            failed,
+        )
+        property_cumulative_depreciation, property_depreciation_ytd = _apply_depreciation_accrual(
+            plan,
+            property_active,
+            property_rented_fraction,
+            property_building_basis,
+            property_cumulative_depreciation,
+            property_depreciation_ytd,
+            failed,
+        )
+
         # Year-end (December) tax accrual: creates this year's tax liabilities, which next year's
         # estimated-tax / true-up obligations read and settle.
         (
@@ -300,6 +331,8 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         buffers.state.liability_monthly_payment_state[month + 1] = np.asarray(liabilities.monthly_payment)
         buffers.state.liability_interest_ytd_state[month + 1] = np.asarray(liabilities.interest_ytd)
         buffers.state.liability_principal_ytd_state[month + 1] = np.asarray(liabilities.principal_ytd)
+        buffers.state.property_cumulative_depreciation_state[month + 1] = np.asarray(property_cumulative_depreciation)
+        buffers.state.property_owner_occupied_months_state[month + 1] = np.asarray(property_owner_occupied_months)
         buffers.state.rollout_failed_state[month + 1] = np.asarray(failed)
         buffers.state.rollout_failed_month_state[month + 1] = np.asarray(failed_month)
 
@@ -1744,3 +1777,116 @@ def _apply_tax_settlements(
                 active=np.asarray(tax_liability.active),
             )
     return tax_liability
+
+
+def _apply_primary_residence_events(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    agent_primary_residence_property: np.ndarray,
+    failed: jnp.ndarray,
+    month: int,
+) -> None:
+    """Port of `phases._apply_primary_residence_events`: assign agents' primary residences.
+
+    `agent_primary_residence_property` is a per-agent (rollout-independent) int array mutated in place.
+    """
+    starts = plan.primary_residence_events.month_starts
+    if month + 1 >= starts.shape[0]:
+        return
+    begin, end = int(starts[month]), int(starts[month + 1])
+    active = np.asarray(~failed)
+    if begin == end or not active.any():
+        return
+    for event_index in range(begin, end):
+        agent_slot = int(plan.primary_residence_events.agent_slot[event_index])
+        agent_primary_residence_property[agent_slot] = int(plan.primary_residence_events.property_slot[event_index])
+        buffers.primary_residence.fired[event_index] = active
+
+
+def _apply_lifecycle_events(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    cash: jnp.ndarray,
+    property_active: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    property_building_basis: jnp.ndarray,
+    failed: jnp.ndarray,
+    month: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Functional port of `phases._apply_lifecycle_events` (FRACTION + CAPITAL_IMPROVEMENT).
+
+    The §1250/§121 SALE kind is not yet ported (raises NotImplementedError) — it is the last
+    remaining engine path.
+    """
+    starts = plan.lifecycle_events.month_starts
+    if month + 1 >= starts.shape[0]:
+        return cash, property_rented_fraction, property_building_basis
+    begin, end = int(starts[month]), int(starts[month + 1])
+    active_rollout = ~failed
+    if begin == end or not bool(active_rollout.any()):
+        return cash, property_rented_fraction, property_building_basis
+    le = plan.lifecycle_events
+    for i in range(begin, end):
+        prop = int(le.property_slot[i])
+        kind = int(le.kind[i])
+        active_property = active_rollout & property_active[prop]
+        if not bool(active_property.any()):
+            continue
+        if kind == LifecycleKind.FRACTION:
+            property_rented_fraction = property_rented_fraction.at[prop].set(
+                jnp.where(active_property, float(le.rented_fraction[i]), property_rented_fraction[prop])
+            )
+        elif kind == LifecycleKind.CAPITAL_IMPROVEMENT:
+            amount = float(le.amount[i])
+            owner_cash_slot = int(plan.properties.buyer_slot[prop])
+            if owner_cash_slot >= 0:
+                cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0.0))
+            property_building_basis = property_building_basis.at[prop].add(jnp.where(active_property, amount, 0.0))
+        elif kind == LifecycleKind.SALE:
+            raise NotImplementedError("property sale (§1250/§121) is not yet ported to the JAX engine")
+        buffers.lifecycle.fired[i] = np.asarray(active_property)
+    return cash, property_rented_fraction, property_building_basis
+
+
+def _apply_owner_occupied_month(
+    plan: CompiledSimulation,
+    property_active: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    agent_primary_residence_property: np.ndarray,
+    property_owner_occupied_months: jnp.ndarray,
+    failed: jnp.ndarray,
+) -> jnp.ndarray:
+    """Port of `phases._apply_owner_occupied_month`: increment §121 owner-occupied-month counters."""
+    active_rollout = ~failed
+    if not bool(active_rollout.any()):
+        return property_owner_occupied_months
+    for prop in range(property_rented_fraction.shape[0]):
+        owner_agent_slot = int(plan.property_owner_agent_index[prop])
+        if owner_agent_slot < 0 or int(agent_primary_residence_property[owner_agent_slot]) != prop:
+            continue
+        owner_occupied = active_rollout & property_active[prop] & (property_rented_fraction[prop] < 1.0)
+        property_owner_occupied_months = property_owner_occupied_months.at[prop].add(owner_occupied.astype(jnp.int32))
+    return property_owner_occupied_months
+
+
+def _apply_depreciation_accrual(
+    plan: CompiledSimulation,
+    property_active: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    property_building_basis: jnp.ndarray,
+    property_cumulative_depreciation: jnp.ndarray,
+    property_depreciation_ytd: jnp.ndarray,
+    failed: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Port of `phases._apply_depreciation_accrual`: §168 straight-line monthly depreciation."""
+    active_rollout = ~failed
+    if not bool(active_rollout.any()):
+        return property_cumulative_depreciation, property_depreciation_ytd
+    for prop in range(property_rented_fraction.shape[0]):
+        active_for_property = active_rollout & property_active[prop]
+        monthly_dep = jnp.where(
+            active_for_property, property_building_basis[prop] * property_rented_fraction[prop] / (27.5 * 12.0), 0.0
+        )
+        property_cumulative_depreciation = property_cumulative_depreciation.at[prop].add(monthly_dep)
+        property_depreciation_ytd = property_depreciation_ytd.at[prop].add(monthly_dep)
+    return property_cumulative_depreciation, property_depreciation_ytd
