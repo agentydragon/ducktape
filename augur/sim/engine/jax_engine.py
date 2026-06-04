@@ -161,25 +161,14 @@ class _FoldedPurchase:
 def scan_supported(plan: CompiledSimulation) -> bool:
     """Whether the jitted `lax.scan` fast path (`run_jax_scan`) covers this plan.
 
-    The scan fold is being grown phase-by-phase; it currently handles scheduled/recurring transfers,
-    scheduled asset sales (FIFO + capital gains), and CONFIGURED obligations (income/rent-style
-    accruals), so route a scenario to it iff it uses no other phase. Anything else falls back to the
-    eager `run_jax`. Conservative by construction — a missing feature here only costs the fast path,
-    never correctness (the dual-backend suite gates both routes)."""
-    obligation = plan.obligations
-    # A real obligation slot has `cause >= 0`; the compiler also stamps a PROPERTY_TAX `source_kind`
-    # on the padded sentinel property slot (with `cause = NO_CODE`), so gate on `cause`, not on
-    # `source_kind` alone — only *real* obligations must be CONFIGURED for the scan to handle them.
-    real_obligation = obligation.cause >= 0
-    handled_kind = (
-        (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION)
-        | (obligation.source_kind == ObligationSource.PROPERTY_TAX)
-        | (obligation.source_kind == ObligationSource.MORTGAGE_PAYMENT)
-    )
+    The scan fold now handles transfers, all obligation kinds (configured / property-tax / mortgage /
+    estimated-tax / true-up), scheduled asset sales, property purchases (cash + financed), depreciation,
+    owner-occupied tracking, and the full year-end tax pass. Remaining un-folded phases — liquidity
+    sales, PE tenders, and lifecycle / primary-residence events — fall back to the eager `run_jax`.
+    Conservative by construction: a missing feature here only costs the fast path, never correctness
+    (the dual-backend suite gates both routes)."""
     return (
-        # real obligations must be CONFIGURED / PROPERTY_TAX / MORTGAGE_PAYMENT — estimated kinds aren't folded
-        bool((~real_obligation | handled_kind).all())
-        and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
+        bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
@@ -348,6 +337,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             & (plan.tax_liabilities.year_end_month[None, None, :] == tax_year_end[:, None, None])
         ).astype(np.float64)
     )
+    # Tax-profile index per estimated/true-up obligation slot (for settlement scatter to profile rows);
+    # and the (static, per-month) prior year-end being settled.
+    acc["prof_idx"] = jnp.asarray(np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, -1))
+    acc["tax_year_end"] = jnp.asarray(tax_year_end)
 
     # December year-end tax pass: static tables. `link_count`/`taxliab_count`/`profile_count` are
     # compile-time. `tax_slot_table[m, link]` is the tax-liability slot a link accrues at year-end
@@ -714,6 +707,26 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         for ms, buy in mortgage_origination_rows.items():
             mort_orig = mort_orig.at[ms].set(buy)
 
+        # Tax-liability settlement: a paid TAX_TRUE_UP fully clears its profile-year's liability (the
+        # estimated prepayments covered the rest). `trueup_sel` maps each true-up obligation slot to
+        # the tax-liability slots of the year it settles; `paid` (active & funded) gates it.
+        trueup_sel_m = acc["trueup_sel"][month]  # (slots, taxliab)
+        is_trueup = (og["source_kind"][month] == ObligationSource.TAX_TRUE_UP) & (og["cause"][month] >= 0)
+        trueup_paid = is_trueup[:, None] & paid  # (slots, R)
+        eligible = jnp.where(taxliab_active, taxliab_amount, 0.0)  # (taxliab, R)
+        actual_per_trueup = trueup_sel_m @ eligible  # (slots, R): full year tax owed
+        settle_k = (trueup_sel_m.astype(bool)[:, :, None] & trueup_paid[:, None, :]).any(axis=0)  # (taxliab, R)
+        taxliab_amount = jnp.where(settle_k, 0.0, taxliab_amount)
+        # Settlement event buffers, scattered to tax-profile rows (one true-up per profile per month).
+        settle_prof_idx = jnp.where(is_trueup, acc["prof_idx"][month], -1)
+        settle_amount = _scatter_rows(
+            jnp.zeros((profile_count, r)), settle_prof_idx, jnp.where(trueup_paid, actual_per_trueup, 0.0)
+        )
+        settle_active = (
+            _scatter_rows(jnp.zeros((profile_count, r)), settle_prof_idx, trueup_paid.astype(jnp.float32)) > 0.0
+        )
+        settle_year_end = jnp.where(settle_active, acc["tax_year_end"][month], NO_CODE)
+
         # §121 owner-occupied-month counter then §168 depreciation accrual (eager order: after
         # settlement, before the year-end tax pass that reads depreciation_ytd).
         property_owner_occupied = _owner_occupied_jit(
@@ -852,8 +865,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             else ()
         )
         # Tax slabs: 13 per-(link, rollout) breakdown buffers + the post-month tax-liability snapshot
-        # (amount, active) for change-log reconstruction. Only when the plan has tax links.
-        tax_ys = (*tax_breakdown, taxliab_amount, taxliab_active) if link_count > 0 else ()
+        # (amount, active) for change-log reconstruction + the 3 per-(profile, rollout) settlement
+        # event buffers. Only when the plan has tax links.
+        tax_ys = (
+            (*tax_breakdown, taxliab_amount, taxliab_active, settle_active, settle_amount, settle_year_end)
+            if link_count > 0
+            else ()
+        )
         return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys)
 
     prop0 = jnp.zeros((p.property_count, r))
@@ -988,8 +1006,10 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         props_buf.mortgage_payment_principal[:] = pay_principal_h
         props_buf.mortgage_payment_total[:] = pay_total_h
     if tax_h:
-        # 13 per-(month, link) breakdown stacks + the post-month tax-liability snapshots.
-        *breakdown_h, taxliab_amount_h, taxliab_active_h = (np.asarray(a) for a in tax_h)
+        # 13 per-(month, link) breakdown stacks + tax-liability snapshots + 3 settlement event stacks.
+        *breakdown_h, taxliab_amount_h, taxliab_active_h, settle_active_h, settle_amount_h, settle_year_end_h = (
+            np.asarray(a) for a in tax_h
+        )
         taxes = buffers.taxes
         taxes.accrual_active[:] = breakdown_h[0] > 0.0
         for buf, slab in zip(
@@ -1011,14 +1031,24 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             strict=True,
         ):
             buf[:] = slab
-        # Reconstruct the sparse tax-liability change log: each year-end records the slots it created
-        # at snapshot month m+1 with that month's post-accrual balance.
-        for m in range(11, horizon, 12):
-            created = np.flatnonzero(plan.tax_liabilities.year_end_month == m)
-            if created.size:
+        n_prof = settle_active_h.shape[1]
+        taxes.settlement_active[:, :n_prof] = settle_active_h
+        taxes.settlement_amount[:, :n_prof] = settle_amount_h
+        taxes.settlement_year_end_month[:, :n_prof] = settle_year_end_h
+        # Reconstruct the sparse tax-liability change log by diffing per-month snapshots: a year-end
+        # accrual (0 -> tax) and a true-up settlement (tax -> 0) each change a slot's balance; record
+        # the post-change balance at month m+1 for every slot that changed that month.
+        prev_amount = np.zeros_like(taxliab_amount_h[0])
+        prev_active = np.zeros_like(taxliab_active_h[0])
+        for m in range(horizon):
+            changed = np.flatnonzero(
+                (taxliab_amount_h[m] != prev_amount).any(axis=1) | (taxliab_active_h[m] != prev_active).any(axis=1)
+            )
+            if changed.size:
                 buffers.tax_liability_changes.record(
-                    snapshot_month=m + 1, slots=created, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
+                    snapshot_month=m + 1, slots=changed, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
                 )
+            prev_amount, prev_active = taxliab_amount_h[m], taxliab_active_h[m]
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
