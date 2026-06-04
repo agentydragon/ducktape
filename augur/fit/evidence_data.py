@@ -7,7 +7,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -427,7 +427,10 @@ def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[Mo
             case _:
                 raise KeyError(f"no vendored absolute level series for level wire id {wire!r}")
         monthly = _monthly_last(raw)
+        # `monthly` is period-indexed (grouped to "M"); pandas-stubs widens the index to Hashable,
+        # so name the Period explicitly to reach `.to_timestamp()`.
         out[wire] = [
-            MonthlyLevel(month=period.to_timestamp().date(), value=float(value)) for period, value in monthly.items()
+            MonthlyLevel(month=cast(pd.Period, period).to_timestamp().date(), value=float(value))
+            for period, value in monthly.items()
         ]
     return out
