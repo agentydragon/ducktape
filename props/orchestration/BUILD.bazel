@@ -129,6 +129,7 @@ py_test(
     deps = [
         ":grader_supervisor",
         "//props/core:ids",
+        "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],

@@ -6,11 +6,13 @@ snapshot when an image is available.
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
 import pytest_bazel
 
 from props.core.ids import SnapshotSlug
@@ -92,23 +94,23 @@ def _mock_session(rows: list[Any]) -> Any:
 async def test_reconcile_spawns_for_all_snapshots():
     """reconcile() spawns a grader for each snapshot."""
     gs, _ = _make_supervisor([SNAP_A, SNAP_B, SNAP_C])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     assert set(gs._handles.keys()) == {SNAP_A, SNAP_B, SNAP_C}
 
 
 async def test_reconcile_noop_when_image_unavailable():
     """reconcile() does nothing when no grader image is available."""
     gs, _ = _make_supervisor([SNAP_A], image=None)
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     assert gs._handles == {}
 
 
 async def test_reconcile_idempotent():
     """Calling reconcile() twice doesn't create duplicate graders."""
     gs, _ = _make_supervisor([SNAP_A, SNAP_B])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     handles_first = dict(gs._handles)
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     # Same handles, not replaced
     assert gs._handles == handles_first
 
@@ -116,13 +118,13 @@ async def test_reconcile_idempotent():
 async def test_reconcile_spawns_new_snapshot():
     """reconcile() spawns for a newly added snapshot without touching existing."""
     gs, _ = _make_supervisor([SNAP_A])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     handle_a = gs._handles[SNAP_A]
 
     # Simulate new snapshot appearing in DB
     gs._db.session = _mock_session([MagicMock(slug=s) for s in [SNAP_A, SNAP_B]])  # type: ignore[method-assign]
 
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     assert gs._handles[SNAP_A] is handle_a
     assert SNAP_B in gs._handles
 
@@ -130,13 +132,13 @@ async def test_reconcile_spawns_new_snapshot():
 async def test_reconcile_kills_removed_snapshot():
     """reconcile() kills grader when snapshot disappears from DB."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     handle_b = gs._handles[SNAP_B]
 
     # Simulate snap-b removed from DB
     gs._db.session = _mock_session([MagicMock(slug=SNAP_A)])  # type: ignore[method-assign]
 
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     assert SNAP_B not in gs._handles
     assert handle_b in registry.killed
 
@@ -144,11 +146,11 @@ async def test_reconcile_kills_removed_snapshot():
 async def test_reconcile_restart_kills_and_respawns():
     """reconcile(restart_existing=True) kills all and respawns."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     old_a = gs._handles[SNAP_A]
     old_b = gs._handles[SNAP_B]
 
-    await gs.reconcile(restart_existing=True)
+    await gs.reconcile(trigger="test", restart_existing=True)
     assert old_a in registry.killed
     assert old_b in registry.killed
     # New handles created
@@ -159,13 +161,13 @@ async def test_reconcile_restart_kills_and_respawns():
 async def test_reconcile_restart_also_spawns_missing():
     """restart_existing=True also spawns graders for snapshots not yet tracked."""
     gs, registry = _make_supervisor([SNAP_A])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     old_a = gs._handles[SNAP_A]
 
     # Add snap-b to DB, trigger restart
     gs._db.session = _mock_session([MagicMock(slug=s) for s in [SNAP_A, SNAP_B]])  # type: ignore[method-assign]
 
-    await gs.reconcile(restart_existing=True)
+    await gs.reconcile(trigger="test", restart_existing=True)
     assert old_a in registry.killed
     assert SNAP_A in gs._handles
     assert SNAP_B in gs._handles
@@ -174,7 +176,7 @@ async def test_reconcile_restart_also_spawns_missing():
 async def test_shutdown_kills_all():
     """shutdown() kills all tracked graders."""
     gs, registry = _make_supervisor([SNAP_A, SNAP_B])
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     handles = list(gs._handles.values())
 
     await gs.shutdown()
@@ -186,8 +188,22 @@ async def test_reconcile_noop_after_shutdown():
     """reconcile() does nothing after shutdown."""
     gs, _ = _make_supervisor([SNAP_A])
     await gs.shutdown()
-    await gs.reconcile()
+    await gs.reconcile(trigger="test")
     assert gs._handles == {}
+
+
+async def test_reconcile_logs_trigger_and_kill_reason(caplog: pytest.LogCaptureFixture) -> None:
+    """Every reconcile logs its trigger and every grader kill logs its reason, so
+    churn (e.g. an image push restarting an in-flight grade) is attributable."""
+    gs, _ = _make_supervisor([SNAP_A])
+    with caplog.at_level(logging.INFO, logger="props.orchestration.grader_supervisor"):
+        await gs.reconcile(trigger="startup")
+        await gs.reconcile(trigger="grader_definition_changed:latest", restart_existing=True)
+    log = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Reconcile triggered by startup" in log
+    assert "Reconcile triggered by grader_definition_changed:latest" in log
+    # The image-push restart attributes why it killed the running grader.
+    assert "reason: grader_image_changed" in log
 
 
 if __name__ == "__main__":

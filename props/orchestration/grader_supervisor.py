@@ -96,7 +96,9 @@ class GraderSupervisor:
             return
         notification = SnapshotCreatedNotification.model_validate_json(payload)
         logger.info(f"Snapshot created: {notification.snapshot_slug}")
-        self._launch_background(self.reconcile(), name="reconcile-snapshot-created")
+        self._launch_background(
+            self.reconcile(trigger=f"snapshot_created:{notification.snapshot_slug}"), name="reconcile-snapshot-created"
+        )
 
     def _grader_definition_changed_callback(
         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
@@ -108,7 +110,10 @@ class GraderSupervisor:
             return
         notification = GraderDefinitionChangedNotification.model_validate_json(payload)
         logger.info(f"Grader definition changed: {notification.tag} -> {notification.digest}")
-        self._launch_background(self.reconcile(restart_existing=True), name="reconcile-definition-changed")
+        self._launch_background(
+            self.reconcile(trigger=f"grader_definition_changed:{notification.tag}", restart_existing=True),
+            name="reconcile-definition-changed",
+        )
 
     # --- Lifecycle ---
 
@@ -118,53 +123,66 @@ class GraderSupervisor:
 
     async def spawn_existing(self) -> None:
         """Initial reconciliation after HTTP server is ready."""
-        await self.reconcile()
+        await self.reconcile(trigger="startup")
 
     # --- Core reconciliation ---
 
-    async def reconcile(self, *, restart_existing: bool = False) -> None:
+    async def reconcile(self, *, trigger: str, restart_existing: bool = False) -> None:
         """Converge actual state toward desired state.
 
         Desired: one grader per snapshot (if image available).
         Actual: self._handles.
 
-        If restart_existing is True, kill all tracked graders first (used
-        when the grader image changes).
+        `trigger` labels what caused this reconcile (startup, snapshot_created,
+        grader_definition_changed, ...) — logged so grader churn is attributable.
+        If restart_existing is True, kill all tracked graders first (used when the
+        grader image changes); note this cancels graders mid-run.
         """
         if self._shutdown:
             return
+
+        logger.info("Reconcile triggered by %s (restart_existing=%s)", trigger, restart_existing)
 
         # Resolve image — if unavailable, nothing to do.
         try:
             resolved = await self._registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
         except ImageResolutionError:
-            logger.warning("Grader image not available — skipping reconciliation")
+            logger.warning("Reconcile [%s] aborted: grader image not available", trigger)
             return
 
         # Get desired set from DB.
         with self._db.session() as session:
             desired: set[SnapshotSlug] = {s.slug for s in session.query(Snapshot.slug).all()}
 
-        # If image changed, kill everything so containers pick up the new image.
+        killed = 0
+        # If the image changed, kill everything so containers pick up the new image.
+        # This cancels any in-flight grade (-> AgentRunStatus.CANCELLED).
         if restart_existing:
             for slug in list(self._handles.keys()):
-                await self._kill_grader(slug)
+                await self._kill_grader(slug, reason="grader_image_changed")
+                killed += 1
 
         # Kill graders for snapshots that no longer exist.
         for slug in list(self._handles.keys()):
             if slug not in desired:
-                logger.info(f"Snapshot {slug} removed, killing grader")
-                await self._kill_grader(slug)
+                await self._kill_grader(slug, reason="snapshot_removed")
+                killed += 1
 
         # Spawn missing graders.
         spawned = 0
         for slug in desired:
             if slug not in self._handles:
-                await self._spawn_grader(slug, image=resolved)
+                await self._spawn_grader(slug, image=resolved, trigger=trigger)
                 spawned += 1
 
-        if spawned or restart_existing:
-            logger.info(f"Reconciled: {len(self._handles)} graders running ({spawned} spawned, {len(desired)} desired)")
+        logger.info(
+            "Reconcile [%s] done: desired=%d killed=%d spawned=%d running=%d",
+            trigger,
+            len(desired),
+            killed,
+            spawned,
+            len(self._handles),
+        )
 
     # --- Internal helpers ---
 
@@ -188,20 +206,22 @@ class GraderSupervisor:
                 logger.warning(f"Error closing listener connection: {e}")
             self._listener_conn = None
 
-    async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage) -> None:
+    async def _spawn_grader(self, snapshot_slug: SnapshotSlug, *, image: ResolvedImage, trigger: str) -> None:
         try:
-            logger.info(f"Starting grader for {snapshot_slug}")
             handle = await self._registry.start_snapshot_grader(
                 image=image, snapshot_slug=snapshot_slug, model=self._model
             )
             self._handles[snapshot_slug] = handle
-            logger.info(f"Grader container {handle.name} running for {snapshot_slug}")
+            logger.info(
+                "Spawned grader %s for %s (trigger: %s, image: %s)", handle.name, snapshot_slug, trigger, image.digest
+            )
         except Exception:
-            logger.exception(f"Failed to start grader for {snapshot_slug}")
+            logger.exception("Failed to start grader for %s (trigger: %s)", snapshot_slug, trigger)
 
-    async def _kill_grader(self, snapshot_slug: SnapshotSlug) -> None:
+    async def _kill_grader(self, snapshot_slug: SnapshotSlug, *, reason: str) -> None:
         handle = self._handles.pop(snapshot_slug, None)
         if handle:
+            logger.info("Killing grader %s for %s (reason: %s)", handle.name, snapshot_slug, reason)
             await handle.kill_and_delete()
 
     async def shutdown(self) -> None:
@@ -210,5 +230,5 @@ class GraderSupervisor:
         logger.info("Shutting down graders...")
         await self._stop_listener()
         for slug in list(self._handles.keys()):
-            await self._kill_grader(slug)
+            await self._kill_grader(slug, reason="shutdown")
         logger.info("All graders stopped")
