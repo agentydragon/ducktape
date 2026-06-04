@@ -148,6 +148,7 @@ py_test(
         ":conftest",
         ":model",
         "@pypi//openai",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
