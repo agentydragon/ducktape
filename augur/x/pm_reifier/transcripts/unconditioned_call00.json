@@ -1,0 +1,48 @@
+{
+  "request": {
+    "model": "glm-4.6",
+    "temperature": 1.1,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You generate plausible future macro/market SCENARIOS as structured numeric JSON. Output ONLY a JSON object {\"scenarios\": [ ... ]} and nothing else. Produce exactly 10 DIVERSE scenarios spanning the full plausible range \u2014 optimistic, median, AND pessimistic, explicitly including tail outcomes (market crashes, AI-driven booms, OpenAI never IPOing, OpenAI IPOing huge). Each scenario must be internally consistent across series and over time (correlated assets move together; a crash year hits equities and crypto together; valuations and IPO timing cohere)."
+      },
+      {
+        "role": "user",
+        "content": "Today is 2026-06. S&P 500 ~ 5300. BTC ~ 95,000 USD. OpenAI last private round ~ $0.85T.\n\nEach scenario is an object with EXACTLY these keys:\n  \"label\": short string,\n  \"sp500_year_end\": {\"2026\":int,...,\"2032\":int}  (S&P 500 index level at each year end),\n  \"btc_usd_year_end\": {\"2026\":int,...,\"2032\":int}  (BTC price in USD),\n  \"openai_ipo_month_index\": int or null  (months from 2026-06 until OpenAI IPOs; null = no IPO by 2032),\n  \"openai_valuation_usd_year_end\": {\"2026\":number,...,\"2032\":number}  (OpenAI enterprise value in USD).\nAll seven years 2026..2032 must be present in every year-end map.\n\n(diversity seed 0: make these scenarios different from a typical run.)"
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"scenarios\":[{\"label\":\"Super-Cycle AGI Boom\",\"sp500_year_end\":{\"2026\":5800,\"2027\":7200,\"2028\":9500,\"2029\":11000,\"2030\":13000,\"2031\":15000,\"2032\":18000},\"btc_usd_year_end\":{\"2026\":140000,\"2027\":210000,\"2028\":350000,\"2029\":500000,\"2030\":750000,\"2031\":950000,\"2032\":1250000},\"openai_ipo_month_index\":6,\"openai_valuation_usd_year_end\":{\"2026\":2.8,\"2027\":4.5,\"2028\":7.2,\"2029\":9.5,\"2030\":12.5,\"2031\":16.0,\"2032\":22.0}},{\"label\":\"Global Recession and Stagflation\",\"sp500_year_end\":{\"2026\":4200,\"2027\":3800,\"2028\":3600,\"2029\":4100,\"2030\":4500,\"2031\":4900,\"2032\":5400},\"btc_usd_year_end\":{\"2026\":45000,\"2027\":30000,\"2028\":25000,\"2029\":32000,\"2030\":40000,\"2031\":48000,\"2032\":55000},\"openai_ipo_month_index\":48,\"openai_valuation_usd_year_end\":{\"2026\":0.7,\"2027\":0.6,\"2028\":0.65,\"2029\":1.1,\"2030\":1.5,\"2031\":1.8,\"2032\":2.2}},{\"label\":\"AI Winter & Tech Correction\",\"sp500_year_end\":{\"2026\":4800,\"2027\":4300,\"2028\":4000,\"2029\":4200,\"2030\":4600,\"2031\":5000,\"2032\":5300},\"btc_usd_year_end\":{\"2026\":70000,\"2027\":50000,\"2028\":45000,\"2029\":50000,\"2030\":60000,\"2031\":70000,\"2032\":75000},\"openai_ipo_month_index\":null,\"openai_valuation_usd_year_end\":{\"2026\":0.6,\"2027\":0.45,\"2028\":0.4,\"2029\":0.5,\"2030\":0.6,\"2031\":0.65,\"2032\":0.7}},{\"label\":\"High Inflation & Rate Spike\",\"sp500_year_end\":{\"2026\":5000,\"2027\":4600,\"2028\":4900,\"2030\":5500,\"2031\":5900,\"2032\":6200},\"btc_usd_year_end\":{\"2026\":85000,\"2027\":70000,\"2028\":90000,\"2029\":110000,\"2030\":135000,\"2031\":150000,\"2032\":175000},\"openai_ipo_month_index\":36,\"openai_valuation_usd_year_end\":{\"2026\":0.9,\"2027\":0.8,\"2028\":1.2,\"2029\":1.5,\"2030\":1.8,\"2031\":2.2,\"2032\":2.8}},{\"label\":\"Fragmentation & Crypto Renaissance\",\"sp500_year_end\":{\"2026\":5400,\"2027\":5600,\"2028\":5800,\"2029\":6000,\"2030\":6200,\"2031\":6400,\"2032\":6600},\"btc_usd_year_end\":{\"2026\":120000,\"2027\":180000,\"2028\":280000,\"2029\":450000,\"2030\":700000,\"2031\":1000000,\"2032\":1500000},\"openai_ipo_month_index\":18,\"openai_valuation_usd_year_end\":{\"2026\":1.5,\"2027\":1.8,\"2028\":2.1,\"2029\":2.4,\"2030\":2.8,\"2031\":3.2,\"2032\":3.6}},{\"label\":\"Systemic Financial Crash\",\"sp500_year_end\":{\"2026\":3500,\"2027\":2800,\"2028\":3200,\"2029\":3600,\"2030\":4000,\"2031\":4500,\"2032\":5000},\"btc_usd_year_end\":{\"2026\":30000,\"2027\":12000,\"2028\":18000,\"2029\":25000,\"2030\":35000,\"2031\":42000,\"2032\":50000},\"openai_ipo_month_index\":null,\"openai_valuation_usd_year_end\":{\"2026\":0.5,\"2027\":0.25,\"2028\":0.3,\"2029\":0.5,\"2030\":0.7,\"2031\":0.9,\"2032\":1.1}},{\"label\":\"OpenAI Monopoly Expansion\",\"sp500_year_end\":{\"2026\":5600,\"2027\":6200,\"2028\":6900,\"2029\":7700,\"2030\":8600,\"2031\":9600,\"2032\":10800},\"btc_usd_year_end\":{\"2026\":100000,\"2027\":115000,\"2028\":130000,\"2029\":145000,\"2030\":160000,\"2031\":180000,\"2032\":200000},\"openai_ipo_month_index\":12,\"openai_valuation_usd_year_end\":{\"2026\":3.5,\"2027\":5.5,\"2028\":8.0,\"2029\":11.0,\"2030\":15.0,\"2031\":20.0,\"2032\":26.0}},{\"label\":\"The Great Moderation\",\"sp500_year_end\":{\"2026\":5450,\"2027\":5750,\"2028\":6050,\"2029\":6400,\"2030\":6750,\"2031\":7100,\"2032\":7500},\"btc_usd_year_end\":{\"2026\":98000,\"2027\":105000,\"2028\":115000,\"2029\":128000,\"2030\":140000,\"2031\":155000,\"2032\":170000},\"openai_ipo_month_index\":24,\"openai_valuation_usd_year_end\":{\"2026\":0.95,\"2027\":1.2,\"2028\":1.5,\"2029\":1.9,\"2030\":2.4,\"2031\":2.9,\"2032\":3.5}},{\"label\":\"Regulatory onslaught on AI\",\"sp500_year_end\":{\"2026\":5100,\"2027\":4900,\"2028\":4800,\"2029\":5100,\"2030\":5400,\"2031\":5800,\"2032\":6100},\"btc_usd_year_end\":{\"2026\":88000,\"2027\":82000,\"2028\":78000,\"2029\":90000,\"2030\":105000,\"2031\":120000,\"2032\":135000},\"openai_ipo_month_index\":60,\"openai_valuation_usd_year_end\":{\"2026\":0.8,\"2027\":0.7,\"2028\":0.65,\"2029\":0.8,\"2030\":1.1,\"2031\":1.4,\"2032\":1.7}},{\"label\":\"Geopolitical Shock (War)\",\"sp500_year_end\":{\"2026\":4000,\"2027\":3500,\"2028\":3800,\"2029\":4200,\"2030\":4600,\"2031\":5100,\"2032\":5600},\"btc_usd_year_end\":{\"2026\":60000,\"2027\":55000,\"2028\":65000,\"2029\":80000,\"2030\":95000,\"2031\":110000,\"2032\":130000},\"openai_ipo_month_index\":null,\"openai_valuation_usd_year_end\":{\"2026\":0.6,\"2027\":0.5,\"2028\":0.7,\"2029\":0.9,\"2030\":1.1,\"2031\":1.3,\"2032\":1.5}}]}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780613574,
+    "id": "202606050652292ff7d4a53a504246",
+    "model": "glm-4.6",
+    "object": "chat.completion",
+    "request_id": "202606050652292ff7d4a53a504246",
+    "usage": {
+      "completion_tokens": 2632,
+      "prompt_tokens": 399,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "total_tokens": 3031
+    }
+  },
+  "latency_s": 25.661783695220947
+}
