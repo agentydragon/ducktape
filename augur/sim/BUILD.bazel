@@ -503,6 +503,7 @@ py_test(
         ":external_series",
         ":runtime",
         ":scenario",
+        "//augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

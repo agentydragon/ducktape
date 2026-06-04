@@ -198,27 +198,31 @@ class _ScanMeta:
 # Everything else the program bakes IS fingerprinted, so a cache hit guarantees byte-identical baked
 # config (correct reuse). Two classes of traced input:
 #   - seed-varying series (`external_values`, the PE channel arrays) → rollout-draw reuse;
-#   - swept numeric config (currently the income/LTCG tax brackets, rates, standard deduction, and the
-#     MID principal-ratio matrix) → config-value-sweep reuse, with the structural feature/count `if`s
-#     left baked so they still ride in the fingerprint. See `_traced_config` / `_hybrid_plan`.
+#   - swept numeric config (the income/LTCG tax brackets, rates, standard deduction, MID principal
+#     ratio, transfer amounts, and per-lot cost basis) → config-value-sweep reuse, with the structural
+#     feature/count `if`s left baked so they still ride in the fingerprint. See `_traced_config`.
 _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
     {
         ("CompiledSimulation", "external_values"),
         ("CompiledSimulation", "pe_channels"),
+        ("CompiledSimulation", "lot_cost_basis_per_unit"),
         ("TaxCompileOutput", "link_standard_deduction"),
         ("TaxCompileOutput", "link_ordinary_upper"),
         ("TaxCompileOutput", "link_ordinary_rate"),
         ("TaxCompileOutput", "link_ltcg_upper"),
         ("TaxCompileOutput", "link_ltcg_rate"),
         ("MIDCompileOutput", "principal_ratio"),
+        ("TransferCompileOutput", "amount_fixed"),
+        ("TransferCompileOutput", "amount_base"),
     }
 )
 
 
 def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
     """The swept numeric-config arrays passed to the compiled program as traced inputs. Mirrors the
-    fields excluded from the fingerprint (the tax-value fields), so a sweep over these values reuses
-    the compiled program instead of recompiling."""
+    fields excluded from the fingerprint, so a sweep over these values reuses the compiled program
+    instead of recompiling. Tax-value fields rebuild a hybrid plan for the cores (`_hybrid_plan`);
+    the transfer-amount and cost-basis arrays are consumed directly by the step closure."""
     return {
         "link_standard_deduction": jnp.asarray(plan.tax.link_standard_deduction),
         "link_ordinary_upper": jnp.asarray(plan.tax.link_ordinary_upper),
@@ -226,6 +230,9 @@ def _traced_config(plan: CompiledSimulation) -> dict[str, jnp.ndarray]:
         "link_ltcg_upper": jnp.asarray(plan.tax.link_ltcg_upper),
         "link_ltcg_rate": jnp.asarray(plan.tax.link_ltcg_rate),
         "mid_principal_ratio": jnp.asarray(plan.mid.principal_ratio),
+        "transfer_amount_fixed": jnp.asarray(plan.transfers.amount_fixed),
+        "transfer_amount_base": jnp.asarray(plan.transfers.amount_base),
+        "cost_basis_per_unit": jnp.asarray(plan.lot_cost_basis_per_unit),
     }
 
 
@@ -361,7 +368,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     # inside `_program_impl`. `step` closes over these names and reads the traced values at trace time.
     external_values: jnp.ndarray = None  # type: ignore[assignment]
     pe_ch: dict[str, jnp.ndarray] = None  # type: ignore[assignment]
-    cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
+    cost_basis_per_unit: jnp.ndarray = None  # type: ignore[assignment]  # traced; set in `_program_impl`
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
     # events), so they're carry state initialized from the compile-time broadcast.
@@ -1531,11 +1538,15 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     ) -> tuple:
         # Rebind the traced placeholders to this draw's arguments; `step` and the cores read them from
         # the enclosing scope, so they trace against the traced inputs. `plan` is swapped for the hybrid
-        # whose swept tax-value fields are the traced `cfg` arrays (structural fields stay concrete).
-        nonlocal external_values, pe_ch, plan
+        # whose swept tax-value fields are the traced `cfg` arrays (structural fields stay concrete); the
+        # transfer-amount entries of the (closed-over, mutable) `tr` table are overwritten in place.
+        nonlocal external_values, pe_ch, plan, cost_basis_per_unit
         external_values = external_values_arg
         pe_ch = pe_ch_arg
+        cost_basis_per_unit = cfg_arg["cost_basis_per_unit"]
         plan = _hybrid_plan(plan, cfg_arg)
+        tr["fixed"] = cfg_arg["transfer_amount_fixed"]
+        tr["base"] = cfg_arg["transfer_amount_base"]
         _, ys = jax.lax.scan(step, init, months)
         return ys
 
