@@ -235,6 +235,82 @@ The backend already caches the dense result per `(scenario, seed)` (`ProductServ
 R=1 `DenseSimulationResult`), so re-deriving any frame or stat for a cached rollout is
 re-simulation-free; lazy decode means that re-derivation only builds what's asked for.
 
+## Results after the fifth pass (per-rollout slicing)
+
+Passes 1–4 profiled the raw `simulate()` boundary (`//augur/sim:profile_rollout`). With those
+landed, the **product `metric_fan` service path** became the thing to profile — a new tool,
+`//augur/api:profile_metric_fan` (<augur/api/profile_metric_fan.py>), runs one product request
+end to end:
+
+```bash
+bazelisk run //augur/api:profile_metric_fan --config=nolint -- \
+  --rollout-count 10000 --horizon-months 100
+```
+
+This path does something raw `simulate()` does not: after simulating the batch it **slices the
+batched dense result into R independent R=1 `DenseSimulationResult`s** to populate the per-`(scenario,
+seed)` LRU (`_simulate_missing` → `slice_dense_results`). At 10k rollouts that slicing dominated.
+
+Two fixes landed:
+
+1. **O(R²) → O(R) exogenous-frame partition (#1850).** Per-seed slicing filtered the full batch
+   Polars frames (`series_values`, the PE bundle) once per rollout — R passes over an R-row frame.
+   `_partition_by_rollout` now partitions each frame once up front, so all R slices share a single
+   `partition_by`. Measured wall at 10k × 100mo: **139 s → 33.6 s**.
+2. **Drop fancy `np.take` from buffer slicing (#1857).** Each batched buffer field was sliced per
+   rollout with `np.take(val, [i], axis).copy()` — the fancy-indexing slow path, copied twice
+   (`take` already returns a fresh array). Replaced with basic slicing `val[..., i : i + 1, ...].copy()`
+   and the buffer dataclass is now walked once across all rollouts (`_split_dc`/`_split_array`).
+   10k × 100mo (cProfile): `slice_dense_results` **78.7 s → 46.6 s** (−41%), whole request
+   **133.4 s → 92.2 s** (−31%); the 890k `np.take` calls (26.4 s) are gone.
+
+### Current breakdown (10k × 100mo, `profile_metric_fan`, cProfile)
+
+| Stage                                     | Time   | %   | Notes                                       |
+| ----------------------------------------- | ------ | --- | ------------------------------------------- |
+| `slice_dense_results`                     | 46.6 s | 50% | split batch → R cacheable R=1 results       |
+| ↳ `np.ndarray.copy` (2.0 M calls)         | 33.9 s | 37% | one strided copy per (rollout × leaf-field) |
+| `simulate_dense_with_external_series`     | 24.8 s | 27% | the actual rollout compute + sampling       |
+| ↳ exogenous sampling (`composite.sample`) | 13.9 s | 15% | PE-risk + level-series draws                |
+| ↳ `_validate_series_indexed_amounts`      | 8.2 s  | 9%  | inflation-indexed spend validation          |
+| ↳ polars `collect` (20 099 calls)         | 7.3 s  | 8%  | per-month-step lazy-frame materialization   |
+| `compile_simulation`                      | 7.7 s  | 8%  | once per batch, seed-independent            |
+
+(cProfile inflates wall ~3–4× and over-weights high-call-count paths; figures are relative.)
+
+## Next levers (highest impact first)
+
+1. **Reduce on the batch; stop slicing into R owning copies (biggest — ~46 s / 50%).** Slicing
+   exists only because the LRU is keyed per `(scenario, seed)`. But `metric_fan` reduces over _all_
+   requested seeds, and `monthly_metric_arrays` is then run per R=1 slice — so we deep-copy the batch
+   into R pieces and then loop over them. Instead cache the **batch** dense result per scenario and
+   run the fan/terminal reductions vectorized over the `(…, R)` axis once (no Python per-rollout
+   loop, no `slice_dense_results`). Per-seed reuse becomes a column index into the batch; the single-
+   rollout detail view (`rollout()`) slices just the one seed it asks for, on read. This removes the
+   33.9 s copy floor _and_ the per-rollout reduction loop. Cost: redesign the `ProductService` cache
+   from per-seed entries to a per-scenario batch (handle growing/!subset seed sets, eviction
+   granularity). This is the structural win.
+
+2. **Cache the compiled plan per scenario (~7.7 s/request).** `compile_simulation` is
+   seed-independent — it depends on scenario structure, not the rollout draws — yet runs on every
+   cold request. Memoize the `CompiledSimulation` keyed by scenario so warm requests with new seeds
+   skip recompilation.
+
+3. **Batch the per-month-step polars `collect` (~7.3 s, 20 k calls).** The dense month loop collects
+   lazy frames ~84×/step × 240 steps. Build the per-step frames eagerly, or hoist the collect out of
+   the loop so it runs once over the whole horizon.
+
+4. **Finish vectorizing `_validate_series_indexed_amounts` (~8.2 s).** Pass-1 short-circuited the
+   _no-indexed-amount_ case; this scenario _uses_ inflation-indexed spend, so it falls through to the
+   slow path. Do the membership/zero checks with a Polars filter/join over the referenced series
+   instead of per-row Python structures.
+
+5. **Incremental fallback for #1 — cut the copy floor in place (~34 s → ~15 s).** If the per-seed
+   cache stays, make the R copies contiguous: `np.ascontiguousarray(np.moveaxis(arr, -1, 0))` once per
+   field (one bulk memcpy), then cheap contiguous per-rollout copies, instead of R strided
+   `[..., i:i+1].copy()` gathers. Requires confirming `decode()` tolerates the resulting layout (or a
+   cheap re-contiguify). Lower ceiling than #1 but localized and low-risk.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**
