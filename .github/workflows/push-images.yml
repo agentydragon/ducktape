@@ -26,6 +26,9 @@
 # `secrets.GITHUB_TOKEN` (with `permissions: packages: write`) is used by
 # `crane auth login` on the runner. No more env_overrides plumbing
 # through the BB runner VM.
+#
+# Also pushes the props *agent* images to the props registry (not GHCR) via the
+# `props-agents` job below — folded in from the former props-images.yml.
 name: Push Images
 
 on:
@@ -270,3 +273,45 @@ jobs:
           echo "$REPO: pushing $LOCAL_DIGEST as :$PINNED (was :$LATEST)"
           crane push "$OCI_DIR" "$REPO:$PINNED"
           crane tag "$REPO:$PINNED" latest
+
+  # Props agent images go to the props registry (not GHCR): the props backend's
+  # registry proxy fronts Forgejo, and the orchestrator + critic-dev flow pull
+  # and push agent / critic-variant images there at runtime. They're pushed by
+  # the bespoke //props/agents:push_images binary (which handles the critic
+  # variants and the digest+tag scheme), not the GHCR matrix above. Gated on
+  # props tests; like the matrix it only pushes from devel, and (via the
+  # always() && !cancelled() caller in ci.yml) runs regardless of unrelated CI
+  # failures — only a props test failure blocks it.
+  props-agents:
+    name: Push props agent images
+    if: github.ref_name == 'devel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Test (gate for push)
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test //props/...
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Push agent images
+        uses: ./.github/actions/bb-remote
+        with:
+          args: run //props/agents:push_images
+          rbe_image: ${{ inputs.rbe_image }}
+          env_overrides: |
+            PROPS_REGISTRY_URL=${{ vars.PROPS_REGISTRY_URL }}
+            PROPS_REGISTRY_USERNAME=${{ env.PROPS_REGISTRY_USERNAME }}
+            PROPS_REGISTRY_PASSWORD=${{ env.PROPS_REGISTRY_PASSWORD }}
