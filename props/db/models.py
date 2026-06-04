@@ -126,12 +126,18 @@ class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
 class AgentRunStatus(StrEnum):
     """Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
 
-    Terminal states: EXITED (check container_exit_code for success/failure), TIMED_OUT.
+    Terminal states: EXITED (check container_exit_code for success/failure),
+    TIMED_OUT, CANCELLED.
     """
 
     IN_PROGRESS = "in_progress"
     EXITED = "exited"
     TIMED_OUT = "timed_out"
+    # The run's host task was cancelled before the container finished — e.g. the
+    # GraderSupervisor replacing a snapshot grader during reconcile, or shutdown.
+    # The pod is deleted; this records a terminal status so the run doesn't leak
+    # as IN_PROGRESS forever.
+    CANCELLED = "cancelled"
 
 
 class PydanticColumn[T: BaseModel](TypeDecorator[T]):

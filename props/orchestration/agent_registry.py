@@ -321,6 +321,17 @@ class AgentRegistry:
         """Wait for container exit, capture logs, update DB status, return final status."""
         try:
             result: ContainerResult = await handle.wait(timeout_seconds=timeout_seconds)
+        except asyncio.CancelledError:
+            # The run's host task was cancelled (e.g. GraderSupervisor replacing
+            # this grader during reconcile, or shutdown). The `finally` below still
+            # deletes the pod; record a terminal CANCELLED status so the run does
+            # not leak as IN_PROGRESS — the pod is gone and nothing else will
+            # finalize it. The DB write is synchronous, so it completes even while
+            # the task is being cancelled.
+            self._persist_run_result(
+                agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None, stdout="", stderr=""
+            )
+            raise
         finally:
             try:
                 await handle.kill_and_delete()
@@ -341,6 +352,24 @@ class AgentRegistry:
             status = AgentRunStatus.EXITED
             container_exit_code = exit.exit_code
 
+        self._persist_run_result(
+            agent_run_id,
+            status=status,
+            container_exit_code=container_exit_code,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
+        return status
+
+    def _persist_run_result(
+        self, agent_run_id: UUID, *, status: AgentRunStatus, container_exit_code: int | None, stdout: str, stderr: str
+    ) -> None:
+        """Write an agent run's terminal status + captured logs to the DB.
+
+        Persisting the logs (not just logging them) makes failures visible in the
+        run record (GET /api/runs/{id}); the pod is already deleted by the caller,
+        so this is the only durable copy.
+        """
         with self._db.session() as session:
             found_run = session.get(AgentRun, agent_run_id)
             assert found_run is not None, f"Agent run {agent_run_id} not found in database"
@@ -348,14 +377,10 @@ class AgentRegistry:
                 raise RuntimeError(f"Agent run {agent_run_id} expected IN_PROGRESS but found {found_run.status}")
             found_run.status = status
             found_run.container_exit_code = container_exit_code
-            # Persist the captured container logs so failures are visible in the
-            # run record (GET /api/runs/{id}) instead of only in the orchestrator's
-            # own stdout — the pod is deleted above, so this is the only durable copy.
-            found_run.container_stdout = result.stdout or None
-            found_run.container_stderr = result.stderr or None
+            found_run.container_stdout = stdout or None
+            found_run.container_stderr = stderr or None
             session.commit()
-            logger.info(f"Updated {agent_run_id} status to {status}")
-        return status
+            logger.info("Updated %s status to %s", agent_run_id, status)
 
     async def _start_agent(
         self, agent_run_id: UUID, *, image: str, timeout_seconds: int | None = None, name: str

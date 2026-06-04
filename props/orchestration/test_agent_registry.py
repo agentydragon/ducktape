@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import pytest
 import pytest_bazel
 
 from props.core.ids import SnapshotSlug
@@ -113,6 +115,45 @@ async def test_collect_run_timeout_persists_partial_logs(db: Database) -> None:
         assert run.status == AgentRunStatus.TIMED_OUT
         assert run.container_exit_code is None
         assert run.container_stdout == "partial output"
+
+
+@dataclass
+class _BlockingHandle:
+    """Handle whose wait() blocks until the task is cancelled (mimics a long-running grader)."""
+
+    name: str
+    started: asyncio.Event
+    killed: bool = False
+
+    async def wait(self, *, timeout_seconds: int | None) -> ContainerResult:
+        self.started.set()
+        await asyncio.Event().wait()  # block forever — only a cancel unblocks us
+        raise AssertionError("unreachable")
+
+    async def kill_and_delete(self) -> None:
+        self.killed = True
+
+
+async def test_collect_run_cancellation_finalizes_as_cancelled(db: Database) -> None:
+    # Reproduces the leak: the GraderSupervisor cancels a grader's task (via
+    # AgentRunHandle.kill_and_delete) while it is waiting on the pod. Previously
+    # the DB status update was skipped and the run leaked as IN_PROGRESS; now it
+    # is finalized to CANCELLED.
+    agent_run_id = _in_progress_critic_run(db)
+    handle = _BlockingHandle(name="grader-x", started=asyncio.Event())
+
+    task = asyncio.create_task(_registry(db)._collect_run(agent_run_id, cast(Any, handle), None))
+    await asyncio.wait_for(handle.started.wait(), timeout=5)  # ensure it is blocked in wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert handle.killed  # pod is still deleted on cancellation
+    with db.session() as session:
+        run = session.get(AgentRun, agent_run_id)
+        assert run is not None
+        assert run.status == AgentRunStatus.CANCELLED
+        assert run.container_exit_code is None
 
 
 if __name__ == "__main__":
