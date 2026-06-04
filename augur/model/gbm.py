@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+from jax import random
 from pydantic import BaseModel
 
 from augur.model.sim_backend import SimBackend, current_backend
@@ -48,10 +51,6 @@ class GeometricBrownian(BaseModel):
         return levels
 
     def _sample_levels_jax(self, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
-        # Lazy import: keep `jax` (a heavy import) off the default NumPy-backend path.
-        import jax
-        from jax import random
-
         rollout_count = len(rollout_seeds)
         # One independent PRNG key per rollout, folded from that rollout's (arbitrary-precision,
         # already per-stream) seed in 32-bit words. This is the "vector of R independent seeded
@@ -67,13 +66,13 @@ class GeometricBrownian(BaseModel):
                 key = random.fold_in(key, words[word_index])
             return key
 
-        keys = jax.vmap(key_for_seed)(jax.numpy.asarray(seed_words))
+        keys = jax.vmap(key_for_seed)(jnp.asarray(seed_words))
         standard_normals = jax.vmap(lambda key: random.normal(key, (horizon_months,)))(keys)
         log_returns = self.monthly_log_return_mu + self.monthly_log_return_sigma * standard_normals
-        levels = jax.numpy.concatenate(
+        levels = jnp.concatenate(
             [
-                jax.numpy.full((rollout_count, 1), self.initial_value),
-                self.initial_value * jax.numpy.exp(jax.numpy.cumsum(log_returns, axis=1)),
+                jnp.full((rollout_count, 1), self.initial_value),
+                self.initial_value * jnp.exp(jnp.cumsum(log_returns, axis=1)),
             ],
             axis=1,
         )
