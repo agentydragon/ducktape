@@ -171,16 +171,36 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         active = ~failed
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
-            tr["cause"][month], tr["kind"][month], tr["fixed"][month], tr["base"][month], tr["series"][month],
-            tr["base_month"][month], tr["period"][month], tr["from_slot"][month], tr["to_slot"][month],
-            tr["income_profile"][month], tr["deduction_profile"][month], cash, ordinary, active, external_values, month,
+            tr["cause"][month],
+            tr["kind"][month],
+            tr["fixed"][month],
+            tr["base"][month],
+            tr["series"][month],
+            tr["base_month"][month],
+            tr["period"][month],
+            tr["from_slot"][month],
+            tr["to_slot"][month],
+            tr["income_profile"][month],
+            tr["deduction_profile"][month],
+            cash,
+            ordinary,
+            active,
+            external_values,
+            month,
         )
 
         # CONFIGURED-obligation accrual (the only kind `scan_supported` admits): a fixed/series amount,
         # active where scheduled and positive. Property-tax/mortgage/estimated kinds are excluded by the gate.
         amount = _amount_values_vec(
-            og["amount_kind"][month], og["amount_fixed"][month], og["amount_base"][month], og["amount_series"][month],
-            og["amount_base_month"][month], og["amount_period"][month], external_values, month, r,
+            og["amount_kind"][month],
+            og["amount_fixed"][month],
+            og["amount_base"][month],
+            og["amount_series"][month],
+            og["amount_base_month"][month],
+            og["amount_period"][month],
+            external_values,
+            month,
+            r,
         )
         slot_active = (
             (og["cause"][month] >= 0)[:, None]
@@ -197,23 +217,61 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         property_slot = og["property_slot"][month]
         _, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
             _settlement_core_jit(
-                from_row, og["to_slot"][month], og["deduction_profile"][month], og["deductible_fraction"][month],
-                og["property_tax_profile"][month], jnp.where(property_slot < 0, 0, property_slot),
-                property_slot >= 0, og["property_tax_profile"][month] >= 0, og["deduction_profile"][month] >= 0,
-                slot_active, accrual_due, funded, cash, ordinary, property_tax_ytd, property_rented_fraction,
-                failed, failed_month, month,
+                from_row,
+                og["to_slot"][month],
+                og["deduction_profile"][month],
+                og["deductible_fraction"][month],
+                og["property_tax_profile"][month],
+                jnp.where(property_slot < 0, 0, property_slot),
+                property_slot >= 0,
+                og["property_tax_profile"][month] >= 0,
+                og["deduction_profile"][month] >= 0,
+                slot_active,
+                accrual_due,
+                funded,
+                cash,
+                ordinary,
+                property_tax_ytd,
+                property_rented_fraction,
+                failed,
+                failed_month,
+                month,
             )
         )
 
         keep = ~failed
         cash, ordinary = cash * keep, ordinary * keep
         carry = (cash, ordinary, property_tax_ytd, failed, failed_month)
-        ys = (cash, ordinary, failed, failed_month, transfer_active, transfer_amount, slot_active, accrual_due, paid_buffer, shortfall, failure_active)
+        ys = (
+            cash,
+            ordinary,
+            failed,
+            failed_month,
+            transfer_active,
+            transfer_amount,
+            slot_active,
+            accrual_due,
+            paid_buffer,
+            shortfall,
+            failure_active,
+        )
         return carry, ys
 
     init = (cash0, ordinary0, property_tax_ytd0, jnp.zeros(r, dtype=bool), jnp.full(r, -1, dtype=jnp.int32))
     _, ys = jax.lax.scan(step, init, jnp.arange(horizon, dtype=jnp.int32))
-    (cash_h, ordinary_h, failed_h, failed_month_h, t_active, t_amount, ob_active, ob_due, ob_paid, ob_short, ob_fail) = ys
+    (
+        cash_h,
+        ordinary_h,
+        failed_h,
+        failed_month_h,
+        t_active,
+        t_amount,
+        ob_active,
+        ob_due,
+        ob_paid,
+        ob_short,
+        ob_fail,
+    ) = ys
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     failed_np = np.asarray(failed_h)  # (horizon, r); monotonic — True from the failure month on
