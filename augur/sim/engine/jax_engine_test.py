@@ -155,5 +155,66 @@ def test_scheduled_asset_sale_engine_parity() -> None:
     )
 
 
+def test_combined_phases_engine_parity() -> None:
+    # All three ported phases interacting in one run: alice receives a transfer, sells lots for cash,
+    # and pays a monthly obligation she eventually can't cover (failure carries forward). Exercises
+    # phase ordering + the ~failed mask across transfers/sales/obligations together.
+    _assert_engine_parity(
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=500.0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=1_000.0),
+            ],
+            initial_lots=[
+                InitialLot(
+                    lot_id="vti",
+                    agent_id="alice",
+                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    purchase_month_index=-24,
+                    quantity=100.0,
+                    cost_basis_per_unit_usd=50.0,
+                )
+            ],
+            scheduled_transfers=[
+                ScheduledTransfer(
+                    month=1,
+                    cause_id="bob_helps_alice",
+                    from_agent_id="bob",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount_usd=200.0,
+                )
+            ],
+            scheduled_asset_sales=[
+                ScheduledAssetSale(
+                    month=2,
+                    cause_id="sell30",
+                    agent_id="alice",
+                    asset=CryptoAssetKey(symbol=CryptoSymbol("vti")),
+                    quantity=30.0,
+                    proceeds_account_id="checking",
+                    price_per_unit_usd=60.0,
+                )
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=0,
+                    obligation_id="rent",
+                    obligation_type="outside_rent",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="bob",
+                    to_account_id="checking",
+                    amount_due_usd=900.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=5,
+        )
+    )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
