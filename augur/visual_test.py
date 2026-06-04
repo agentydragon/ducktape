@@ -302,6 +302,21 @@ def _show_candles(page: Page) -> None:
     )
 
 
+def _select_rollout_from_distribution(page: Page) -> None:
+    """Select a rollout directly from the multi-variant terminal-distribution chart. A click binds to
+    the nearest variant line at that percentile (making it active), drawing the selection marker on
+    the line and the rollout overlay on the fan below, with the events panel carrying the active
+    badge."""
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    plot.click(position={"x": box["width"] * 0.6, "y": box["height"] * 0.4})
+    page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+
+
 def _focus_active_scenario(page: Page) -> None:
     """Collapse the multi-scenario overlay to just the active scenario via the Compare/Focus toggle,
     then select a rollout. Focus renders the active variant as a full single-scenario fan (the
@@ -319,6 +334,12 @@ VISUAL_CASES = (
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
     VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
+    VisualCase(
+        name="product_distribution_multi",
+        path=_COMPARISON_URL,
+        wait_ready=_wait_for_scenario_comparison,
+        interact=_select_rollout_from_distribution,
+    ),
     VisualCase(
         name="product_scenario_candles",
         path=_COMPARISON_URL,
