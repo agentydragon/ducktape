@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from augur.model.sim_backend import SimBackend, current_backend
 from augur.sim.buffers import (
     CurrentStateBuffers,
     DispositionGroup,
@@ -22,6 +23,7 @@ from augur.sim.buffers import (
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
+from augur.sim.engine.jax_engine import run_jax
 from augur.sim.engine.phases import (
     _apply_depreciation_accrual,
     _apply_lifecycle_events,
@@ -55,6 +57,9 @@ def simulate_with_external_series_dense_result(
         locations=locations,
     )
     buffers = _allocate_buffers(plan)
+    if current_backend() is SimBackend.JAX:
+        run_jax(plan, buffers)  # in-progress JAX parity port (augur/sim/engine/jax_engine.py)
+        return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
     current = _allocate_current_state(plan)
     _snapshot_current_state(buffers.state, current, snapshot_index=0)
     for month in range(plan.horizon_months):
