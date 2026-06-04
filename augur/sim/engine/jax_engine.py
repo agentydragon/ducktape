@@ -281,7 +281,6 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             failed,
         )
         property_cumulative_depreciation, property_depreciation_ytd = _apply_depreciation_accrual(
-            plan,
             property_active,
             property_rented_fraction,
             property_building_basis,
@@ -2255,6 +2254,20 @@ def _apply_property_sale(
     )
 
 
+@jax.jit
+def _owner_occupied_jit(
+    property_active: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    property_owner_occupied_months: jnp.ndarray,
+    is_primary: jnp.ndarray,
+    active: jnp.ndarray,
+) -> jnp.ndarray:
+    """Branch-free §121 owner-occupied-month counter: a property counts for a rollout this month iff
+    it is active, the owner's primary residence (static `is_primary` mask), and not fully rented."""
+    owner_occupied = active[None, :] & property_active & (property_rented_fraction < 1.0) & is_primary[:, None]
+    return property_owner_occupied_months + owner_occupied.astype(property_owner_occupied_months.dtype)
+
+
 def _apply_owner_occupied_month(
     plan: CompiledSimulation,
     property_active: jnp.ndarray,
@@ -2263,21 +2276,18 @@ def _apply_owner_occupied_month(
     property_owner_occupied_months: jnp.ndarray,
     failed: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Port of `phases._apply_owner_occupied_month`: increment §121 owner-occupied-month counters."""
-    active_rollout = ~failed
-    if not bool(active_rollout.any()):
-        return property_owner_occupied_months
-    for prop in range(property_rented_fraction.shape[0]):
-        owner_agent_slot = int(plan.property_owner_agent_index[prop])
-        if owner_agent_slot < 0 or int(agent_primary_residence_property[owner_agent_slot]) != prop:
-            continue
-        owner_occupied = active_rollout & property_active[prop] & (property_rented_fraction[prop] < 1.0)
-        property_owner_occupied_months = property_owner_occupied_months.at[prop].add(owner_occupied.astype(jnp.int32))
-    return property_owner_occupied_months
+    """Port of `phases._apply_owner_occupied_month` (branch-free, jit-compiled)."""
+    owner_agent = plan.property_owner_agent_index
+    primary_of_owner = _np_gather(agent_primary_residence_property, np.where(owner_agent < 0, 0, owner_agent), NO_CODE)
+    is_primary = (owner_agent >= 0) & (primary_of_owner == np.arange(owner_agent.shape[0]))
+    occupied: jnp.ndarray = _owner_occupied_jit(
+        property_active, property_rented_fraction, property_owner_occupied_months, jnp.asarray(is_primary), ~failed
+    )
+    return occupied
 
 
+@jax.jit
 def _apply_depreciation_accrual(
-    plan: CompiledSimulation,
     property_active: jnp.ndarray,
     property_rented_fraction: jnp.ndarray,
     property_building_basis: jnp.ndarray,
@@ -2285,15 +2295,9 @@ def _apply_depreciation_accrual(
     property_depreciation_ytd: jnp.ndarray,
     failed: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
-    """Port of `phases._apply_depreciation_accrual`: §168 straight-line monthly depreciation."""
-    active_rollout = ~failed
-    if not bool(active_rollout.any()):
-        return property_cumulative_depreciation, property_depreciation_ytd
-    for prop in range(property_rented_fraction.shape[0]):
-        active_for_property = active_rollout & property_active[prop]
-        monthly_dep = jnp.where(
-            active_for_property, property_building_basis[prop] * property_rented_fraction[prop] / (27.5 * 12.0), 0.0
-        )
-        property_cumulative_depreciation = property_cumulative_depreciation.at[prop].add(monthly_dep)
-        property_depreciation_ytd = property_depreciation_ytd.at[prop].add(monthly_dep)
-    return property_cumulative_depreciation, property_depreciation_ytd
+    """Port of `phases._apply_depreciation_accrual`: §168 straight-line monthly depreciation,
+    branch-free over all properties (one masked elementwise accrual)."""
+    monthly_dep = jnp.where(
+        (~failed)[None, :] & property_active, property_building_basis * property_rented_fraction / (27.5 * 12.0), 0.0
+    )
+    return property_cumulative_depreciation + monthly_dep, property_depreciation_ytd + monthly_dep
