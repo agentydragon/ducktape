@@ -79,7 +79,6 @@ export const METRIC_OPTIONS = [
   { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
   { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
-  { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },
 ];
 
 export const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));

@@ -4,29 +4,22 @@ import { scenarioColor } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
 import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricValue } from "./data_helpers.ts";
 
-// Sort each variant's rollouts by outcome: failures first (earliest bust = worst = leftmost,
-// ordered by failure month), then survivors ascending by terminal value. Failures plot at 0 so they
-// read as a flat red floor whose width is the failure rate; survivors rise from there. Every variant
-// shares the same seed set, so a seed is the *same underlying world* across variants — selection is
-// therefore a seed, and switching the active variant relocates the marker to that seed's rank in the
-// newly-active line without clearing it.
+// Each variant's rollouts sorted ascending by terminal value — the quantile (inverse-CDF) curve.
+// Failed rollouts keep their real terminal value: the sim freezes every terminal metric to 0 on
+// failure, so a bust lands at 0 (the bottom of the curve) and is drawn with a red marker rather than
+// special-cased onto a synthetic floor. Every variant shares the same seed set, so a seed is the
+// *same underlying world* across variants — selection is therefore a seed, and switching the active
+// variant relocates the marker to that seed's rank in the newly-active line without clearing it.
 function orderedRollouts(summaries, metric) {
-  const points = summaries.map((summary) => ({
-    seed: Number(summary.seed),
-    failed: Boolean(summary.failed),
-    failedMonth: summary.terminalMetrics?.failedMonthIndex,
-    value: terminalMetricValue(summary.terminalMetrics, metric),
-  }));
-  const failed = points
-    .filter((point) => point.failed)
-    .sort((left, right) => (left.failedMonth ?? 0) - (right.failedMonth ?? 0));
-  const survived = points
-    .filter((point) => !point.failed && Number.isFinite(point.value))
+  return summaries
+    .map((summary) => ({
+      seed: Number(summary.seed),
+      failed: Boolean(summary.failed),
+      failedMonth: summary.terminalMetrics?.failedMonthIndex,
+      value: terminalMetricValue(summary.terminalMetrics, metric),
+    }))
+    .filter((point) => Number.isFinite(point.value))
     .sort((left, right) => left.value - right.value);
-  // A failed rollout's terminal value is post-bust and not meaningful, so plot it at 0 regardless of
-  // what the array carried. CLEANUP tracked in augur/TODO.md: "failed = 0" is wrong for non-money
-  // metrics (mortgage balance, property value) — revisit per-metric.
-  return [...failed, ...survived].map((point) => ({ ...point, plotted: point.failed ? 0 : point.value }));
 }
 
 export function TerminalDistributionChart({
@@ -78,8 +71,8 @@ export function TerminalDistributionChart({
 
   if (series.length === 0) return null;
 
-  const allPlotted = series.flatMap((entry) => entry.ordered.map((point) => point.plotted));
-  const yAxis = fanChartAxis(metric.chartValue, allPlotted, metricScale);
+  const allValues = series.flatMap((entry) => entry.ordered.map((point) => point.value));
+  const yAxis = fanChartAxis(metric.chartValue, allValues, metricScale);
   const svgHeight = 260;
   const margin = { left: 82, right: 20, top: 16, bottom: 34 };
   const plotWidth = Math.max(1, svgWidth - margin.left - margin.right);
@@ -104,7 +97,7 @@ export function TerminalDistributionChart({
     let activeDist = Infinity;
     for (const entry of series) {
       const point = entry.ordered[indexAtPercentile(entry, percentile)];
-      const dist = Math.abs(cursorY - yAt(point.plotted));
+      const dist = Math.abs(cursorY - yAt(point.value));
       if (entry.isActive) {
         active = entry;
         activeDist = dist;
@@ -207,7 +200,7 @@ export function TerminalDistributionChart({
             color: entry.color,
             failed: point.failed,
             failedMonth: point.failedMonth,
-            value: point.plotted,
+            value: point.value,
           };
         });
   const xTicks = [0, 0.25, 0.5, 0.75, 1];
@@ -224,7 +217,8 @@ export function TerminalDistributionChart({
         <div>
           <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
           <div className="mt-1 text-xs augur-muted">
-            One line per variant, rollouts sorted by outcome. Failures sit at 0 on the left. Click to inspect a rollout.
+            One line per variant, rollouts sorted by terminal value. Failed rollouts marked in red. Click to inspect a
+            rollout.
           </div>
         </div>
         {selectedSeed != null && (
@@ -296,38 +290,31 @@ export function TerminalDistributionChart({
           );
         })}
         {orderedSeries.map((entry) => {
-          const failedCount = entry.ordered.filter((point) => point.failed).length;
-          const failedFloor = entry.ordered
-            .slice(0, failedCount)
-            .map((point, index) => `${xAt(percentileOf(entry, index))},${yAt(0)}`)
-            .join(" ");
-          // The survivor curve includes the last failed point (at 0) as its left anchor so the line
-          // rises continuously off the floor instead of leaving a gap at the lift-off rank.
-          const survivorFrom = Math.max(0, failedCount - 1);
-          const survivorLine = entry.ordered
-            .slice(survivorFrom)
-            .map((point, offset) => `${xAt(percentileOf(entry, survivorFrom + offset))},${yAt(point.plotted)}`)
+          const linePoints = entry.ordered
+            .map((point, index) => `${xAt(percentileOf(entry, index))},${yAt(point.value)}`)
             .join(" ");
           return (
             <g key={entry.id} data-product-distribution-series={entry.id}>
-              {failedCount > 0 && (
-                <polyline
-                  points={failedFloor}
-                  fill="none"
-                  stroke={FAILED_ROLLOUT_COLOR}
-                  strokeWidth={entry.isActive ? 3 : 2}
-                  strokeLinecap="round"
-                  opacity={entry.isActive ? 1 : 0.85}
-                />
-              )}
-              {failedCount < entry.ordered.length && (
-                <polyline
-                  points={survivorLine}
-                  fill="none"
-                  stroke={entry.color}
-                  strokeWidth={entry.isActive ? 2.75 : 2}
-                  opacity={entry.isActive ? 1 : 0.85}
-                />
+              <polyline
+                points={linePoints}
+                fill="none"
+                stroke={entry.color}
+                strokeWidth={entry.isActive ? 2.75 : 2}
+                opacity={entry.isActive ? 1 : 0.85}
+              />
+              {/* Failed rollouts sit at their (frozen-to-0) terminal value; mark each in red so the
+                  bust band is visible wherever it lands on the curve, without assuming it's leftmost. */}
+              {entry.ordered.map((point, index) =>
+                point.failed ? (
+                  <circle
+                    key={point.seed}
+                    cx={xAt(percentileOf(entry, index))}
+                    cy={yAt(point.value)}
+                    r={entry.isActive ? 2.4 : 1.8}
+                    fill={FAILED_ROLLOUT_COLOR}
+                    opacity={entry.isActive ? 1 : 0.8}
+                  />
+                ) : null
               )}
             </g>
           );
@@ -345,7 +332,7 @@ export function TerminalDistributionChart({
             />
             <circle
               cx={xAt(percentileOf(activeSeries, selectedIndex))}
-              cy={yAt(selectedPoint.plotted)}
+              cy={yAt(selectedPoint.value)}
               r="5"
               fill={selectedPoint.failed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR}
               stroke="white"
@@ -355,7 +342,7 @@ export function TerminalDistributionChart({
             {loadingSeed === selectedSeed && (
               <circle
                 cx={xAt(percentileOf(activeSeries, selectedIndex))}
-                cy={yAt(selectedPoint.plotted)}
+                cy={yAt(selectedPoint.value)}
                 r="8"
                 fill="none"
                 stroke={SELECTED_ROLLOUT_COLOR}

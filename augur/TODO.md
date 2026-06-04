@@ -259,18 +259,6 @@ Remaining:
 
 ## Reporting / UI
 
-- [ ] **Terminal-distribution chart: handle metrics where "failed = 0" is
-      wrong.** The terminal-distribution chart plots terminal metric value
-      (Y) against percentile (X), one line per variant, and pins failed
-      rollouts to a flat segment at 0 (so the segment's length reads as the
-      failure rate). That's natural for net-worth-style money metrics where 0 ≈
-      "wiped out", but it's misleading for metrics where 0 isn't the failure
-      value — e.g. `mortgage_balance_usd` or `property_value_usd`, where a
-      busted rollout's terminal balance/value isn't 0. Decide how to render
-      failures per-metric: pin to the axis floor instead of literal 0, draw
-      failures in a dedicated gutter decoupled from the value axis, or suppress
-      the failed segment for non-money metrics. Today every metric uses the
-      money-metric treatment.
 - [ ] **Reframe the Augur UI around the user's conceptual model**
       instead of the simulator's current implementation seams. The
       sidebar mixes initial holdings, policy knobs, exogenous market
