@@ -381,7 +381,6 @@ def compiled_hlo_text(plan: CompiledSimulation) -> str:
     return program.lower(*_program_inputs(plan)).compile().as_text()
 
 
-
 def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
     """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
     jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
