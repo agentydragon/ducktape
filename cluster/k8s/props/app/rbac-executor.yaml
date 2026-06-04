@@ -11,8 +11,10 @@ metadata:
   namespace: props
 rules:
   - apiGroups: [""]
+    # list: the GraderSupervisor reconciles graders by listing pods by label
+    # (reconcile-from-API), so it survives restarts and reaps duplicates/orphans.
     resources: ["pods"]
-    verbs: ["create", "get", "delete"]
+    verbs: ["create", "get", "list", "delete"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
