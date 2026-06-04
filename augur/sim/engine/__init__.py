@@ -23,7 +23,7 @@ from augur.sim.buffers import (
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
-from augur.sim.engine.jax_engine import run_jax, run_jax_scan, scan_supported
+from augur.sim.engine.jax_engine import run_jax_scan
 from augur.sim.engine.phases import (
     _apply_depreciation_accrual,
     _apply_lifecycle_events,
@@ -58,13 +58,9 @@ def simulate_with_external_series_dense_result(
     )
     buffers = _allocate_buffers(plan)
     if current_backend() is SimBackend.JAX:
-        # `run_jax_scan` is the jitted lax.scan fast path (one compiled program for the whole month
-        # loop); it currently covers a subset of phases, so fall back to the eager `run_jax` engine
-        # for scenarios it doesn't yet handle. Both are parity-gated by the dual-backend suite.
-        if scan_supported(plan):
-            run_jax_scan(plan, buffers)
-        else:
-            run_jax(plan, buffers)  # in-progress JAX parity port (augur/sim/engine/jax_engine.py)
+        # The JAX backend is a single always-scan path: `run_jax_scan` compiles the whole month loop
+        # into one `lax.scan`/XLA program covering every phase. Parity-gated by the dual-backend suite.
+        run_jax_scan(plan, buffers)
         return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
     current = _allocate_current_state(plan)
     _snapshot_current_state(buffers.state, current, snapshot_index=0)

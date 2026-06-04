@@ -85,6 +85,9 @@ class _ScanState(NamedTuple):
     property_cumulative_depreciation: jnp.ndarray
     property_owner_occupied_months: jnp.ndarray
     property_depreciation_ytd: jnp.ndarray
+    property_rented_fraction: jnp.ndarray  # mutable: lifecycle FRACTION/SALE events change it
+    property_building_basis: jnp.ndarray  # mutable: lifecycle CAPITAL_IMPROVEMENT/SALE events change it
+    owner_occupied_window: jnp.ndarray  # (60, property, R) ring of monthly owner-occupancy flags (§121)
     liability_active: jnp.ndarray
     liability_principal: jnp.ndarray
     liability_monthly_payment: jnp.ndarray
@@ -219,19 +222,58 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
     external_values = jnp.asarray(plan.external_values)
     cost_basis_per_unit = jnp.asarray(plan.lot_cost_basis_per_unit)
-    # Property statics. `rented_fraction`/`building_basis` are constant (lifecycle events that would
-    # mutate them are barred by `scan_supported`). `is_primary[prop]` marks a property as its owner's
-    # primary residence (static: no primary-residence events) — drives the §121 owner-occupied counter.
-    property_rented_fraction = jnp.asarray(
+    props = plan.properties
+    # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
+    # events), so they're carry state initialized from the compile-time broadcast.
+    property_rented_fraction_0 = jnp.asarray(
         np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r))
     )
-    property_building_basis = jnp.asarray(np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r)))
-    owner_agent = plan.property_owner_agent_index
-    primary_of_owner = _np_gather(
-        plan.initial_primary_residence_property_index, np.where(owner_agent < 0, 0, owner_agent), NO_CODE
+    property_building_basis_0 = jnp.asarray(
+        np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r))
     )
-    property_is_primary = jnp.asarray((owner_agent >= 0) & (primary_of_owner == np.arange(owner_agent.shape[0])))
-    props = plan.properties
+    # Per-month `is_primary[prop]` (rollout-independent): walk primary-residence events and SALE-driven
+    # resets month by month so the §121 owner-occupied counter uses the right assignment each month.
+    owner_agent = plan.property_owner_agent_index
+    n_agents = owner_agent.shape[0]
+    apr = plan.initial_primary_residence_property_index.copy()
+    pr_starts = plan.primary_residence_events.month_starts
+    pr_events = plan.primary_residence_events
+    le_all = plan.lifecycle_events
+    le_starts = le_all.month_starts
+    is_primary_by_month = np.zeros((horizon, p.property_count), dtype=bool)
+    for m in range(horizon):
+        if m + 1 < pr_starts.shape[0]:
+            for ei in range(int(pr_starts[m]), int(pr_starts[m + 1])):
+                apr[int(pr_events.agent_slot[ei])] = int(pr_events.property_slot[ei])
+        if m + 1 < le_starts.shape[0]:  # SALE events globally clear the seller's primary residence
+            for ei in range(int(le_starts[m]), int(le_starts[m + 1])):
+                if int(le_all.kind[ei]) == LifecycleKind.SALE:
+                    sold_prop = int(le_all.property_slot[ei])
+                    owner_slot = int(plan.property_owner_agent_index[sold_prop])
+                    if owner_slot >= 0 and int(apr[owner_slot]) == sold_prop:
+                        apr[owner_slot] = NO_CODE
+        primary_of_owner = _np_gather(apr, np.where(owner_agent < 0, 0, owner_agent), NO_CODE)
+        is_primary_by_month[m] = (owner_agent >= 0) & (primary_of_owner == np.arange(n_agents))
+    property_is_primary_table = jnp.asarray(is_primary_by_month)
+
+    # Lifecycle + primary-residence events: map each event to the month it fires (event index ->
+    # month, via the CSR month_starts). The step applies all events firing at the traced month.
+    def _event_months(starts: np.ndarray, count: int) -> np.ndarray:
+        em = np.full(count, -1, dtype=np.int64)
+        for m in range(horizon):
+            if m + 1 < starts.shape[0]:
+                em[int(starts[m]) : int(starts[m + 1])] = m
+        return em
+
+    le_event_month = _event_months(le_starts, le_all.kind.shape[0])
+    folded_lifecycle = [
+        (i, int(le_event_month[i]), int(le_all.kind[i]), int(le_all.property_slot[i]))
+        for i in range(le_all.kind.shape[0])
+        if le_event_month[i] >= 0
+    ]
+    pr_event_month = _event_months(pr_starts, pr_events.agent_slot.shape[0])
+    folded_pr = [(i, int(pr_event_month[i])) for i in range(pr_events.agent_slot.shape[0]) if pr_event_month[i] >= 0]
+    folded_sale_events = [(i, m) for (i, m, k, _prop) in folded_lifecycle if k == LifecycleKind.SALE]
 
     # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
     # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
@@ -652,6 +694,8 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
         property_cum_dep, property_owner_occupied = s.property_cumulative_depreciation, s.property_owner_occupied_months
         property_dep_ytd = s.property_depreciation_ytd
+        property_rented_fraction, property_building_basis = s.property_rented_fraction, s.property_building_basis
+        oo_window = s.owner_occupied_window
         liab_active, liab_principal, liab_monthly = (
             s.liability_active,
             s.liability_principal,
@@ -663,6 +707,62 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         taxliab_active, taxliab_amount = s.tax_liability_active, s.tax_liability_amount
         failed, failed_month = s.failed, s.failed_month
         active = ~failed
+
+        # Primary-residence + lifecycle events (first in the month, eager order). Each event fires when
+        # its static month equals the traced month, masked per-rollout. is_primary is precomputed
+        # per-month host-side; the SALE path uses the §121 owner-occupancy window for the exclusion.
+        pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
+        le_fired: list[jnp.ndarray] = []
+        sale_traces: list[tuple] = []
+        for ev_i, ev_month, ev_kind, ev_prop in folded_lifecycle:
+            fires = month == ev_month
+            active_property = fires & active & property_active[ev_prop]
+            if ev_kind == LifecycleKind.FRACTION:
+                property_rented_fraction = property_rented_fraction.at[ev_prop].set(
+                    jnp.where(active_property, float(le_all.rented_fraction[ev_i]), property_rented_fraction[ev_prop])
+                )
+            elif ev_kind == LifecycleKind.CAPITAL_IMPROVEMENT:
+                amount = float(le_all.amount[ev_i])
+                owner_cash_slot = int(props.buyer_slot[ev_prop])
+                if owner_cash_slot >= 0:
+                    cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0.0))
+                property_building_basis = property_building_basis.at[ev_prop].add(
+                    jnp.where(active_property, amount, 0.0)
+                )
+            elif ev_kind == LifecycleKind.SALE:
+                (
+                    cash,
+                    property_active,
+                    property_rented_fraction,
+                    property_building_basis,
+                    liab_active,
+                    liab_principal,
+                    recapture_ytd,
+                    cg_active,
+                    cg_ytd,
+                    sale_trace,
+                ) = _scan_property_sale(
+                    plan,
+                    external_values,
+                    cash=cash,
+                    property_active=property_active,
+                    property_rented_fraction=property_rented_fraction,
+                    property_building_basis=property_building_basis,
+                    property_cum_dep=property_cum_dep,
+                    oo_window=oo_window,
+                    liab_active=liab_active,
+                    liab_principal=liab_principal,
+                    recapture_ytd=recapture_ytd,
+                    cg_active=cg_active,
+                    cg_ytd=cg_ytd,
+                    month=month,
+                    prop=ev_prop,
+                    closing_cost_pct=float(le_all.amount[ev_i]),
+                    active_property=active_property,
+                    rollout_count=r,
+                )
+                sale_traces.append(sale_trace)
+            le_fired.append(active_property)
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
             tr["cause"][month],
@@ -1079,10 +1179,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             pe_disp_active, pe_disp_units, pe_disp_basis, pe_disp_proceeds = state[5], state[6], state[7], state[8]
 
         # §121 owner-occupied-month counter then §168 depreciation accrual (eager order: after
-        # settlement, before the year-end tax pass that reads depreciation_ytd).
-        property_owner_occupied = _owner_occupied_jit(
-            property_active, property_rented_fraction, property_owner_occupied, property_is_primary, active
-        )
+        # settlement, before the year-end tax pass that reads depreciation_ytd). Inlined (vs the jit
+        # core) to also push this month's occupancy flag into the trailing-60-month §121 ring.
+        is_primary_m = property_is_primary_table[month]
+        occupied_flag = active[None, :] & property_active & (property_rented_fraction < 1.0) & is_primary_m[:, None]
+        property_owner_occupied = property_owner_occupied + occupied_flag.astype(property_owner_occupied.dtype)
+        oo_window = oo_window.at[month % SECTION_121_LOOKBACK_MONTHS].set(occupied_flag)
         property_cum_dep, property_dep_ytd = _apply_depreciation_accrual(
             property_active,
             property_rented_fraction,
@@ -1152,6 +1254,9 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             property_cumulative_depreciation=property_cum_dep,
             property_owner_occupied_months=property_owner_occupied,
             property_depreciation_ytd=property_dep_ytd,
+            property_rented_fraction=property_rented_fraction,
+            property_building_basis=property_building_basis,
+            owner_occupied_window=oo_window,
             liability_active=liab_active,
             liability_principal=liab_principal,
             liability_monthly_payment=liab_monthly,
@@ -1250,7 +1355,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             if folded_pe
             else ()
         )
-        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys, *pe_ys)
+        # Lifecycle/PR event slabs: per-event `fired` flags (lifecycle, then PR) + the 7 sale-trace
+        # fields stacked over SALE events. Each group present iff that event class exists in the plan.
+        lifecycle_ys = (
+            *([jnp.stack(le_fired)] if folded_lifecycle else []),
+            *([jnp.stack(pr_fired)] if folded_pr else []),
+            *([jnp.stack([st[f] for st in sale_traces]) for f in range(7)] if folded_sale_events else []),
+        )
+        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys, *pe_ys, *lifecycle_ys)
 
     prop0 = jnp.zeros((p.property_count, r))
     liab0 = jnp.zeros((p.liability_count, r))
@@ -1270,6 +1382,9 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         property_cumulative_depreciation=prop0,
         property_owner_occupied_months=jnp.zeros((p.property_count, r), dtype=jnp.int32),
         property_depreciation_ytd=prop0,
+        property_rented_fraction=property_rented_fraction_0,
+        property_building_basis=property_building_basis_0,
+        owner_occupied_window=jnp.zeros((SECTION_121_LOOKBACK_MONTHS, p.property_count, r), dtype=bool),
         liability_active=jnp.zeros((p.liability_count, r), dtype=bool),
         liability_principal=liab0,
         liability_monthly_payment=liab0,
@@ -1322,17 +1437,26 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     n_mortgage = 5 if p.liability_count > 0 else 0
     n_tax = 18 if link_count > 0 else 0
     n_liquidity = 5 if folded_liquidity else 0
+    n_pe = 13 if folded_pe else 0
+    n_le_fired = 1 if folded_lifecycle else 0
+    n_pr_fired = 1 if folded_pr else 0
     o1 = n_sale
     o2 = o1 + n_purchase
     o3 = o2 + n_mortgage
     o4 = o3 + n_tax
     o5 = o4 + n_liquidity
+    o6 = o5 + n_pe
+    o7 = o6 + n_le_fired
+    o8 = o7 + n_pr_fired
     sale_h = rest[:o1]
     purchase_h = rest[o1:o2]
     mortgage_h = rest[o2:o3]
     tax_h = rest[o3:o4]
     liquidity_h = rest[o4:o5]
-    pe_h = rest[o5:]
+    pe_h = rest[o5:o6]
+    le_fired_h = rest[o6:o7]
+    pr_fired_h = rest[o7:o8]
+    sale_trace_h = rest[o8:]
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
@@ -1467,6 +1591,30 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         opp.sellable_units[:] = opp_sellable
         opp.target_units[:] = opp_target
         opp.proceeds[:] = opp_proceeds
+    if le_fired_h:
+        # `le_fired_h[0]` is `(horizon, n_lifecycle_events, R)`; each event fires once at its month.
+        fired_np = np.asarray(le_fired_h[0])
+        for pos, (i, ev_month, _kind, _prop) in enumerate(folded_lifecycle):
+            buffers.lifecycle.fired[i] = fired_np[ev_month, pos]
+    if pr_fired_h:
+        pr_fired_np = np.asarray(pr_fired_h[0])
+        for pos, (ei, ev_month) in enumerate(folded_pr):
+            buffers.primary_residence.fired[ei] = pr_fired_np[ev_month, pos]
+    if sale_trace_h:
+        # 7 stacks `(horizon, n_sale_events, R)` in the lifecycle.sale_* field order.
+        trace_np = [np.asarray(a) for a in sale_trace_h]
+        sale_fields = (
+            buffers.lifecycle.sale_gross_proceeds,
+            buffers.lifecycle.sale_mortgage_payoff,
+            buffers.lifecycle.sale_net_cash,
+            buffers.lifecycle.sale_realized_gain,
+            buffers.lifecycle.sale_recapture,
+            buffers.lifecycle.sale_section_121_exclusion,
+            buffers.lifecycle.sale_long_term_gain,
+        )
+        for pos, (i, ev_month) in enumerate(folded_sale_events):
+            for field, stack in zip(sale_fields, trace_np, strict=True):
+                field[i] = stack[ev_month, pos]
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
@@ -3891,6 +4039,105 @@ def _apply_property_sale(
         recapture_section_1250_ytd=recapture_ytd,
         capital_gain_active=capital_gain_active,
         capital_gain_ytd=capital_gain_ytd,
+    )
+
+
+def _scan_property_sale(
+    plan: CompiledSimulation,
+    external_values: jnp.ndarray,
+    *,
+    cash: jnp.ndarray,
+    property_active: jnp.ndarray,
+    property_rented_fraction: jnp.ndarray,
+    property_building_basis: jnp.ndarray,
+    property_cum_dep: jnp.ndarray,
+    oo_window: jnp.ndarray,
+    liab_active: jnp.ndarray,
+    liab_principal: jnp.ndarray,
+    recapture_ytd: jnp.ndarray,
+    cg_active: jnp.ndarray,
+    cg_ytd: jnp.ndarray,
+    month: jnp.ndarray,
+    prop: int,
+    closing_cost_pct: float,
+    active_property: jnp.ndarray,
+    rollout_count: int,
+) -> tuple[
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    jnp.ndarray,
+    tuple[jnp.ndarray, ...],
+]:
+    """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
+    owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace."""
+    series_idx = int(plan.property_home_value_series_index[prop])
+    market_value = (
+        float(plan.properties.purchase_price[prop])
+        * external_values[series_idx, :, month]
+        / external_values[series_idx, :, 0]
+    )
+    gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
+    capex = property_building_basis[prop] - float(plan.property_building_basis[prop])
+    cum_dep = property_cum_dep[prop]
+    realized_gain = gross_proceeds - (float(plan.properties.purchase_price[prop]) + capex - cum_dep)
+    recapture = jnp.minimum(jnp.maximum(realized_gain, 0.0), cum_dep)
+    post_recapture_gain = jnp.maximum(realized_gain - recapture, 0.0)
+    # §121: months owner-occupied within the trailing 60-month window (the carried ring's column sum).
+    qualifies = oo_window[:, prop, :].sum(axis=0) >= SECTION_121_MIN_QUALIFYING_MONTHS
+    owner_profile = int(plan.property_owner_profile_index[prop])
+    exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
+    section_121_exclusion = jnp.where(qualifies, jnp.minimum(post_recapture_gain, exclusion_cap), 0.0)
+    ltcg = post_recapture_gain - section_121_exclusion
+    mortgage_payoff = jnp.zeros(rollout_count)
+    for lia in range(plan.liabilities.property_slot.shape[0]):
+        if int(plan.liabilities.property_slot[lia]) == prop:
+            mortgage_payoff = mortgage_payoff + liab_principal[lia]
+            liab_principal = liab_principal.at[lia].set(jnp.where(active_property, 0.0, liab_principal[lia]))
+            liab_active = liab_active.at[lia].set(jnp.where(active_property, False, liab_active[lia]))
+    net_cash = gross_proceeds - mortgage_payoff
+    owner_cash_slot = int(plan.properties.buyer_slot[prop])
+    if owner_cash_slot >= 0:
+        cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0.0))
+    if owner_profile >= 0:
+        recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0.0))
+        gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
+        if gain_profile >= 0:
+            lt = int(CapitalGainClassification.LONG_TERM)
+            cg_ytd = cg_ytd.at[gain_profile, lt].add(jnp.where(active_property, ltcg, 0.0))
+            cg_active = cg_active.at[gain_profile, lt].set(cg_active[gain_profile, lt] | active_property)
+    property_active = property_active.at[prop].set(property_active[prop] & ~active_property)
+    property_rented_fraction = property_rented_fraction.at[prop].set(
+        jnp.where(active_property, 0.0, property_rented_fraction[prop])
+    )
+    property_building_basis = property_building_basis.at[prop].set(
+        jnp.where(active_property, 0.0, property_building_basis[prop])
+    )
+    sale_trace = (
+        jnp.where(active_property, gross_proceeds, 0.0),
+        jnp.where(active_property, mortgage_payoff, 0.0),
+        jnp.where(active_property, net_cash, 0.0),
+        jnp.where(active_property, realized_gain, 0.0),
+        jnp.where(active_property, recapture, 0.0),
+        jnp.where(active_property, section_121_exclusion, 0.0),
+        jnp.where(active_property, ltcg, 0.0),
+    )
+    return (
+        cash,
+        property_active,
+        property_rented_fraction,
+        property_building_basis,
+        liab_active,
+        liab_principal,
+        recapture_ytd,
+        cg_active,
+        cg_ytd,
+        sale_trace,
     )
 
 
