@@ -214,6 +214,27 @@ safe to event-ize: unlike tax liabilities, they change every month and consumers
 at arbitrary months expecting forward-filled state. Their remaining decode cost is the row
 count itself (O(months × R)); the lever there is lazy/opt-in decode (#1), not event-izing.
 
+## Results after the fourth pass (lazy decode)
+
+`SimulationRun` is now a lazy facade over the dense result: each long-form frame (and the
+event log) is a `cached_property` decoded on first access, so `decode()` is free and a caller
+only pays to materialize the frames it reads. Public attribute surface unchanged — every
+consumer and test is untouched.
+
+This makes the existing "stats on dense arrays" path (`metric_fan`, `monthly_metric_arrays`)
+pay **zero** decode, and the single-rollout detail view (`rollout_events_from`, which reads
+only `events_log` + `asset_lots`) skip the other ~10 frames it never used. 1000 × 1200:
+
+| caller pattern                                    | before | lazy   |
+| ------------------------------------------------- | ------ | ------ |
+| summary / fan (reduces on dense, decodes nothing) | 6.5 s  | 1.9 s  |
+| rollout detail (`events_log` + `asset_lots`)      | 6.5 s  | 3.85 s |
+| full-frame caller (`materialize all`)             | 6.5 s  | 6.5 s  |
+
+The backend already caches the dense result per `(scenario, seed)` (`ProductService` LRU of
+R=1 `DenseSimulationResult`), so re-deriving any frame or stat for a cached rollout is
+re-simulation-free; lazy decode means that re-derivation only builds what's asked for.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**

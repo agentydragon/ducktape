@@ -108,9 +108,40 @@ def main() -> None:
         help="run the dense engine (compile + month loop) and skip the Polars decode, to isolate "
         "pure rollout-compute cost/memory from the encode boundary",
     )
+    parser.add_argument(
+        "--materialize",
+        choices=["all", "rollout", "none"],
+        default="all",
+        help="which lazy SimulationRun frames to force-decode: 'all' (every frame), 'rollout' "
+        "(only what the single-rollout detail view reads: events_log + asset_lots), or 'none' "
+        "(decode nothing — the lazy default)",
+    )
     args = parser.parse_args()
 
     scenario, locations = build_profile_scenario(horizon_months=args.horizon_months)
+
+    def _materialize(result: object) -> None:
+        if args.materialize == "none":
+            return
+        if args.materialize == "rollout":
+            _ = result.events_log  # type: ignore[attr-defined]
+            _ = result.asset_lots  # type: ignore[attr-defined]
+            return
+        for frame in (
+            "cash_balances",
+            "asset_lots",
+            "ordinary_income_ytd",
+            "capital_gains_ytd",
+            "tax_liabilities",
+            "property_state",
+            "property_stakes",
+            "liabilities",
+            "rollout_status_history",
+            "rollout_status",
+            "series_values",
+            "events_log",
+        ):
+            getattr(result, frame)
 
     def run(rollout_count: int) -> None:
         if args.dense_only:
@@ -123,12 +154,15 @@ def main() -> None:
                 scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
             )
         else:
-            simulate(scenario, rollout_count=rollout_count, locations=locations)
+            _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
 
     # Warm-up tiny run to pay one-time import / JIT-ish costs outside the timed region.
     run(2)
 
-    print(f"rollouts={args.rollouts} horizon_months={args.horizon_months} dense_only={args.dense_only}")
+    print(
+        f"rollouts={args.rollouts} horizon_months={args.horizon_months} "
+        f"dense_only={args.dense_only} materialize={args.materialize}"
+    )
 
     if args.no_profile:
         t0 = time.perf_counter()
