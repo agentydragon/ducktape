@@ -1,8 +1,10 @@
-"""Parity test for the jitted `lax.scan` fast path (`run_jax_scan`).
+"""Parity tests for the jitted `lax.scan` JAX engine (`run_jax_scan`).
 
-A transfers-only scenario satisfies `scan_supported`, so on the JAX backend it routes through the
-scan engine instead of the eager `run_jax`. The autouse `backend` fixture (augur/sim/conftest.py)
-runs this under NumPy (reference) and JAX (scan); identical assertions gate scan == reference.
+The JAX backend is a single always-scan path — `run_jax_scan` compiles the whole month loop into one
+`lax.scan`/XLA program covering every phase. The autouse `backend` fixture (augur/sim/conftest.py)
+runs each test under NumPy (reference) and JAX (scan); identical assertions gate scan == reference.
+These tests pin specific phases (transfers, obligations, sales, purchases, property tax, mortgages,
+year-end tax) with exact expected values on top of that suite-wide parity check.
 """
 
 from __future__ import annotations
