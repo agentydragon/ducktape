@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -386,6 +387,88 @@ def _amount_values(
     return amount_base * reset_level / base_level
 
 
+def _scatter_rows(target: jnp.ndarray, indices: jnp.ndarray, values: jnp.ndarray) -> jnp.ndarray:
+    """Sentinel-aware segment scatter-add: add `values[s]` into `target[indices[s]]`, ignoring
+    rows where `indices[s] < 0`. Duplicate indices accumulate. Branch-free (no per-row Python
+    loop / `if idx >= 0`): a `-1` index is redirected to a padding row that is then sliced off."""
+    dump = target.shape[0]
+    padded = jnp.concatenate([target, jnp.zeros((1, *target.shape[1:]), target.dtype)], axis=0)
+    idx = jnp.where(indices < 0, dump, indices)
+    return padded.at[idx].add(values)[:dump]
+
+
+def _amount_values_vec(
+    amount_kind: jnp.ndarray,
+    amount_fixed: jnp.ndarray,
+    amount_base: jnp.ndarray,
+    amount_series: jnp.ndarray,
+    amount_base_month: jnp.ndarray,
+    amount_period: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: jnp.ndarray,
+    rollout_count: int,
+) -> jnp.ndarray:
+    """`_amount_values` vectorized over slots (branch-free): returns `(slots, rollouts)`.
+
+    The series path is computed for every slot and selected against the fixed amount by the
+    `AMOUNT_FIXED` mask; `-1` series / non-positive periods are sanitized to safe indices so the
+    (unused) series math never indexes out of range or divides by zero on fixed slots.
+    """
+    if external_values.shape[0] == 0:
+        # No exogenous series in this scenario, so every amount is necessarily fixed; skip the
+        # series gather (it would index a size-0 axis). `shape[0]` is static under jit.
+        return jnp.broadcast_to(amount_fixed[:, None], (amount_kind.shape[0], rollout_count))
+    safe_period = jnp.where(amount_period > 0, amount_period, 1)
+    reset_month = amount_base_month + ((month - amount_base_month) // safe_period) * safe_period
+    safe_series = jnp.where(amount_series >= 0, amount_series, 0)
+    rows = jnp.arange(rollout_count)
+    base_level = external_values[safe_series[:, None], rows[None, :], amount_base_month[:, None]]
+    reset_level = external_values[safe_series[:, None], rows[None, :], reset_month[:, None]]
+    series_amount = amount_base[:, None] * reset_level / base_level
+    return jnp.where((amount_kind == AMOUNT_FIXED)[:, None], amount_fixed[:, None], series_amount)
+
+
+@jax.jit
+def _transfers_jit(
+    cause: jnp.ndarray,
+    amount_kind: jnp.ndarray,
+    amount_fixed: jnp.ndarray,
+    amount_base: jnp.ndarray,
+    amount_series: jnp.ndarray,
+    amount_base_month: jnp.ndarray,
+    amount_period: jnp.ndarray,
+    from_slot: jnp.ndarray,
+    to_slot: jnp.ndarray,
+    income_profile: jnp.ndarray,
+    deduction_profile: jnp.ndarray,
+    cash: jnp.ndarray,
+    ordinary_ytd: jnp.ndarray,
+    active: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Branch-free, jit-compiled scheduled-transfer step (all slots vectorized; `month` traced)."""
+    rollout_count = cash.shape[1]
+    fire = (cause >= 0)[:, None] & active[None, :]  # (slots, rollouts)
+    raw = _amount_values_vec(
+        amount_kind,
+        amount_fixed,
+        amount_base,
+        amount_series,
+        amount_base_month,
+        amount_period,
+        external_values,
+        month,
+        rollout_count,
+    )
+    amounts = jnp.where(fire, raw, 0.0)
+    cash = _scatter_rows(cash, from_slot, -amounts)
+    cash = _scatter_rows(cash, to_slot, amounts)
+    ordinary_ytd = _scatter_rows(ordinary_ytd, income_profile, amounts)
+    ordinary_ytd = _scatter_rows(ordinary_ytd, deduction_profile, -amounts)
+    return cash, ordinary_ytd, fire, amounts
+
+
 def _apply_scheduled_transfers(
     transfers: TransferCompileOutput,
     cash: jnp.ndarray,
@@ -395,43 +478,25 @@ def _apply_scheduled_transfers(
     month: int,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Functional port of `phases._apply_scheduled_transfers`. `active = ~failed` masks every write."""
-    slot_count = transfers.cause.shape[1]
-    transfer_active = jnp.zeros((slot_count, rollout_count), dtype=bool)
-    transfer_amount = jnp.zeros((slot_count, rollout_count))
-    for slot in range(slot_count):
-        if int(transfers.cause[month, slot]) < 0:
-            continue
-        amount = jnp.where(
-            active,
-            _amount_values(
-                amount_kind=int(transfers.amount_kind[month, slot]),
-                amount_fixed=float(transfers.amount_fixed[month, slot]),
-                amount_base=float(transfers.amount_base[month, slot]),
-                amount_series=int(transfers.amount_series[month, slot]),
-                amount_base_month=int(transfers.amount_base_month[month, slot]),
-                amount_period=int(transfers.amount_period[month, slot]),
-                external_values=external_values,
-                month=month,
-                rollout_count=rollout_count,
-            ),
-            0.0,
-        )
-        transfer_active = transfer_active.at[slot].set(active)
-        transfer_amount = transfer_amount.at[slot].set(amount)
-        from_slot = int(transfers.from_slot[month, slot])
-        if from_slot >= 0:
-            cash = cash.at[from_slot].add(-amount)
-        to_slot = int(transfers.to_slot[month, slot])
-        if to_slot >= 0:
-            cash = cash.at[to_slot].add(amount)
-        income_profile = int(transfers.income_profile[month, slot])
-        if income_profile >= 0:
-            ordinary_ytd = ordinary_ytd.at[income_profile].add(amount)
-        deduction_profile = int(transfers.deduction_profile[month, slot])
-        if deduction_profile >= 0:
-            ordinary_ytd = ordinary_ytd.at[deduction_profile].add(-amount)
-    return cash, ordinary_ytd, transfer_active, transfer_amount
+    """Functional port of `phases._apply_scheduled_transfers` (branch-free, jit-compiled core)."""
+    return _transfers_jit(
+        jnp.asarray(transfers.cause[month]),
+        jnp.asarray(transfers.amount_kind[month]),
+        jnp.asarray(transfers.amount_fixed[month]),
+        jnp.asarray(transfers.amount_base[month]),
+        jnp.asarray(transfers.amount_series[month]),
+        jnp.asarray(transfers.amount_base_month[month]),
+        jnp.asarray(transfers.amount_period[month]),
+        jnp.asarray(transfers.from_slot[month]),
+        jnp.asarray(transfers.to_slot[month]),
+        jnp.asarray(transfers.income_profile[month]),
+        jnp.asarray(transfers.deduction_profile[month]),
+        cash,
+        ordinary_ytd,
+        active,
+        external_values,
+        jnp.asarray(month),
+    )
 
 
 def _apply_scheduled_asset_sales(
