@@ -1,8 +1,10 @@
 """JAX simulation engine — in-progress parity port of the NumPy engine.
 
 The dense engine is being ported to JAX phase-by-phase (see <augur/plans/jax_migration.md>). Each
-phase is a functional `jnp.at[]` translation of its NumPy counterpart in `phases.py`, verified
-against the NumPy reference by a parity test at float32 tolerance. Selection is via
+phase is a functional `jnp.at[]` translation of its NumPy counterpart in `phases.py`. Parity is
+verified by running the existing simulator test suite under both backends (the autouse `backend`
+fixture in `augur/sim/conftest.py` parameterizes every test over NumPy and JAX); the JAX variants
+for scenarios touching not-yet-ported phases fail until the port lands them. Selection is via
 `sim_backend.current_backend()`.
 
 `run_jax(plan, buffers)` fills the (already NumPy-allocated, zeroed) `buffers` from a JAX run.
@@ -49,7 +51,9 @@ def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     property_contribution = jnp.zeros((p.property_count, r))
     property_equity = jnp.zeros((p.property_count, r))
     failed = jnp.zeros(r, dtype=bool)
-    failed_month = jnp.full(r, -1, dtype=jnp.int64)
+    # int32 (not int64): x64 is disabled, so a jnp.int64 request truncates with a warning. Values
+    # are tiny (month index or -1); the NumPy int64 state buffer upcasts on assignment.
+    failed_month = jnp.full(r, -1, dtype=jnp.int32)
     external_values = jnp.asarray(plan.external_values)
 
     # Snapshot index 0 is the pre-month-0 opening state (initial cash + lots; all else zero, already
