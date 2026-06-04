@@ -26,23 +26,64 @@ import time
 import jax
 
 from augur.model.sim_backend import SimBackend, use_backend
+from augur.product.asset_key import SP500AssetKey
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
+    InitialLot,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
     PropertyTaxPolicy,
     RecurringTransfer,
     Scenario,
+    ScheduledAssetSale,
     ScheduledPropertyPurchase,
 )
 from augur.sim.simulate import simulate, simulate_dense_with_external_series
 
 PROFILE_LOCATION_ID = "sf"
+
+
+def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scenario:
+    """Append `n` independent (distinct-account) SP500 lots + scheduled sales, to scale the unrolled
+    per-sale loop and measure its compile/execute cost."""
+    if n <= 0:
+        return scenario
+    lots = [
+        InitialLot(
+            lot_id=f"scale_lot_{i}",
+            agent_id="alice",
+            account_id=f"scale_brk_{i}",
+            asset=SP500AssetKey(),
+            purchase_month_index=-24,
+            quantity=100.0,
+            cost_basis_per_unit_usd=80.0,
+        )
+        for i in range(n)
+    ]
+    sales = [
+        ScheduledAssetSale(
+            month=1 + (i % max(1, horizon_months - 2)),
+            cause_id=f"scale_sale_{i}",
+            agent_id="alice",
+            source_account_id=f"scale_brk_{i}",
+            asset=SP500AssetKey(),
+            quantity=100.0,
+            price_per_unit_usd=120.0,
+            proceeds_account_id="checking",
+        )
+        for i in range(n)
+    ]
+    return scenario.model_copy(
+        update={
+            "initial_lots": [*scenario.initial_lots, *lots],
+            "scheduled_asset_sales": [*scenario.scheduled_asset_sales, *sales],
+        }
+    )
 
 
 def build_transfers_only_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, Location]]:
@@ -153,6 +194,12 @@ def main() -> None:
         help="time N back-to-back runs (no warmup) to expose per-call recompilation cost",
     )
     parser.add_argument(
+        "--extra-sales",
+        type=int,
+        default=0,
+        help="append N independent SP500 lots + scheduled sales, to scale the unrolled per-sale loop",
+    )
+    parser.add_argument(
         "--dense-only",
         action="store_true",
         help="run the dense engine (compile + month loop) and skip the Polars decode, to isolate "
@@ -173,6 +220,7 @@ def main() -> None:
         if args.transfers_only
         else build_profile_scenario(horizon_months=args.horizon_months)
     )
+    scenario = _add_scale_sales(scenario, n=args.extra_sales, horizon_months=args.horizon_months)
 
     def _materialize(result: object) -> None:
         if args.materialize == "none":
