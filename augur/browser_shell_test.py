@@ -139,12 +139,12 @@ def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) 
     page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='log']").wait_for(
         state="visible", timeout=15_000
     )
-    page.locator("[data-product-histogram-scale='log']").wait_for(state="visible", timeout=15_000)
+    page.locator("[data-product-distribution-scale='log']").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Chart scale").get_by_text("Linear", exact=True).click()
     page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='linear']").wait_for(
         state="visible", timeout=15_000
     )
-    page.locator("[data-product-histogram-scale='linear']").wait_for(state="visible", timeout=15_000)
+    page.locator("[data-product-distribution-scale='linear']").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").select_option("holding_value_usd")
     page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Initial portfolio").wait_for(state="visible", timeout=15_000)
@@ -160,7 +160,9 @@ def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: P
     page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-rollout-sliver]").first.click()
+    # Select a rollout by clicking the terminal-distribution plot (the per-rollout "sliver" strip
+    # was replaced by the quantile-line distribution in #1848; the plot is the click-to-inspect surface).
+    page.locator("[data-product-terminal-distribution-plot]").click()
     page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Event kinds").wait_for(state="visible", timeout=30_000)
     legend = page.get_by_label("Event-kind visibility legend")
