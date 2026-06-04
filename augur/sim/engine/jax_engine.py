@@ -85,6 +85,12 @@ class _ScanState(NamedTuple):
     property_cumulative_depreciation: jnp.ndarray
     property_owner_occupied_months: jnp.ndarray
     property_depreciation_ytd: jnp.ndarray
+    liability_active: jnp.ndarray
+    liability_principal: jnp.ndarray
+    liability_monthly_payment: jnp.ndarray
+    liability_interest_ytd: jnp.ndarray
+    liability_principal_ytd: jnp.ndarray
+    liability_rental_interest_ytd: jnp.ndarray
     failed: jnp.ndarray
     failed_month: jnp.ndarray
 
@@ -143,6 +149,9 @@ class _FoldedPurchase:
     equity_ledger: float
     buyer_slot: int
     seller_slot: int
+    mortgage_slot: int  # NO_CODE for cash purchases; else the liability slot to originate
+    mortgage_principal: float
+    mortgage_monthly_payment: float
 
 
 def scan_supported(plan: CompiledSimulation) -> bool:
@@ -158,17 +167,18 @@ def scan_supported(plan: CompiledSimulation) -> bool:
     # on the padded sentinel property slot (with `cause = NO_CODE`), so gate on `cause`, not on
     # `source_kind` alone — only *real* obligations must be CONFIGURED for the scan to handle them.
     real_obligation = obligation.cause >= 0
-    handled_kind = (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION) | (
-        obligation.source_kind == ObligationSource.PROPERTY_TAX
+    handled_kind = (
+        (obligation.source_kind == ObligationSource.CONFIGURED_OBLIGATION)
+        | (obligation.source_kind == ObligationSource.PROPERTY_TAX)
+        | (obligation.source_kind == ObligationSource.MORTGAGE_PAYMENT)
     )
     return (
-        # real obligations must be CONFIGURED or PROPERTY_TAX — mortgage/estimated kinds aren't folded
+        # real obligations must be CONFIGURED / PROPERTY_TAX / MORTGAGE_PAYMENT — estimated kinds aren't folded
         bool((~real_obligation | handled_kind).all())
         and bool((plan.liquidity_policies.cash_slot < 0).all())  # no liquidity policies
         and bool((plan.pe_issuers.codes < 0).all())  # no PE issuers
         and bool((plan.harvest_policies.gain_profile_index < 0).all())  # no (effective) harvest policies
         and plan.tax.profile_agent.shape[0] == 0  # no tax profiles (tax arrays are not padded)
-        and bool((plan.properties.mortgage_slot < 0).all())  # only cash property purchases (no mortgages)
         and int(plan.lifecycle_events.month_starts[-1]) == 0  # no lifecycle events
         and int(plan.primary_residence_events.month_starts[-1]) == 0  # no primary-residence events
     )
@@ -210,22 +220,7 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         plan.initial_primary_residence_property_index, np.where(owner_agent < 0, 0, owner_agent), NO_CODE
     )
     property_is_primary = jnp.asarray((owner_agent >= 0) & (primary_of_owner == np.arange(owner_agent.shape[0])))
-    # Cash property purchases (financed purchases are barred — they need the liability/mortgage fold).
     props = plan.properties
-    folded_purchases = [
-        _FoldedPurchase(
-            buffer_index=prop,
-            month=int(props.month[prop]),
-            adjusted_basis=float(props.adjusted_basis[prop]),
-            ownership=float(props.ownership[prop]),
-            stake_contribution=float(props.stake_contribution[prop]),
-            equity_ledger=float(props.equity_ledger[prop]),
-            buyer_slot=int(props.buyer_slot[prop]),
-            seller_slot=int(props.seller_slot[prop]),
-        )
-        for prop in range(props.month.shape[0])
-        if int(props.month[prop]) >= 0
-    ]
 
     # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
     # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
@@ -250,6 +245,30 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
         for s in range(sales.month.shape[0])
         if int(sales.month[s]) >= 0
+    ]
+    _liabs = plan.liabilities
+    folded_purchases = [
+        _FoldedPurchase(
+            buffer_index=prop,
+            month=int(props.month[prop]),
+            adjusted_basis=float(props.adjusted_basis[prop]),
+            ownership=float(props.ownership[prop]),
+            stake_contribution=float(props.stake_contribution[prop]),
+            equity_ledger=float(props.equity_ledger[prop]),
+            buyer_slot=int(props.buyer_slot[prop]),
+            seller_slot=int(props.seller_slot[prop]),
+            mortgage_slot=int(props.mortgage_slot[prop]),
+            mortgage_principal=(
+                float(_liabs.principal[int(props.mortgage_slot[prop])]) if int(props.mortgage_slot[prop]) >= 0 else 0.0
+            ),
+            mortgage_monthly_payment=(
+                float(_liabs.monthly_payment[int(props.mortgage_slot[prop])])
+                if int(props.mortgage_slot[prop]) >= 0
+                else 0.0
+            ),
+        )
+        for prop in range(props.month.shape[0])
+        if int(props.month[prop]) >= 0
     ]
     # Whole-horizon `(months, slots)` plan tables live as device arrays in the closure; each step
     # indexes them by the traced `month`. Built explicitly (no getattr) so a field rename is caught.
@@ -285,21 +304,47 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         "property_tax_profile": jnp.asarray(ob.property_tax_profile),
         "property_slot": jnp.asarray(ob.property_slot),
     }
-    # Property-tax obligation amounts, per (month, slot), static: monthly ad-valorem on the assessed
-    # value (rate = the obligation's amount_fixed, or the location reference rate when NaN) plus the
-    # flat special assessment / 12. `prop_idx` indexes the obligation's property; `prop_month` is that
-    # property's purchase month (the tax accrues only once it's been bought).
-    pt_prop_idx_np = np.where(ob.source_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)
-    pt_rate_np = np.where(np.isnan(ob.amount_fixed), props.location_tax_rate[pt_prop_idx_np], ob.amount_fixed)
-    pt_amount_np = (
-        props.initial_assessed_value[pt_prop_idx_np] * pt_rate_np / 12.0
-        + props.special_assessment_annual_usd[pt_prop_idx_np] / 12.0
-    )
-    pt = {
-        "amount": jnp.asarray(pt_amount_np),
-        "prop_idx": jnp.asarray(pt_prop_idx_np),
-        "prop_month": jnp.asarray(props.month[pt_prop_idx_np]),
+    # Per-(month, slot) static obligation-accrual tables — the host-side precompute of
+    # `_apply_obligation_accruals`, vectorized over the whole horizon at once (everything here is a
+    # function of the static plan only). The scan indexes these by the traced month and runs the
+    # branch-free `_obligation_accruals_jit` core against the live property/liability/tax-liability
+    # state. Covers every source kind; kinds with no backing entity are masked off inside the core.
+    liabs = plan.liabilities
+    acc_kind = ob.source_kind
+    acc = {
+        "kind": jnp.asarray(acc_kind),
+        "valid": jnp.asarray((ob.cause >= 0) & (acc_kind >= 0)),
+        "prop_idx": jnp.asarray(np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)),
+        "liab_idx": jnp.asarray(np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)),
     }
+    acc_prop_idx_np = np.where(acc_kind == ObligationSource.PROPERTY_TAX, ob.source_index, 0)
+    acc_pt_rate = np.where(
+        np.isnan(ob.amount_fixed), _np_gather(props.location_tax_rate, acc_prop_idx_np, 0.0), ob.amount_fixed
+    )
+    acc["pt_amount"] = jnp.asarray(
+        _np_gather(props.initial_assessed_value, acc_prop_idx_np, 0.0) * acc_pt_rate / 12.0
+        + _np_gather(props.special_assessment_annual_usd, acc_prop_idx_np, 0.0) / 12.0
+    )
+    acc["pt_prop_month"] = jnp.asarray(_np_gather(props.month, acc_prop_idx_np, 0))
+    acc_liab_idx_np = np.where(acc_kind == ObligationSource.MORTGAGE_PAYMENT, ob.source_index, 0)
+    acc_liab_prop_slot = _np_gather(liabs.property_slot, acc_liab_idx_np, -1)
+    acc["mort_prop_month"] = jnp.asarray(
+        _np_gather(props.month, np.where(acc_liab_prop_slot >= 0, acc_liab_prop_slot, 0), 0)
+    )
+    acc["mort_rate"] = jnp.asarray(_np_gather(liabs.annual_rate, acc_liab_idx_np, 0.0))
+    # Property slot of each mortgage obligation's liability (for the Schedule-E rented-share of interest).
+    acc["mort_prop_idx"] = jnp.asarray(np.where(acc_liab_prop_slot >= 0, acc_liab_prop_slot, 0))
+    acc_prof_idx = np.where(acc_kind >= ObligationSource.ESTIMATED_TAX, ob.source_index, 0)
+    acc_est_prior = _np_gather(plan.tax.profile_prior_year_tax, acc_prof_idx, 0.0)
+    acc["est_prior"] = jnp.asarray(acc_est_prior)
+    acc["est_quarterly"] = jnp.asarray(acc_est_prior / 4.0)
+    tax_year_end = (np.arange(horizon) // 12 - 1) * 12 + 11
+    acc["trueup_sel"] = jnp.asarray(
+        (
+            (plan.tax_liabilities.profile_index[None, None, :] == acc_prof_idx[:, :, None])
+            & (plan.tax_liabilities.year_end_month[None, None, :] == tax_year_end[:, None, None])
+        ).astype(np.float64)
+    )
 
     def step(s: _ScanState, month: jnp.ndarray) -> tuple[_ScanState, tuple[jnp.ndarray, ...]]:
         cash, ordinary, property_tax_ytd, lot_remaining = s.cash, s.ordinary_ytd, s.property_tax_ytd, s.lot_remaining
@@ -311,7 +356,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             s.property_equity,
         )
         property_cum_dep, property_owner_occupied = s.property_cumulative_depreciation, s.property_owner_occupied_months
-        property_dep_ytd, failed, failed_month = s.property_depreciation_ytd, s.failed, s.failed_month
+        property_dep_ytd = s.property_depreciation_ytd
+        liab_active, liab_principal, liab_monthly = (
+            s.liability_active,
+            s.liability_principal,
+            s.liability_monthly_payment,
+        )
+        liab_interest_ytd, liab_principal_ytd = s.liability_interest_ytd, s.liability_principal_ytd
+        liab_rental_ytd, failed, failed_month = s.liability_rental_interest_ytd, s.failed, s.failed_month
         active = ~failed
 
         cash, ordinary, transfer_active, transfer_amount = _transfers_jit(
@@ -333,10 +385,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             month,
         )
 
-        # Cash property purchases (after transfers, before sales — eager order). Each real purchase
-        # fires when its static month equals the traced month, for the rollouts still active then;
-        # the down payment (stake_contribution) moves buyer->seller. Financed purchases are barred.
+        # Property purchases (after transfers, before sales — eager order). Each real purchase fires
+        # when its static month equals the traced month, for the rollouts still active then; the down
+        # payment (stake_contribution) moves buyer->seller and, when financed, the mortgage liability
+        # is originated (principal + monthly payment set, YTD interest/principal reset).
         purchase_active_rows, transfer_active_rows = [], []
+        mortgage_origination_rows: dict[int, jnp.ndarray] = {}
         for fp in folded_purchases:
             fires = month == fp.month
             buy = fires & active  # (rollouts,)
@@ -361,6 +415,14 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
                     cash = cash.at[fp.buyer_slot].add(jnp.where(buy, -fp.stake_contribution, 0.0))
                 if fp.seller_slot >= 0:
                     cash = cash.at[fp.seller_slot].add(jnp.where(buy, fp.stake_contribution, 0.0))
+            if fp.mortgage_slot >= 0:
+                ms = fp.mortgage_slot
+                liab_active = liab_active.at[ms].set(jnp.where(buy, True, liab_active[ms]))
+                liab_principal = liab_principal.at[ms].set(jnp.where(buy, fp.mortgage_principal, liab_principal[ms]))
+                liab_monthly = liab_monthly.at[ms].set(jnp.where(buy, fp.mortgage_monthly_payment, liab_monthly[ms]))
+                liab_interest_ytd = liab_interest_ytd.at[ms].set(jnp.where(buy, 0.0, liab_interest_ytd[ms]))
+                liab_principal_ytd = liab_principal_ytd.at[ms].set(jnp.where(buy, 0.0, liab_principal_ytd[ms]))
+                mortgage_origination_rows[ms] = buy
             purchase_active_rows.append(buy)
             transfer_active_rows.append(transfer_fires)
 
@@ -388,47 +450,44 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             disp_proceeds.append(proceeds.T)
             oversells.append(oversell.any())
 
-        # CONFIGURED-obligation accrual (the only kind `scan_supported` admits): a fixed/series amount,
-        # active where scheduled and positive. Property-tax/mortgage/estimated kinds are excluded by the gate.
-        amount = _amount_values_vec(
+        # Obligation accrual — every source kind, branch-free. Static per-(month,slot) data is sliced
+        # from the precomputed `acc` tables; the live property/liability/tax-liability state comes from
+        # the carry. Kinds with no backing entity (e.g. mortgages with no liability) mask to inactive.
+        slot_active, accrual_due = _obligation_accruals_jit(
+            acc["kind"][month],
+            acc["valid"][month],
             og["amount_kind"][month],
             og["amount_fixed"][month],
             og["amount_base"][month],
             og["amount_series"][month],
             og["amount_base_month"][month],
             og["amount_period"][month],
+            acc["prop_idx"][month],
+            acc["pt_amount"][month],
+            acc["pt_prop_month"][month],
+            acc["liab_idx"][month],
+            acc["mort_rate"][month],
+            acc["mort_prop_month"][month],
+            acc["est_quarterly"][month],
+            acc["est_prior"][month],
+            acc["trueup_sel"][month],
+            property_active,
+            liab_principal,
+            liab_monthly,
+            liab_active,
+            taxliab_active,
+            taxliab_amount,
+            active,
             external_values,
             month,
-            r,
         )
-        real_slot = og["cause"][month] >= 0
-        configured_active = (
-            real_slot[:, None]
-            & active[None, :]
-            & (og["source_kind"][month] == ObligationSource.CONFIGURED_OBLIGATION)[:, None]
-            & (amount > 0.0)
-        )
-        # Property-tax accrual: monthly ad-valorem, active once the property is owned (its purchase
-        # month has passed) and the rollout still holds it. `cause >= 0` excludes the padded sentinel
-        # property slot, which carries source_kind == PROPERTY_TAX but no real obligation.
-        pt_amount_row = pt["amount"][month]
-        pt_active = (
-            real_slot[:, None]
-            & (og["source_kind"][month] == ObligationSource.PROPERTY_TAX)[:, None]
-            & active[None, :]
-            & _gather_rows(property_active, pt["prop_idx"][month])
-            & (pt["prop_month"][month] < month)[:, None]
-            & (pt_amount_row > 0.0)[:, None]
-        )
-        slot_active = configured_active | pt_active
-        accrual_due = jnp.where(configured_active, amount, 0.0) + jnp.where(pt_active, pt_amount_row[:, None], 0.0)
 
         agent_row, from_row = og["agent"][month], og["from_slot"][month]
         group_matrix = (agent_row[:, None] == agent_row[None, :]) & (from_row[:, None] == from_row[None, :])
         funded = _obligation_group_funded_jit(group_matrix, from_row, cash, slot_active, accrual_due)
 
         property_slot = og["property_slot"][month]
-        _, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
+        paid, paid_buffer, cash, ordinary, property_tax_ytd, shortfall, failure_active, failed, failed_month = (
             _settlement_core_jit(
                 from_row,
                 og["to_slot"][month],
@@ -451,6 +510,35 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
                 month,
             )
         )
+
+        # Mortgage payments: split each paid mortgage bill into interest (rate/12 on the outstanding
+        # principal, capped at the payment) and principal (the remainder, capped at the balance), then
+        # pay down the liability and accrue the YTD interest/principal (+ the rented share for Sch E).
+        # Non-mortgage slots route to the sentinel index -1, so `_scatter_rows` ignores them.
+        is_mortgage = (og["source_kind"][month] == ObligationSource.MORTGAGE_PAYMENT) & (og["cause"][month] >= 0)
+        mort_liab_idx = jnp.where(is_mortgage, acc["liab_idx"][month], -1)
+        principal_before = _gather_rows(liab_principal, jnp.where(is_mortgage, acc["liab_idx"][month], 0))
+        interest = jnp.minimum(principal_before * acc["mort_rate"][month][:, None] / 12.0, paid_buffer)
+        principal_paid = jnp.minimum(jnp.maximum(paid_buffer - interest, 0.0), principal_before)
+        mort_paid = is_mortgage[:, None] & paid
+        interest_m = jnp.where(mort_paid, interest, 0.0)
+        principal_m = jnp.where(mort_paid, principal_paid, 0.0)
+        rented_per_slot = _gather_rows(property_rented_fraction, acc["mort_prop_idx"][month])
+        liab_principal = _scatter_rows(liab_principal, mort_liab_idx, -principal_m)
+        liab_interest_ytd = _scatter_rows(liab_interest_ytd, mort_liab_idx, interest_m)
+        liab_principal_ytd = _scatter_rows(liab_principal_ytd, mort_liab_idx, principal_m)
+        liab_rental_ytd = _scatter_rows(liab_rental_ytd, mort_liab_idx, interest_m * rented_per_slot)
+        # Mortgage-payment event slabs, scattered from obligation slots to their liability rows.
+        liab_count = liab_principal.shape[0]
+        mort_pay_active = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, mort_paid.astype(jnp.float32)) > 0.0
+        mort_pay_interest = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, interest_m)
+        mort_pay_principal = _scatter_rows(jnp.zeros((liab_count, r)), mort_liab_idx, principal_m)
+        mort_pay_total = _scatter_rows(
+            jnp.zeros((liab_count, r)), mort_liab_idx, jnp.where(mort_paid, paid_buffer, 0.0)
+        )
+        mort_orig = jnp.zeros((liab_count, r), dtype=bool)
+        for ms, buy in mortgage_origination_rows.items():
+            mort_orig = mort_orig.at[ms].set(buy)
 
         # §121 owner-occupied-month counter then §168 depreciation accrual (eager order: after
         # settlement, before the year-end tax pass that reads depreciation_ytd).
@@ -478,6 +566,9 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             property_contribution * keep,
             property_equity * keep,
         )
+        # Liability dollar fields are drained on failure; `active` and `rental_interest_ytd` are not.
+        liab_principal, liab_monthly = liab_principal * keep, liab_monthly * keep
+        liab_interest_ytd, liab_principal_ytd = liab_interest_ytd * keep, liab_principal_ytd * keep
         carry = _ScanState(
             cash=cash,
             ordinary_ytd=ordinary,
@@ -494,6 +585,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             property_cumulative_depreciation=property_cum_dep,
             property_owner_occupied_months=property_owner_occupied,
             property_depreciation_ytd=property_dep_ytd,
+            liability_active=liab_active,
+            liability_principal=liab_principal,
+            liability_monthly_payment=liab_monthly,
+            liability_interest_ytd=liab_interest_ytd,
+            liability_principal_ytd=liab_principal_ytd,
+            liability_rental_interest_ytd=liab_rental_ytd,
             failed=failed,
             failed_month=failed_month,
         )
@@ -510,6 +607,11 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             property_equity,
             property_cum_dep,
             property_owner_occupied,
+            liab_active,
+            liab_principal,
+            liab_monthly,
+            liab_interest_ytd,
+            liab_principal_ytd,
             failed,
             failed_month,
             transfer_active,
@@ -522,6 +624,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         )
         # Per-month property-event slabs (stacked over real purchases); empty when no purchases.
         purchase_ys = (jnp.stack(purchase_active_rows), jnp.stack(transfer_active_rows)) if folded_purchases else ()
+        # Mortgage event slabs (per-liability), only when the plan has liabilities (event buffers are
+        # padded to max(1, liability_count), so a 0-row emit can't be scattered into them).
+        mortgage_ys = (
+            (mort_orig, mort_pay_active, mort_pay_interest, mort_pay_principal, mort_pay_total)
+            if liab_count > 0
+            else ()
+        )
         # Per-(sale, lot, rollout) disposition slabs (stacked over real sales) + a per-month oversell
         # flag; all empty when there are no sales.
         sale_ys = (
@@ -535,9 +644,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
             if folded_sales
             else ()
         )
-        return carry, (*base_ys, *sale_ys, *purchase_ys)
+        return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys)
 
     prop0 = jnp.zeros((p.property_count, r))
+    liab0 = jnp.zeros((p.liability_count, r))
+    taxliab_active = jnp.zeros((p.tax_liability_count, r), dtype=bool)
+    taxliab_amount = jnp.zeros((p.tax_liability_count, r))
     init = _ScanState(
         cash=cash0,
         ordinary_ytd=ordinary0,
@@ -554,6 +666,12 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         property_cumulative_depreciation=prop0,
         property_owner_occupied_months=jnp.zeros((p.property_count, r), dtype=jnp.int32),
         property_depreciation_ytd=prop0,
+        liability_active=jnp.zeros((p.liability_count, r), dtype=bool),
+        liability_principal=liab0,
+        liability_monthly_payment=liab0,
+        liability_interest_ytd=liab0,
+        liability_principal_ytd=liab0,
+        liability_rental_interest_ytd=liab0,
         failed=jnp.zeros(r, dtype=bool),
         failed_month=jnp.full(r, -1, dtype=jnp.int32),
     )
@@ -571,6 +689,11 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         prop_equity_h,
         prop_cum_dep_h,
         prop_occupied_h,
+        liab_active_h,
+        liab_principal_h,
+        liab_monthly_h,
+        liab_interest_ytd_h,
+        liab_principal_ytd_h,
         failed_h,
         failed_month_h,
         t_active,
@@ -582,10 +705,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         ob_fail,
         *rest,
     ) = ys
-    # The two variable-length tail groups: sale slabs (5 leaves if any sales) then property-event
-    # slabs (2 leaves if any purchases). Slice deterministically by their compile-time presence.
+    # Three variable-length tail groups, sliced by compile-time presence: sale slabs (5 leaves if any
+    # sales), property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities).
     n_sale = 5 if folded_sales else 0
-    sale_h, purchase_h = rest[:n_sale], rest[n_sale:]
+    n_purchase = 2 if folded_purchases else 0
+    sale_h = rest[:n_sale]
+    purchase_h = rest[n_sale : n_sale + n_purchase]
+    mortgage_h = rest[n_sale + n_purchase :]
 
     # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
@@ -602,6 +728,11 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     buffers.state.property_equity_state[1:] = np.asarray(prop_equity_h)
     buffers.state.property_cumulative_depreciation_state[1:] = np.asarray(prop_cum_dep_h)
     buffers.state.property_owner_occupied_months_state[1:] = np.asarray(prop_occupied_h)
+    buffers.state.liability_active_state[1:] = np.asarray(liab_active_h)
+    buffers.state.liability_principal_state[1:] = np.asarray(liab_principal_h)
+    buffers.state.liability_monthly_payment_state[1:] = np.asarray(liab_monthly_h)
+    buffers.state.liability_interest_ytd_state[1:] = np.asarray(liab_interest_ytd_h)
+    buffers.state.liability_principal_ytd_state[1:] = np.asarray(liab_principal_ytd_h)
     buffers.state.rollout_failed_state[1:] = np.asarray(failed_h)
     buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
     buffers.transfers.active[:] = np.asarray(t_active)
@@ -632,6 +763,15 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
         for i, fp in enumerate(folded_purchases):
             buffers.properties.purchase_active[:, fp.buffer_index] = purchase_active_np[:, i]
             buffers.properties.transfer_active[:, fp.buffer_index] = transfer_active_np[:, i]
+    if mortgage_h:
+        # Per-liability mortgage event stacks `(horizon, liability_count, R)`.
+        orig_h, pay_active_h, pay_interest_h, pay_principal_h, pay_total_h = (np.asarray(a) for a in mortgage_h)
+        props_buf = buffers.properties
+        props_buf.mortgage_origination_active[:] = orig_h
+        props_buf.mortgage_payment_active[:] = pay_active_h
+        props_buf.mortgage_payment_interest[:] = pay_interest_h
+        props_buf.mortgage_payment_principal[:] = pay_principal_h
+        props_buf.mortgage_payment_total[:] = pay_total_h
 
 
 def run_jax(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
