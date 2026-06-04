@@ -126,16 +126,28 @@ earlier ones only where noted.
     API (#1882) and the executor SA can `list` pods (#1891), so the grader
     controller maintains one labeled grader per snapshot.
 
-### Stage 2 — Agent-readable logs (transcript + Loki)
+### Stage 2 — Agent-readable logs (Loki)
 
-- Promtail config: promote `adgn.agent_run_id` to a Loki stream label.
-- Add `GET /api/runs/{id}/transcript` and `GET /api/runs/{id}/logs` (the latter
-  proxies a Loki query), authorized by run lineage.
-- Add the data-plane component(s) to the Loki `NetworkPolicy` ingress allowlist.
-- Update critic_dev agent docs/tools to read both.
-- **Done when:** a critic_dev agent can fetch both the transcript and raw logs
-  of a critic it launched.
-- **Depends on:** Stage 1 (transcript capture).
+- **Transcript stays DB-direct — no endpoint.** The proxy already logs each
+  request+response to `llm_requests`, and `GET /api/runs/{id}/llm_requests`
+  (RLS-scoped) already returns it; agents read their descendants' transcripts
+  straight from the DB.
+- **Logs:** `GET /api/runs/{id}/logs` queries Loki by the run's pod label
+  (`{namespace="props",pod=~".+-<run_id[:8]>"}`) — promtail already labels `pod`,
+  so no relabel is needed. **RBAC is RLS:** the run is looked up via the caller's
+  RLS-scoped DB (the `agent_runs_select_descendants` policy), so an agent sees
+  only runs it launched and admin/evaluator see all. Container logs are no longer
+  persisted to the DB — Loki is the store.
+- Added the props backend to the Loki `NetworkPolicy` ingress allowlist.
+- **Status (2026-06-04): logs endpoint + Loki client landed.** Done when a
+  critic_dev agent fetches a launched critic's logs via the endpoint.
+- **TODO — namespace-isolate agent pods from the backend.** Agent pods (critic,
+  grader) currently share the `props` namespace with the backend + DB. Consider
+  moving them to their own namespace under a restrictive NetworkPolicy so they
+  **cannot reach Loki / DB-admin / other infra directly** and must go through the
+  backend's RBAC'd endpoints (e.g. `/api/runs/{id}/logs`). The Loki ingress policy
+  already admits only `component=backend`, not agent pods — namespace isolation
+  makes that boundary structural and shrinks the agent blast radius.
 
 ### Stage 3 — In-cluster Forgejo pulls
 

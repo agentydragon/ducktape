@@ -30,6 +30,7 @@ from props.backend.auth import (
     require_evaluator_or_admin_access,
 )
 from props.backend.deps import AdminDb
+from props.backend.loki import fetch_run_logs
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType, TargetMetric, TypeConfig
 from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
@@ -1031,6 +1032,26 @@ def get_run_llm_requests(run_id: UUID, caller_db: CallerDb) -> LLMRequestsRespon
         )
 
         return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
+
+
+class RunLogsResponse(BaseModel):
+    run_id: UUID
+    logs: str
+
+
+@router.get("/{run_id}/logs")
+async def get_run_logs(run_id: UUID, caller_db: CallerDb) -> RunLogsResponse:
+    """Container logs for an agent run, fetched from Loki.
+
+    RLS-scoped: an agent (e.g. critic_dev) sees only runs it launched (its
+    descendants); admin/evaluator see all. Container logs are not persisted to
+    the DB — only the run's status is — so this reads them back from Loki by the
+    run's pod label. (The LLM transcript is read separately from /llm_requests.)
+    """
+    with caller_db.session() as session:
+        if session.get(AgentRun, run_id) is None:
+            raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
+    return RunLogsResponse(run_id=run_id, logs=await fetch_run_logs(run_id))
 
 
 def _build_run_info(

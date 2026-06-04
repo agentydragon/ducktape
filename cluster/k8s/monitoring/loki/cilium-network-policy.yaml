@@ -46,6 +46,17 @@ spec:
             - port: "3100"
               protocol: TCP
 
+    # Props backend → Loki (GET /api/runs/{id}/logs reads agent container logs)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: backend
+            app.kubernetes.io/instance: props
+            k8s:io.kubernetes.pod.namespace: props
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
     # Alloy → Loki (OTel log forwarding)
     - fromEndpoints:
         - matchLabels:

@@ -54,11 +54,17 @@ schema = httpx.get(f"{backend_url}/openapi.json").json()
 
 ## Available Endpoints
 
-| Endpoint           | Method | Description               |
-| ------------------ | ------ | ------------------------- |
-| `/api/runs/critic` | POST   | Run critic on an example  |
-| `/v1/responses`    | POST   | LLM proxy (OpenAI format) |
-| `/v2/*`            | \*     | OCI registry proxy        |
+| Endpoint                      | Method | Description                                                        |
+| ----------------------------- | ------ | ------------------------------------------------------------------ |
+| `/api/runs/critic`            | POST   | Run critic on an example                                           |
+| `/api/runs/{id}/llm_requests` | GET    | A run's LLM transcript (request/response rows); RLS-scoped         |
+| `/api/runs/{id}/logs`         | GET    | A run's container logs (from Loki); RLS-scoped to your descendants |
+| `/v2/*`                       | \*     | OCI registry proxy                                                 |
+
+The LLM proxy (`/v1/responses`) is a **separate service** (`props-llm-proxy`),
+reached via `OPENAI_BASE_URL`, not this backend. Read a launched agent's
+**transcript** from `llm_requests` (DB, also exposed above) and its **container
+logs** via `/api/runs/{id}/logs` — agents cannot query Loki directly.
 
 ## Access Control
 

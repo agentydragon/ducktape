@@ -83,6 +83,7 @@ py_library(
         "//openai_utils:model",
         "//props/backend:auth",
         "//props/backend:deps",
+        "//props/backend:loki",
         "//props/core:agent_types",
         "//props/core:eval_api_models",
         "//props/core:oci_utils",
