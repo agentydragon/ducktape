@@ -50,7 +50,8 @@ def _is_transient(exc: BaseException) -> bool:
 def _get(url: str, ua: str) -> bytes:
     # Yahoo needs a browser UA; FRED rejects "Mozilla/*" (anti-scraping) but serves a curl-style UA.
     req = urllib.request.Request(url, headers={"User-Agent": ua})
-    return urllib.request.urlopen(req, timeout=30).read()
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return bytes(resp.read())
 
 
 def yahoo_monthly(sym: str) -> list[tuple[str, float]]:
