@@ -305,6 +305,30 @@ teacher-forced PIT →
 JSD/rank scoring → date-ranged ground truth); next is more anchors (rolling origin), the structured-Q
 baseline on the same scorecard, and an older model (Ollama) for a longer window.
 
+## Rolling-origin calibration vs horizon (glm-4.5)
+
+Free-running rollouts from multiple post-cutoff origins (`backtest_rolling.py`, 4 origins × 8 rollouts
+× 8 horizons), scoring the realized value at each horizon as its rank in that origin's ensemble.
+**Does the miscalibration compound with horizon? No — two distinct behaviors:**
+
+| h           | 1    | 2    | 3    | 4    | 5    | 6    | 7    | 8    |
+| ----------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| mean PIT    | 0.79 | 0.69 | 0.68 | 0.69 | 0.72 | 0.73 | 0.71 | 0.72 |
+| tail-escape | 60%  | 45%  | 40%  | 20%  | 39%  | 45%  | 30%  | 15%  |
+
+- **Under-prediction is persistent and flat** — mean PIT ~0.70 at _every_ horizon (origin-block 95% CI
+  stays above the 0.5 calibrated line). The conservative bias shows up at h=1 and neither compounds
+  nor washes out: reality stayed above glm-4.5's median throughout the 2024–26 climb.
+- **Thin tails are a near-term problem that self-corrects.** Tail-escape is 60% at h=1 — the one-step
+  ensemble is far too tight (all chains share the same real history) — and falls to ~15% by h=8 as the
+  free-running cone _widens_ with diverging paths. So the under-dispersion is worst near-term; the cone
+  does eventually fan out enough to cover reality.
+
+Caveats: M=8 ensemble (coarse PIT resolution), n=20/horizon, origins/series correlated → per-horizon
+numbers are noisy (the flat ~0.70 mean is the robust signal; the tail trend is suggestive). Consistent
+with the one-step verdict (conservative + under-dispersed), and it adds the horizon structure: the
+**directional bias is horizon-independent, the dispersion deficit is front-loaded**.
+
 ## Validating the LLM base measure (plan)
 
 We are scoring a **distribution** (a base measure), not a point forecast, so metrics are
