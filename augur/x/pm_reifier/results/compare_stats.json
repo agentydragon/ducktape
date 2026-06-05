@@ -1,35 +1,86 @@
 {
-  "LLM enumeration": {
-    "mean_pit": 0.6203177097903758,
-    "mean_ci": [0.5040879467319069, 0.7491651353747558],
+  "enumeration": {
+    "mean_pit": 0.6203177097903759,
+    "mean_ci": [
+      0.5040879467319069,
+      0.7491651353747558
+    ],
     "mean_excludes_half": true,
     "tail_rate": 0.31,
-    "tail_ci": [0.23, 0.42],
-    "tail_excludes_null": true,
-    "jsd": 0.051870046004174664,
-    "p1_p99_escape_rate": null,
-    "verdict": "MISCALIBRATED"
+    "tail_ci": [
+      0.23,
+      0.42
+    ],
+    "tail_excludes_null": true
   },
-  "LLM percentile": {
+  "iid reframe": {
+    "mean_pit": 0.5845833333333333,
+    "mean_ci": [
+      0.495,
+      0.6966666666666668
+    ],
+    "mean_excludes_half": false,
+    "tail_rate": 0.31,
+    "tail_ci": [
+      0.23,
+      0.38
+    ],
+    "tail_excludes_null": true
+  },
+  "joint (gridded)": {
+    "mean_pit": 0.4329166666666666,
+    "mean_ci": [
+      0.39666666666666667,
+      0.48625
+    ],
+    "mean_excludes_half": true,
+    "tail_rate": 0.04,
+    "tail_ci": [
+      0.02,
+      0.07
+    ],
+    "tail_excludes_null": true
+  },
+  "joint (sharp) \u2014 deployable": {
+    "mean_pit": 0.39875,
+    "mean_ci": [
+      0.3383333333333334,
+      0.46291666666666664
+    ],
+    "mean_excludes_half": true,
+    "tail_rate": 0.13,
+    "tail_ci": [
+      0.05,
+      0.23
+    ],
+    "tail_excludes_null": false
+  },
+  "percentile (marginal diag)": {
     "mean_pit": 0.47529517963171813,
-    "mean_ci": [0.424426203646623, 0.5583824155060371],
+    "mean_ci": [
+      0.42620102012232985,
+      0.5574227677801512
+    ],
     "mean_excludes_half": false,
     "tail_rate": 0.1,
-    "tail_ci": [0.07, 0.14],
-    "tail_excludes_null": true,
-    "jsd": 0.05299458276980622,
-    "p1_p99_escape_rate": 0.02,
-    "verdict": "MISCALIBRATED"
+    "tail_ci": [
+      0.07,
+      0.14
+    ],
+    "tail_excludes_null": true
   },
-  "state-space": {
+  "state-space baseline": {
     "mean_pit": 0.4013616480018587,
-    "mean_ci": [0.3228929558265169, 0.4826453750236224],
+    "mean_ci": [
+      0.3238351687875838,
+      0.48514011038702265
+    ],
     "mean_excludes_half": true,
     "tail_rate": 0.23,
-    "tail_ci": [0.12, 0.36],
-    "tail_excludes_null": false,
-    "jsd": 0.05596954501607279,
-    "p1_p99_escape_rate": null,
-    "verdict": "MISCALIBRATED"
+    "tail_ci": [
+      0.12,
+      0.36
+    ],
+    "tail_excludes_null": false
   }
 }
