@@ -33,6 +33,15 @@ upstream as of the last refresh. Series mapping:
 | `fred_fhfa_sf_oakland_berkeley.csv` | `ATNHPIUS41884Q` | FHFA SF-Oakland-Berkeley MSA all-transactions HPI (quarterly)                                      |
 | `fred_sf_rent_cpi.csv`              | `CUURA422SEHA`   | SF-area rent CPI — only the FRED-only degraded evidence path; production rent is Zillow ZORI below |
 
+**Known gap — October 2025 CPI.** BLS published **no October-2025 CPI**: the
+government shutdown disrupted collection that month, so BLS skipped the standalone
+October release. Every CPI product is affected — `CPIAUCSL` and the `CUUR*` rent
+series (`CUURA422SEHA`, `CUUR0000SEHA`) have **no `2025-10` row at all** (the CSV
+jumps `2025-09 → 2025-11`); non-CPI series (Yahoo, Case-Shiller `SFXRSA`) are
+unaffected. This is source-side and permanent — re-downloading does not recover
+it. Consumers that align series month-by-month see a one-month hole here; do not
+mistake it for a fetch bug or forward-fill an invented CPI value.
+
 ### `yahoo_spy_chart_adjusted.json`, `yahoo_btc_chart_adjusted.json`, `yahoo_eth_chart_adjusted.json`
 
 Three Yahoo Finance v8 chart-API snapshots, all trimmed to the same minimal

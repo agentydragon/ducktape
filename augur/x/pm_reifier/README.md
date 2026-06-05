@@ -110,6 +110,16 @@ Anchor `glm-4.5` at its **leakage-probed June-2024 cutoff** (it doesn't know the
 or end-2025 BTC), so 2024-06 → now is genuinely out-of-sample. Score the realized next value as a PIT
 within the kernel's options; ground truth from the date-ranged fetcher. ~0 pp weekly quota.
 
+> **Window note — the Oct-2025 CPI gap (20 months, not 21).** The backtest scores the strict
+> intersection of months present in all five series. BLS published **no October-2025 CPI** (the
+> government shutdown disrupted collection), so both FRED CPI series — `inflation` (CPIAUCSL) and
+> `rent:sf_ca` (CUUR0000SEHA) — have **no `2025-10` row at all** (confirmed source-side on
+> re-download; the Yahoo and Case-Shiller series do have it). The intersection therefore drops
+> `2025-10` for every series, leaving 20 scored months (`2024-07`…`2026-03`). Side effect: the
+> `2025-09 → 2025-11` move is treated as one step, so that step's return is mildly inflated for the
+> non-CPI series. Left as-is (one month barely moves n_eff≈5–7); not forward-filled (would invent a
+> CPI value BLS never published).
+
 **One-step (`backtest.py`, teacher-forced, 100 PITs).** Two failures, both as predicted:
 
 | metric (pooled)              |         value | read                                                |
