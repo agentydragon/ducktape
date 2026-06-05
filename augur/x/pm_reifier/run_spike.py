@@ -18,6 +18,7 @@ Run: python3 augur/x/pm_reifier/run_spike.py
 
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import os
@@ -36,15 +37,15 @@ GENERAL = "https://api.z.ai/api/paas/v4/chat/completions"
 CODING = "https://api.z.ai/api/coding/paas/v4/chat/completions"
 QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
 
-# Cheapness-ordered model candidates (per z.ai pricing, $/1M in/out): the free Flash tiers first,
-# then the cheap FlashX, then known-good coding-plan models. The coding-plan key may 429 on the
-# general endpoint ("insufficient balance"); pick_model() probes and uses the first that answers.
+# Model candidates in PREFERENCE order. The paid coding-plan tier (coding endpoint) has dedicated,
+# much higher rate limits than the throttled free general tier, and draws the weekly token quota
+# (tracked in results/quota_log.jsonl). The free *-flash general models are kept only as a fallback
+# for when we want $0 and can tolerate 429s. pick_model() probes and uses the first that answers.
 CANDIDATES = [
-    (GENERAL, "glm-4.7-flash"),  # free
-    (GENERAL, "glm-4.5-flash"),  # free
-    (CODING, "glm-4.7-flashx"),  # $0.07 / $0.40
-    (CODING, "glm-4.5-air"),  # $0.20 / $1.10
-    (CODING, "glm-4.6"),  # $0.60 / $2.20 (last-resort known-good)
+    (CODING, "glm-4.7"),  # paid coding plan — fast, dedicated rate limits (preferred)
+    (CODING, "glm-4.6"),  # paid coding plan — known-good fallback
+    (GENERAL, "glm-4.7-flash"),  # free, throttled — fallback only
+    (GENERAL, "glm-4.5-flash"),  # free, throttled — fallback only
 ]
 
 HORIZON_MONTHS = 57  # dense monthly: index 0 = 2026-06 .. index 57 = 2031-03 (just past the furthest market)
@@ -161,6 +162,30 @@ def quota() -> dict[str, float]:
         if lim.get("type") == "TOKENS_LIMIT" and lim.get("unit") == 6:
             out["weekly_7d_pct"] = lim.get("percentage")
     return out
+
+
+def append_quota_log(
+    *, script: str, model: str, endpoint: str, q0: dict, q1: dict, total_tokens: int, prompt_tokens: int | None = None
+) -> None:
+    """Append one run's token spend + weekly/short quota before-after to results/quota_log.jsonl.
+
+    The z.ai token quota API exposes only an integer percentage (no raw token counts), so burn rate is
+    tracked from both sides: the coarse server-side weekly %, and our own precise token totals here.
+    """
+    rec = {
+        "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        "script": script,
+        "model": model,
+        "endpoint": "general" if endpoint == GENERAL else "coding",
+        "total_tokens": total_tokens,
+        "prompt_tokens": prompt_tokens,
+        "weekly_pct_before": q0.get("weekly_7d_pct"),
+        "weekly_pct_after": q1.get("weekly_7d_pct"),
+        "short5h_pct_before": q0.get("short_5h_pct"),
+        "short5h_pct_after": q1.get("short_5h_pct"),
+    }
+    with (RESULTS / "quota_log.jsonl").open("a") as f:
+        f.write(json.dumps(rec) + "\n")
 
 
 def market_prompt(conditioned: bool, nonce: int) -> list[dict]:
@@ -365,6 +390,7 @@ def main() -> None:
         "reports": reports,
     }
     (RESULTS / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    append_quota_log(script="run_spike", model=model, endpoint=endpoint, q0=q0, q1=q1, total_tokens=total_tokens)
     print(
         f"\n=== model {model} | {total_tokens} tokens | weekly quota {q0.get('weekly_7d_pct')}% -> "
         f"{q1.get('weekly_7d_pct')}% (delta {summary['weekly_pct_delta']}pp) ==="

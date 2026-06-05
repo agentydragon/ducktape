@@ -30,6 +30,7 @@ from run_spike import (
     MARKETS,
     RESULTS,
     _post,
+    append_quota_log,
     indicator,
     max_monthly_log_jump,
     quota,
@@ -301,6 +302,15 @@ def main() -> None:
         "report": report,
     }
     (RESULTS / "windowed_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    append_quota_log(
+        script="run_windowed",
+        model=MODEL,
+        endpoint=ENDPOINT,
+        q0=q0,
+        q1=q1,
+        total_tokens=usage["prompt"] + usage["completion"],
+        prompt_tokens=usage["prompt"],
+    )
     print(
         f"\n=== model {MODEL} | {usage['prompt'] + usage['completion']} tokens "
         f"({usage['prompt']} prompt) | weekly {q0.get('weekly_7d_pct')}% -> {q1.get('weekly_7d_pct')}% "
