@@ -42,6 +42,12 @@ def _get(url: str, ua: str, tries: int = 5) -> bytes:
                 delay *= 2
                 continue
             raise
+        except (TimeoutError, urllib.error.URLError):
+            if i < tries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
     raise RuntimeError("unreachable")
 
 
