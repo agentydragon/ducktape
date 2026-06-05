@@ -1,14 +1,19 @@
-"""Leakage-free percentile-kernel calibration on a local llama3.1:8b via ollama (augur/x, throwaway).
+"""Leakage-free percentile-kernel calibration on a local known-cutoff model via ollama (augur/x).
 
-glm-4.5's June-2024 cutoff is fuzzy/leaky. llama3.1:8b has a documented training cutoff of December
-2023 and open weights, so 2024-01 onward is a HARD leakage-free out-of-sample window. We probe the
-cleanest signal — the model's stated quantiles (kernel_percentile) — since the heavy sharp-joint schema
-is impractical at CPU speed (~4.7 tok/s). Same teacher-forced one-step PIT scoring as backtest_percentile,
-but anchored at 2023-12 and routed to ollama's native /api/chat with format=json (the OpenAI-compat
-json_object path 500s on this model).
+glm-4.5's June-2024 cutoff is fuzzy/leaky, so "anchor at cutoff, predict to now" can be recall. Open
+models with documented training cutoffs give a HARD leakage-free window: anything after the cutoff was
+unseeable. We probe the cleanest signal — the model's stated quantiles (kernel_percentile) — since the
+heavy sharp-joint schema is impractical at CPU speed (~5 tok/s). Routed to ollama's native /api/chat
+with a JSON SCHEMA as `format` (grammar-constrained decoding) so even weak models emit the exact
+{"quantiles": {series: {p: number}}} structure; the OpenAI-compat json_object path 500s on the big schema.
 
-Run (ollama serving llama3.1:8b on :11434):
-  PYTHONPATH=.:augur/x/pm_reifier python3 augur/x/pm_reifier/backtest_llama.py
+Parameterized via env (LLAMA_MODEL / LLAMA_T0 / LLAMA_CUTOFF / LLAMA_N_HIST / LLAMA_MAX_STEPS):
+  llama3.1:8b — documented cutoff Dec 2023 (anchor 2023-12)
+  llama2:7b   — documented cutoff Sep 2022 (anchor 2022-09 → many more leakage-free dates)
+
+Run (ollama serving the model on :11434):
+  PYTHONPATH=.:augur/x/pm_reifier LLAMA_MODEL=llama2:7b LLAMA_T0=2022-09 \
+    python3 augur/x/pm_reifier/backtest_llama.py
 """
 
 from __future__ import annotations
