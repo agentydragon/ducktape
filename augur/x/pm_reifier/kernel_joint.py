@@ -28,21 +28,22 @@ def _sample_instruction(n: int, *, sharp: bool) -> str:
     if not sharp:
         return (
             f'2. "samples": {n} INDEPENDENT joint samples drawn from that SAME distribution. Each sample is one '
-            "cross-section over all series, and the series move together coherently within a sample (a risk-off "
-            "month hits equities and crypto together; inflation drags rents and home prices). Your samples MUST "
-            "be consistent with your percentiles: across the samples, each series' spread should match the "
-            "p1..p99 you stated — typical values common, tail values rare but present.\n"
+            "cross-section over all series; within a sample the series move together coherently, capturing the "
+            "realistic relationships between them. Your samples MUST be consistent with your percentiles: across "
+            "the samples, each series' spread should match the p1..p99 you stated — typical values common, tail "
+            "values rare but present.\n"
         )
     # Sharp: the model defaults to an evenly-spaced quantile GRID; force a density-weighted i.i.d. draw.
     return (
         f'2. "samples": {n} samples that are an HONEST RANDOM (i.i.d.) draw from the distribution you just '
         f"described — as if you actually rolled the dice {n} times. This is NOT a grid and NOT evenly spaced "
         "from low to high: in a real random sample most draws land near the middle and only a few reach the "
-        f"tails. Concretely, across your {n} samples about HALF should fall between your p25 and p75, only "
-        "about 1 in 10 beyond p90 or below p10, and only about 1 in 50 beyond p99 or below p1. Near-duplicate "
+        f"tails. Concretely, for EACH series independently, its values across the {n} samples should match the "
+        "percentiles you stated for THAT series: about HALF between that series' p25 and p75, about 1 in 10 "
+        "beyond its p90 or below its p10, and about 1 in 50 beyond its p99 or below its p1. Near-duplicate "
         "or clustered values are expected and correct; do NOT sort them; do NOT lay one out at each percentile. "
-        "Each sample is one joint cross-section — all series move together coherently within a sample (a "
-        "risk-off month hits equities and crypto together; inflation drags rents and home prices).\n"
+        "Each sample is one joint cross-section — within a sample the series move together coherently, capturing "
+        "the realistic relationships between them.\n"
     )
 
 
