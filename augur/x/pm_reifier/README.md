@@ -313,6 +313,52 @@ takes date ranges, so for any past anchor we fetch the realized `[cutoff → tod
 against it. Candidates by documented cutoff (older = longer backtest): Llama 2 (~Sep 2022), Mistral
 7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
 
+### Calibration backtest: teacher-forced rank histogram + rolling origin
+
+The concrete procedure once we have a known-dated model:
+
+1. **Anchor** at `t0` = the model's training cutoff (leakage-free by construction). Fetch the real
+   series for `[t0 − context, today]` (date-ranged FRED/Yahoo), rebase the index series to 100 at
+   `t0`; everything after `t0` is hidden ground truth.
+2. **Teacher-forced one-step walk (the workhorse).** For each month `t` from `t0` to today, feed the
+   model the **real** history up to `t` and read the N-weighted next-step joint distribution — don't
+   draw. Record where the realized `x_{t+1}` falls among the N sorted options per series → a
+   **Talagrand rank** in `0..N` (randomized-PIT to resolve the discrete jumps). Pool ranks over all
+   `t` × series.
+3. **Read the rank histogram — this _is_ the calibration.** Flat/uniform = calibrated; **U-shaped =
+   overconfident / thin-tailed** (reality escapes the option spread too often — the
+   black-swan-undercoverage failure, now quantified); dome = underconfident (too wide); sloped =
+   biased level.
+
+Two modes: **(A) teacher-forced one-step** (above) is high-power — `H × n_series` resolved
+predictions, tests the kernel `p(next | true history)` directly. **(B) free-running rollout** (feed
+the model its _own_ sampled history `t0 → today`) tests uncertainty compounding + long-horizon realism
+via the realized path's PIT at each horizon and its stay-inside-the-central-80%-band fraction — but
+it's one realized path, so a coverage check, not a grade.
+
+**Calibration vs skill, kept separate.** The rank histogram answers "are the stated uncertainties
+honest" with _no baseline_ and _independent of how (un)predictable the era was_ — so it dissolves the
+"error is muddied by period difficulty" worry. For skill, report **CRPS relative to a baseline**
+(random-walk + historical-vol band, or the structured state-space `Q`) on the same anchors; the
+relative score cancels intrinsic difficulty, leaving excess skill. Two numbers per series: honest?
+(histogram) and sharper-than-dumb? (relative CRPS).
+
+**Rolling origin — the old-dated-model unlock.** Every anchor _after_ the cutoff `D` is leakage-free,
+so slide `t0` across the whole post-`D` era and run the walk from each → many clean anchors × steps ×
+series, all uncontaminated. (Anchors before `D` leak — exclude them.)
+
+**Tails / events.** The histogram tails directly answer "do extremes land in extreme ranks as often
+as they should"; add the blunt check "did _any_ rollout ever reach the realized worst month of the
+period" (0/M = a concrete coverage failure). Discrete events (tenders/IPO) → reliability diagram on
+event probabilities / hazard timing, low-power until many accrue.
+
+**Caveats.** Run the leakage probe first (dated questions about post-`t0` events). Adjacent months'
+ranks autocorrelate (regimes persist) so the effective sample size is `< H` — block-bootstrap the
+uniformity test rather than assuming `H` independent draws.
+
+New code: a teacher-forced walk driver + rank/CRPS scorer + a random-walk baseline. Ground truth
+(date-ranged fetcher) and the per-step kernel already exist.
+
 **Infra (2026-06).** Cluster GPU Ollama (wyrm2, 2×RTX 5090, `ollama.allegedly.works`) is the natural
 host but is **currently down** — bring it up if this becomes the path. Alternatively any small model
 runnable locally that emits reliable structured JSON works. New harness pieces needed: an old-model
