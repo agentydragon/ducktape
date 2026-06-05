@@ -206,7 +206,7 @@ calibration numbers as leakage-suspect**; a rigorous leakage-free verdict needs 
 known-cutoff model (Llama-3.1-70B / a frontier open model) on a GPU. **Infra note:** CPU inference is
 ~5 tok/s and ollama's OpenAI-compat `json_object` 500s on the heavy schema, so on a CPU box only the
 light percentile probe is feasible — the sharp-joint kernel and forward reify need a GPU.
-(`backtest_llama.py`; `results/backtest_llama.json`.)
+(`backtest_llama.py`; `results/backtest_llama3-1-8b.json`.)
 
 ## Calibration backtest — the rigorous validation
 

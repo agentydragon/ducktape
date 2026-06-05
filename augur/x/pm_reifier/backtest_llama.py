@@ -24,11 +24,16 @@ import kernel_percentile
 from backtest import build_series, jsd_to_uniform, m_index
 from kernel import SERIES
 
-MODEL = "llama3.1:8b"  # documented training cutoff Dec 2023
-T0 = "2023-12"  # anchor at the cutoff; everything after is leakage-free
-N_HIST = 12  # shorter history than the z.ai runs — CPU prompt-processing is slow
-MAX_STEPS = 18  # cap the window (CPU: ~1-2 min/call, sequential — ollama NUM_PARALLEL=1)
+# Parameterized via env so any local known-cutoff model can be probed:
+#   llama3.1:8b — documented cutoff Dec 2023 (anchor 2023-12)
+#   llama2:7b   — documented cutoff Sep 2022 (anchor 2022-09 → many more leakage-free dates)
+MODEL = os.environ.get("LLAMA_MODEL", "llama3.1:8b")
+T0 = os.environ.get("LLAMA_T0", "2023-12")  # anchor at the cutoff; everything after is leakage-free
+CUTOFF = os.environ.get("LLAMA_CUTOFF", "Dec 2023")
+N_HIST = int(os.environ.get("LLAMA_N_HIST", "12"))  # short history — CPU prompt-processing is slow
+MAX_STEPS = int(os.environ.get("LLAMA_MAX_STEPS", "18"))  # cap window (CPU ~5 tok/s, ollama NUM_PARALLEL=1)
 OLLAMA = "http://127.0.0.1:11434/api/chat"
+SLUG = MODEL.replace(":", "-").replace(".", "-")
 TRANSCRIPTS = pathlib.Path(__file__).parent / "transcripts"
 
 
@@ -95,6 +100,7 @@ def main() -> None:
         "model": MODEL,
         "kernel": "percentile",
         "anchor": T0,
+        "cutoff": CUTOFF,
         "leakage_free": True,
         "steps": len(steps),
         "n_pits": len(pooled),
@@ -105,8 +111,10 @@ def main() -> None:
         "n_by_series": {s: len(ps) for s, ps in by_series.items()},
         "per_step": steps,
     }
-    (pathlib.Path(__file__).parent / "results" / "backtest_llama.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(f"\n=== {MODEL} (leakage-free, anchor {T0}): {len(steps)} steps, {len(pooled)} PITs ===")
+    (pathlib.Path(__file__).parent / "results" / f"backtest_{SLUG}.json").write_text(
+        json.dumps(summary, indent=2) + "\n"
+    )
+    print(f"\n=== {MODEL} (leakage-free, cutoff {CUTOFF}, anchor {T0}): {len(steps)} steps, {len(pooled)} PITs ===")
     print(
         f"  mean PIT {summary['mean_pit']:.3f}  tail-escape {tail:.0%}  p1/p99 escape "
         f"{summary['p1_p99_escape_rate']:.0%}  JSD {summary['jsd_pooled']:.3f}"
