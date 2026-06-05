@@ -219,3 +219,49 @@ Then **compact handoff**: the input tokens (now ~150k, ~10k/world) are pure stat
 window re-reads the growing thread. A fresh prompt per window carrying only the previous window's
 ending levels + a one-line regime note (not the whole thread) should cut input toward ~1–2k/world
 while keeping the long arc via the regime note, plus prompt-caching the shared prefix.
+
+## Validating the LLM base measure (plan)
+
+We are scoring a **distribution** (a base measure), not a point forecast, so metrics are
+distributional and every comparison is **relative** — LLM vs the structured state-space `Q` vs the
+crowd — on the same anchor + markets: Brier / log-loss + reliability diagram for binary markets; CRPS
++ PIT/rank histograms for continuous series; explicit **tail coverage** (we already see upside
+under-coverage, so extremes will realize _more_ often than the model implies).
+
+**The leakage problem (why a naive cutoff backtest fails).** An LLM's knowledge cutoff is fuzzy and
+leaky — models routinely know post-cutoff events, so "anchor at its cutoff, predict to today" can be
+_recall, not forecast_, and looks artificially good. You cannot build a cleanly held-out future for a
+model whose training overlaps the test window.
+
+Three tiers:
+
+1. **Now, leakage-free, relative.** Raw-marginal divergence from _current_ crowd prices + ESS, LLM
+   vs structured-`Q`. No outcomes, no leakage — measures whether the base measure covers the regions
+   the crowd believes in (the raw/reweighted/ESS tables, with a structured-`Q` baseline column).
+2. **Cutoff backtest — smoke test only.** (a) leakage probe: dated questions about post-cutoff
+   events; if known, discount. (b) plot **relative skill** (vs random-walk / structured baseline, so
+   intrinsic predictability cancels) as a function of anchor date; leakage shows up as skill
+   approaching the _recall ceiling_ for windows inside training data, and the decay point estimates
+   the cutoff. One realization per anchor → coarse cutoff detector, not a quality grade.
+3. **Prospective scorecard — the real validation.** Log today's model distribution over dated,
+   resolvable markets/series; score with CRPS / log-loss + calibration _as they resolve_. Only
+   leakage-free distributional test; same scorecard for structured model + reified hybrid. Slow but
+   true.
+
+**Leakage-free backtest testbed: an old, known-dated open model.** A model whose weights came online
+on date D cannot have seen anything after D — a **known hard cutoff**, no leakage guessing. Older =
+longer resolved-future window = enough resolved instances for real calibration/CRPS/PIT (not the
+single realization the GLM-cutoff backtest is stuck with). Use it to validate the harness + scoring
+and characterize the calibration shape (esp. tail under-coverage); the production quality number for
+GLM still comes from tier 3. Tradeoff: old/small models are weaker and worse at structured JSON —
+fine for _methodology_ validation. The requirement is a **known training date + reliable structured
+output**, not capability. **Ground truth is already in hand**: `fetch_real_history.py` (FRED/Yahoo)
+takes date ranges, so for any past anchor we fetch the realized `[cutoff → today]` series and score
+against it. Candidates by documented cutoff (older = longer backtest): Llama 2 (~Sep 2022), Mistral
+7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
+
+**Infra (2026-06).** Cluster GPU Ollama (wyrm2, 2×RTX 5090, `ollama.allegedly.works`) is the natural
+host but is **currently down** — bring it up if this becomes the path. Alternatively any small model
+runnable locally that emits reliable structured JSON works. New harness pieces needed: an old-model
+endpoint, anchoring the history fetch at a past date, and the scoring (CRPS/PIT/coverage); the
+rollout harness itself is done.
