@@ -135,9 +135,12 @@ def main() -> None:
     )
     print(f"\n=== {MODEL} (leakage-free, cutoff {CUTOFF}, anchor {T0}): {len(steps)} steps, {len(pooled)} PITs ===")
     if pooled:
+        jsd = summary["jsd_pooled"]
         print(
             f"  mean PIT {summary['mean_pit']:.3f}  tail-escape {tail:.0%}  p1/p99 escape "
-            f"{summary['p1_p99_escape_rate']:.0%}  JSD {summary['jsd_pooled']:.3f}"
+            f"{summary['p1_p99_escape_rate']:.0%}  JSD {jsd:.3f}"
+            if jsd is not None
+            else f"  mean PIT {summary['mean_pit']:.3f}  tail-escape {tail:.0%}  (too few PITs for JSD)"
         )
     else:
         print("  no PITs parsed")
