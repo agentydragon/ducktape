@@ -23,6 +23,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "model_metadata_api_shape_check", "model_metadata", "api_shape IN ('responses', 'chat_completions')"
     )
+    op.execute("GRANT SELECT ON TABLE model_metadata TO agent_base")
 
     op.add_column("llm_requests", sa.Column("api_shape", sa.String(), nullable=False, server_default="responses"))
     op.create_check_constraint(
@@ -79,5 +80,6 @@ def downgrade() -> None:
     """)
     op.drop_constraint("llm_requests_api_shape_check", "llm_requests", type_="check")
     op.drop_column("llm_requests", "api_shape")
+    op.execute("REVOKE SELECT ON TABLE model_metadata FROM agent_base")
     op.drop_constraint("model_metadata_api_shape_check", "model_metadata", type_="check")
     op.drop_column("model_metadata", "api_shape")
