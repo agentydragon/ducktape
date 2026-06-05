@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import time
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
 from run_spike import (
@@ -40,6 +41,7 @@ HORIZON = 60  # months 1..60 produced across ceil(HORIZON/W) windows; index 0 is
 N_CONV = 16  # independent conversations
 BATCH_SIZE = 1  # worlds per conversation (1 = pure independent draw; >1 = diverse-batch coverage knob)
 CONCURRENCY = 2  # free-tier rate limits are tight; keep low and back off on 429
+TEMPERATURE = 1.0  # 1.0 is accepted across GLM models; some free models 400 on temperature > 1.0
 OVAL = "openai_valuation_usd_trillions"  # PE issuer path key (in the window payload, not LEVEL_SERIES)
 
 ANCHOR0 = {"inflation": 100.0, "sp500": 5300.0, "crypto:BTC": 95000.0, f"home_value:{LOC}": 100.0, f"rent:{LOC}": 100.0}
@@ -110,6 +112,7 @@ def pick_model() -> tuple[str, str]:
     for endpoint, model in CANDIDATES:
         body = {
             "model": model,
+            "temperature": TEMPERATURE,
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": 'reply {"ok": true}'}],
@@ -132,18 +135,22 @@ def pick_model() -> tuple[str, str]:
 
 
 def _call(body: dict, tag: str, max_tries: int = 6) -> dict:
-    """_post with exponential backoff on the free tier's 429 rate limit."""
+    """_post with exponential backoff on transient failures: the free tier's 429 rate limit and
+    socket read timeouts / connection errors (common when the free tier is overloaded)."""
     delay = 2.0
-    for i in range(max_tries):
+    last: Exception = RuntimeError("unreachable")
+    for _ in range(max_tries):
         try:
             return _post(ENDPOINT, body, tag)
         except RuntimeError as e:
-            if "HTTP 429" in str(e) and i < max_tries - 1:
-                time.sleep(delay)
-                delay = min(delay * 2, 30)
-                continue
-            raise
-    raise RuntimeError("unreachable")
+            if "HTTP 429" not in str(e):
+                raise
+            last = e
+        except (TimeoutError, urllib.error.URLError) as e:
+            last = e
+        time.sleep(delay)
+        delay = min(delay * 2, 30)
+    raise last
 
 
 def _step(messages: list[dict], user: str, k: int, tag: str, usage: dict) -> dict | None:
@@ -152,7 +159,7 @@ def _step(messages: list[dict], user: str, k: int, tag: str, usage: dict) -> dic
     for attempt in range(2):
         body = {
             "model": MODEL,
-            "temperature": 1.1,
+            "temperature": TEMPERATURE,
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"},
             "messages": messages,
@@ -199,16 +206,20 @@ def rollout_conversation(ci: int) -> dict:
         last = {**ANCHOR0, OVAL: ANCHOR0_OVAL}
         windows: list[dict] = []
         ok = True
-        for t in range(math.ceil(HORIZON / W)):
-            start = t * W
-            k = min(W, HORIZON - start)
-            user = _user_turn(start, k, last, fresh=(t == 0), distinct=(wi > 0))
-            win = _step(messages, user, k, f"conv{ci:02d}_w{wi}_win{t}", usage)
-            if win is None:
-                ok = False
-                break
-            windows.append(win)
-            last = {s: win["months"][s][-1] for s in WINDOW_SERIES}
+        try:
+            for t in range(math.ceil(HORIZON / W)):
+                start = t * W
+                k = min(W, HORIZON - start)
+                user = _user_turn(start, k, last, fresh=(t == 0), distinct=(wi > 0))
+                win = _step(messages, user, k, f"conv{ci:02d}_w{wi}_win{t}", usage)
+                if win is None:  # malformed window past retry — drop this world
+                    ok = False
+                    break
+                windows.append(win)
+                last = {s: win["months"][s][-1] for s in WINDOW_SERIES}
+        except (RuntimeError, OSError) as e:  # API/network error past backoff — isolate, don't sink the run
+            print(f"  conv{ci:02d} world{wi} failed: {str(e)[:100]}")
+            ok = False
         worlds.append(_assemble(windows) if ok else None)
     return {"worlds": worlds, **usage}
 
