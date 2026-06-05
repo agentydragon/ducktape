@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import hashlib
 from collections import OrderedDict
-from collections.abc import Callable
 from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
 from typing import Any, NamedTuple
@@ -48,6 +47,7 @@ from typing import Any, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax import stages
 
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
@@ -320,11 +320,11 @@ def _plan_fingerprint(plan: CompiledSimulation) -> bytes:
 # Compiled scan programs, keyed by plan fingerprint (LRU-bounded). Each entry is the jitted device
 # program plus the structural `_ScanMeta` for post-scan scatter. Bounded so a long-lived process that
 # simulates many distinct structures doesn't retain every executable.
-_PROGRAM_CACHE: OrderedDict[bytes, tuple[Callable, _ScanMeta]] = OrderedDict()
+_PROGRAM_CACHE: OrderedDict[bytes, tuple[stages.Wrapped, _ScanMeta]] = OrderedDict()
 _PROGRAM_CACHE_MAX = 32
 
 
-def _get_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
+def _get_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
     key = _plan_fingerprint(plan)
     cached = _PROGRAM_CACHE.get(key)
     if cached is not None:
@@ -378,10 +378,13 @@ def _program_inputs(plan: CompiledSimulation) -> tuple:
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
     program, _ = _get_program(plan)
-    return program.lower(*_program_inputs(plan)).compile().as_text()
+    text = program.lower(*_program_inputs(plan)).compile().as_text()
+    if text is None:
+        raise RuntimeError("compiled program exposes no HLO text")
+    return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
+def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
     """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
     jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
     `_ScanMeta`. Called once per fingerprint; the result is cached by `_get_program`.
@@ -1045,8 +1048,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[Callable, _ScanMeta]:
                 jnp.where(fires, tcfg.property_equity_ledger[pur_buf][:, None], property_equity[pur_buf])
             )
             stake_flow = jnp.where(fires & stake_pos, pur_stake[:, None], 0.0)  # (P, R)
-            cash = _scatter_rows(cash, pur_buyer, -stake_flow)
-            cash = _scatter_rows(cash, pur_seller, stake_flow)
+            cash = _scatter_rows(cash, jnp.asarray(pur_buyer), -stake_flow)
+            cash = _scatter_rows(cash, jnp.asarray(pur_seller), stake_flow)
             # Mortgage origination: financed subset only (distinct liability slots -> plain scatter-set).
             mfires = fires[pur_mort_rows]  # (M, R)
             liab_active = liab_active.at[pur_mort_idx].set(jnp.where(mfires, True, liab_active[pur_mort_idx]))
