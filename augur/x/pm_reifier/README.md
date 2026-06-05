@@ -22,18 +22,23 @@ are evaluated at specific month indices on the paths.
 
 ## Components
 
-| file                     | what                                                                         |
-| ------------------------ | ---------------------------------------------------------------------------- |
-| `run_spike.py`           | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
-| `run_windowed.py`        | conversational rollout — advance 12 months/turn, real history, OpenAI events |
-| `kernel.py`              | per-step transition kernel, ENUMERATION proposal: N weighted joint options   |
-| `kernel_percentile.py`   | per-step kernel, PERCENTILE proposal: elicited quantile function (p1..p99)   |
-| `backtest.py`            | teacher-forced one-step calibration backtest (PIT scoring)                   |
-| `backtest_percentile.py` | same backtest for the percentile kernel (PIT by inverse quantile function)   |
-| `backtest_rolling.py`    | rolling-origin, multi-horizon free-running calibration                       |
-| `backtest_statespace.py` | structured state-space baseline on the same window (analytic PIT, no API)    |
-| `openai_history.json`    | OpenAI's **public** funding-round/tender history (private marks excluded)    |
-| `plot_*.py`              | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
+| file                                    | what                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `run_spike.py`                          | one-shot: ask for N dense monthly scenarios in one call, reweight to markets        |
+| `run_windowed.py`                       | conversational rollout — advance 12 months/turn, real history, OpenAI events        |
+| `run_reify_joint.py`                    | **forward reify** via the sharp joint kernel: roll a cloud, reweight, report ESS    |
+| `kernel.py`                             | per-step kernel, ENUMERATION proposal: N weighted joint options (`pit`/`draw`)      |
+| `kernel_percentile.py`                  | per-step kernel, PERCENTILE proposal: elicited quantile function (p1..p99)          |
+| `kernel_iid.py`                         | enumeration reframed as an explicit i.i.d. sample (±thinking) — finding 6           |
+| `kernel_joint.py`                       | percentiles + N joint samples in one emission; `sharp` = anti-grid (the deployable) |
+| `backtest.py`                           | teacher-forced one-step calibration backtest (PIT scoring) + shared helpers         |
+| `backtest_percentile.py`                | same backtest for the percentile kernel (PIT by inverse quantile function)          |
+| `backtest_iid.py` / `backtest_joint.py` | backtests for the iid / joint(+sharp) kernels                                       |
+| `backtest_rolling.py`                   | rolling-origin, multi-horizon free-running calibration                              |
+| `backtest_statespace.py`                | structured state-space baseline on the same window (analytic PIT, no API)           |
+| `backtest_llama.py`                     | leakage-free percentile probe on a local known-cutoff model via ollama — finding 8  |
+| `openai_history.json`                   | OpenAI's **public** funding-round/tender history (private marks excluded)           |
+| `plot_*.py`                             | rollout fan plot + small-multiples calibration scorecard → `results/*.png`          |
 
 Macro history is fetched by **`//augur/data:fetch_real_history`** (Yahoo for sp500/BTC, FRED for
 CPI/home/rent; date-ranged) — promoted out of `x/` into the curated `augur/data` directory.
@@ -121,10 +126,7 @@ valuation markets reweight cleanly.
   > So `kernel_percentile` is a **diagnostic** — it isolates that the enumeration kernel's failures are a
   > marginal-calibration problem, and proves the model _can_ state honest marginal tails when asked
   > directly. It is not a deployable kernel. The deployable kernel must emit a **joint** in a single
-  > unified process (see the enumeration-reframing work below).
-  > Caveat: a quantile is per-series scalar (awkward for the joint+events step); the N-sample handles the
-  > joint natively. Hybrid for the forward path: percentile marginals for the joint + the N-sample for the
-  > cross-series coupling and discrete events.
+  > unified process — which the sharp joint kernel (finding 6) turns out to do, no copula/AR hybrid needed.
 
 ### 6. Freehand sampling grids the quantile function — but that's a prompt artifact, fixable
 
@@ -139,7 +141,16 @@ scoring the realized value's PIT against the **sample cloud** (`pit_samp`):
 | joint, commit-then-sample (`kernel_joint.py`) |          0.43 |          4% | grid over the _correct_ range → over-dispersed      |
 | **joint, sharp anti-grid prompt**             |      **0.40** |     **13%** | **density-weighted draw that tracks the marginals** |
 | _(percentile, read directly — marginal only)_ |        _0.48_ |       _10%_ | _calibrated, but not deployable_                    |
+| state-space baseline (structured `Q`)         |          0.40 |         23% | log-ret Gaussian, calibrated tails, over-predicts   |
 | calibrated target                             |          0.50 |         20% |                                                     |
+
+The **state-space baseline** (`backtest_statespace.py`, PR #1909) scores augur's structured `Q` — a joint
+monthly log-return Gaussian, analytic one-step PIT — on the identical window. Through the
+moving-block-bootstrap scorecard it is MISCALIBRATED on **one** axis (over-predicts, bias only; its
+Gaussian tails are calibrated), where the **enumeration** kernel fails on **two** (under-predicts +
+thin), so on this window the mechanistic model beat the original LLM kernel — but the **sharp joint
+kernel** matches it on dispersion and recentres the bias. CIs + per-model PIT histograms for all six in
+`results/compare.png` / `results/compare_stats.json`.
 
 **The mechanism.** Asked for N "samples", the model first returns them **evenly spaced from its stated p1
 to p99** — a **quantile grid**, not a density-weighted i.i.d. draw. It reads "give me N samples" as "give
@@ -211,118 +222,48 @@ schema, so on a CPU box only the light percentile probe is feasible (the sharp-j
 reify need a GPU); pass a JSON **schema** as ollama's `format` to force structure on weak models.
 (`backtest_llama.py`; `results/backtest_llama3-1-8b.json`, `results/backtest_llama2-7b.json`.)
 
-## Calibration backtest — the rigorous validation
+## Methodology & rigor
 
-Anchor `glm-4.5` at its **leakage-probed June-2024 cutoff** (it doesn't know the 2024–26 OpenAI rounds
-or end-2025 BTC), so 2024-06 → now is genuinely out-of-sample. Score the realized next value as a PIT
-within the kernel's options; ground truth from the date-ranged fetcher. ~0 pp weekly quota.
+We score a **distribution**, so metrics are distributional (PIT / rank histograms, tail-escape, JSD) and
+comparisons are **relative** (LLM vs structured `Q` vs crowd). Calibration — _are the stated
+uncertainties honest_, the rank histogram, no baseline, independent of how (un)predictable the era was —
+is kept separate from **skill** (CRPS vs a random-walk / structured baseline, which cancels era difficulty).
 
-> **Window note — the Oct-2025 CPI gap (20 months, not 21).** The backtest scores the strict
-> intersection of months present in all five series. BLS published **no October-2025 CPI** (the
-> government shutdown disrupted collection), so both FRED CPI series — `inflation` (CPIAUCSL) and
-> `rent:sf_ca` (CUUR0000SEHA) — have **no `2025-10` row at all** (confirmed source-side on
-> re-download; the Yahoo and Case-Shiller series do have it). The intersection therefore drops
-> `2025-10` for every series, leaving 20 scored months (`2024-07`…`2026-03`). Side effect: the
-> `2025-09 → 2025-11` move is treated as one step, so that step's return is mildly inflated for the
-> non-CPI series. Left as-is (one month barely moves n_eff≈5–7); not forward-filled (would invent a
-> CPI value BLS never published).
+**Window & statistics.** The teacher-forced backtests anchor `glm-4.5` at its leakage-probed June-2024
+cutoff and score the realized next value as a PIT over 20 months (`2024-07`…`2026-03`, the strict
+5-series intersection; ground truth from the date-ranged fetcher; ~0 pp weekly quota). The monthly PITs
+are strongly autocorrelated (ρ₁≈0.6 → **n_eff≈5–7**), so i.i.d. KS/χ² p-values (~1e-5) are
+anti-conservative; every "MISCALIBRATED" verdict rests on the serial-dependence-robust **moving-block
+bootstrap** 95% CI, not the p-values. Per-series JSDs sit in the n=20 noise floor — only the pooled
+bootstrap and histogram shape are trustworthy. Small-multiples scorecard: `results/compare.png`.
 
-**One-step (`backtest.py`, teacher-forced, 100 PITs).** Two failures, both as predicted:
+> **Oct-2025 CPI gap (20 months, not 21).** BLS published no October-2025 CPI (government shutdown), so
+> the two FRED CPI series have **no `2025-10` row** while Yahoo/Case-Shiller do; the strict intersection
+> drops it for all series. The `2025-09→2025-11` step is then mildly inflated for the non-CPI series.
+> Left as-is (one month barely moves n_eff); documented in `augur/data/SOURCES.md`.
 
-| metric (pooled)              |         value | read                                                |
-| ---------------------------- | ------------: | --------------------------------------------------- |
-| tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) | **overconfident / thin-tailed** (home 40%, BTC 35%) |
-| mean PIT                     | 0.62 (vs .50) | **under-prediction** (under-shot the 2024–26 climb) |
+**Does miscalibration compound with horizon?** Rolling-origin, free-running from 4 origins
+(`backtest_rolling.py`): **no.** Under-prediction is horizon-independent (mean PIT ~0.70 at every h),
+while the dispersion deficit is **front-loaded and self-corrects** (tail-escape 60% at h=1 → ~15% by h=8
+as the free-running cone widens). So the enumeration `Q` needed a de-bias nudge at all horizons + more
+_initial_ spread — exactly what the sharp joint kernel (finding 6) supplies. (M=8 ensemble, n≈20/horizon,
+correlated origins → the flat ~0.70 mean is the robust signal, the tail trend suggestive.)
 
-The formal verdict (on `results/backtest.png`): KS/χ² reject PIT uniformity at p~1e-5 _under an i.i.d.
-null_, but the monthly PITs are strongly autocorrelated (ρ₁≈0.6 → **n_eff≈5**), so those p-values are
-anti-conservative. The serial-dependence-robust **moving-block bootstrap** gives mean PIT 0.62 CI
-`[0.50, 0.75]` and tail-escape 0.31 CI `[0.23, 0.42]` — both 95% CIs exclude their calibrated nulls →
-**MISCALIBRATED, borderline** (n_eff is tiny). Per-series JSDs are all within the n=20 noise floor;
-only the pooled bootstrap + the histogram shape are trustworthy.
+## Status & next steps
 
-**Rolling-origin, multi-horizon (`backtest_rolling.py`, free-running from 4 origins).** Does it compound
-with horizon? **No** — the two failures behave differently:
+**Done.** Percentile diagnostic → the **sharp joint kernel** (finding 6) is a calibrated,
+density-weighted, single-unified-process joint `Q` — validated in the one-step backtest, the
+structured-`Q` comparison (it beats both the enumeration kernel and the state-space baseline on the same
+scorecard), and end-to-end in the **forward reify** (finding 7: ESS 62%, BTC upside tail covered).
+Leakage-free probes (finding 8) show CPU-class open models can't isolate leakage — capability dominates.
 
-| h           | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   |
-| ----------- | --- | --- | --- | --- | --- | --- | --- | --- |
-| mean PIT    | .79 | .69 | .68 | .69 | .72 | .73 | .71 | .72 |
-| tail-escape | 60% | 45% | 40% | 20% | 39% | 45% | 30% | 15% |
+**Open**, in priority order:
 
-- **Under-prediction is horizon-independent** (mean PIT ~0.70 at every horizon; origin-block CI stays
-  above 0.5). The conservative bias appears at h=1 and neither compounds nor washes out.
-- **The dispersion deficit is front-loaded and self-corrects.** Tail-escape is 60% at h=1 (the one-step
-  ensemble is far too tight — chains share the same history) → ~15% by h=8 as the free-running cone
-  widens with diverging paths. So `Q` needs a de-biasing nudge at _all_ horizons and more _initial_
-  spread, not more long-horizon spread.
-
-(Caveats: M=8 ensemble, n≈20/horizon, correlated origins/series → the flat ~0.70 mean is the robust
-signal, the tail trend suggestive.)
-
-**Structured-model baseline (`backtest_statespace.py` + `plot_compare.py`).** Is the LLM's
-miscalibration actually _bad_? Score augur's structured `Q` on the **exact same window**: the
-state-space model is a joint monthly log-return Gaussian, so its one-step marginal for series _s_ is
-`N(μ_s, σ_s²)` and the analytic PIT is `Φ((log(realized/last) − μ_s)/σ_s)` — pure local compute, no
-API. To stay apples-to-apples we fit `μ_s, σ_s` on the **identical trailing 24-month window** the LLM
-kernel saw each step (`//augur/x/pm_reifier:backtest_statespace`, runs on RBE). Both through the same
-scorecard:
-
-| metric (pooled, n=100)        |         LLM enumeration (glm-4.5) |                  LLM percentile (glm-4.5) | state-space (log-ret Gaussian) |
-| ----------------------------- | --------------------------------: | ----------------------------------------: | -----------------------------: |
-| mean PIT [block-boot 95% CI]  |       **0.62 [0.50, 0.75]** (out) |            **0.48 [0.42, 0.56]** (**in**) |    **0.40 [0.32, 0.48]** (out) |
-| tail-escape [CI]              | **0.31 [0.23, 0.42]** (out, thin) |         **0.10 [0.07, 0.14]** (out, wide) | **0.23 [0.12, 0.36]** (**in**) |
-| realized beyond stated p1/p99 |                                 — |                  **2%** (honest 98% int.) |                              — |
-| JSD-to-uniform                |                        0.052 bits |                                0.053 bits |                     0.056 bits |
-| verdict                       |          MISCALIBRATED (two axes) | MISCALIBRATED (**dispersion only, mild**) |      MISCALIBRATED (bias only) |
-
-First-pass read (state-space vs LLM **enumeration**): both biased in **opposite directions** — the LLM
-under-predicted the 2024–26 bull run (PIT piled high); the trailing-window state-space over-predicted
-(PIT piled low, extrapolating decelerating momentum). The decisive split was **dispersion**: enumeration
-was significantly **thin-tailed** (overconfident), the state-space tails were calibrated.
-
-**The percentile kernel changes the verdict.** Asking the LLM for its quantile function (p1..p99)
-instead of N enumerated options — same model, same window — **removes both enumeration failures at
-once**: the location bias vanishes (mean PIT 0.48, CI now straddles 0.5) and the thin tails are gone.
-The explicit extreme commitment is **honest** — realized fell outside the stated p1/p99 exactly 2% of
-the time (the calibrated rate). It over-corrects only mildly: tail-escape drops to 0.10 (the p10–p90
-band is now a touch too _wide_), the opposite, gentler failure. So the elicitation format, not the
-model, was the binding constraint — naming the percentiles (and being forced to commit to a p1/p99)
-beats asking for "diverse options," which collapses toward the mode and truncates the tail. This is the
-representation `Q` should use going forward (with the README's hybrid for the joint cross-section, since
-a quantile is per-series scalar). (Same n≈20-effective caveat; the bias removal and the tail-escape sign
-flip are the robust signals.)
-
-## Validation methodology & next steps
-
-We are scoring a **distribution**, so the metrics are distributional (PIT/rank histograms, CRPS,
-reliability) and every comparison should be **relative** (LLM vs structured `Q` vs crowd). The clean
-verdict is **calibration separated from skill**: the rank histogram answers "are the stated
-uncertainties honest" with no baseline and _independent of how (un)predictable the era was_ (dissolving
-the "error muddied by period difficulty" worry); skill is CRPS relative to a random-walk / structured
-baseline, which cancels period difficulty.
-
-**The leakage problem.** An LLM's cutoff is fuzzy and leaky — "anchor at its cutoff, predict to today"
-can be recall, not forecast. So the workhorse testbed is an **old, known-dated open model** (weights
-released on date D can't have seen past D — a hard cutoff). Older = longer resolved-future window =
-real per-horizon statistics; every anchor after D is a leakage-free **rolling origin**. Tradeoff: old
-models are weaker at JSON, but the requirement is _a known date + reliable structured output_, not
-capability. Ground truth is already in hand (`//augur/data:fetch_real_history` takes date ranges). Candidates:
-Llama 2 (~Sep 2022), Mistral 7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
-
-Next, in priority order:
-
-1. **Force coverage** — was the binding blocker; the **percentile kernel largely solves it** (bias gone,
-   thin tails gone, honest p1/p99 — see the comparison above). Remaining: trim the mild p10–p90
-   over-width (a sharper percentile grid / temperature), and confirm the all-zero upside markets come
-   alive in the forward reify path under percentile elicitation.
-2. **More anchors (rolling origin)** to tighten the borderline CIs, now across all three proposals. The
-   structured-`Q` baseline on the same scorecard is **done** (above); the percentile-vs-enumeration
-   comparison is **done** — percentile wins. Next is whether the percentile kernel's edge holds across
-   more anchors and a longer-cutoff model.
-3. **Wire the percentile kernel into the forward reify path** (the backtest uses it; the reify path still
-   uses the windowed enumeration rollout), with the **hybrid** for the joint cross-section (percentile
-   marginals + N-sample coupling) and the **compact handoff** (carry only last levels + a regime note).
-
-**Infra.** The known-dated-model backtest wants a 7–8B model with reliable JSON; the cluster GPU Ollama
-(wyrm2) is the natural host but is **currently down** (CPU-local is workable but slow). z.ai `glm-4.5`
-(June-2024 cutoff) is what the current backtest uses — convenient and leakage-clean, but a short window.
+1. **Strong known-cutoff model on a GPU** — the only way to settle whether glm-4.5's calibration is skill
+   or leakage (finding 8). Needs ≥70B / a frontier open model; the cluster GPU Ollama (wyrm2) is the
+   natural host but was last seen **down**.
+2. **Finer reify cloud** (finding 7) — more rollouts + non-degenerate market thresholds to
+   de-collinearize the markets and resolve the cloud past its current 16-path coarseness.
+3. **Trim the residual** — the sharp joint is mildly over-wide + slightly over-predicts; try a sharper
+   percentile grid / temperature, plus the **compact handoff** (carry only last levels + a regime note)
+   to cut the stateful input tokens on long rollouts.
