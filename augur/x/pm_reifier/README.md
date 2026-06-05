@@ -164,6 +164,23 @@ reweight (the one-way valve). The model's stated quantiles are good; once told c
 samples from them faithfully. (`kernel_iid.py`, `kernel_joint.py`, `backtest_iid.py`, `backtest_joint.py`;
 results in `results/backtest_iid.json`, `results/backtest_joint.json`, `results/backtest_joint_sharp.json`.)
 
+### 7. The sharp joint kernel runs end-to-end in the forward reify path
+
+`run_reify_joint.py` rolls a cloud of forward trajectories step-by-step through the sharp joint kernel
+(seeded from the same real-history pipeline as the backtest, rolling N_HIST window), then max-ent
+reweights the cloud to illustrative markets. **It works: 16/20 full 12-month trajectories, ESS 9.9
+(62%)** — the reweight is real, not fiction. The headline win vs the old enumeration runs: the **BTC
+upside tail is now covered** (31% of paths cross +150% → that tail market reweights cleanly 0.31→0.16),
+where enumeration put zero mass there ("smarter model = worse base measure"). The honest tails of the
+sharp kernel carry into the forward cloud.
+
+Two caveats it surfaced: (a) with only 16 compounded 12-month paths the cloud is **coarse** — nearby
+markets go collinear (sp500>+8%, sp500>+20%, BTC>+50% all share raw 0.75: nothing lands _between_ +8%
+and +20%), so the reweight can't separate them; more/finer rollouts are the fix, not a kernel change.
+(b) Illustrative thresholds must be chosen non-degenerately — inflation>+3%/yr and rent>+4%/yr are
+near-certain (raw 1.0), so those markets can't move. (`run_reify_joint.py`; result in
+`results/reify_joint.json`.)
+
 ## Calibration backtest — the rigorous validation
 
 Anchor `glm-4.5` at its **leakage-probed June-2024 cutoff** (it doesn't know the 2024–26 OpenAI rounds
