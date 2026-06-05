@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Post-pandemic recovery continues with moderate inflation, strong tech growth, and surging crypto. OpenAI prepares for IPO with rising valuation.\",\"months\":{\"inflation\":[101.2,102.5,103.1,103.8,104.5,105.2,105.9,106.5,107.2,107.8,108.4,109.0],\"sp500\":[5400,5520,5650,5710,5820,5910,6030,6120,6250,6310,6420,6510],\"crypto:BTC\":[97000,105000,113000,121000,132000,141000,152000,165000,178000,192000,208000,225000],\"home_value:sf_ca\":[101,102,103,104,105,106,107,108,109,110,111,112],\"rent:sf_ca\":[101.5,102.5,103.2,103.8,104.5,105.1,105.8,106.4,107.1,107.7,108.3,108.9],\"openai_valuation_usd_trillions\":[0.92,1.05,1.18,1.32,1.45,1.58,1.72,1.85,1.98,2.12,2.25,2.38]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Post-election stability with soft landing optimism. AI infrastructure drives equity gains while inflation cools gradually. OpenAI valuation surges on deployment rumors.\",\"months\":{\"inflation\":[100.2,100.3,100.5,100.8,101.0,101.1,101.2,101.3,101.4,101.5,101.6,101.7],\"sp500\":[5350,5400,5450,5420,5480,5520,5550,5600,5580,5620,5650,5680],\"crypto:BTC\":[96000,97500,99000,98500,99500,101000,102500,104000,103000,105000,106500,108000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.8,102.2,102.5,102.8,103.0,103.2,103.3,103.4,103.5],\"rent:sf_ca\":[100.3,100.5,100.7,100.9,101.1,101.3,101.4,101.5,101.6,101.7,101.8,101.9],\"openai_valuation_usd_trillions\":[0.88,0.90,0.92,0.93,0.95,0.98,1.00,1.02,1.05,1.08,1.10,1.12]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619104,
-    "id": "20260605082429b899dd634f104e51",
-    "model": "glm-4.5-flash",
+    "created": 1780619969,
+    "id": "2026060508392146e3d1ac5bdf4090",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082429b899dd634f104e51",
+    "request_id": "2026060508392146e3d1ac5bdf4090",
     "usage": {
-      "completion_tokens": 426,
-      "prompt_tokens": 373,
+      "completion_tokens": 542,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 64
+        "cached_tokens": 0
       },
-      "total_tokens": 799
+      "total_tokens": 910
     }
   },
-  "latency_s": 36.319185972213745
+  "latency_s": 9.12367057800293
 }

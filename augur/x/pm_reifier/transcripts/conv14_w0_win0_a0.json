@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Early recovery phase with moderate inflation, strong tech growth, and booming real estate markets. AI enthusiasm drives equity markets while crypto experiences consolidation.\",\"months\":{\"inflation\":[100.5,100.8,101.2,101.5,101.8,102.0,102.2,102.3,102.4,102.5,102.6,102.7],\"sp500\":[5400,5550,5700,5850,6000,6150,6300,6450,6600,6750,6900,7050],\"crypto:BTC\":[95000,92000,89000,87000,85000,83000,81000,79500,78000,77000,76000,75500],\"home_value:sf_ca\":[102,104,106,108,110,112,114,116,118,120,122,124],\"rent:sf_ca\":[101,102,103,105,107,109,111,113,115,117,119,121],\"openai_valuation_usd_trillions\":[0.87,0.90,0.93,0.96,0.99,1.02,1.05,1.08,1.11,1.14,1.17,1.20]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"The AI Boom sustains high growth but sticky inflation prompts the Fed to hold rates high, creating volatility. Housing in SF remains resilient but rent growth slows.\",\"months\":{\"inflation\":[100.2,100.4,100.5,100.8,101.1,101.3,101.5,101.6,101.8,102.0,102.1,102.3],\"sp500\":[5325,5350,5380,5360,5340,5390,5420,5460,5490,5520,5550,5580],\"crypto:BTC\":[95200,96000,97500,96500,95000,97000,98500,100500,102000,103000,104500,106000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.3,101.0,101.8,102.2,102.5,102.8,103.0,103.3,103.5],\"rent:sf_ca\":[100.2,100.4,100.5,100.6,100.6,100.8,101.0,101.1,101.2,101.3,101.4,101.5],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96,0.97]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619542,
-    "id": "20260605083208aa8b3e7101c34c90",
-    "model": "glm-4.5-flash",
+    "created": 1780620308,
+    "id": "2026060508445955c57f40bbb84dc5",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605083208aa8b3e7101c34c90",
+    "request_id": "2026060508445955c57f40bbb84dc5",
     "usage": {
-      "completion_tokens": 410,
-      "prompt_tokens": 373,
+      "completion_tokens": 457,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 256
       },
-      "total_tokens": 783
+      "total_tokens": 825
     }
   },
-  "latency_s": 14.535491466522217
+  "latency_s": 8.592767715454102
 }

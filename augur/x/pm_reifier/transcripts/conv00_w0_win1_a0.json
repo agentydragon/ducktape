@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -20,11 +20,11 @@
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Stagflationary environment begins with moderate economic growth but persistent inflation concerns\",\"months\":{\"inflation\":[101.2,102.5,103.8,104.3,105.1,105.8,106.5,107.2,107.8,108.3,108.7,109.0],\"sp500\":[5250,5180,5120,5080,5050,5020,4990,4960,4930,4910,4890,4870],\"crypto:BTC\":[92000,88000,84000,81000,78000,75000,73000,71000,69000,67000,65000,63000],\"home_value:sf_ca\":[101,102,102.5,103,103.2,103.5,103.8,104,104.2,104.3,104.4,104.5],\"rent:sf_ca\":[101.5,102.5,103.5,104,104.5,105,105.5,106,106.5,107,107.5,108],\"openai_valuation_usd_trillions\":[0.88,0.91,0.94,0.97,1.00,1.03,1.06,1.09,1.12,1.15,1.18,1.21]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"Post-election boom with AI mania driving high valuations. Inflation remains sticky but markets are euphoric.\",\"months\":{\"inflation\":[100.3,100.5,100.8,101.0,101.1,101.2,101.3,101.2,101.1,101.0,100.9,100.8],\"sp500\":[5380,5450,5520,5560,5600,5620,5640,5620,5590,5550,5520,5480],\"crypto:BTC\":[97000,98500,100000,101000,102000,102500,102000,101000,99500,98000,96500,95000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.8,102.0,102.1,102.0,101.8,101.5,101.2,101.0,100.8],\"rent:sf_ca\":[100.4,100.7,101.0,101.2,101.3,101.3,101.2,101.1,100.9,100.7,100.5,100.3],\"openai_valuation_usd_trillions\":[0.9,0.95,1.0,1.1,1.2,1.25,1.3,1.32,1.34,1.35,1.36,1.37]},\"openai_ipo_month_index\":null}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-12 levels: inflation=109, sp500=4870, crypto:BTC=63000, home_value:sf_ca=104.5, rent:sf_ca=108, openai_valuation_usd_trillions=1.21\nReturn exactly 12 values per series for months 13..24."
+        "content": "Continue the SAME world. Month-12 levels: inflation=100.8, sp500=5480, crypto:BTC=95000, home_value:sf_ca=100.8, rent:sf_ca=100.3, openai_valuation_usd_trillions=1.37\nReturn exactly 12 values per series for months 13..24."
       }
     ]
   },
@@ -34,27 +34,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Economic cooling accelerates with inflation peaking and growth concerns intensifying, tech sector faces correction\",\"months\":{\"inflation\":[109.2,109.3,109.2,108.9,108.5,108.0,107.4,106.8,106.2,105.6,105.0,104.4],\"sp500\":[4850,4800,4730,4650,4560,4460,4350,4230,4100,3960,3820,3680],\"crypto:BTC\":[61000,59000,57000,54000,51000,47000,43000,39000,35000,31000,27000,23000],\"home_value:sf_ca\":[104.6,104.7,104.7,104.6,104.5,104.3,104.0,103.6,103.1,102.5,101.8,101.0],\"rent:sf_ca\":[108.2,108.3,108.3,108.2,108.0,107.7,107.3,106.8,106.2,105.5,104.7,103.8],\"openai_valuation_usd_trillions\":[1.22,1.23,1.24,1.25,1.26,1.27,1.28,1.29,1.30,1.31,1.32,1.33]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Monetary tightening kicks in to control sticky services inflation. Tech and crypto lead the market correction while real estate prices begin to stagnate.\",\"months\":{\"inflation\":[101.0,101.1,101.2,101.1,101.0,100.9,100.8,100.7,100.6,100.5,100.4,100.3],\"sp500\":[5400,5320,5250,5200,5180,5170,5200,5250,5300,5320,5340,5350],\"crypto:BTC\":[92000,89000,87000,86000,85500,85000,86000,87500,89000,90000,91000,91500],\"home_value:sf_ca\":[100.6,100.3,100.0,99.8,99.7,99.6,99.7,99.9,100.1,100.2,100.3,100.4],\"rent:sf_ca\":[100.2,100.0,99.8,99.6,99.5,99.4,99.5,99.6,99.8,100.0,100.1,100.2],\"openai_valuation_usd_trillions\":[1.38,1.39,1.4,1.41,1.42,1.43,1.44,1.45,1.46,1.47,1.48,1.5]},\"openai_ipo_month_index\":24}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619089,
-    "id": "2026060508244046d5eb8e94df4fe4",
-    "model": "glm-4.5-flash",
+    "created": 1780619977,
+    "id": "20260605083929a61f8e9a37a74898",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "2026060508244046d5eb8e94df4fe4",
+    "request_id": "20260605083929a61f8e9a37a74898",
     "usage": {
-      "completion_tokens": 350,
-      "completion_tokens_details": {
-        "reasoning_tokens": 0
-      },
-      "prompt_tokens": 782,
+      "completion_tokens": 361,
+      "prompt_tokens": 798,
       "prompt_tokens_details": {
-        "cached_tokens": 373
+        "cached_tokens": 0
       },
-      "total_tokens": 1132
+      "total_tokens": 1159
     }
   },
-  "latency_s": 9.824747085571289
+  "latency_s": 8.66136384010315
 }

@@ -124,6 +124,29 @@ parallel with 429/timeout backoff.
 - **Free, 0 pp quota** (127k tokens; `glm-4.7-flash` was 429-saturated, so the probe fell to
   `glm-4.5-flash`).
 
+### Paid coding tier (GLM-4.7): faster, but a worse base measure
+
+Re-run on the **paid coding endpoint** (`glm-4.7`) to escape free-tier 429s: median **9 s/window**
+(vs 25–170 s throttled on flash), **0 retries over 80 windows** (it counts to 12 flawlessly), 16/16
+valid, 80/80 full length. Burn: 138k tokens moved the **5 h** quota +1 pp and the **weekly** quota
+0 pp (below the integer-% resolution) — negligible against a 50% cap. Tracked in `quota_log.jsonl`
+(the token-quota API exposes only an integer %, so we pair it with our own token totals).
+
+But `glm-4.7` is a **worse base measure** than `glm-4.5-flash` here — it is too conservative:
+
+```
+btc>150k@2027-12   target 0.50   raw 0.00   reweighted 0.00
+cpi>110@2029-12    target 0.60   raw 0.00   reweighted 0.00
+```
+
+Zero of 16 worlds cross BTC>150k or CPI>110 (smoothness 0.05 — very tight, no tails). When the base
+measure puts **zero mass** on a market's region the indicator column is all-zeros and **no reweight
+can lift it** — you cannot upweight worlds the model never proposed. That is the concrete form of
+"ESS collapse = reweighting is fiction." The sloppier flash model actually _covered_ more (BTC raw
+0.27 vs 0.00). **Lesson: a base measure wants dispersion/coverage, not calibration** — a "smarter"
+model that hugs the median is the wrong tool. Levers to force coverage: higher temperature,
+conditioning on the prices, or the `BATCH_SIZE > 1` distinct-worlds knob.
+
 ### Next: compact handoff
 
 The 97k input tokens are pure statefulness. A **compact handoff** — fresh prompt each window carrying

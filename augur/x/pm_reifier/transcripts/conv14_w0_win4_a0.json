@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -20,35 +20,35 @@
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Early recovery phase with moderate inflation, strong tech growth, and booming real estate markets. AI enthusiasm drives equity markets while crypto experiences consolidation.\",\"months\":{\"inflation\":[100.5,100.8,101.2,101.5,101.8,102.0,102.2,102.3,102.4,102.5,102.6,102.7],\"sp500\":[5400,5550,5700,5850,6000,6150,6300,6450,6600,6750,6900,7050],\"crypto:BTC\":[95000,92000,89000,87000,85000,83000,81000,79500,78000,77000,76000,75500],\"home_value:sf_ca\":[102,104,106,108,110,112,114,116,118,120,122,124],\"rent:sf_ca\":[101,102,103,105,107,109,111,113,115,117,119,121],\"openai_valuation_usd_trillions\":[0.87,0.90,0.93,0.96,0.99,1.02,1.05,1.08,1.11,1.14,1.17,1.20]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"The AI Boom sustains high growth but sticky inflation prompts the Fed to hold rates high, creating volatility. Housing in SF remains resilient but rent growth slows.\",\"months\":{\"inflation\":[100.2,100.4,100.5,100.8,101.1,101.3,101.5,101.6,101.8,102.0,102.1,102.3],\"sp500\":[5325,5350,5380,5360,5340,5390,5420,5460,5490,5520,5550,5580],\"crypto:BTC\":[95200,96000,97500,96500,95000,97000,98500,100500,102000,103000,104500,106000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.3,101.0,101.8,102.2,102.5,102.8,103.0,103.3,103.5],\"rent:sf_ca\":[100.2,100.4,100.5,100.6,100.6,100.8,101.0,101.1,101.2,101.3,101.4,101.5],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96,0.97]},\"openai_ipo_month_index\":null}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-12 levels: inflation=102.7, sp500=7050, crypto:BTC=75500, home_value:sf_ca=124, rent:sf_ca=121, openai_valuation_usd_trillions=1.2\nReturn exactly 12 values per series for months 13..24."
+        "content": "Continue the SAME world. Month-12 levels: inflation=102.3, sp500=5580, crypto:BTC=106000, home_value:sf_ca=103.5, rent:sf_ca=101.5, openai_valuation_usd_trillions=0.97\nReturn exactly 12 values per series for months 13..24."
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Economic cooling period begins as inflation stabilizes, tech stocks face volatility, real estate market cools slightly, and crypto continues to consolidate. AI sector shows signs of maturation with increased regulatory scrutiny.\",\"months\":{\"inflation\":[102.8,102.9,103.0,103.1,103.2,103.3,103.4,103.5,103.6,103.7,103.8,103.9],\"sp500\":[7100,7150,7200,7250,7300,7350,7400,7450,7500,7550,7600,7650],\"crypto:BTC\":[75000,74500,74000,73500,73000,72500,72000,71500,71000,70500,70000,69500],\"home_value:sf_ca\":[124.5,125,125.5,126,126.5,127,127.5,128,128.5,129,129.5,130],\"rent:sf_ca\":[121.5,122,122.5,123,123.5,124,124.5,125,125.5,126,126.5,127],\"openai_valuation_usd_trillions\":[1.21,1.22,1.23,1.24,1.25,1.26,1.27,1.28,1.29,1.30,1.31,1.32]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"Inflation accelerates to a 4% annualized clip, forcing the Fed into a hawkish pivot. Risk assets tumble as liquidity tightens, though OpenAI's IPO in month 18 provides a brief, isolated tech rally before broader market weakness resumes.\",\"months\":{\"inflation\":[102.6,103.0,103.4,103.8,104.1,104.3,104.4,104.5,104.6,104.5,104.3,104.1],\"sp500\":[5500,5420,5350,5380,5300,5250,5200,5180,5150,5120,5100,5080],\"crypto:BTC\":[104000,101000,98000,100000,96000,94000,92000,91000,90000,89000,88000,87000],\"home_value:sf_ca\":[103.2,102.8,102.5,102.7,102.0,101.5,101.0,100.5,100.2,100.0,99.8,99.5],\"rent:sf_ca\":[101.6,101.6,101.5,101.5,101.4,101.3,101.2,101.0,100.8,100.6,100.4,100.2],\"openai_valuation_usd_trillions\":[0.98,1.0,1.05,1.1,1.08,1.06,1.05,1.04,1.03,1.02,1.01,1.0]},\"openai_ipo_month_index\":18}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-24 levels: inflation=103.9, sp500=7650, crypto:BTC=69500, home_value:sf_ca=130, rent:sf_ca=127, openai_valuation_usd_trillions=1.32\nReturn exactly 12 values per series for months 25..36."
+        "content": "Continue the SAME world. Month-24 levels: inflation=104.1, sp500=5080, crypto:BTC=87000, home_value:sf_ca=99.5, rent:sf_ca=100.2, openai_valuation_usd_trillions=1\nReturn exactly 12 values per series for months 25..36."
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Shift to risk-off sentiment as inflationary pressures resurface, leading to market volatility. AI and tech sectors face regulatory headwinds while crypto experiences significant correction. Real estate markets show signs of weakening under higher interest rate environment.\",\"months\":{\"inflation\":[104.0,104.3,104.6,105.0,105.4,105.8,106.2,106.6,107.0,107.4,107.8,108.2],\"sp500\":[7600,7550,7500,7450,7400,7350,7300,7250,7200,7150,7100,7050],\"crypto:BTC\":[69000,67500,66000,64500,63000,61500,60000,58500,57000,55500,54000,52500],\"home_value:sf_ca\":[129.5,129,128.5,128,127.5,127,126.5,126,125.5,125,124.5,124],\"rent:sf_ca\":[127.5,128,128.5,129,129.5,130,130.5,131,131.5,132,132.5,133],\"openai_valuation_usd_trillions\":[1.31,1.30,1.29,1.28,1.27,1.26,1.25,1.24,1.23,1.22,1.21,1.20]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"Recession fears mount as high rates finally break demand. Inflation cools rapidly towards target, causing bonds to rally but equities to struggle on earnings contraction. SF home prices correct further while rents decline as vacancy rates rise.\",\"months\":{\"inflation\":[103.9,103.6,103.3,103.0,102.7,102.5,102.3,102.1,102.0,101.9,101.8,101.8],\"sp500\":[5020,4960,4900,4850,4800,4780,4750,4720,4700,4680,4650,4620],\"crypto:BTC\":[86000,84500,83000,82000,81000,80000,79000,78500,78000,77500,77000,76500],\"home_value:sf_ca\":[99.0,98.5,98.0,97.5,97.2,97.0,96.8,96.5,96.3,96.0,95.8,95.5],\"rent:sf_ca\":[99.8,99.4,99.0,98.5,98.0,97.5,97.2,97.0,96.8,96.5,96.3,96.0],\"openai_valuation_usd_trillions\":[0.99,0.98,0.97,0.96,0.95,0.94,0.93,0.92,0.91,0.90,0.89,0.88]},\"openai_ipo_month_index\":null}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-36 levels: inflation=108.2, sp500=7050, crypto:BTC=52500, home_value:sf_ca=124, rent:sf_ca=133, openai_valuation_usd_trillions=1.2\nReturn exactly 12 values per series for months 37..48."
+        "content": "Continue the SAME world. Month-36 levels: inflation=101.8, sp500=4620, crypto:BTC=76500, home_value:sf_ca=95.5, rent:sf_ca=96, openai_valuation_usd_trillions=0.88\nReturn exactly 12 values per series for months 37..48."
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Economic downturn as inflation peaks and central banks maintain aggressive stance. Tech and crypto markets face significant correction, while housing market continues to cool. AI sector consolidates with market turmoil, setting stage for potential IPO at attractive valuation.\",\"months\":{\"inflation\":[108.5,108.8,109.1,109.3,109.4,109.5,109.6,109.7,109.8,109.9,110.0,110.1],\"sp500\":[7000,6950,6900,6850,6800,6750,6700,6650,6600,6550,6500,6450],\"crypto:BTC\":[52000,51500,51000,50500,50000,49500,49000,48500,48000,47500,47000,46500],\"home_value:sf_ca\":[123,122,121,120,119,118,117,116,115,114,113,112],\"rent:sf_ca\":[133.5,134,134.5,135,135.5,136,136.5,137,137.5,138,138.5,139],\"openai_valuation_usd_trillions\":[1.18,1.16,1.14,1.12,1.10,1.08,1.06,1.04,1.02,1.00,0.98,0.96]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"The recession proves brief and shallow. Inflation hits the 2% target, prompting the Fed to cut rates aggressively. Markets anticipate a soft landing, driving a sharp rally in equities, crypto, and OpenAI's valuation as capital rotates back into risk.\",\"months\":{\"inflation\":[101.6,101.4,101.2,101.0,100.8,100.6,100.5,100.4,100.3,100.2,100.1,100.0],\"sp500\":[4700,4800,4920,5050,5180,5280,5350,5400,5450,5500,5520,5530],\"crypto:BTC\":[78000,80000,82500,85000,87000,88500,89500,90500,91500,92000,92500,93000],\"home_value:sf_ca\":[95.8,96.2,96.8,97.5,98.2,98.8,99.2,99.5,99.8,100.0,100.2,100.3],\"rent:sf_ca\":[95.8,95.6,95.5,95.4,95.5,95.6,95.8,96.0,96.2,96.5,96.8,97.0],\"openai_valuation_usd_trillions\":[0.90,0.92,0.95,0.98,1.02,1.05,1.08,1.10,1.12,1.13,1.14,1.15]},\"openai_ipo_month_index\":null}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-48 levels: inflation=110.1, sp500=6450, crypto:BTC=46500, home_value:sf_ca=112, rent:sf_ca=139, openai_valuation_usd_trillions=0.96\nReturn exactly 12 values per series for months 49..60."
+        "content": "Continue the SAME world. Month-48 levels: inflation=100, sp500=5530, crypto:BTC=93000, home_value:sf_ca=100.3, rent:sf_ca=97, openai_valuation_usd_trillions=1.15\nReturn exactly 12 values per series for months 49..60."
       }
     ]
   },
@@ -58,24 +58,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Recession deepens with persistent inflation forcing continued tight monetary policy. Markets reach bottom as investors price in economic downturn, with AI and crypto sectors experiencing significant value compression. Housing market stabilizes at lower price points with rents peaking as demand weakens.\",\"months\":{\"inflation\":[110.2,110.3,110.4,110.5,110.6,110.7,110.8,110.9,111.0,111.1,111.2,111.3],\"sp500\":[6400,6350,6300,6250,6200,6150,6100,6050,6000,5950,5900,5850],\"crypto:BTC\":[46000,45500,45000,44500,44000,43500,43000,42500,42000,41500,41000,40500],\"home_value:sf_ca\":[111.5,111,110.5,110,109.5,109,108.5,108,107.5,107,106.5,106],\"rent:sf_ca\":[139.5,140,140.5,141,141.5,142,142.5,143,143.5,144,144.5,145],\"openai_valuation_usd_trillions\":[0.95,0.94,0.93,0.92,0.91,0.90,0.89,0.88,0.87,0.86,0.85,0.84]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Rate cuts fuel a renewed bull market; risk assets surge. Inflation stabilizes. Tech leads, with OpenAI crossing 2 trillion valuation. Housing demand in SF returns, pushing values up, while rents lag.\",\"months\":{\"inflation\":[100.1,100.3,100.5,100.8,101.1,101.4,101.6,101.8,102.0,102.2,102.3,102.4],\"sp500\":[5580,5650,5740,5850,5960,6050,6140,6220,6290,6350,6400,6440],\"crypto:BTC\":[94500,96500,99000,102000,105000,107000,109000,110500,112000,113000,114000,115000],\"home_value:sf_ca\":[100.8,101.4,102.1,103.0,104.0,105.0,106.0,106.8,107.5,108.0,108.5,109.0],\"rent:sf_ca\":[97.2,97.4,97.6,97.8,98.0,98.2,98.4,98.6,98.8,99.0,99.2,99.5],\"openai_valuation_usd_trillions\":[1.18,1.22,1.28,1.35,1.45,1.55,1.65,1.75,1.85,1.95,2.05,2.15]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619588,
-    "id": "202606050832599a9bb0dc26f74425",
-    "model": "glm-4.5-flash",
+    "created": 1780620348,
+    "id": "20260605084538ecb269d118b14cf8",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "202606050832599a9bb0dc26f74425",
+    "request_id": "20260605084538ecb269d118b14cf8",
     "usage": {
-      "completion_tokens": 358,
-      "prompt_tokens": 2043,
+      "completion_tokens": 372,
+      "prompt_tokens": 2176,
       "prompt_tokens_details": {
-        "cached_tokens": 1963
+        "cached_tokens": 1664
       },
-      "total_tokens": 2401
+      "total_tokens": 2548
     }
   },
-  "latency_s": 10.280542612075806
+  "latency_s": 10.29249906539917
 }

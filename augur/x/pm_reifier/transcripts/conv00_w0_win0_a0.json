@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,27 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Stagflationary environment begins with moderate economic growth but persistent inflation concerns\",\"months\":{\"inflation\":[101.2,102.5,103.8,104.3,105.1,105.8,106.5,107.2,107.8,108.3,108.7,109.0],\"sp500\":[5250,5180,5120,5080,5050,5020,4990,4960,4930,4910,4890,4870],\"crypto:BTC\":[92000,88000,84000,81000,78000,75000,73000,71000,69000,67000,65000,63000],\"home_value:sf_ca\":[101,102,102.5,103,103.2,103.5,103.8,104,104.2,104.3,104.4,104.5],\"rent:sf_ca\":[101.5,102.5,103.5,104,104.5,105,105.5,106,106.5,107,107.5,108],\"openai_valuation_usd_trillions\":[0.88,0.91,0.94,0.97,1.00,1.03,1.06,1.09,1.12,1.15,1.18,1.21]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Post-election boom with AI mania driving high valuations. Inflation remains sticky but markets are euphoric.\",\"months\":{\"inflation\":[100.3,100.5,100.8,101.0,101.1,101.2,101.3,101.2,101.1,101.0,100.9,100.8],\"sp500\":[5380,5450,5520,5560,5600,5620,5640,5620,5590,5550,5520,5480],\"crypto:BTC\":[97000,98500,100000,101000,102000,102500,102000,101000,99500,98000,96500,95000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.8,102.0,102.1,102.0,101.8,101.5,101.2,101.0,100.8],\"rent:sf_ca\":[100.4,100.7,101.0,101.2,101.3,101.3,101.2,101.1,100.9,100.7,100.5,100.3],\"openai_valuation_usd_trillions\":[0.9,0.95,1.0,1.1,1.2,1.25,1.3,1.32,1.34,1.35,1.36,1.37]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619079,
-    "id": "20260605082428aab1c0d2b6d24836",
-    "model": "glm-4.5-flash",
+    "created": 1780619968,
+    "id": "202606050839211252aecc641d4af5",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082428aab1c0d2b6d24836",
+    "request_id": "202606050839211252aecc641d4af5",
     "usage": {
-      "completion_tokens": 427,
-      "completion_tokens_details": {
-        "reasoning_tokens": 0
-      },
-      "prompt_tokens": 373,
+      "completion_tokens": 448,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 64
+        "cached_tokens": 0
       },
-      "total_tokens": 800
+      "total_tokens": 816
     }
   },
-  "latency_s": 11.50558590888977
+  "latency_s": 8.077377319335938
 }

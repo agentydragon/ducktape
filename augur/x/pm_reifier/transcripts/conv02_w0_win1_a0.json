@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -20,11 +20,11 @@
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Early recovery phase with moderate inflation, strong tech and crypto performance, housing market stabilization, OpenAI preparing for IPO\",\"months\":{\"inflation\":[100.2,100.5,100.8,101.1,101.3,101.5,101.6,101.8,102.0,102.1,102.3,102.4],\"sp500\":[5350,5420,5485,5540,5610,5680,5725,5780,5820,5875,5920,5960],\"crypto:BTC\":[96500,98500,100500,103000,106000,109500,113000,116500,119500,122000,124500,126500],\"home_value:sf_ca\":[100.2,100.5,100.8,101.1,101.4,101.6,101.8,102.0,102.2,102.4,102.5,102.7],\"rent:sf_ca\":[100.3,100.6,100.9,101.2,101.4,101.7,101.9,102.1,102.3,102.5,102.7,102.9],\"openai_valuation_usd_trillions\":[0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"Soft landing and AI boom. Inflation cools gradually towards target. S&P 500 and Bitcoin rally on productivity gains and rate cut expectations. SF real estate remains resilient but decouples from national averages due to tech wealth concentration. OpenAI valuation creeps higher as GPT-5 rumors circulate.\",\"months\":{\"inflation\":[99.8,99.5,99.2,99.0,98.8,98.6,98.5,98.4,98.3,98.2,98.1,98.0],\"sp500\":[5350,5380,5400,5390,5420,5450,5480,5500,5530,5560,5590,5620],\"crypto:BTC\":[96000,97000,97500,96800,98000,99500,100500,101000,102500,104000,105500,107000],\"home_value:sf_ca\":[100.5,101.0,101.4,101.8,102.1,102.4,102.6,102.8,103.0,103.2,103.3,103.5],\"rent:sf_ca\":[100.3,100.6,100.9,101.1,101.3,101.5,101.7,101.9,102.0,102.2,102.3,102.4],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96]},\"openai_ipo_month_index\":null}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-12 levels: inflation=102.4, sp500=5960, crypto:BTC=126500, home_value:sf_ca=102.7, rent:sf_ca=102.9, openai_valuation_usd_trillions=1.45\nReturn exactly 12 values per series for months 13..24."
+        "content": "Continue the SAME world. Month-12 levels: inflation=98, sp500=5620, crypto:BTC=107000, home_value:sf_ca=103.5, rent:sf_ca=102.4, openai_valuation_usd_trillions=0.96\nReturn exactly 12 values per series for months 13..24."
       }
     ]
   },
@@ -34,24 +34,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Recovery continues with cooling inflation, peak OpenAI valuation before IPO, market volatility increases, housing market starts to soften\",\"months\":{\"inflation\":[102.6,102.7,102.8,102.9,103.0,103.1,103.0,102.9,102.8,102.7,102.6,102.5],\"sp500\":[5980,6020,6050,6080,6100,6120,6150,6180,6200,6220,6250,6270],\"crypto:BTC\":[127000,128500,129500,130000,131000,132000,133000,134000,135000,136000,137000,138000],\"home_value:sf_ca\":[102.8,102.9,103.0,103.0,102.9,102.8,102.7,102.6,102.5,102.4,102.3,102.2],\"rent:sf_ca\":[103.0,103.1,103.2,103.3,103.3,103.4,103.4,103.3,103.2,103.1,103.0,102.9],\"openai_valuation_usd_trillions\":[1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00,2.05]},\"openai_ipo_month_index\":18}",
+          "content": "{\"regime\":\"The 'Great Reflation'. Inflation surprises to the upside, stalling the Fed's rate cut path. Equities and crypto face headwinds from higher-for-longer rates. SF housing growth slows significantly, but rents remain sticky.\",\"months\":{\"inflation\":[98.2,98.5,98.9,99.3,99.7,100.0,100.2,100.4,100.5,100.6,100.6,100.5],\"sp500\":[5580,5520,5450,5400,5350,5300,5280,5250,5230,5200,5180,5150],\"crypto:BTC\":[105000,102000,98000,95000,93000,91000,89500,88000,87000,86000,85500,85000],\"home_value:sf_ca\":[103.6,103.6,103.5,103.4,103.2,103.0,102.8,102.5,102.2,101.8,101.5,101.2],\"rent:sf_ca\":[102.6,102.8,103.0,103.2,103.3,103.4,103.5,103.6,103.6,103.6,103.5,103.4],\"openai_valuation_usd_trillions\":[0.97,0.98,0.98,0.99,1.00,1.01,1.02,1.03,1.04,1.05,1.06,1.07]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619135,
-    "id": "20260605082525515001440a1a434f",
-    "model": "glm-4.5-flash",
+    "created": 1780620022,
+    "id": "20260605084014fdf17801d8be43f4",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082525515001440a1a434f",
+    "request_id": "20260605084014fdf17801d8be43f4",
     "usage": {
-      "completion_tokens": 347,
-      "prompt_tokens": 803,
+      "completion_tokens": 476,
+      "prompt_tokens": 833,
       "prompt_tokens_details": {
-        "cached_tokens": 373
+        "cached_tokens": 0
       },
-      "total_tokens": 1150
+      "total_tokens": 1309
     }
   },
-  "latency_s": 10.429338693618774
+  "latency_s": 9.005878448486328
 }

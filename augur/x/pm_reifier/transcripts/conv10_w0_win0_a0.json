@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Post-pandemic recovery with moderate inflation; AI boom continues with OpenAI pre-IPO valuation surge; housing market stabilizes after pandemic volatility\",\"months\":{\"inflation\":[101.2,102.5,103.1,103.8,104.2,104.9,105.3,106.1,106.8,107.5,108.2,108.9],\"sp500\":[5400,5600,5750,5900,6050,6200,6350,6500,6650,6800,6950,7100],\"crypto:BTC\":[97000,105000,112000,118000,125000,132000,139000,146000,153000,160000,167000,174000],\"home_value:sf_ca\":[101,102,103,104,105,106,107,108,109,110,111,112],\"rent:sf_ca\":[101.5,102.8,104.1,105.5,106.9,108.3,109.7,111.1,112.5,113.9,115.3,116.7],\"openai_valuation_usd_trillions\":[0.95,1.1,1.25,1.4,1.55,1.7,1.85,2.0,2.15,2.3,2.45,2.6]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"The 'Soft Landing' consensus holds as inflation cools gradually. OpenAI valuation expands rapidly on enterprise adoption rumors, fueling a tech-led equity rally. Bitcoin consolidates near all-time highs. SF real estate sees rent growth outpace home appreciation as high mortgage rates suppress buying demand.\",\"months\":{\"inflation\":[100.2,100.3,100.5,100.7,100.9,101.1,101.3,101.5,101.7,101.9,102.1,102.3],\"sp500\":[5350,5400,5450,5480,5520,5550,5600,5580,5620,5650,5700,5725],\"crypto:BTC\":[95500,96000,97500,99000,98500,99200,100500,101000,100200,102000,103500,104000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.8,102.0,102.1,102.3,102.4,102.5,102.5,102.6,102.7],\"rent:sf_ca\":[100.3,100.8,101.2,101.6,102.1,102.5,102.9,103.4,103.8,104.2,104.5,104.8],\"openai_valuation_usd_trillions\":[0.88,0.91,0.94,0.98,1.02,1.05,1.10,1.15,1.18,1.22,1.25,1.28]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619407,
-    "id": "20260605082951ff76dd79015f4d79",
-    "model": "glm-4.5-flash",
+    "created": 1780620211,
+    "id": "202606050843218d2bb958484d4d3c",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082951ff76dd79015f4d79",
+    "request_id": "202606050843218d2bb958484d4d3c",
     "usage": {
-      "completion_tokens": 426,
-      "prompt_tokens": 373,
+      "completion_tokens": 572,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 0
       },
-      "total_tokens": 799
+      "total_tokens": 940
     }
   },
-  "latency_s": 16.243064165115356
+  "latency_s": 9.87193489074707
 }

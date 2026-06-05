@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Initial stagflation environment with high inflation and slowing growth. Markets brace for potential Fed rate cuts. OpenAI remains private but valuation continues to climb. Housing market shows signs of cooling despite high inflation.\",\"months\":{\"inflation\":[101.2,102.5,103.8,105.1,106.3,107.4,108.2,108.9,109.5,110.0,110.4,110.7],\"sp500\":[5150,5000,4850,4700,4550,4450,4400,4450,4600,4800,5100,5400],\"crypto:BTC\":[92000,88000,84000,80000,76000,72000,70000,73000,78000,84000,90000,96000],\"home_value:sf_ca\":[99.5,98.8,98.0,97.1,96.2,95.3,94.5,93.8,93.2,92.8,92.5,92.3],\"rent:sf_ca\":[100.5,101.2,101.9,102.6,103.3,103.9,104.4,104.8,105.1,105.3,105.4,105.5],\"openai_valuation_usd_trillions\":[0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Stable growth with persistent inflation. OpenAI valuation climbs as AGI anticipation builds. Equity markets rally alongside crypto.\",\"months\":{\"inflation\":[100.2,100.5,100.9,101.2,101.3,101.4,101.4,101.3,101.2,101.0,100.8,100.9],\"sp500\":[5350,5410,5450,5480,5520,5560,5590,5605,5580,5540,5520,5510],\"crypto:BTC\":[96500,98000,99500,101000,103500,105000,106500,105000,102500,100000,99000,98500],\"home_value:sf_ca\":[100.5,101.0,101.5,102.0,102.8,103.5,104.0,104.2,104.0,103.5,103.0,102.8],\"rent:sf_ca\":[100.3,100.6,101.0,101.4,101.8,102.2,102.5,102.6,102.5,102.2,101.9,101.8],\"openai_valuation_usd_trillions\":[0.88,0.92,0.95,0.98,1.02,1.05,1.08,1.10,1.12,1.15,1.18,1.20]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619483,
-    "id": "20260605083111a2fd26c3a12e4319",
-    "model": "glm-4.5-flash",
+    "created": 1780620300,
+    "id": "20260605084451639cad194f7e4eb3",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605083111a2fd26c3a12e4319",
+    "request_id": "20260605084451639cad194f7e4eb3",
     "usage": {
-      "completion_tokens": 466,
-      "prompt_tokens": 373,
+      "completion_tokens": 537,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 0
       },
-      "total_tokens": 839
+      "total_tokens": 905
     }
   },
-  "latency_s": 12.89611005783081
+  "latency_s": 9.506401062011719
 }

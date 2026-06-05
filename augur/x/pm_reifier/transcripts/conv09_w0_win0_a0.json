@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,27 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Post-pandemic recovery with moderate inflation; tech growth continues, AI boom accelerates; housing market stabilizing after cooling\",\"months\":{\"inflation\":[101.2,102.5,103.8,104.3,104.9,105.2,105.6,105.9,106.3,106.7,107.1,107.5],\"sp500\":[5450,5620,5800,5920,6050,6120,6250,6400,6550,6680,6800,6920],\"crypto:BTC\":[98000,102000,108000,115000,122000,128000,135000,142000,148000,152000,155000,158000],\"home_value:sf_ca\":[101.5,102.3,103.1,103.8,104.5,105.1,105.7,106.2,106.8,107.3,107.8,108.2],\"rent:sf_ca\":[101.8,102.9,104.1,105.3,106.5,107.6,108.7,109.8,110.9,111.9,112.9,113.8],\"openai_valuation_usd_trillions\":[0.92,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Stable high-growth environment with sticky inflation; markets adjusting to sustained AI capital expenditure. OpenAI gears for public offering.\",\"months\":{\"inflation\":[100.2,100.5,100.8,101.2,101.5,101.8,102.0,102.3,102.6,102.9,103.2,103.5],\"sp500\":[5325,5350,5370,5355,5380,5405,5425,5440,5415,5390,5410,5430],\"crypto:BTC\":[95200,95800,96500,95500,96200,97000,97800,97500,96200,95000,95800,96500],\"home_value:sf_ca\":[100.5,101.0,101.5,101.8,102.2,102.5,102.8,103.0,103.2,103.5,103.8,104.0],\"rent:sf_ca\":[100.3,100.6,100.9,101.2,101.5,101.8,102.1,102.4,102.7,103.0,103.3,103.6],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96,0.97]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619347,
-    "id": "20260605082853c17fdcd80a1f4882",
-    "model": "glm-4.5-flash",
+    "created": 1780620207,
+    "id": "20260605084319bcf8123e99f14491",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082853c17fdcd80a1f4882",
+    "request_id": "20260605084319bcf8123e99f14491",
     "usage": {
-      "completion_tokens": 447,
-      "completion_tokens_details": {
-        "reasoning_tokens": 0
-      },
-      "prompt_tokens": 373,
+      "completion_tokens": 546,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 0
       },
-      "total_tokens": 820
+      "total_tokens": 914
     }
   },
-  "latency_s": 14.357199430465698
+  "latency_s": 8.856951475143433
 }

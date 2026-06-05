@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Early recovery phase with moderate inflation and strong tech growth. Crypto sees volatile gains. OpenAI approaches IPO readiness as valuation climbs steadily.\",\"months\":{\"inflation\":[100.5,101.2,102.0,102.5,103.1,103.8,104.2,104.7,105.3,105.8,106.2,106.5],\"sp500\":[5380,5450,5520,5600,5680,5720,5650,5580,5450,5380,5420,5500],\"crypto:BTC\":[98000,102000,108000,115000,122000,118000,112000,105000,98000,102000,108000,115000],\"home_value:sf_ca\":[100.3,101.0,101.8,102.5,103.2,103.8,104.2,104.5,104.8,105.0,105.2,105.3],\"rent:sf_ca\":[100.5,101.2,102.0,102.8,103.5,104.2,104.8,105.2,105.5,105.8,106.0,106.2],\"openai_valuation_usd_trillions\":[0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Early expansion phase driven by AI productivity gains. Inflation remains sticky but manageable. OpenAI growth accelerates in private markets ahead of anticipated public offering.\",\"months\":{\"inflation\":[100.2,100.4,100.6,100.9,101.2,101.5,101.8,102.0,102.2,102.4,102.5,102.6],\"sp500\":[5350,5410,5465,5500,5530,5565,5590,5620,5645,5665,5680,5690],\"crypto:BTC\":[96500,98200,99500,101000,102500,103800,105000,106500,107800,108900,109500,110200],\"home_value:sf_ca\":[100.5,101.1,101.8,102.5,103.3,104.0,104.8,105.5,106.2,106.8,107.4,108.0],\"rent:sf_ca\":[100.3,100.6,101.0,101.4,101.9,102.3,102.8,103.2,103.6,104.0,104.3,104.6],\"openai_valuation_usd_trillions\":[0.9,0.95,1.0,1.05,1.1,1.15,1.2,1.25,1.3,1.35,1.4,1.45]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619555,
-    "id": "202606050832225c1be73576c84a48",
-    "model": "glm-4.5-flash",
+    "created": 1780620349,
+    "id": "20260605084537de2df668a52e4f8f",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "202606050832225c1be73576c84a48",
+    "request_id": "20260605084537de2df668a52e4f8f",
     "usage": {
-      "completion_tokens": 448,
-      "prompt_tokens": 373,
+      "completion_tokens": 542,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 0
       },
-      "total_tokens": 821
+      "total_tokens": 910
     }
   },
-  "latency_s": 14.162521123886108
+  "latency_s": 12.641583681106567
 }

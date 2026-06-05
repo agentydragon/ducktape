@@ -1,7 +1,7 @@
 {
-  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
   "request": {
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7",
     "temperature": 1.0,
     "thinking": {
       "type": "disabled"
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Early recovery phase with moderate inflation, strong tech and crypto performance, housing market stabilization, OpenAI preparing for IPO\",\"months\":{\"inflation\":[100.2,100.5,100.8,101.1,101.3,101.5,101.6,101.8,102.0,102.1,102.3,102.4],\"sp500\":[5350,5420,5485,5540,5610,5680,5725,5780,5820,5875,5920,5960],\"crypto:BTC\":[96500,98500,100500,103000,106000,109500,113000,116500,119500,122000,124500,126500],\"home_value:sf_ca\":[100.2,100.5,100.8,101.1,101.4,101.6,101.8,102.0,102.2,102.4,102.5,102.7],\"rent:sf_ca\":[100.3,100.6,100.9,101.2,101.4,101.7,101.9,102.1,102.3,102.5,102.7,102.9],\"openai_valuation_usd_trillions\":[0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Soft landing and AI boom. Inflation cools gradually towards target. S&P 500 and Bitcoin rally on productivity gains and rate cut expectations. SF real estate remains resilient but decouples from national averages due to tech wealth concentration. OpenAI valuation creeps higher as GPT-5 rumors circulate.\",\"months\":{\"inflation\":[99.8,99.5,99.2,99.0,98.8,98.6,98.5,98.4,98.3,98.2,98.1,98.0],\"sp500\":[5350,5380,5400,5390,5420,5450,5480,5500,5530,5560,5590,5620],\"crypto:BTC\":[96000,97000,97500,96800,98000,99500,100500,101000,102500,104000,105500,107000],\"home_value:sf_ca\":[100.5,101.0,101.4,101.8,102.1,102.4,102.6,102.8,103.0,103.2,103.3,103.5],\"rent:sf_ca\":[100.3,100.6,100.9,101.1,101.3,101.5,101.7,101.9,102.0,102.2,102.3,102.4],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96]},\"openai_ipo_month_index\":null}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780619124,
-    "id": "20260605082511b17e165a8bc44748",
-    "model": "glm-4.5-flash",
+    "created": 1780620013,
+    "id": "20260605084002b1152007d3fe4208",
+    "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605082511b17e165a8bc44748",
+    "request_id": "20260605084002b1152007d3fe4208",
     "usage": {
-      "completion_tokens": 445,
-      "prompt_tokens": 373,
+      "completion_tokens": 576,
+      "prompt_tokens": 368,
       "prompt_tokens_details": {
-        "cached_tokens": 289
+        "cached_tokens": 0
       },
-      "total_tokens": 818
+      "total_tokens": 944
     }
   },
-  "latency_s": 14.031613111495972
+  "latency_s": 11.594953060150146
 }
