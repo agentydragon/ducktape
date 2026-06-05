@@ -28,11 +28,11 @@
         }
       }
     ],
-    "created": 1780622442,
-    "id": "2026060509204105bd63b66f7042c5",
+    "created": 1780623860,
+    "id": "20260605094419c184f428a1784c2a",
     "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "2026060509204105bd63b66f7042c5",
+    "request_id": "20260605094419c184f428a1784c2a",
     "usage": {
       "completion_tokens": 9,
       "prompt_tokens": 72,
@@ -42,5 +42,5 @@
       "total_tokens": 81
     }
   },
-  "latency_s": 2.0278186798095703
+  "latency_s": 1.897531509399414
 }

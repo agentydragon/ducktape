@@ -25,6 +25,30 @@
       {
         "role": "user",
         "content": "Continue the SAME world. Month-12 macro levels: inflation=103.69, sp500=7624.5, crypto:BTC=63050.3, home_value:sf_ca=101.75, rent:sf_ca=102.4. Last OpenAI valuation: ~$1150B.\nReturn exactly 12 macro values per series for months 13..24, and openai_events for months 13..24."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Post-IPO hangover and sticky inflation force the Fed into a hawkish hold, triggering a broad risk-off rotation. Equities and crypto correct sharply as liquidity tightens, while real assets like SF homes hold firm as inflation hedges.\",\"months\":{\"inflation\":[104.05,104.41,104.77,105.12,105.48,105.82,106.16,106.49,106.82,107.14,107.45,107.76],\"sp500\":[7410.2,7280.5,7150.8,7025.3,6890.1,6955.4,6840.2,6705.8,6620.5,6580.1,6510.4,6455.2],\"crypto:BTC\":[60120.4,57500.2,54200.8,51500.5,53500.3,51250.1,48800.5,47200.2,45800.8,46500.4,44200.1,42800.5],\"home_value:sf_ca\":[101.88,101.95,102.05,102.18,102.3,102.4,102.52,102.65,102.78,102.85,102.92,103.05],\"rent:sf_ca\":[102.55,102.7,102.85,103.0,103.15,103.3,103.45,103.6,103.75,103.9,104.05,104.2]},\"openai_events\":[]}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-24 macro levels: inflation=107.76, sp500=6455.2, crypto:BTC=42800.5, home_value:sf_ca=103.05, rent:sf_ca=104.2. Last OpenAI valuation: ~$1150B.\nReturn exactly 12 macro values per series for months 25..36, and openai_events for months 25..36."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Liquidity returns as inflation breaks below trend. Aggressive rate cuts fuel a melt-up in equities and crypto, with AI stocks leading the charge. Real estate accelerates as capital floods back into hard assets.\",\"months\":{\"inflation\":[108.05,108.32,108.58,108.82,109.05,109.27,109.48,109.68,109.87,110.05,110.22,110.38],\"sp500\":[6510.5,6650.2,6840.8,7020.5,7250.1,7480.3,7690.5,7850.2,8010.5,8150.2,8280.5,8405.1],\"crypto:BTC\":[44505.2,47200.5,51000.3,55800.5,60500.2,65200.8,69800.5,74200.2,78500.5,82000.2,85500.5,88500.2],\"home_value:sf_ca\":[103.15,103.25,103.38,103.52,103.68,103.85,104.02,104.2,104.38,104.55,104.72,104.88],\"rent:sf_ca\":[104.35,104.5,104.65,104.8,104.95,105.1,105.25,105.4,105.55,105.7,105.85,106.0]},\"openai_events\":[{\"month\":32,\"kind\":\"secondary_tender\",\"valuation_usd_b\":1450,\"price_per_share\":179.5}]}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-36 macro levels: inflation=110.38, sp500=8405.1, crypto:BTC=88500.2, home_value:sf_ca=104.88, rent:sf_ca=106. Last OpenAI valuation: ~$1450B.\nReturn exactly 12 macro values per series for months 37..48, and openai_events for months 37..48."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Goldilocks era solidifies as inflation stabilizes and earnings beat expectations. The S&P 500 grinds steadily higher, crypto volatility subsides into a structural uptrend, and San Francisco real estate decouples from national averages, surging on localized tech wealth effects.\",\"months\":{\"inflation\":[110.55,110.72,110.89,111.06,111.23,111.41,111.59,111.77,111.95,112.14,112.33,112.52],\"sp500\":[8480.5,8565.2,8620.8,8550.3,8610.5,8690.2,8750.5,8820.8,8890.5,8940.2,8985.5,9030.2],\"crypto:BTC\":[90200.5,92800.2,91500.5,94500.2,97200.5,98500.2,101000.5,103500.2,102200.5,105500.2,108000.5,110500.2],\"home_value:sf_ca\":[105.1,105.35,105.65,105.95,106.3,106.65,107.05,107.45,107.9,108.35,108.8,109.25],\"rent:sf_ca\":[106.15,106.3,106.45,106.6,106.75,106.9,107.05,107.2,107.35,107.5,107.65,107.8]},\"openai_events\":[]}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-48 macro levels: inflation=112.52, sp500=9030.2, crypto:BTC=110500, home_value:sf_ca=109.25, rent:sf_ca=107.8. Last OpenAI valuation: ~$1450B.\nReturn exactly 12 macro values per series for months 49..60, and openai_events for months 49..60."
       }
     ]
   },
@@ -34,24 +58,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Post-IPO hangover and sticky inflation force the Fed into a hawkish hold, triggering a broad risk-off rotation. Equities and crypto correct sharply as liquidity tightens, while real assets like SF homes hold firm as inflation hedges.\",\"months\":{\"inflation\":[104.05,104.41,104.77,105.12,105.48,105.82,106.16,106.49,106.82,107.14,107.45,107.76],\"sp500\":[7410.2,7280.5,7150.8,7025.3,6890.1,6955.4,6840.2,6705.8,6620.5,6580.1,6510.4,6455.2],\"crypto:BTC\":[60120.4,57500.2,54200.8,51500.5,53500.3,51250.1,48800.5,47200.2,45800.8,46500.4,44200.1,42800.5],\"home_value:sf_ca\":[101.88,101.95,102.05,102.18,102.3,102.4,102.52,102.65,102.78,102.85,102.92,103.05],\"rent:sf_ca\":[102.55,102.7,102.85,103.0,103.15,103.3,103.45,103.6,103.75,103.9,104.05,104.2]},\"openai_events\":[]}",
+          "content": "{\"regime\":\"Inflation accelerates into a structural wage-price spiral, forcing the Fed into a restrictive stance. A credit contraction triggers a broad de-risking, punishing high-multiple tech and crypto, while SF real estate stagnates under the weight of high rates. OpenAI, heavily reliant on capital expenditure, faces a valuation reset.\",\"months\":{\"inflation\":[112.92,113.35,113.8,114.28,114.78,115.3,115.84,116.4,116.98,117.58,118.2,118.84],\"sp500\":[8940.5,8810.2,8650.8,8420.5,8150.2,7950.5,7800.2,7650.5,7520.2,7480.5,7405.2,7350.8],\"crypto:BTC\":[108500.2,104000.5,98500.2,92000.5,88000.2,85000.5,82000.2,79500.5,78000.2,76200.5,74500.2,72800.5],\"home_value:sf_ca\":[109.35,109.4,109.35,109.25,109.1,108.9,108.75,108.6,108.45,108.35,108.2,108.1],\"rent:sf_ca\":[107.95,108.1,108.25,108.4,108.55,108.7,108.85,109.0,109.15,109.3,109.45,109.6]},\"openai_events\":[{\"month\":58,\"kind\":\"secondary_tender\",\"valuation_usd_b\":1250,\"price_per_share\":154.7}]}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780624279,
-    "id": "202606050951086ceadf05893a425d",
+    "created": 1780624314,
+    "id": "20260605095144547a2e94ebe74f3f",
     "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "202606050951086ceadf05893a425d",
+    "request_id": "20260605095144547a2e94ebe74f3f",
     "usage": {
-      "completion_tokens": 527,
-      "prompt_tokens": 2890,
+      "completion_tokens": 411,
+      "prompt_tokens": 4296,
       "prompt_tokens_details": {
-        "cached_tokens": 2304
+        "cached_tokens": 3712
       },
-      "total_tokens": 3417
+      "total_tokens": 4707
     }
   },
-  "latency_s": 10.746873378753662
+  "latency_s": 11.16689133644104
 }

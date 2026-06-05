@@ -187,6 +187,27 @@ Burn: 191k tokens, weekly **0 pp** (three runs total ≈ 0 pp weekly, ~1% on the
   climbing it (relabeled as a cumulative price level → `cpi>108` coverage 0.00 → 0.73); transient
   `503 DNS resolution failure`s dropped worlds (now retried as 5xx).
 
+### History context length (1 yr → 5 yr)
+
+Extending the recent-history tail from 12 to **60 months** (`fetch_real_history.py` N=60; the model now
+sees BTC's full 2021 boom → 2022 crash → 2025 peak → 2026 drawdown and the post-2021 inflation/rent/home
+climb) modestly **widens coverage**, mostly on the steady climbers and the near-zero markets:
+
+| market (raw)       | 1 yr | 5 yr |
+| ------------------ | ---: | ---: |
+| sp500>8500@2027-12 | 0.00 | 0.06 |
+| btc>90k@2027-12    | 0.00 | 0.06 |
+| cpi>108@2029-12    | 0.73 | 0.94 |
+| sfhome>110@2030-12 | 0.13 | 0.38 |
+| sfrent>108@2029-12 | 0.27 | 0.38 |
+| openai_ipo_by_2029 | 0.67 | 0.81 |
+
+The multi-year drift is now grounded in the real trend (CPI/rent/home), and S&P/BTC upside moves off
+exactly-zero. But the **extreme tails stay uncovered** (btc>180k, openai_val>2T both 0.00) — a full
+cyclical history still isn't enough to make GLM-4.7 imagine the biggest booms. Cost: input ~doubles
+(60-month history carried in every stateful window → 271k tokens), still 0 pp weekly. See
+`plot_rollouts.py` / `results/rollouts.png` for the visual.
+
 ### Next: force coverage, then compact handoff
 
 **Force upside coverage first** — it is the binding blocker across every run. Levers: raise
