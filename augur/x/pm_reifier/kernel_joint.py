@@ -24,7 +24,29 @@ from kernel import SERIES, SERIES_DESC, _call
 from kernel_percentile import PERCENTILES, _enforce_monotone
 
 
-def system_prompt(n: int) -> str:
+def _sample_instruction(n: int, *, sharp: bool) -> str:
+    if not sharp:
+        return (
+            f'2. "samples": {n} INDEPENDENT joint samples drawn from that SAME distribution. Each sample is one '
+            "cross-section over all series, and the series move together coherently within a sample (a risk-off "
+            "month hits equities and crypto together; inflation drags rents and home prices). Your samples MUST "
+            "be consistent with your percentiles: across the samples, each series' spread should match the "
+            "p1..p99 you stated — typical values common, tail values rare but present.\n"
+        )
+    # Sharp: the model defaults to an evenly-spaced quantile GRID; force a density-weighted i.i.d. draw.
+    return (
+        f'2. "samples": {n} samples that are an HONEST RANDOM (i.i.d.) draw from the distribution you just '
+        f"described — as if you actually rolled the dice {n} times. This is NOT a grid and NOT evenly spaced "
+        "from low to high: in a real random sample most draws land near the middle and only a few reach the "
+        f"tails. Concretely, across your {n} samples about HALF should fall between your p25 and p75, only "
+        "about 1 in 10 beyond p90 or below p10, and only about 1 in 50 beyond p99 or below p1. Near-duplicate "
+        "or clustered values are expected and correct; do NOT sort them; do NOT lay one out at each percentile. "
+        "Each sample is one joint cross-section — all series move together coherently within a sample (a "
+        "risk-off month hits equities and crypto together; inflation drags rents and home prices).\n"
+    )
+
+
+def system_prompt(n: int, *, sharp: bool = False) -> str:
     lines = "\n".join(f"  {s}: {SERIES_DESC[s]}" for s in SERIES)
     grid = ", ".join(str(p) for p in PERCENTILES)
     return (
@@ -34,11 +56,7 @@ def system_prompt(n: int) -> str:
         f'1. "percentiles": for EACH series, your predictive quantiles at percentiles {grid}. p50 is your '
         "median; p1/p99 are your honest 1-in-100 low/high — make the tails genuinely wide (crashes and "
         "spikes happen), non-decreasing.\n"
-        f'2. "samples": {n} INDEPENDENT joint samples drawn from that SAME distribution. Each sample is one '
-        "cross-section over all series, and the series move together coherently within a sample (a risk-off "
-        "month hits equities and crypto together; inflation drags rents and home prices). Your samples MUST "
-        "be consistent with your percentiles: across the samples, each series' spread should match the "
-        "p1..p99 you stated — typical values common, tail values rare but present.\n"
+        f"{_sample_instruction(n, sharp=sharp)}"
         'Output ONLY JSON: {"percentiles": {series: {"1": num, ..., "99": num}, ...}, "samples": '
         f"[{{series: num, ...}}, ...]}} with exactly {n} samples. Every object must contain all of: "
         f"{', '.join(SERIES)}."
@@ -53,6 +71,8 @@ def sample_step(
     n_options: int,
     temperature: float,
     tag: str,
+    *,
+    sharp: bool = False,
 ) -> tuple[dict[str, dict[float, float]], list[dict], dict]:
     """Returns (percentiles {series:{u:val}}, samples [{"values":{series:float},"weight":1.0}], usage)."""
     cur_label = history[-1][0]
@@ -66,7 +86,10 @@ def sample_step(
         "temperature": temperature,
         "thinking": {"type": "disabled"},
         "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": system_prompt(n_options)}, {"role": "user", "content": user}],
+        "messages": [
+            {"role": "system", "content": system_prompt(n_options, sharp=sharp)},
+            {"role": "user", "content": user},
+        ],
     }
     resp = _call(endpoint, body, tag)
     content = resp["choices"][0]["message"]["content"]

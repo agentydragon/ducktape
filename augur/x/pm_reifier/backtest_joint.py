@@ -18,6 +18,7 @@ Run: PYTHONPATH=. python3 augur/x/pm_reifier/backtest_joint.py   (writes results
 from __future__ import annotations
 
 import json
+import os
 import statistics
 from concurrent.futures import ThreadPoolExecutor
 
@@ -30,6 +31,7 @@ from run_spike import CODING, RESULTS, quota
 ENDPOINT = CODING
 TEMP = 1.0
 CONCURRENCY = 4
+SHARP = os.environ.get("JOINT_SHARP") == "1"  # explicit anti-grid / density-weighted sampling instruction
 
 
 def _interdecile(values: list[float]) -> float:
@@ -44,7 +46,7 @@ def step(args: tuple[int, list[tuple[str, dict[str, float]]], dict[str, float]])
     target_idx, history, realized = args
     next_label = m_label(target_idx)
     percentiles, samples, usage = kernel_joint.sample_step(
-        ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"joint_{next_label}"
+        ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"joint_{next_label}", sharp=SHARP
     )
     pit_pctl, pit_samp, spread_ratio = {}, {}, {}
     for s in kernel.SERIES:
@@ -108,7 +110,7 @@ def main() -> None:
     ratios = [v for r in steps for v in r["spread_ratio"].values()]
     summary = {
         "model": MODEL,
-        "kernel": "joint",
+        "kernel": "joint_sharp" if SHARP else "joint",
         "anchor": T0,
         "steps": len(steps),
         "tokens": sum(r["tokens"] for r in steps),
@@ -117,10 +119,11 @@ def main() -> None:
         "mean_spread_ratio": sum(ratios) / len(ratios) if ratios else float("nan"),
         "per_step": steps,
     }
-    (RESULTS / "backtest_joint.json").write_text(json.dumps(summary, indent=2) + "\n")
+    out = RESULTS / ("backtest_joint_sharp.json" if SHARP else "backtest_joint.json")
+    out.write_text(json.dumps(summary, indent=2) + "\n")
     q1 = quota()
     p, sm = summary["from_percentiles"], summary["from_samples"]
-    print(f"\n=== {MODEL} joint backtest: {len(steps)} steps ===")
+    print(f"\n=== {MODEL} joint backtest (sharp={SHARP}): {len(steps)} steps ===")
     print("  (percentiles are a commitment-device scaffold only; the SAMPLES are Q)")
     print(
         f"  SAMPLES [RESULT]: mean PIT {sm['mean_pit']:.3f}  tail-escape {sm['tail_escape']:.0%}  JSD {sm['jsd']:.3f}"
