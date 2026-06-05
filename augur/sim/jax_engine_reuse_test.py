@@ -22,7 +22,7 @@ from augur.sim.buffers import SimulationBuffers
 from augur.sim.compiler import compile_simulation
 from augur.sim.compiler.plan import CompiledSimulation
 from augur.sim.engine import _allocate_buffers, _allocate_current_state, _run_month_step, _snapshot_current_state
-from augur.sim.engine.jax_engine import run_jax_scan
+from augur.sim.engine.jax_engine import _program_impl, run_jax_scan
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
@@ -250,6 +250,36 @@ def test_mortgage_principal_sweep_produces_correct_result() -> None:
         lambda b: b.state.liability_principal_state,
         locations=_SF,
     )
+
+
+def test_native_cache_reuses_executable_across_structure_and_sweeps() -> None:
+    """JAX's OWN compile cache (`_program_impl._cache_size()`) reuses the compiled executable: an
+    identical-structure second call adds 0 compiles, a traced value/seed sweep adds 0, and a structural
+    change adds exactly 1. This is what makes repeated `run_jax_scan` not recompile the scan program."""
+    plan_a = _compile(_tax_scenario(), rollout_count=2, locations={})
+
+    _run_jax(plan_a)
+    base = _program_impl._cache_size()
+
+    # Identical structure (same plan): zero additional compiles.
+    _run_jax(plan_a)
+    assert _program_impl._cache_size() == base
+
+    # Traced value sweep (same structure, perturbed bracket rates): zero additional compiles.
+    plan_b = replace(plan_a, tax=replace(plan_a.tax, link_ordinary_rate=plan_a.tax.link_ordinary_rate * 1.3))
+    _run_jax(plan_b)
+    assert _program_impl._cache_size() == base
+
+    # Seed sweep (same structure, different rollout draws): zero additional compiles.
+    plan_seed = _compile(_tax_scenario(), rollout_count=2, locations={})
+    plan_seed = replace(plan_seed, external_values=plan_seed.external_values * 1.01)
+    _run_jax(plan_seed)
+    assert _program_impl._cache_size() == base
+
+    # Structural change (different rollout_count -> different shapes & `SlotPlan`): exactly one more.
+    plan_struct = _compile(_tax_scenario(), rollout_count=3, locations={})
+    _run_jax(plan_struct)
+    assert _program_impl._cache_size() == base + 1
 
 
 if __name__ == "__main__":

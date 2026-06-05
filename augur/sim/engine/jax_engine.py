@@ -38,6 +38,7 @@ precision alone, not logic.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import partial
 from typing import NamedTuple
@@ -45,12 +46,12 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax import stages
 
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
+from augur.sim.compiler.plan import SlotPlan
 from augur.sim.enums import (
     CapitalGainClassification,
     LifecycleKind,
@@ -59,6 +60,15 @@ from augur.sim.enums import (
     PrivateEquityOpportunityOutcome,
 )
 from augur.sim.tensor_fifo import lot_order_for_pool
+
+# Opt-in JAX persistent on-disk compilation cache: when the env var is set, compiled executables
+# survive across processes so the ~6400-instruction scan program need not recompile each run. A no-op
+# otherwise (the in-process native cache still reuses across `run_jax_scan` calls of one structure).
+_JAX_CACHE_DIR = os.environ.get("AUGUR_JAX_COMPILATION_CACHE_DIR")
+if _JAX_CACHE_DIR:
+    jax.config.update("jax_compilation_cache_dir", _JAX_CACHE_DIR)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.0)
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
@@ -127,12 +137,13 @@ class _FoldedSale:
     """One real scheduled sale, with its static FIFO data resolved host-side for the scan fold.
 
     `ordered_lots` is the FIFO lot order for the sale's (agent, account, asset) pool (a static index
-    array); `buffer_index` is the sale's column in the `lot_dispositions.scheduled` buffers; `month`
+    tuple — `tuple` so the enclosing `_Structure` is hashable; convert with `np.asarray` at the use
+    site); `buffer_index` is the sale's column in the `lot_dispositions.scheduled` buffers; `month`
     is the (static) month it fires, compared against the traced scan index inside the step."""
 
     buffer_index: int
     month: int
-    ordered_lots: np.ndarray
+    ordered_lots: tuple[int, ...]
     quantity: float
     proceeds_slot: int
     agent_code: int
@@ -163,7 +174,7 @@ class _LiquidityPool:
 
     asset_idx: int  # column in the policy's asset list (the disposition buffer's asset axis)
     series_index: int
-    ordered_lots: np.ndarray
+    ordered_lots: tuple[int, ...]  # `tuple` (not np array) so the enclosing `_Structure` is hashable
 
 
 @dataclass(frozen=True)
@@ -244,6 +255,190 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
+class _Baked(NamedTuple):
+    """Every device array the scan program closes over, packed into a single pytree (a `NamedTuple` is
+    an auto-registered JAX pytree node; nested `dict[str, jnp.ndarray]` values are valid pytree nodes
+    too). Passed to `_program_impl` as a TRACED argument: JAX keys the native compile cache on its
+    avals, so an identical-structure plan (identical shapes/dtypes) is a cache hit and differing VALUES
+    reuse the same executable — no hand-rolled hashing of array contents."""
+
+    # Carry-init device constants.
+    cash0: jnp.ndarray
+    ordinary0: jnp.ndarray
+    property_tax_ytd0: jnp.ndarray
+    lot0: jnp.ndarray
+    cg_active0: jnp.ndarray
+    cg_ytd0: jnp.ndarray
+    tlh0: jnp.ndarray
+    property_rented_fraction_0: jnp.ndarray
+    property_building_basis_0: jnp.ndarray
+    prop0: jnp.ndarray
+    liab0: jnp.ndarray
+    # Whole-horizon static tables sliced by the traced month.
+    tr: dict[str, jnp.ndarray]
+    og: dict[str, jnp.ndarray]
+    acc: dict[str, jnp.ndarray]
+    # Scheduled-sale stacked static data.
+    sale_months_t: jnp.ndarray
+    sale_qty_t: jnp.ndarray
+    sale_prior_t: jnp.ndarray
+    sale_cg_map_t: jnp.ndarray
+    sale_policy_mask_t: jnp.ndarray
+    sale_price_fixed_t: jnp.ndarray
+    # Year-end / property tables.
+    property_is_primary_table: jnp.ndarray
+    tax_slot_table: jnp.ndarray
+    salt_cap_table: jnp.ndarray
+    # Device arrays the bodies + de-`plan`-ed cores read directly.
+    lot_purchase_month: jnp.ndarray
+    capital_gain_agent_codes: jnp.ndarray
+    cg_rep_profile: jnp.ndarray
+    property_owner_profile_index: jnp.ndarray
+    liability_owner_profile_index: jnp.ndarray
+    salt_contributing_mask: jnp.ndarray
+    lot_asset_series_index: jnp.ndarray
+    pe_owner_cash_mask: jnp.ndarray  # (pe_policy, cash)
+
+
+@dataclass(frozen=True)
+class _FoldedHarvest:
+    """One reduced-form TLH harvest policy, static data resolved host-side (hashable for `_Structure`)."""
+
+    policy_idx: int
+    gain_profile: int
+    lot_indices: tuple[int, ...]
+    series_index: int
+    peak_annual_yield: float
+    floor_annual_yield: float
+    maturity_decay_exponent: float
+    drawdown_sensitivity: float
+    short_term_fraction: float
+
+
+@dataclass(frozen=True)
+class _FoldedPE:
+    """One private-equity issuer's tender static data, plus its policy's per-issuer scalars (hashable)."""
+
+    issuer_idx: int
+    policy_idx: int
+    ordered: tuple[int, ...]
+    proceeds_cash_slot: int
+    owner_agent: int
+    floor_kind: int
+    floor_fixed: float
+    floor_base: float
+    floor_series: int
+    floor_base_month: int
+    floor_period: int
+    owner_non_pe_lot_indices: tuple[int, ...]  # for `_compute_liquid_net_worth`
+
+
+@dataclass(frozen=True)
+class _FoldedLifecycleEvent:
+    """One lifecycle event with the per-event scalars the step reads as Python (hashable)."""
+
+    event_index: int
+    month: int
+    kind: int
+    property_slot: int
+    rented_fraction: float  # for FRACTION events
+    amount: float  # for CAPITAL_IMPROVEMENT (cash) / SALE (closing-cost pct) events
+    owner_cash_slot: int  # `props.buyer_slot[property_slot]`
+    # SALE static data (resolved host-side; defaults for non-SALE events).
+    home_value_series_index: int
+    purchase_price: float
+    building_basis_initial: float
+    owner_profile: int
+    gain_profile: int
+    exclusion_cap: float
+    mortgage_liabilities: tuple[int, ...]  # liability slots whose property_slot == this property
+
+
+@dataclass(frozen=True)
+class _CapitalGainTarget:
+    """One (agent_code) -> matching capital-gain profile rows, resolved host-side (hashable)."""
+
+    agent_code: int
+    profiles: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class _LinkTaxStatic:
+    """One tax link's per-link Python scalars (read at trace time by `_compute_tax_for_link`)."""
+
+    link: int
+    profile: int
+    gain_profile: int
+    section_1250_rate: float
+    mid_active: bool
+    ordinary_count: int
+    has_ltcg: int
+    ltcg_count: int
+    salt_active: bool
+
+
+@dataclass(frozen=True)
+class _Structure:
+    """Every natively-hashable Python value the scan bodies read at TRACE TIME (counts, slot indices,
+    feature flags, and the folded event lists as tuples-of-frozen-dataclasses with int/float fields).
+    A frozen dataclass of `int`/`bool`/`float`/`tuple` (and tuples of small frozen dataclasses) is
+    hashable by Python's default frozen-dataclass `__hash__` — NO custom `__hash__`/`__eq__`. Passed
+    as a `static_argnames` arg to `_program_impl`, so identical structure is one cache key (a cache
+    hit) and a structural change is a fresh key (one extra compile)."""
+
+    rollout_count: int
+    horizon: int
+    cash_count: int
+    lot_count: int
+    property_count: int
+    liability_count: int
+    tax_profile_count: int
+    capital_gain_agent_count: int
+    tax_liability_count: int
+    harvest_policy_count: int
+    scheduled_sale_count: int
+    link_count: int
+    profile_count: int
+    taxliab_count: int
+    n_sales: int
+    sale_max_pool: int
+    lot_axis: int
+    liq_policy_count: int
+    liq_max_assets: int
+    pe_issuer_count: int
+    n_pe_kinds: int
+    # Folded event tuples (iterated in the step body / december pass).
+    folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
+    folded_pr: tuple[tuple[int, int], ...]
+    folded_liquidity: tuple[_FoldedLiquidity, ...]
+    folded_pe: tuple[_FoldedPE, ...]
+    folded_harvest: tuple[_FoldedHarvest, ...]
+    # Small index/selection arrays converted to (tuples of) tuples so they are hashable; converted
+    # back with `np.asarray(...)` at the use site inside the jitted region.
+    salt_link_active: tuple[bool, ...]
+    sale_pslot: tuple[int, ...]
+    sale_bufidx: tuple[int, ...]
+    sale_olots: tuple[tuple[int, ...], ...]
+    sale_price_series: tuple[int, ...]
+    pur_buf: tuple[int, ...]
+    pur_month: tuple[int, ...]
+    pur_stake: tuple[float, ...]
+    pur_buyer: tuple[int, ...]
+    pur_seller: tuple[int, ...]
+    pur_mort_rows: tuple[int, ...]
+    pur_mort_idx: tuple[int, ...]
+    folded_purchases_present: bool
+    folded_sales_present: bool
+    # Capital-gain accrual targets (agent_code -> matching profile rows) for the de-`plan`-ed
+    # `_record_capital_gains` (keyed by agent code, looked up at the call site).
+    cg_targets: tuple[_CapitalGainTarget, ...]
+    # Per-link tax static scalars for `_compute_tax_for_link`.
+    link_tax_static: tuple[_LinkTaxStatic, ...]
+    # Per-link tax profile / gain profile for the december breakdown column reads.
+    link_profile: tuple[int, ...]
+    profile_gain_index: tuple[int, ...]
+
+
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
     dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
@@ -257,12 +452,13 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
         raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
-    program, meta = _build_program(plan)
-    ys, sale_disp = program(*_program_inputs(plan))
+    baked, structure, p, meta = _build_program(plan)
+    external, pe, cfg = _program_inputs(plan)
+    ys, sale_disp = _program_impl(external, pe, cfg, baked, p, structure)
     _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
-def _program_inputs(plan: CompiledSimulation) -> tuple:
+def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
     """The three traced arguments the compiled program takes: the external-series cube, the
     seed-varying PE channel dict, and the swept-numeric `_TracedConfig`."""
     pe_channels = plan.pe_channels
@@ -281,23 +477,22 @@ def _program_inputs(plan: CompiledSimulation) -> tuple:
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
-    program, _ = _build_program(plan)
-    text = program.lower(*_program_inputs(plan)).compile().as_text()
+    baked, structure, p, _ = _build_program(plan)
+    external, pe, cfg = _program_inputs(plan)
+    text = _program_impl.lower(external, pe, cfg, baked, p, structure).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
     return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
-    """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
-    jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
-    `_ScanMeta`. Builds a fresh `jax.jit` program each call.
-
-    All numeric config is baked as XLA constants here; only the seed-varying series are traced, so the
-    compiled executable is reusable across rollout draws of the same scenario structure. The carry is
-    the per-rollout `_ScanState` pytree; each step gathers the month's plan rows by the traced scan
-    index and runs the branch-free cores (transfers, purchases/mortgages, sales, obligations, TLH,
-    private equity, §121/§168 property accrual, year-end tax)."""
+def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPlan, _ScanMeta]:
+    """Host-only build of the device program inputs for one plan *structure*. Does ALL numpy/Python
+    precompute and packs the results into a `_Baked` pytree (every device array the scan closes over,
+    a TRACED arg) and a `_Structure` frozen dataclass (every natively-hashable Python value the bodies
+    read at trace time, a STATIC arg) — plus the plan's `SlotPlan` (`p`, already natively hashable) and
+    the host-side `_ScanMeta` for the post-scan scatter. The compiled program is `_program_impl`, whose
+    native JAX cache reuses the executable across calls of the same structure (and across traced
+    value/seed sweeps) — no hand-rolled hashing."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
@@ -310,13 +505,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
     # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
     # capital-gains core threads it, so carry a zeroed copy.
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
-    # Traced inputs: placeholders here, rebound (via `nonlocal`) to the traced arguments inside
-    # `_program_impl`. `step` / `december_tax` close over these names and read the traced values at
-    # trace time. `tcfg` carries the swept numeric VALUES; `plan` stays the concrete structure.
-    external_values: jnp.ndarray = None  # type: ignore[assignment]
-    pe_ch: dict[str, jnp.ndarray] = None  # type: ignore[assignment]
-    cost_basis_per_unit: jnp.ndarray = None  # type: ignore[assignment]
-    tcfg: _TracedConfig = None  # type: ignore[assignment]
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
     # events), so they're carry state initialized from the compile-time broadcast.
@@ -361,14 +549,39 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         return em
 
     le_event_month = _event_months(le_starts, le_all.kind.shape[0])
-    folded_lifecycle = [
-        (i, int(le_event_month[i]), int(le_all.kind[i]), int(le_all.property_slot[i]))
-        for i in range(le_all.kind.shape[0])
-        if le_event_month[i] >= 0
-    ]
+
+    def _fold_lifecycle_event(i: int) -> _FoldedLifecycleEvent:
+        kind = int(le_all.kind[i])
+        prop = int(le_all.property_slot[i])
+        owner_profile = int(plan.property_owner_profile_index[prop]) if prop >= 0 else NO_CODE
+        gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile]) if owner_profile >= 0 else NO_CODE
+        exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
+        mortgage_liabilities = tuple(
+            int(lia)
+            for lia in range(plan.liabilities.property_slot.shape[0])
+            if int(plan.liabilities.property_slot[lia]) == prop
+        )
+        return _FoldedLifecycleEvent(
+            event_index=i,
+            month=int(le_event_month[i]),
+            kind=kind,
+            property_slot=prop,
+            rented_fraction=float(le_all.rented_fraction[i]),
+            amount=float(le_all.amount[i]),
+            owner_cash_slot=int(props.buyer_slot[prop]) if prop >= 0 else NO_CODE,
+            home_value_series_index=int(plan.property_home_value_series_index[prop]) if prop >= 0 else 0,
+            purchase_price=float(plan.properties.purchase_price[prop]) if prop >= 0 else 0.0,
+            building_basis_initial=float(plan.property_building_basis[prop]) if prop >= 0 else 0.0,
+            owner_profile=owner_profile,
+            gain_profile=gain_profile,
+            exclusion_cap=exclusion_cap,
+            mortgage_liabilities=mortgage_liabilities,
+        )
+
+    folded_lifecycle = [_fold_lifecycle_event(i) for i in range(le_all.kind.shape[0]) if le_event_month[i] >= 0]
     pr_event_month = _event_months(pr_starts, pr_events.agent_slot.shape[0])
     folded_pr = [(i, int(pr_event_month[i])) for i in range(pr_events.agent_slot.shape[0]) if pr_event_month[i] >= 0]
-    folded_sale_events = [(i, m) for (i, m, k, _prop) in folded_lifecycle if k == LifecycleKind.SALE]
+    folded_sale_events = [(ev.event_index, ev.month) for ev in folded_lifecycle if ev.kind == LifecycleKind.SALE]
 
     # Scheduled asset sales: resolve each real sale's static FIFO data once (host-side); the step
     # applies all firing sales (masked by the traced month). No sales -> the whole block is skipped.
@@ -377,15 +590,18 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         _FoldedSale(
             buffer_index=s,
             month=int(sales.month[s]),
-            ordered_lots=lot_order_for_pool(
-                lot_agent_codes=plan.lot_agent_codes,
-                lot_account_codes=plan.lot_account_codes,
-                lot_asset_codes=plan.lot_asset_codes,
-                lot_purchase_month=plan.lot_purchase_month,
-                lot_id_codes=plan.lot_id_codes,
-                agent_code=int(sales.agent[s]),
-                account_code=int(sales.source_account[s]),
-                asset_code=int(sales.asset[s]),
+            ordered_lots=tuple(
+                int(lot)
+                for lot in lot_order_for_pool(
+                    lot_agent_codes=plan.lot_agent_codes,
+                    lot_account_codes=plan.lot_account_codes,
+                    lot_asset_codes=plan.lot_asset_codes,
+                    lot_purchase_month=plan.lot_purchase_month,
+                    lot_id_codes=plan.lot_id_codes,
+                    agent_code=int(sales.agent[s]),
+                    account_code=int(sales.source_account[s]),
+                    asset_code=int(sales.asset[s]),
+                )
             ),
             quantity=float(sales.quantity[s]),
             proceeds_slot=int(sales.proceeds_slot[s]),
@@ -399,14 +615,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
     # sale to all): supply prefix over each pool's lots, demand prefix over each pool's sales (via the
     # `same_pool_prior` lower-triangular mask), so shared pools need no sequential loop.
     n_sales = len(folded_sales)
-    sale_max_pool = max((fs.ordered_lots.shape[0] for fs in folded_sales), default=1)
+    sale_max_pool = max((len(fs.ordered_lots) for fs in folded_sales), default=1)
     sale_months_t = jnp.asarray([fs.month for fs in folded_sales], dtype=jnp.int32)
     sale_qty_t = jnp.asarray([fs.quantity for fs in folded_sales], dtype=jnp.float32)
     sale_pslot = np.array([fs.proceeds_slot for fs in folded_sales], dtype=np.int64).reshape(n_sales)
     sale_bufidx = np.array([fs.buffer_index for fs in folded_sales], dtype=np.int64).reshape(n_sales)
     sale_olots = np.full((n_sales, sale_max_pool), p.lot_count, dtype=np.int64)  # pad with the dummy lot
     for _i, _fs in enumerate(folded_sales):
-        sale_olots[_i, : _fs.ordered_lots.shape[0]] = _fs.ordered_lots
+        sale_olots[_i, : len(_fs.ordered_lots)] = np.asarray(_fs.ordered_lots, dtype=np.int64)
     sale_price_fixed_t = jnp.asarray(
         [float(sales.price_fixed[fs.buffer_index]) for fs in folded_sales], dtype=jnp.float32
     )
@@ -575,7 +791,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                     asset_code=asset_code,
                 )
                 if ordered.size:
-                    pools.append(_LiquidityPool(asset_idx=asset_idx, series_index=series_index, ordered_lots=ordered))
+                    pools.append(
+                        _LiquidityPool(
+                            asset_idx=asset_idx,
+                            series_index=series_index,
+                            ordered_lots=tuple(int(lot) for lot in ordered),
+                        )
+                    )
         folded_liquidity.append(
             _FoldedLiquidity(
                 policy_index=policy,
@@ -609,7 +831,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
     pe_policies = plan.pe_policies
     pe_issuer_count = int(pe_issuers.codes.shape[0])
     n_pe_kinds = len(PrivateEquityDispositionKind)
-    folded_pe: list[tuple[int, int, np.ndarray]] = []
+    folded_pe: list[_FoldedPE] = []
     for issuer_idx in range(pe_issuer_count):
         if int(pe_issuers.codes[issuer_idx]) < 0:
             continue
@@ -617,11 +839,46 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         if lot_indices.size == 0:
             continue
         ordered = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
-        folded_pe.append((issuer_idx, int(pe_issuers.policy_index[issuer_idx]), ordered))
+        policy_idx = int(pe_issuers.policy_index[issuer_idx])
+        if policy_idx >= 0:
+            owner_non_pe = tuple(int(lot) for lot in np.flatnonzero(pe_policies.owner_non_pe_lot_mask[policy_idx]))
+            folded_pe.append(
+                _FoldedPE(
+                    issuer_idx=issuer_idx,
+                    policy_idx=policy_idx,
+                    ordered=tuple(int(lot) for lot in ordered),
+                    proceeds_cash_slot=int(pe_policies.proceeds_cash_slot[policy_idx]),
+                    owner_agent=int(pe_policies.owner_agent[policy_idx]),
+                    floor_kind=int(pe_policies.floor_kind[policy_idx]),
+                    floor_fixed=float(pe_policies.floor_fixed[policy_idx]),
+                    floor_base=float(pe_policies.floor_base[policy_idx]),
+                    floor_series=int(pe_policies.floor_series[policy_idx]),
+                    floor_base_month=int(pe_policies.floor_base_month[policy_idx]),
+                    floor_period=int(pe_policies.floor_period[policy_idx]),
+                    owner_non_pe_lot_indices=owner_non_pe,
+                )
+            )
+        else:
+            folded_pe.append(
+                _FoldedPE(
+                    issuer_idx=issuer_idx,
+                    policy_idx=policy_idx,
+                    ordered=tuple(int(lot) for lot in ordered),
+                    proceeds_cash_slot=NO_CODE,
+                    owner_agent=NO_CODE,
+                    floor_kind=AMOUNT_FIXED,
+                    floor_fixed=0.0,
+                    floor_base=0.0,
+                    floor_series=NO_CODE,
+                    floor_base_month=0,
+                    floor_period=1,
+                    owner_non_pe_lot_indices=(),
+                )
+            )
 
     # TLH harvest policies: per-policy static data (the jitted core books a calibrated capital loss).
     harvest = plan.harvest_policies
-    folded_harvest: list[tuple] = []
+    folded_harvest: list[_FoldedHarvest] = []
     for policy_idx in range(harvest.gain_profile_index.shape[0]):
         gain_profile = int(harvest.gain_profile_index[policy_idx])
         lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
@@ -629,16 +886,16 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
             continue
         params = harvest.params[policy_idx]
         folded_harvest.append(
-            (
-                policy_idx,
-                gain_profile,
-                lot_indices,
-                int(harvest.series_index[policy_idx]),
-                float(params.peak_annual_yield),
-                float(params.floor_annual_yield),
-                float(params.maturity_decay_exponent),
-                float(params.drawdown_sensitivity),
-                float(harvest.short_term_fraction[policy_idx]),
+            _FoldedHarvest(
+                policy_idx=policy_idx,
+                gain_profile=gain_profile,
+                lot_indices=tuple(int(lot) for lot in lot_indices),
+                series_index=int(harvest.series_index[policy_idx]),
+                peak_annual_yield=float(params.peak_annual_yield),
+                floor_annual_yield=float(params.floor_annual_yield),
+                maturity_decay_exponent=float(params.maturity_decay_exponent),
+                drawdown_sensitivity=float(params.drawdown_sensitivity),
+                short_term_fraction=float(harvest.short_term_fraction[policy_idx]),
             )
         )
 
@@ -675,6 +932,228 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         jnp.asarray(plan.salt.cap_by_year[:, cap_year_index_by_month]) if link_count else jnp.zeros((0, horizon))
     )
 
+    salt_contributing_mask = (
+        jnp.asarray(plan.salt.contributing_mask.astype(np.float64))
+        if link_count
+        else jnp.zeros((0, max(1, link_count)))
+    )
+    pe_owner_cash_mask = (
+        jnp.asarray(pe_policies.owner_cash_mask)
+        if pe_policies.owner_cash_mask.size
+        else jnp.zeros((max(1, pe_issuer_count), p.cash_count))
+    )
+
+    baked = _Baked(
+        cash0=cash0,
+        ordinary0=ordinary0,
+        property_tax_ytd0=property_tax_ytd0,
+        lot0=lot0,
+        cg_active0=cg_active0,
+        cg_ytd0=cg_ytd0,
+        tlh0=tlh0,
+        property_rented_fraction_0=property_rented_fraction_0,
+        property_building_basis_0=property_building_basis_0,
+        prop0=jnp.zeros((p.property_count, r)),
+        liab0=jnp.zeros((p.liability_count, r)),
+        tr=tr,
+        og=og,
+        acc=acc,
+        sale_months_t=sale_months_t,
+        sale_qty_t=sale_qty_t,
+        sale_prior_t=sale_prior_t,
+        sale_cg_map_t=sale_cg_map_t,
+        sale_policy_mask_t=sale_policy_mask_t,
+        sale_price_fixed_t=sale_price_fixed_t,
+        property_is_primary_table=property_is_primary_table,
+        tax_slot_table=tax_slot_table,
+        salt_cap_table=salt_cap_table,
+        lot_purchase_month=jnp.asarray(plan.lot_purchase_month),
+        capital_gain_agent_codes=jnp.asarray(plan.capital_gain_agent_codes),
+        cg_rep_profile=jnp.asarray(cg_rep_profile),
+        property_owner_profile_index=jnp.asarray(plan.property_owner_profile_index),
+        liability_owner_profile_index=jnp.asarray(plan.liability_owner_profile_index),
+        salt_contributing_mask=salt_contributing_mask,
+        lot_asset_series_index=jnp.asarray(plan.lot_asset_series_index),
+        pe_owner_cash_mask=pe_owner_cash_mask,
+    )
+
+    # Capital-gain accrual targets: each agent code that sells (liquidity / PE owners) maps to the
+    # capital-gain profile rows whose agent code matches (the de-`plan`-ed `_record_capital_gains`).
+    cg_agent_codes = {fl.agent for fl in folded_liquidity} | {
+        fpe.owner_agent for fpe in folded_pe if fpe.owner_agent >= 0
+    }
+    cg_targets = tuple(
+        _CapitalGainTarget(
+            agent_code=agent_code,
+            profiles=tuple(int(profile) for profile in np.flatnonzero(plan.capital_gain_agent_codes == agent_code)),
+        )
+        for agent_code in sorted(cg_agent_codes)
+    )
+    link_tax_static = tuple(
+        _LinkTaxStatic(
+            link=link,
+            profile=int(taxc.link_profile[link]),
+            gain_profile=int(plan.tax_profile_capital_gain_index[int(taxc.link_profile[link])]),
+            section_1250_rate=float(taxc.link_section_1250_rate[link]),
+            mid_active=bool(plan.mid.link_active[link]),
+            ordinary_count=int(taxc.link_ordinary_count[link]),
+            has_ltcg=int(taxc.link_has_ltcg[link]),
+            ltcg_count=int(taxc.link_ltcg_count[link]),
+            salt_active=bool(salt_link_active[link]),
+        )
+        for link in range(link_count)
+    )
+    structure = _Structure(
+        rollout_count=r,
+        horizon=horizon,
+        cash_count=p.cash_count,
+        lot_count=p.lot_count,
+        property_count=p.property_count,
+        liability_count=p.liability_count,
+        tax_profile_count=p.tax_profile_count,
+        capital_gain_agent_count=p.capital_gain_agent_count,
+        tax_liability_count=p.tax_liability_count,
+        harvest_policy_count=p.harvest_policy_count,
+        scheduled_sale_count=p.scheduled_sale_count,
+        link_count=link_count,
+        profile_count=profile_count,
+        taxliab_count=taxliab_count,
+        n_sales=n_sales,
+        sale_max_pool=sale_max_pool,
+        lot_axis=lot_axis,
+        liq_policy_count=liq_policy_count,
+        liq_max_assets=liq_max_assets,
+        pe_issuer_count=pe_issuer_count,
+        n_pe_kinds=n_pe_kinds,
+        folded_lifecycle=tuple(folded_lifecycle),
+        folded_pr=tuple(folded_pr),
+        folded_liquidity=tuple(folded_liquidity),
+        folded_pe=tuple(folded_pe),
+        folded_harvest=tuple(folded_harvest),
+        salt_link_active=tuple(bool(salt_link_active[link]) for link in range(link_count)),
+        sale_pslot=tuple(int(x) for x in sale_pslot),
+        sale_bufidx=tuple(int(x) for x in sale_bufidx),
+        sale_olots=tuple(tuple(int(x) for x in row) for row in sale_olots),
+        sale_price_series=tuple(int(x) for x in sale_price_series),
+        pur_buf=tuple(int(x) for x in pur_buf),
+        pur_month=tuple(int(x) for x in pur_month),
+        pur_stake=tuple(float(x) for x in pur_stake),
+        pur_buyer=tuple(int(x) for x in pur_buyer),
+        pur_seller=tuple(int(x) for x in pur_seller),
+        pur_mort_rows=tuple(int(x) for x in pur_mort_rows),
+        pur_mort_idx=tuple(int(x) for x in pur_mort_idx),
+        folded_purchases_present=bool(folded_purchases),
+        folded_sales_present=bool(folded_sales),
+        cg_targets=cg_targets,
+        link_tax_static=link_tax_static,
+        link_profile=tuple(int(taxc.link_profile[link]) for link in range(link_count)),
+        profile_gain_index=tuple(int(x) for x in plan.tax_profile_capital_gain_index),
+    )
+
+    meta = _ScanMeta(
+        folded_sales=folded_sales,
+        folded_purchases=folded_purchases,
+        folded_lifecycle=folded_lifecycle,
+        folded_pr=folded_pr,
+        folded_sale_events=folded_sale_events,
+        folded_liquidity=folded_liquidity,
+        folded_pe=folded_pe,
+        link_count=link_count,
+        liability_count=p.liability_count,
+        horizon=horizon,
+    )
+    return baked, structure, p, meta
+
+
+@partial(jax.jit, static_argnames=("p", "structure"))
+def _program_impl(
+    external_values: jnp.ndarray,
+    pe_ch: dict[str, jnp.ndarray],
+    cfg: _TracedConfig,
+    baked: _Baked,
+    p: SlotPlan,
+    structure: _Structure,
+) -> tuple:
+    """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
+    (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
+    bodies close over; `p` (`SlotPlan`) and `structure` are STATIC (`static_argnames`), so JAX keys the
+    compile cache on them and reuses the executable across identical-structure calls and across traced
+    value/seed sweeps. A structural change is a fresh static key (exactly one extra compile)."""
+    r = structure.rollout_count
+    horizon = structure.horizon
+    lot_count = structure.lot_count
+    link_count = structure.link_count
+    profile_count = structure.profile_count
+    taxliab_count = structure.taxliab_count
+    n_sales = structure.n_sales
+    sale_max_pool = structure.sale_max_pool
+    lot_axis = structure.lot_axis
+    liq_policy_count = structure.liq_policy_count
+    liq_max_assets = structure.liq_max_assets
+    pe_issuer_count = structure.pe_issuer_count
+    n_pe_kinds = structure.n_pe_kinds
+    folded_lifecycle = structure.folded_lifecycle
+    folded_pr = structure.folded_pr
+    folded_liquidity = structure.folded_liquidity
+    folded_pe = structure.folded_pe
+    folded_harvest = structure.folded_harvest
+    folded_sale_events = [ev for ev in folded_lifecycle if ev.kind == LifecycleKind.SALE]
+    salt_link_active = structure.salt_link_active
+    link_tax_static = structure.link_tax_static
+    link_profile = structure.link_profile
+    profile_gain_index = structure.profile_gain_index
+    cg_profiles_by_agent = {ct.agent_code: ct.profiles for ct in structure.cg_targets}
+    # Static index/selection arrays (rebuilt from the hashable tuples carried in `structure`).
+    sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
+    sale_bufidx = np.asarray(structure.sale_bufidx, dtype=np.int64).reshape(n_sales)
+    sale_olots = np.asarray(structure.sale_olots, dtype=np.int64).reshape(n_sales, sale_max_pool)
+    sale_price_series = np.asarray(structure.sale_price_series, dtype=np.int64).reshape(n_sales)
+    pur_buf = np.asarray(structure.pur_buf, dtype=np.int64)
+    pur_month = np.asarray(structure.pur_month, dtype=np.int64)
+    pur_stake = np.asarray(structure.pur_stake, dtype=np.float32)
+    pur_buyer = np.asarray(structure.pur_buyer, dtype=np.int64)
+    pur_seller = np.asarray(structure.pur_seller, dtype=np.int64)
+    pur_mort_rows = np.asarray(structure.pur_mort_rows, dtype=np.int64)
+    pur_mort_idx = np.asarray(structure.pur_mort_idx, dtype=np.int64)
+    folded_purchases = structure.folded_purchases_present
+    folded_sales = structure.folded_sales_present
+    # Device arrays unpacked from the baked pytree (SAME names the bodies use).
+    cash0 = baked.cash0
+    ordinary0 = baked.ordinary0
+    property_tax_ytd0 = baked.property_tax_ytd0
+    lot0 = baked.lot0
+    cg_active0 = baked.cg_active0
+    cg_ytd0 = baked.cg_ytd0
+    tlh0 = baked.tlh0
+    property_rented_fraction_0 = baked.property_rented_fraction_0
+    property_building_basis_0 = baked.property_building_basis_0
+    prop0 = baked.prop0
+    liab0 = baked.liab0
+    tr = dict(baked.tr)  # copy: `fixed`/`base` are overwritten with the traced cfg values below
+    og = baked.og
+    acc = baked.acc
+    sale_months_t = baked.sale_months_t
+    sale_qty_t = baked.sale_qty_t
+    sale_prior_t = baked.sale_prior_t
+    sale_cg_map_t = baked.sale_cg_map_t
+    sale_policy_mask_t = baked.sale_policy_mask_t
+    sale_price_fixed_t = baked.sale_price_fixed_t
+    property_is_primary_table = baked.property_is_primary_table
+    tax_slot_table = baked.tax_slot_table
+    salt_cap_table = baked.salt_cap_table
+    lot_purchase_month = baked.lot_purchase_month
+    cg_rep_profile = baked.cg_rep_profile
+    property_owner_profile_index = baked.property_owner_profile_index
+    liability_owner_profile_index = baked.liability_owner_profile_index
+    salt_contributing_mask = baked.salt_contributing_mask
+    lot_asset_series_index = baked.lot_asset_series_index
+    pe_owner_cash_mask = baked.pe_owner_cash_mask
+    # Swept numeric config (traced): cost basis + the transfer-amount entries of the `tr` table.
+    tcfg = cfg
+    cost_basis_per_unit = cfg.cost_basis_per_unit
+    tr["fixed"] = cfg.transfer_amount_fixed
+    tr["base"] = cfg.transfer_amount_base
+
     def december_tax(
         ordinary: jnp.ndarray,
         cg_ytd: jnp.ndarray,
@@ -710,14 +1189,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         # to `_scatter_rows`'s dump row and contribute nothing.
         dec_col = dec[None, :]
         ordinary = ordinary + _scatter_rows(
-            jnp.zeros_like(ordinary),
-            jnp.asarray(plan.property_owner_profile_index),
-            -jnp.where(dec_col, property_dep_ytd, 0.0),
+            jnp.zeros_like(ordinary), property_owner_profile_index, -jnp.where(dec_col, property_dep_ytd, 0.0)
         )
         ordinary = ordinary + _scatter_rows(
-            jnp.zeros_like(ordinary),
-            jnp.asarray(plan.liability_owner_profile_index),
-            -jnp.where(dec_col, liab_rental_ytd, 0.0),
+            jnp.zeros_like(ordinary), liability_owner_profile_index, -jnp.where(dec_col, liab_rental_ytd, 0.0)
         )
 
         # §1211/§1212 netting, vectorized over the capital-gain-agent axis (each agent netted once).
@@ -730,7 +1205,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         )
         # `cg_rep_profile` is padded to `max(1, count)`; align it to the actual cap-gain-agent axis
         # (which may be 0 when the scenario has no tax profiles).
-        cg_rep = jnp.asarray(cg_rep_profile[: cg_ytd.shape[0]])
+        cg_rep = cg_rep_profile[: cg_ytd.shape[0]]
         do_net = dec_col & (cg_rep >= 0)[:, None]
         cg_ytd = cg_ytd.at[:, CapitalGainClassification.SHORT_TERM, :].set(
             jnp.where(do_net, net_st, cg_ytd[:, CapitalGainClassification.SHORT_TERM, :])
@@ -748,18 +1223,17 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
 
         def run_link(link: int, salt_deduction: jnp.ndarray, ann: jnp.ndarray) -> jnp.ndarray:
             mid, itemized, ord_taxable, cap_taxable, ord_tax, cap_tax = _compute_tax_for_link(
-                plan,
+                link_tax_static[link],
                 tcfg,
                 ordinary,
                 cg_ytd,
                 recapture,
                 liabs_view,
-                link=link,
                 salt_deduction=salt_deduction,
                 rollout_count=r,
             )
-            profile = int(taxc.link_profile[link])
-            gp = int(plan.tax_profile_capital_gain_index[profile])
+            profile = link_profile[link]
+            gp = profile_gain_index[profile]
             tax = ord_tax + cap_tax
             cols = [
                 dec.astype(jnp.float32),  # accrual_active flag (->bool post-scan)
@@ -786,8 +1260,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         for link in range(link_count):
             if not bool(salt_link_active[link]):
                 continue
-            profile = int(taxc.link_profile[link])
-            state_tax_total = annual_tax_by_link @ jnp.asarray(plan.salt.contributing_mask[link].astype(np.float64))
+            profile = link_profile[link]
+            state_tax_total = annual_tax_by_link @ salt_contributing_mask[link]
             salt_total = property_tax_ytd[profile] + state_tax_total
             salt_deduction = jnp.minimum(salt_total, salt_cap_table[link][month])
             annual_tax_by_link = run_link(link, salt_deduction, annual_tax_by_link)
@@ -856,16 +1330,17 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
         le_fired: list[jnp.ndarray] = []
         sale_traces: list[tuple] = []
-        for ev_i, ev_month, ev_kind, ev_prop in folded_lifecycle:
+        for ev in folded_lifecycle:
+            ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
             active_property = fires & active & property_active[ev_prop]
             if ev_kind == LifecycleKind.FRACTION:
                 property_rented_fraction = property_rented_fraction.at[ev_prop].set(
-                    jnp.where(active_property, float(le_all.rented_fraction[ev_i]), property_rented_fraction[ev_prop])
+                    jnp.where(active_property, ev.rented_fraction, property_rented_fraction[ev_prop])
                 )
             elif ev_kind == LifecycleKind.CAPITAL_IMPROVEMENT:
-                amount = float(le_all.amount[ev_i])
-                owner_cash_slot = int(props.buyer_slot[ev_prop])
+                amount = ev.amount
+                owner_cash_slot = ev.owner_cash_slot
                 if owner_cash_slot >= 0:
                     cash = cash.at[owner_cash_slot].add(jnp.where(active_property, -amount, 0.0))
                 property_building_basis = property_building_basis.at[ev_prop].add(
@@ -884,7 +1359,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                     cg_ytd,
                     sale_trace,
                 ) = _scan_property_sale(
-                    plan,
+                    ev,
                     external_values,
                     cash=cash,
                     property_active=property_active,
@@ -898,8 +1373,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                     cg_active=cg_active,
                     cg_ytd=cg_ytd,
                     month=month,
-                    prop=ev_prop,
-                    closing_cost_pct=float(le_all.amount[ev_i]),
                     active_property=active_property,
                     rollout_count=r,
                 )
@@ -981,10 +1454,10 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         # disposition `(sale, lot, R)` accumulates into the carry at its slot (fires once -> horizon
         # collapsed). `L` is padded with a zero dummy lot so the ragged pools share one shape.
         if folded_sales:
-            ld = p.lot_count
+            ld = lot_count
             lot_rem_pad = jnp.concatenate([lot_remaining, jnp.zeros((1, r))], axis=0)  # (L+1, R)
             cost_pad = jnp.concatenate([cost_basis_per_unit, jnp.zeros(1)])  # (L+1,)
-            lpm_pad = jnp.concatenate([jnp.asarray(plan.lot_purchase_month).astype(jnp.int32), jnp.zeros(1, jnp.int32)])
+            lpm_pad = jnp.concatenate([lot_purchase_month.astype(jnp.int32), jnp.zeros(1, jnp.int32)])
             pool_qty = lot_rem_pad[sale_olots]  # (N, P, R) supply per pool lot
             target = jnp.where(
                 (active[None, :]) & (month == sale_months_t)[:, None], sale_qty_t[:, None], 0.0
@@ -1108,16 +1581,26 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                 raw_price = external_values[pool.series_index, :, month]
                 valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
                 unit_price = jnp.where(valid_price, raw_price, 0.0)
-                available = lot_remaining[pool.ordered_lots].sum(axis=0) * unit_price
+                pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
+                available = lot_remaining[pool_lots].sum(axis=0) * unit_price
                 target = jnp.where(valid_price & active, jnp.minimum(jnp.maximum(remaining, 0.0), available), 0.0)
                 sold_units, proceeds, basis, _ovr = _fifo_sell_dollars(
-                    lot_remaining.T, pool.ordered_lots, target, unit_price, cost_basis_per_unit
+                    lot_remaining.T, pool_lots, target, unit_price, cost_basis_per_unit
                 )
                 lot_remaining = lot_remaining - sold_units.T
                 total_proceeds = proceeds.sum(axis=1)
                 cash = cash.at[lp.cash_slot].add(total_proceeds)
                 cg_active, cg_ytd, tlh = _record_capital_gains(
-                    plan, cg_active, cg_ytd, tlh, lot_remaining, month, lp.agent, sold_units, proceeds - basis
+                    folded_harvest,
+                    lot_purchase_month,
+                    cg_profiles_by_agent[lp.agent],
+                    cg_active,
+                    cg_ytd,
+                    tlh,
+                    lot_remaining,
+                    month,
+                    sold_units,
+                    proceeds - basis,
                 )
                 liq_disp_active = liq_disp_active.at[lp.policy_index, pool.asset_idx].set(
                     liq_disp_active[lp.policy_index, pool.asset_idx] | (sold_units > 0.0).T
@@ -1206,19 +1689,11 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         # TLH harvest (after settlement, before PE): book a calibrated capital loss per policy. The
         # prior price clamps to month 0 (max(0, month-1)), giving a flat period return there — so the
         # eager engine's month-0 `has_prior=False` special case is unnecessary inside the scan.
-        for (
-            hp_policy,
-            hp_gain_profile,
-            hp_lots,
-            hp_series,
-            hp_peak,
-            hp_floor,
-            hp_gamma,
-            hp_dd,
-            hp_stf,
-        ) in folded_harvest:
-            hp_price = external_values[hp_series, :, month]
-            hp_prior = external_values[hp_series, :, jnp.maximum(0, month - 1)]
+        for fh in folded_harvest:
+            hp_policy = fh.policy_idx
+            hp_lots = np.asarray(fh.lot_indices, dtype=np.int64)
+            hp_price = external_values[fh.series_index, :, month]
+            hp_prior = external_values[fh.series_index, :, jnp.maximum(0, month - 1)]
             cg_ytd, cg_active, hp_cumulative = _tlh_harvest_policy_jit(
                 lot_remaining[hp_lots, :],
                 cost_basis_per_unit[hp_lots],
@@ -1228,13 +1703,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                 cg_ytd,
                 cg_active,
                 active,
-                gain_profile=hp_gain_profile,
+                gain_profile=fh.gain_profile,
                 has_prior=True,
-                peak=hp_peak,
-                floor=hp_floor,
-                gamma=hp_gamma,
-                drawdown_sensitivity=hp_dd,
-                short_term_fraction=hp_stf,
+                peak=fh.peak_annual_yield,
+                floor=fh.floor_annual_yield,
+                gamma=fh.maturity_decay_exponent,
+                drawdown_sensitivity=fh.drawdown_sensitivity,
+                short_term_fraction=fh.short_term_fraction,
             )
             tlh = tlh.at[hp_policy].set(hp_cumulative)
 
@@ -1249,7 +1724,9 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
             k: jnp.zeros((pe_issuer_count, r), dtype=(jnp.int64 if k in ("active", "outcome") else jnp.float32))
             for k in ("active", "outcome", "floor", "lnw", "shortfall", "units", "sellable", "target", "proceeds")
         }
-        for issuer_idx, policy_idx, ordered in folded_pe:
+        for fpe in folded_pe:
+            issuer_idx, policy_idx = fpe.issuer_idx, fpe.policy_idx
+            ordered = np.asarray(fpe.ordered, dtype=np.int64)
             mark = pe_ch["marks"][issuer_idx, :, month]
             positive_mark = mark > 0.0
             tender_active = pe_ch["sale_opp"][issuer_idx, :, month] & active
@@ -1270,8 +1747,8 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                 pe_opp["units"] = pe_opp["units"].at[issuer_idx].set(units_held)
                 pe_opp["sellable"] = pe_opp["sellable"].at[issuer_idx].set(units_held * capacity * eligible)
                 continue
-            proceeds_slot = int(pe_policies.proceeds_cash_slot[policy_idx])
-            owner = int(pe_policies.owner_agent[policy_idx])
+            proceeds_slot = fpe.proceeds_cash_slot
+            owner = fpe.owner_agent
 
             # Default args bind this issuer's loop vars per iteration (the closure is called inline).
             def book(
@@ -1293,7 +1770,16 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
                 if proceeds_slot >= 0:
                     cash = cash.at[proceeds_slot].add(proceeds.sum(axis=1))
                 cg_active, cg_ytd, tlh = _record_capital_gains(
-                    plan, cg_active, cg_ytd, tlh, lot_remaining, month, owner, sold, proceeds - basis
+                    folded_harvest,
+                    lot_purchase_month,
+                    cg_profiles_by_agent[owner],
+                    cg_active,
+                    cg_ytd,
+                    tlh,
+                    lot_remaining,
+                    month,
+                    sold,
+                    proceeds - basis,
                 )
                 ki = int(kind)
                 da = da.at[issuer_idx, ki].set(da[issuer_idx, ki] | (sold > 0.0).T)
@@ -1335,17 +1821,25 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
             cash, lot_remaining = state[0], state[1]
             # LNW-floor tender: sell to lift liquid net worth to the floor, capped at sellable units.
             floor = _amount_values(
-                amount_kind=int(pe_policies.floor_kind[policy_idx]),
-                amount_fixed=float(pe_policies.floor_fixed[policy_idx]),
-                amount_base=float(pe_policies.floor_base[policy_idx]),
-                amount_series=int(pe_policies.floor_series[policy_idx]),
-                amount_base_month=int(pe_policies.floor_base_month[policy_idx]),
-                amount_period=int(pe_policies.floor_period[policy_idx]),
+                amount_kind=fpe.floor_kind,
+                amount_fixed=fpe.floor_fixed,
+                amount_base=fpe.floor_base,
+                amount_series=fpe.floor_series,
+                amount_base_month=fpe.floor_base_month,
+                amount_period=fpe.floor_period,
                 external_values=external_values,
                 month=month,
                 rollout_count=r,
             )
-            lnw = _compute_liquid_net_worth(plan, cash, lot_remaining, external_values, policy_idx, month)
+            lnw = _compute_liquid_net_worth(
+                pe_owner_cash_mask[policy_idx],
+                lot_asset_series_index,
+                fpe.owner_non_pe_lot_indices,
+                cash,
+                lot_remaining,
+                external_values,
+                month,
+            )
             pe_shortfall = jnp.maximum(0.0, floor - lnw)  # distinct from the obligation `shortfall` in base_ys
             units_held = lot_remaining[ordered].sum(axis=0)
             sellable = units_held * capacity * eligible
@@ -1561,8 +2055,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         )
         return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys, *pe_ys, *lifecycle_ys)
 
-    prop0 = jnp.zeros((p.property_count, r))
-    liab0 = jnp.zeros((p.liability_count, r))
     init = _ScanState(
         cash=cash0,
         ordinary_ytd=ordinary0,
@@ -1600,48 +2092,19 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         sale_oversell=jnp.zeros((), dtype=bool),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
-
-    def _program_impl(
-        external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray], cfg_arg: _TracedConfig
-    ) -> tuple:
-        # Rebind the traced placeholders to this draw's arguments; `step`, `december_tax` and the cores
-        # read them from the enclosing scope (`tcfg` holds the swept numeric VALUES; `plan` stays the
-        # concrete structure). The transfer-amount entries of the (closed-over, mutable) `tr` table are
-        # overwritten in place.
-        nonlocal external_values, pe_ch, cost_basis_per_unit, tcfg
-        external_values = external_values_arg
-        pe_ch = pe_ch_arg
-        tcfg = cfg_arg
-        cost_basis_per_unit = cfg_arg.cost_basis_per_unit
-        tr["fixed"] = cfg_arg.transfer_amount_fixed
-        tr["base"] = cfg_arg.transfer_amount_base
-        # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
-        init_traced = init._replace(
-            cash=jnp.broadcast_to(cfg_arg.cash_initial_balance[:, None], (p.cash_count, r)),
-            lot_remaining=jnp.broadcast_to(cfg_arg.lot_initial_quantity[:, None], (p.lot_count, r)),
-        )
-        final_carry, ys = jax.lax.scan(step, init_traced, months)
-        # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
-        return ys, (
-            final_carry.sale_disp_units,
-            final_carry.sale_disp_basis,
-            final_carry.sale_disp_proceeds,
-            final_carry.sale_oversell,
-        )
-
-    meta = _ScanMeta(
-        folded_sales=folded_sales,
-        folded_purchases=folded_purchases,
-        folded_lifecycle=folded_lifecycle,
-        folded_pr=folded_pr,
-        folded_sale_events=folded_sale_events,
-        folded_liquidity=folded_liquidity,
-        folded_pe=folded_pe,
-        link_count=link_count,
-        liability_count=p.liability_count,
-        horizon=horizon,
+    # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
+    init = init._replace(
+        cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
+        lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
     )
-    return jax.jit(_program_impl), meta
+    final_carry, ys = jax.lax.scan(step, init, months)
+    # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
+    return ys, (
+        final_carry.sale_disp_units,
+        final_carry.sale_disp_basis,
+        final_carry.sale_disp_proceeds,
+        final_carry.sale_oversell,
+    )
 
 
 def _scatter_ys_to_buffers(
@@ -1852,8 +2315,8 @@ def _scatter_ys_to_buffers(
     if le_fired_h:
         # `le_fired_h[0]` is `(horizon, n_lifecycle_events, R)`; each event fires once at its month.
         fired_np = np.asarray(le_fired_h[0])
-        for pos, (i, ev_month, _kind, _prop) in enumerate(folded_lifecycle):
-            buffers.lifecycle.fired[i] = fired_np[ev_month, pos]
+        for pos, ev in enumerate(folded_lifecycle):
+            buffers.lifecycle.fired[ev.event_index] = fired_np[ev.month, pos]
     if pr_fired_h:
         pr_fired_np = np.asarray(pr_fired_h[0])
         for pos, (ei, ev_month) in enumerate(folded_pr):
@@ -2038,7 +2501,7 @@ def _fifo_sell_units(
 
 
 def _apply_tlh_give_back(
-    plan: CompiledSimulation,
+    folded_harvest: tuple[_FoldedHarvest, ...],
     tlh_cumulative_harvest: jnp.ndarray,
     lot_remaining: jnp.ndarray,
     sold_units: jnp.ndarray,
@@ -2048,14 +2511,10 @@ def _apply_tlh_give_back(
     harvest-policy lots. The fraction of the policy's pre-sale units sold here realizes that share
     of `tlh_cumulative_harvest`, distributed across the sold policy-lots by sold units (preserving
     each lot's ST/LT character) and drained from the ledger. Branch-free over rollouts; the per-policy
-    Python loop is over static plan data. `lot_remaining` is post-sale (caller already subtracted)."""
-    harvest = plan.harvest_policies
-    for policy_idx in range(harvest.gain_profile_index.shape[0]):
-        if int(harvest.gain_profile_index[policy_idx]) < 0:
-            continue
-        lot_indices = np.flatnonzero(harvest.lot_mask[policy_idx])
-        if lot_indices.size == 0:
-            continue
+    Python loop is over static folded data. `lot_remaining` is post-sale (caller already subtracted)."""
+    for fh in folded_harvest:
+        policy_idx = fh.policy_idx
+        lot_indices = np.asarray(fh.lot_indices, dtype=np.int64)
         sold_policy = sold_units[:, lot_indices]  # (R, policy_lots)
         units_sold = sold_policy.sum(axis=1)  # (R,)
         pre_sale_units = lot_remaining[lot_indices, :].T.sum(axis=1) + units_sold  # (R,)
@@ -2073,13 +2532,14 @@ def _apply_tlh_give_back(
 
 
 def _record_capital_gains(
-    plan: CompiledSimulation,
+    folded_harvest: tuple[_FoldedHarvest, ...],
+    lot_purchase_month: jnp.ndarray,
+    cg_profiles: tuple[int, ...],
     capital_gain_active: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
     tlh_cumulative_harvest: jnp.ndarray,
     lot_remaining: jnp.ndarray,
     month: int | jnp.ndarray,
-    agent_code: int,
     sold_units: jnp.ndarray,
     gains: jnp.ndarray,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -2089,16 +2549,18 @@ def _record_capital_gains(
     Branch-free: the per-lot long/short split is a static `(L,)` boolean mask (holding period vs
     the lot's purchase month), so the whole `[2, R]` classification block is one masked sum/any —
     no per-lot scatter loop, no data-dependent branching. The only Python loop is over the
-    statically-known capital-gain profiles matching `agent_code`.
+    statically-resolved capital-gain profiles (`cg_profiles`) of the selling agent.
     """
-    gains, tlh_cumulative_harvest = _apply_tlh_give_back(plan, tlh_cumulative_harvest, lot_remaining, sold_units, gains)
-    long_mask = jnp.asarray(month - plan.lot_purchase_month >= 12)  # (L,)
+    gains, tlh_cumulative_harvest = _apply_tlh_give_back(
+        folded_harvest, tlh_cumulative_harvest, lot_remaining, sold_units, gains
+    )
+    long_mask = (month - lot_purchase_month) >= 12  # (L,)
     masks = jnp.stack([long_mask, ~long_mask])  # (2, L), rows ordered LONG_TERM=0, SHORT_TERM=1
     sold = sold_units > 0.0  # (R, L)
     # einsum over lots: (2, L) x (R, L) -> (2, R) per-classification gain sums and activity flags.
     gains_by_class = jnp.einsum("cl,rl->cr", masks.astype(gains.dtype), gains)
     active_by_class = (masks[:, None, :] & sold[None, :, :]).any(axis=2)  # (2, R)
-    for profile in np.flatnonzero(plan.capital_gain_agent_codes == agent_code).tolist():
+    for profile in cg_profiles:
         capital_gain_active = capital_gain_active.at[profile].set(capital_gain_active[profile] | active_by_class)
         capital_gain_ytd = capital_gain_ytd.at[profile].add(gains_by_class)
     return capital_gain_active, capital_gain_ytd, tlh_cumulative_harvest
@@ -2288,24 +2750,25 @@ def _fifo_sell_dollars(
 
 
 def _compute_liquid_net_worth(
-    plan: CompiledSimulation,
+    owner_cash_mask: jnp.ndarray,
+    lot_asset_series_index: jnp.ndarray,
+    owner_non_pe_lot_indices: tuple[int, ...],
     cash: jnp.ndarray,
     lot_remaining: jnp.ndarray,
     external_values: jnp.ndarray,
-    policy_idx: int,
     month: int | jnp.ndarray,
 ) -> jnp.ndarray:
-    """Port of `phases._compute_liquid_net_worth`: owner cash + non-PE lot value at current marks."""
-    owner_cash_mask = jnp.asarray(plan.pe_policies.owner_cash_mask[policy_idx])
+    """Port of `phases._compute_liquid_net_worth`: owner cash + non-PE lot value at current marks.
+    `owner_cash_mask` (this policy's row, device) and `lot_asset_series_index` (device) come from
+    `_Baked`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
     cash_total = (cash * owner_cash_mask[:, None]).sum(axis=0)
-    lot_mask = plan.pe_policies.owner_non_pe_lot_mask[policy_idx]
-    if not lot_mask.any():
+    if not owner_non_pe_lot_indices:
         return cash_total
-    lot_indices = np.flatnonzero(lot_mask)
-    series_indices = plan.lot_asset_series_index[lot_indices]
+    lot_indices = np.asarray(owner_non_pe_lot_indices, dtype=np.int64)
+    series_indices = lot_asset_series_index[lot_indices]
     valid = series_indices >= 0
-    prices = external_values[np.where(valid, series_indices, 0), :, month]
-    prices = jnp.nan_to_num(jnp.where(jnp.asarray(valid)[:, None], prices, 0.0), nan=0.0)
+    prices = external_values[jnp.where(valid, series_indices, 0), :, month]
+    prices = jnp.nan_to_num(jnp.where(valid[:, None], prices, 0.0), nan=0.0)
     lot_value = (lot_remaining[lot_indices, :] * prices).sum(axis=0)
     return cash_total + lot_value
 
@@ -2425,30 +2888,29 @@ def _net_capital_gains_jnp(
 
 
 def _compute_tax_for_link(
-    plan: CompiledSimulation,
+    static: _LinkTaxStatic,
     tcfg: _TracedConfig,
     ordinary_ytd: jnp.ndarray,
     capital_gain_ytd: jnp.ndarray,
     recapture_section_1250_ytd: jnp.ndarray,
     liabilities: LiabilityState,
     *,
-    link: int,
     salt_deduction: jnp.ndarray,
     rollout_count: int,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Port of `phases._compute_tax_for_link`: one link's bracket math (MID + SALT + §1250 + LTCG).
     Bracket values / rates / deduction / MID ratio come from the traced `tcfg`; feature flags, counts
-    and the §1250 style rate are read from the concrete `plan`."""
-    t = plan.tax
-    profile = int(t.link_profile[link])
-    gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+    and the §1250 style rate are read from the hashable `_LinkTaxStatic` (no `plan` reference)."""
+    link = static.link
+    profile = static.profile
+    gain_profile = static.gain_profile
     ordinary = ordinary_ytd[profile]
     ltcg = capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM]
     stcg = capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM]
     recapture = recapture_section_1250_ytd[profile]
-    section_1250_rate = float(t.link_section_1250_rate[link])
+    section_1250_rate = static.section_1250_rate
     standard_deduction = tcfg.link_standard_deduction[link]
-    if bool(plan.mid.link_active[link]):
+    if static.mid_active:
         owner_interest_ytd = liabilities.interest_ytd - liabilities.rental_interest_ytd
         mortgage_interest_deduction = tcfg.mid_principal_ratio[link] @ owner_interest_ytd
     else:
@@ -2461,8 +2923,8 @@ def _compute_tax_for_link(
 
     ordinary_upper = tcfg.link_ordinary_upper[link]
     ordinary_rate = tcfg.link_ordinary_rate[link]
-    ordinary_count = int(t.link_ordinary_count[link])
-    if int(t.link_has_ltcg[link]) == 1:
+    ordinary_count = static.ordinary_count
+    if static.has_ltcg == 1:
         ordinary_taxable = jnp.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
         capital_taxable = ltcg
         ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
@@ -2471,7 +2933,7 @@ def _compute_tax_for_link(
             ordinary_taxable,
             upper=tcfg.link_ltcg_upper[link],
             rate=tcfg.link_ltcg_rate[link],
-            count=int(t.link_ltcg_count[link]),
+            count=static.ltcg_count,
         )
     else:
         ordinary_taxable = jnp.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
@@ -2493,7 +2955,7 @@ def _compute_tax_for_link(
 
 
 def _scan_property_sale(
-    plan: CompiledSimulation,
+    ev: _FoldedLifecycleEvent,
     external_values: jnp.ndarray,
     *,
     cash: jnp.ndarray,
@@ -2508,8 +2970,6 @@ def _scan_property_sale(
     cg_active: jnp.ndarray,
     cg_ytd: jnp.ndarray,
     month: jnp.ndarray,
-    prop: int,
-    closing_cost_pct: float,
     active_property: jnp.ndarray,
     rollout_count: int,
 ) -> tuple[
@@ -2525,38 +2985,36 @@ def _scan_property_sale(
     tuple[jnp.ndarray, ...],
 ]:
     """Branch-free `lax.scan` port of `_apply_property_sale`: §1250 recapture + §121 exclusion (via the
-    owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace."""
-    series_idx = int(plan.property_home_value_series_index[prop])
-    market_value = (
-        float(plan.properties.purchase_price[prop])
-        * external_values[series_idx, :, month]
-        / external_values[series_idx, :, 0]
-    )
+    owner-occupancy window) + mortgage payoff, returning the updated state and the 7-field sale trace.
+    All per-property statics come from the hashable `_FoldedLifecycleEvent` (no `plan` reference)."""
+    prop = ev.property_slot
+    closing_cost_pct = ev.amount
+    series_idx = ev.home_value_series_index
+    market_value = ev.purchase_price * external_values[series_idx, :, month] / external_values[series_idx, :, 0]
     gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
-    capex = property_building_basis[prop] - float(plan.property_building_basis[prop])
+    capex = property_building_basis[prop] - ev.building_basis_initial
     cum_dep = property_cum_dep[prop]
-    realized_gain = gross_proceeds - (float(plan.properties.purchase_price[prop]) + capex - cum_dep)
+    realized_gain = gross_proceeds - (ev.purchase_price + capex - cum_dep)
     recapture = jnp.minimum(jnp.maximum(realized_gain, 0.0), cum_dep)
     post_recapture_gain = jnp.maximum(realized_gain - recapture, 0.0)
     # §121: months owner-occupied within the trailing 60-month window (the carried ring's column sum).
     qualifies = oo_window[:, prop, :].sum(axis=0) >= SECTION_121_MIN_QUALIFYING_MONTHS
-    owner_profile = int(plan.property_owner_profile_index[prop])
-    exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
+    owner_profile = ev.owner_profile
+    exclusion_cap = ev.exclusion_cap
     section_121_exclusion = jnp.where(qualifies, jnp.minimum(post_recapture_gain, exclusion_cap), 0.0)
     ltcg = post_recapture_gain - section_121_exclusion
     mortgage_payoff = jnp.zeros(rollout_count)
-    for lia in range(plan.liabilities.property_slot.shape[0]):
-        if int(plan.liabilities.property_slot[lia]) == prop:
-            mortgage_payoff = mortgage_payoff + liab_principal[lia]
-            liab_principal = liab_principal.at[lia].set(jnp.where(active_property, 0.0, liab_principal[lia]))
-            liab_active = liab_active.at[lia].set(jnp.where(active_property, False, liab_active[lia]))
+    for lia in ev.mortgage_liabilities:
+        mortgage_payoff = mortgage_payoff + liab_principal[lia]
+        liab_principal = liab_principal.at[lia].set(jnp.where(active_property, 0.0, liab_principal[lia]))
+        liab_active = liab_active.at[lia].set(jnp.where(active_property, False, liab_active[lia]))
     net_cash = gross_proceeds - mortgage_payoff
-    owner_cash_slot = int(plan.properties.buyer_slot[prop])
+    owner_cash_slot = ev.owner_cash_slot
     if owner_cash_slot >= 0:
         cash = cash.at[owner_cash_slot].add(jnp.where(active_property, net_cash, 0.0))
     if owner_profile >= 0:
         recapture_ytd = recapture_ytd.at[owner_profile].add(jnp.where(active_property, recapture, 0.0))
-        gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
+        gain_profile = ev.gain_profile
         if gain_profile >= 0:
             lt = int(CapitalGainClassification.LONG_TERM)
             cg_ytd = cg_ytd.at[gain_profile, lt].add(jnp.where(active_property, ltcg, 0.0))
