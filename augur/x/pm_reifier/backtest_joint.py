@@ -1,15 +1,16 @@
 """Calibration backtest of the joint (percentiles + samples) kernel (augur/x, throwaway).
 
-Same teacher-forced window/series as backtest.py. Each step the model emits BOTH per-series percentiles
-and N joint samples (kernel_joint). We score the realized value two ways and compare:
+Same teacher-forced window/series as backtest.py. Each step the model emits per-series percentiles AND
+N joint samples (kernel_joint). The percentiles are **write-only scaffold** — they force the model to
+reason about distribution width before it samples, but they are NOT the kernel's output. The deployable
+distribution Q is the SAMPLES ONLY; `pit_samp` (empirical CDF of the sample cloud, kernel.pit) is the
+metric of record, scored and sampled identically (test-what-you-deploy).
 
-  - pit_pctl: inverse quantile function of the stated percentiles (kernel_percentile.pit).
-  - pit_samp: empirical CDF of the joint sample cloud (kernel.pit).
-
-Plus a consistency check: the sample inter-decile width vs the stated p10..p90 width per series. If the
-samples hug the center despite wide stated percentiles, the spread ratio << 1 → the model states wide
-but samples narrow (use percentiles for marginals, samples only for the copula). If ~1, the percentile
-commitment successfully widened the joint samples.
+The percentile-derived numbers are kept strictly as DIAGNOSTICS to evaluate whether the scaffold worked:
+  - spread_ratio: sample inter-decile width / stated p10..p90 width. ~1 → the percentile commitment
+    successfully widened the joint samples (scaffold works, clean joint sampler). <<1 → states wide but
+    samples narrow (scaffold failed; fall back to percentiles-for-marginals + samples-for-copula).
+  - pit_pctl: what the calibration WOULD be if we read the percentiles — NOT a result, only a yardstick.
 
 Run: PYTHONPATH=. python3 augur/x/pm_reifier/backtest_joint.py   (writes results/backtest_joint.json)
 """
@@ -120,13 +121,15 @@ def main() -> None:
     q1 = quota()
     p, sm = summary["from_percentiles"], summary["from_samples"]
     print(f"\n=== {MODEL} joint backtest: {len(steps)} steps ===")
-    print(f"  from PERCENTILES: mean PIT {p['mean_pit']:.3f}  tail-escape {p['tail_escape']:.0%}  JSD {p['jsd']:.3f}")
+    print("  (percentiles are a commitment-device scaffold only; the SAMPLES are Q)")
     print(
-        f"  from SAMPLES:     mean PIT {sm['mean_pit']:.3f}  tail-escape {sm['tail_escape']:.0%}  JSD {sm['jsd']:.3f}"
+        f"  SAMPLES [RESULT]: mean PIT {sm['mean_pit']:.3f}  tail-escape {sm['tail_escape']:.0%}  JSD {sm['jsd']:.3f}"
     )
     print(
-        f"  sample/stated inter-decile width ratio: {summary['mean_spread_ratio']:.2f}  (1.0 = samples as wide as stated)"
+        f"  scaffold width ratio (sample p10-90 / stated p10-90): {summary['mean_spread_ratio']:.2f}  "
+        "(1.0 = samples realized the committed spread)"
     )
+    print(f"  [diag] if we'd read percentiles: mean PIT {p['mean_pit']:.3f}  tail-escape {p['tail_escape']:.0%}")
     print(f"  tokens={summary['tokens']}  weekly quota {q0.get('weekly_7d_pct')}% -> {q1.get('weekly_7d_pct')}%")
 
 
