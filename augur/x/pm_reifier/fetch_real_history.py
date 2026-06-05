@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 
 HERE = pathlib.Path(__file__).parent
-N = 12  # months of recent history
+N = 60  # months of recent history (~5 years of context for the model to infer drift/volatility)
 
 FRED = {"inflation": "CPIAUCSL", "home_value:sf_ca": "SFXRSA", "rent:sf_ca": "CUUR0000SEHA"}
 YAHOO = {"sp500": "%5EGSPC", "crypto:BTC": "BTC-USD"}
@@ -47,7 +47,7 @@ def _get(url: str, ua: str, tries: int = 5) -> bytes:
 
 def yahoo_monthly(sym: str) -> list[tuple[str, float]]:
     d = json.loads(
-        _get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1mo&range=3y", ua="Mozilla/5.0")
+        _get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?interval=1mo&range=10y", ua="Mozilla/5.0")
     )
     r = d["chart"]["result"][0]
     by_month: dict[str, float] = {}

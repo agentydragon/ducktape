@@ -53,7 +53,10 @@ TEMPERATURE = 1.0  # 1.0 is accepted across GLM models; some free models 400 on 
 HISTORY: dict[str, list[float]] = REAL["series"]  # real recent tail per macro series (oldest first, last = now)
 HISTORY_MONTHS = len(next(iter(HISTORY.values())))
 ANCHOR0 = {s: HISTORY[s][-1] for s in LEVEL_SERIES}  # month-0 levels = last real point
-CURRENT_MONTH = datetime.date.fromisoformat(f"{REAL['as_of']}-01").strftime("%B %Y")  # e.g. "June 2026" (month 0)
+_AS_OF = datetime.date.fromisoformat(f"{REAL['as_of']}-01")
+CURRENT_MONTH = _AS_OF.strftime("%B %Y")  # e.g. "June 2026" (month 0)
+_start_idx = _AS_OF.year * 12 + (_AS_OF.month - 1) - (HISTORY_MONTHS - 1)
+HISTORY_START_MONTH = datetime.date(_start_idx // 12, _start_idx % 12 + 1, 1).strftime("%B %Y")
 ANCHOR_VAL_B = OPENAI["anchor_valuation_usd_b"]  # OpenAI post-money valuation at month 0 ($B)
 OAI_KINDS = {"primary_round", "secondary_tender", "ipo", "collapse"}
 
@@ -131,7 +134,8 @@ def _user_turn(
             else f"Begin a new world at month 0 (now = {CURRENT_MONTH})."
         )
         return (
-            f"{head}\nReal recent {HISTORY_MONTHS}-month macro history per series (oldest first; last = month 0 = now):\n"
+            f"{head}\nReal recent {HISTORY_MONTHS}-month macro history per series (monthly, {HISTORY_START_MONTH} to "
+            f"{CURRENT_MONTH}; oldest first; last value = month 0 = now):\n"
             f"{_macro_history_block()}\n{_openai_history_block()}\n"
             f"Continue this world forward. Return exactly {k} macro values per series for months 1..{k}, "
             f"and openai_events for any OpenAI events in months 1..{k}."
