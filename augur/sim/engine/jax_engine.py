@@ -1,39 +1,39 @@
-"""JAX simulation engine — in-progress parity port of the NumPy engine.
+"""JAX simulation engine: a single always-`lax.scan` device program, parity-checked against NumPy.
 
-The dense engine is being ported to JAX phase-by-phase (see <augur/plans/jax_migration.md>). Each
-phase is a functional `jnp.at[]` translation of its NumPy counterpart in `phases.py`. Parity is
-verified by running the existing simulator test suite under both backends (the autouse `backend`
-fixture in `augur/sim/conftest.py` parameterizes every test over NumPy and JAX); the JAX variants
-for scenarios touching not-yet-ported phases fail until the port lands them. Selection is via
-`sim_backend.current_backend()`.
-
-`run_jax(plan, buffers)` fills the (already NumPy-allocated, zeroed) `buffers` from a JAX run.
-Un-ported phases / branches are no-ops, so the JAX backend is correct only for scenarios that
-exercise only the ported paths — which is exactly what the passing parity tests use.
-
-Ported so far (in `_run_month_step` order):
+The whole month loop compiles into one `jax.jit` program (`_program_impl`) whose carry is the
+per-rollout `_ScanState`; one `lax.scan` over `jnp.arange(horizon)` runs every phase branch-free, and
+`run_jax_scan(plan, buffers)` fills the (NumPy-allocated, zeroed) `buffers` from the stacked scan
+outputs in one device→host transfer. Every phase of the NumPy `phases.py` engine is implemented:
 - scheduled / recurring transfers;
 - property purchases (cash + mortgage origination);
 - scheduled asset sales (FIFO lot matching + capital-gain classification + lot-disposition log);
 - liquidity-policy sales;
-- obligation accruals + settlement with failure tracking and `_zero_failed_state`, for every
-  source kind (CONFIGURED_OBLIGATION, PROPERTY_TAX with the SALT/Schedule-E split, MORTGAGE_PAYMENT
-  with the interest/principal split, and ESTIMATED_TAX / ESTIMATED_TAX_Q4 / TAX_TRUE_UP);
+- obligation accruals + settlement with failure tracking and `_zero_failed_state`, for every source
+  kind (CONFIGURED_OBLIGATION, PROPERTY_TAX with the SALT/Schedule-E split, MORTGAGE_PAYMENT with the
+  interest/principal split, and ESTIMATED_TAX / ESTIMATED_TAX_Q4 / TAX_TRUE_UP);
+- TLH harvest (calibrated per-policy capital-loss booking);
 - PE tenders (LNW-floor tender / public-market / forced-sale / forced-recovery sales + opportunity
   trace);
-- the December year-end tax machinery: Schedule-E rental-interest/depreciation deductions,
-  §1211/§1212 capital-loss netting, the two-pass SALT walk over MID + LTCG brackets + the §1250
-  worksheet, tax-liability accrual, and the true-up settlement (the latter in float64, since a
-  ~$50k liability must settle to exactly zero — float32 leaves a ~$0.004 residual).
+- property sale (§1250 recapture + §121 exclusion), §168 depreciation accrual, owner-occupied-month
+  tracking, lifecycle events, and primary-residence assignment;
+- the December year-end tax machinery: Schedule-E rental-interest/depreciation deductions, §1211/§1212
+  capital-loss netting, the two-pass SALT walk over MID + LTCG brackets + the §1250 worksheet,
+  tax-liability accrual, and the true-up settlement.
+Parity is verified by running the simulator test suite under both backends (the autouse `backend`
+fixture in `augur/sim/conftest.py` parameterizes every test over NumPy and JAX); the backend is
+selected by `sim_backend.current_backend()`.
 
-Not yet ported (no-op): property sale, §168 depreciation accrual, owner-occupied-month tracking,
-lifecycle events, and primary-residence assignment — so depreciation_ytd / recapture stay zero,
-which is correct for non-rental, non-sale scenarios.
+Caching is JAX-native. `_program_impl` is module-level and
+`@partial(jax.jit, static_argnames=("p", "structure"))`: its compiled executable is keyed by JAX on
+the structural `SlotPlan` `p` and the hashable `_Structure` (folded-event tuples + scalars — both
+natively hashable, no content hashing) plus the avals of the traced `_Baked` data pytree and the
+seed/swept-config inputs. So an identical-structure plan — including sweeps over the traced numeric
+config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only a structural change
+recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
+across processes.
 
 Float32 note: tax amounts, cash flows, and settlements match the float64 reference to within a few
-parts in 1e8, but a handful of existing tests assert breakdown fields (income, deductions) to
-`rel=1e-9` / `abs=1e-6`, which float32 cannot meet on $10k-$200k values; those JAX variants fail on
-precision alone, not logic.
+parts in 1e8; the true-up settlement runs in float64 (a ~$50k liability must settle to exactly zero).
 """
 
 from __future__ import annotations
@@ -502,7 +502,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
     lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
     cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     cg_ytd0 = jnp.zeros((p.capital_gain_agent_count, 2, r))
-    # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
+    # TLH give-back ledger starts at zero (the harvest phase populates it during the scan); the
     # capital-gains core threads it, so carry a zeroed copy.
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
     props = plan.properties

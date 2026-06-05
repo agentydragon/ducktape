@@ -1,9 +1,9 @@
 """Selectable numeric backend for the simulation core (NumPy reference vs JAX).
 
-The migration to a JAX simulation core (see <augur/plans/jax_migration.md>) runs the JAX
-implementation in parallel with the existing NumPy reference. `current_backend()` selects which one
-runs; tests parametrize over both and assert the same invariants against each. The default is NumPy
-(the reference); set `AUGUR_SIM_BACKEND=jax` (or call `use_backend(...)`) to exercise the JAX path.
+The JAX simulation core runs in parallel with the NumPy reference. `current_backend()` selects which
+one runs; tests parametrize over both and assert the same invariants against each. The default is
+NumPy (the reference); set `AUGUR_SIM_BACKEND=jax` (or call `use_backend(...)`) to exercise the JAX
+path.
 
 This is a leaf module (only stdlib) so both the model layer (sampling) and the sim engine can read it
 without a dependency cycle.
