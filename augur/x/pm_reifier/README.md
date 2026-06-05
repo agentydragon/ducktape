@@ -229,6 +229,12 @@ LLM as an explicit stochastic transition kernel `p(x_{t+1} | x_{≤t})`. Why: en
 diverse possibilities") beats implicit sampling (which collapses to the mode — our conservatism);
 LLM-proposes/you-draw removes the bad-RNG failure; per-step branching compounds into diverse paths.
 
+**Each of the N options is a _joint_ cross-section** — the next single data point for _every_ series
+we model, plus any sparse events that fire that step (OpenAI tender / round / IPO / collapse). The
+options are samples of the whole next-step vector, so cross-series dependence (a risk-off step hits
+equities and crypto together; a tender coincides with a valuation jump) is captured _within each
+draw_, not stitched together from independent per-series marginals.
+
 Design decisions:
 
 - **No explicit latent state.** The LLM re-infers the latent (regime/vol) from the history each step,
