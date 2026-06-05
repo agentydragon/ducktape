@@ -24,13 +24,13 @@ from run_spike import CODING, RESULTS, quota
 
 MODEL = "glm-4.5"
 ENDPOINT = CODING
-ORIGINS = ["2024-06", "2024-09", "2024-12", "2025-03", "2025-05"]  # all >= the ~2024-06 cutoff
-M = 12  # free-running rollouts per origin (the ensemble)
-H = 10  # horizons (months ahead) per rollout
+ORIGINS = ["2024-06", "2024-10", "2025-01", "2025-05"]  # all >= the ~2024-06 cutoff
+M = 8  # free-running rollouts per origin (the ensemble)
+H = 8  # horizons (months ahead) per rollout
 N_HIST = 24
-N_OPTIONS = 20
+N_OPTIONS = 12  # smaller -> faster glm-4.5 generation (it is ~37s/call at N=20)
 TEMP = 1.0
-CONCURRENCY = 4  # keep the request rate under the coding-plan 1302 limit
+CONCURRENCY = 5  # keep the request rate under the coding-plan 1302 limit
 
 
 def chain(args: tuple[str, int, list[tuple[str, dict[str, float]]]]) -> dict:
