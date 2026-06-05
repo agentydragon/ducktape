@@ -1,0 +1,21 @@
+{
+  "model": "llama2:7b",
+  "kernel": "percentile",
+  "anchor": "2022-09",
+  "cutoff": "Sep 2022",
+  "leakage_free": true,
+  "steps": 18,
+  "n_pits": 90,
+  "window": "2022-10..2024-03",
+  "mean_pit": 0.4037952283118609,
+  "tail_escape": 0.7,
+  "p1_p99_escape_rate": 0.5222222222222223,
+  "jsd_pooled": 0.22008841673974433,
+  "n_by_series": {
+    "inflation": 18,
+    "sp500": 18,
+    "crypto:BTC": 18,
+    "home_value:sf_ca": 18,
+    "rent:sf_ca": 18
+  }
+}
