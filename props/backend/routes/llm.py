@@ -250,6 +250,16 @@ def _merge_props_metadata(
     body["metadata"] = {**metadata, **props_metadata}
 
 
+async def _read_json_object(request: Request) -> dict[str, Any]:
+    try:
+        raw_body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+    if not isinstance(raw_body, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
+    return raw_body
+
+
 async def _proxy_openai_request(
     request: Request,
     admin_db: AdminDb,
@@ -259,11 +269,7 @@ async def _proxy_openai_request(
     api_shape: LLMApiShape,
     upstream_path: str,
 ) -> JSONResponse:
-    # Parse request body
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON body: {e}")
+    body = await _read_json_object(request)
 
     request_model = body.get("model")
     if not isinstance(request_model, str) or not request_model:

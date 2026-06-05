@@ -72,6 +72,20 @@ The Chat Completions endpoint supports tools in the OpenAI-compatible `tools` ar
 
 See `open.bigmodel.cn/dev/api/normal-model/glm-4` for the full tool-use request format.
 
+Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
+
+- Function tools work with ordinary OpenAI chat-completions `tools`. The response uses
+  `finish_reason: "tool_calls"` and returns `message.tool_calls[]` with
+  `function.name` and JSON-string `function.arguments`.
+- `tool_choice: "auto"` works, and omitting `tool_choice` also works.
+- OpenAI strict tool metadata works: `function.strict: true`, `required`, `enum`, and
+  `additionalProperties: false` were accepted in a function tool schema.
+- Forced named tool choice in the OpenAI object form is rejected:
+  `{"type": "function", "function": {"name": "..."}}` returns `400` with
+  `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.
+  If a caller needs z.ai to call a specific tool, use prompt instructions plus
+  `tool_choice: "auto"` rather than the forced named object shape.
+
 ## Not Supported
 
 - **OpenAI Responses API** (`/v1/responses`): returns 404 on both general and coding
@@ -130,6 +144,8 @@ models at $0) and the coding endpoint.
 
 - `thinking: {"type": "disabled"}` disables reasoning (reasoning_tokens → 0). Recommended for
   structured-output tasks that don't need chain-of-thought (e.g. JSON generation).
+- Both `max_completion_tokens` and legacy `max_tokens` are accepted by the OpenAI-compatible
+  chat-completions endpoint.
 - `response_format: {"type": "json_object"}` works on the paid coding models and on `glm-4.7-flash`,
   but free `glm-4.5-flash` returns `400` (`code 1210`, "Invalid API parameter") when `thinking` /
   `response_format` are present. **Probe a candidate model with the real generation params** before

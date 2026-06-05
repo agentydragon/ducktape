@@ -8,7 +8,19 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from openai import AsyncOpenAI
-from openai.types.chat import CompletionCreateParams
+from openai.types import CompletionUsage
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionMessageToolCallParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionToolChoiceOptionParam,
+    ChatCompletionToolMessageParam,
+    ChatCompletionToolParam,
+    ChatCompletionUserMessageParam,
+)
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
+from openai.types.shared_params.function_definition import FunctionDefinition
 from pydantic import BaseModel
 
 from openai_utils.api_shape import LLMApiShape
@@ -38,6 +50,8 @@ from openai_utils.model import (
 )
 from openai_utils.retry import chat_create_with_retries
 from openai_utils.types import ReasoningParams
+
+type AgentWireBody = ResponsesRequest | CompletionCreateParamsNonStreaming
 
 
 @dataclass(frozen=True)
@@ -70,7 +84,7 @@ class AgentModelRequest:
 class PreparedAgentModelRequest:
     api_shape: LLMApiShape
     request: AgentModelRequest
-    wire_body: dict[str, Any]
+    wire_body: AgentWireBody
 
 
 @dataclass(frozen=True)
@@ -102,8 +116,7 @@ class ResponsesAgentModel(AgentModelProto):
 
     def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
         responses_request = request.to_responses_request()
-        wire_body = responses_request.model_dump(mode="json", exclude_none=True)
-        wire_body["model"] = self.model
+        wire_body = responses_request.model_copy(update={"model": self.model})
         return PreparedAgentModelRequest(api_shape=self.api_shape, request=request, wire_body=wire_body)
 
     async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
@@ -118,7 +131,7 @@ class ChatCompletionsAgentModel(AgentModelProto):
     api_shape: LLMApiShape = LLMApiShape.CHAT_COMPLETIONS
 
     def prepare(self, request: AgentModelRequest) -> PreparedAgentModelRequest:
-        body: dict[str, Any] = {
+        body: CompletionCreateParamsNonStreaming = {
             "model": self.model,
             "messages": _input_to_chat_messages(request.input, request.instructions),
             "stream": False,
@@ -134,7 +147,9 @@ class ChatCompletionsAgentModel(AgentModelProto):
         return PreparedAgentModelRequest(api_shape=self.api_shape, request=request, wire_body=body)
 
     async def sample(self, request: PreparedAgentModelRequest) -> AgentModelResult:
-        response = await chat_create_with_retries(self.client, cast(CompletionCreateParams, request.wire_body))
+        response = await chat_create_with_retries(
+            self.client, cast(CompletionCreateParamsNonStreaming, request.wire_body)
+        )
         choice = response.choices[0]
         message = choice.message
         output: list[ResponseOutItem] = []
@@ -166,7 +181,7 @@ def _agent_result_from_responses(result: ResponsesResult) -> AgentModelResult:
     return AgentModelResult(id=result.id, usage=result.usage, output=result.output)
 
 
-def _content_text(content: Sequence[Any] | None) -> str:
+def _content_text(content: Sequence[InputTextPart | OutputTextPart | OutputText] | None) -> str:
     parts = [
         part.text
         for part in content or []
@@ -175,72 +190,66 @@ def _content_text(content: Sequence[Any] | None) -> str:
     return "\n".join(parts)
 
 
-def _chat_message_text(content: Any) -> str:
+def _chat_message_text(content: str | None) -> str:
     if content is None:
         return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, Sequence):
-        parts: list[str] = []
-        for part in content:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                parts.append(part["text"])
-            elif isinstance(part, BaseModel):
-                data = part.model_dump(mode="json")
-                if isinstance(data.get("text"), str):
-                    parts.append(data["text"])
-        return "\n".join(parts)
-    return str(content)
+    return content
 
 
-def _message_extra_str(message: Any, key: str) -> str | None:
-    if not isinstance(message, BaseModel):
-        return None
+def _message_extra_str(message: BaseModel, key: str) -> str | None:
     data = message.model_dump(mode="json")
     value = data.get(key)
     if isinstance(value, str):
         return value
     extra = message.model_extra
     if isinstance(extra, dict):
-        extra_value = extra.get(key)
+        extra_value = cast(dict[str, Any], extra).get(key)
         if isinstance(extra_value, str):
             return extra_value
     return None
 
 
-def _input_to_chat_messages(input_items: list[InputItem] | str, instructions: str | None) -> list[dict[str, Any]]:
+def _input_to_chat_messages(
+    input_items: list[InputItem] | str, instructions: str | None
+) -> list[ChatCompletionMessageParam]:
     if isinstance(input_items, str):
-        messages: list[dict[str, Any]] = [{"role": "user", "content": input_items}]
+        messages: list[ChatCompletionMessageParam] = [ChatCompletionUserMessageParam(role="user", content=input_items)]
     else:
         messages = []
-        pending_tool_calls: list[dict[str, Any]] = []
+        pending_tool_calls: list[ChatCompletionMessageToolCallParam] = []
 
         def flush_tool_calls() -> None:
             nonlocal pending_tool_calls
             if pending_tool_calls:
-                messages.append({"role": "assistant", "content": None, "tool_calls": pending_tool_calls})
+                messages.append(
+                    ChatCompletionAssistantMessageParam(role="assistant", content=None, tool_calls=pending_tool_calls)
+                )
                 pending_tool_calls = []
 
         for item in input_items:
             if isinstance(item, FunctionCallItem):
                 pending_tool_calls.append(
-                    {
-                        "id": item.call_id,
-                        "type": "function",
-                        "function": {"name": item.name, "arguments": item.arguments or "{}"},
-                    }
+                    ChatCompletionMessageToolCallParam(
+                        id=item.call_id,
+                        type="function",
+                        function={"name": item.name, "arguments": item.arguments or "{}"},
+                    )
                 )
                 continue
 
             flush_tool_calls()
             if isinstance(item, UserMessage):
-                messages.append({"role": "user", "content": _content_text(item.content)})
+                messages.append(ChatCompletionUserMessageParam(role="user", content=_content_text(item.content)))
             elif isinstance(item, SystemMessage):
-                messages.append({"role": "system", "content": _content_text(item.content)})
+                messages.append(ChatCompletionSystemMessageParam(role="system", content=_content_text(item.content)))
             elif isinstance(item, AssistantMessage):
-                messages.append({"role": "assistant", "content": _content_text(item.content)})
+                messages.append(
+                    ChatCompletionAssistantMessageParam(role="assistant", content=_content_text(item.content))
+                )
             elif isinstance(item, FunctionCallOutputItem):
-                messages.append({"role": "tool", "tool_call_id": item.call_id, "content": item.output})
+                messages.append(
+                    ChatCompletionToolMessageParam(role="tool", tool_call_id=item.call_id, content=item.output)
+                )
             elif isinstance(item, ReasoningItem):
                 continue
             else:
@@ -251,12 +260,12 @@ def _input_to_chat_messages(input_items: list[InputItem] | str, instructions: st
         insert_at = 0
         while insert_at < len(messages) and messages[insert_at].get("role") == "system":
             insert_at += 1
-        messages.insert(insert_at, {"role": "system", "content": instructions})
+        messages.insert(insert_at, ChatCompletionSystemMessageParam(role="system", content=instructions))
     return messages
 
 
-def _tool_to_chat_tool(tool: FunctionToolParam) -> dict[str, Any]:
-    function: dict[str, Any] = {"name": tool.name, "parameters": tool.parameters}
+def _tool_to_chat_tool(tool: FunctionToolParam) -> ChatCompletionToolParam:
+    function = FunctionDefinition(name=tool.name, parameters=tool.parameters)
     if tool.description is not None:
         function["description"] = tool.description
     if tool.strict is not None:
@@ -264,7 +273,7 @@ def _tool_to_chat_tool(tool: FunctionToolParam) -> dict[str, Any]:
     return {"type": "function", "function": function}
 
 
-def _tool_choice_to_chat_tool_choice(tool_choice: ToolChoice) -> Any:
+def _tool_choice_to_chat_tool_choice(tool_choice: ToolChoice) -> ChatCompletionToolChoiceOptionParam:
     if isinstance(tool_choice, str):
         return tool_choice
     if isinstance(tool_choice, ToolChoiceFunction):
@@ -272,20 +281,15 @@ def _tool_choice_to_chat_tool_choice(tool_choice: ToolChoice) -> Any:
     raise TypeError(f"Unsupported tool_choice: {tool_choice!r}")
 
 
-def _chat_usage_to_response_usage(usage: Any) -> ResponseUsage | None:
+def _chat_usage_to_response_usage(usage: CompletionUsage | None) -> ResponseUsage | None:
     if usage is None:
         return None
-    if not isinstance(usage, BaseModel):
-        raise TypeError(f"Unsupported chat usage type: {type(usage).__name__}")
-    usage_data = usage.model_dump(mode="json")
-    prompt_details = usage_data.get("prompt_tokens_details")
-    completion_details = usage_data.get("completion_tokens_details")
-    cached_tokens = prompt_details.get("cached_tokens", 0) if isinstance(prompt_details, dict) else 0
-    reasoning_tokens = completion_details.get("reasoning_tokens", 0) if isinstance(completion_details, dict) else 0
+    cached_tokens = usage.prompt_tokens_details.cached_tokens if usage.prompt_tokens_details else None
+    reasoning_tokens = usage.completion_tokens_details.reasoning_tokens if usage.completion_tokens_details else None
     return ResponseUsage(
-        input_tokens=usage_data["prompt_tokens"],
-        output_tokens=usage_data["completion_tokens"],
-        total_tokens=usage_data["total_tokens"],
+        input_tokens=usage.prompt_tokens,
+        output_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
         input_tokens_details=InputTokensDetails(cached_tokens=cached_tokens or 0),
         output_tokens_details=OutputTokensDetails(reasoning_tokens=reasoning_tokens or 0),
     )

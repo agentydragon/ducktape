@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import httpx
 import pytest_bazel
 from openai import AsyncOpenAI
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
 from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
 from openai_utils.model import (
@@ -19,10 +21,11 @@ from openai_utils.model import (
 
 
 async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
-    captured: dict[str, object] = {}
+    captured_body: CompletionCreateParamsNonStreaming | None = None
 
     def handler(request: httpx.Request) -> httpx.Response:
-        captured["body"] = json.loads(request.content)
+        nonlocal captured_body
+        captured_body = cast(CompletionCreateParamsNonStreaming, json.loads(request.content))
         return httpx.Response(
             200,
             json={
@@ -83,7 +86,9 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
         )
 
         prepared = model.prepare(request)
-        assert prepared.wire_body["messages"] == [
+        wire_body = prepared.wire_body
+        assert isinstance(wire_body, dict)
+        assert wire_body["messages"] == [
             {"role": "system", "content": "static system"},
             {"role": "system", "content": "dynamic instructions"},
             {"role": "user", "content": "hello"},
@@ -101,7 +106,7 @@ async def test_chat_adapter_prepares_and_parses_tool_call() -> None:
     finally:
         await http_client.aclose()
 
-    assert captured["body"] == prepared.wire_body
+    assert captured_body == prepared.wire_body
     assert result.id == "chatcmpl_test"
     assert result.usage is not None
     assert result.usage.input_tokens == 10

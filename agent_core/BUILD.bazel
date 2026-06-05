@@ -40,6 +40,7 @@ py_library(
         ":tool_provider",
         "//openai_utils:api_shape",
         "//openai_utils:model",
+        "@pypi//openai",
         "@pypi//pydantic",
     ],
 )
@@ -266,6 +267,28 @@ py_test(
         ":model",
         "//openai_utils:model",
         "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_zai_chat_adapter_live",
+    srcs = ["test_zai_chat_adapter_live.py"],
+    env_inherit = [
+        "ZAI_API_KEY",
+        "ZAI_MODEL",
+    ],
+    tags = [
+        "live_openai_api",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        ":model",
+        "//openai_utils:api_shape",
+        "//openai_utils:model",
         "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

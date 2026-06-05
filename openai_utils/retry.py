@@ -77,7 +77,7 @@ async def chat_create_with_retries(client: AsyncOpenAI, params: CompletionCreate
     """
     if params.get("stream"):
         raise ValueError("chat_create_with_retries does not support streaming (stream=True)")
-    request_params: dict[str, Any] = dict(params)
+    request_params = dict(params)
     request_params.pop("stream", None)
     # Explicit stream=False ensures we get ChatCompletion (non-streaming) overload
     create: Callable[..., Awaitable[ChatCompletion]] = cast(
