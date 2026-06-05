@@ -17,8 +17,9 @@ import math
 from concurrent.futures import ThreadPoolExecutor
 
 import kernel
-from fetch_real_history import FRED, NORMALIZE, YAHOO, fred_monthly, yahoo_monthly
 from run_spike import CODING, RESULTS, quota
+
+from augur.data.fetch_real_history import FRED, NORMALIZE, YAHOO, fred_monthly, yahoo_monthly
 
 MODEL = "glm-4.5"  # self-reported cutoff ~2024-06 (leakage-probed clean for 2024-2026)
 ENDPOINT = CODING

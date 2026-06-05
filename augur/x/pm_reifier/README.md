@@ -22,17 +22,18 @@ are evaluated at specific month indices on the paths.
 
 ## Components
 
-| file                    | what                                                                         |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| `run_spike.py`          | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
-| `run_windowed.py`       | conversational rollout — advance 12 months/turn, real history, OpenAI events |
-| `kernel.py`             | the shared per-step transition kernel: N weighted joint next-month options   |
-| `backtest.py`           | teacher-forced one-step calibration backtest (PIT scoring)                   |
-| `backtest_rolling.py`   | rolling-origin, multi-horizon free-running calibration                       |
-| `fetch_real_history.py` | real macro series from Yahoo (sp500/BTC) + FRED (CPI/home/rent), date-ranged |
-| `openai_history.json`   | OpenAI's **public** funding-round/tender history (private marks excluded)    |
-| `plot_*.py`             | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
+| file                  | what                                                                         |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `run_spike.py`        | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
+| `run_windowed.py`     | conversational rollout — advance 12 months/turn, real history, OpenAI events |
+| `kernel.py`           | the shared per-step transition kernel: N weighted joint next-month options   |
+| `backtest.py`         | teacher-forced one-step calibration backtest (PIT scoring)                   |
+| `backtest_rolling.py` | rolling-origin, multi-horizon free-running calibration                       |
+| `openai_history.json` | OpenAI's **public** funding-round/tender history (private marks excluded)    |
+| `plot_*.py`           | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
+Macro history is fetched by **`//augur/data:fetch_real_history`** (Yahoo for sp500/BTC, FRED for
+CPI/home/rent; date-ranged) — promoted out of `x/` into the curated `augur/data` directory.
 `results/` holds summaries, plots, and `quota_log.jsonl` (per-run token + z.ai-quota burn).
 `transcripts/` (every request/response) is **git-ignored** — written locally, not committed.
 Operational z.ai behavior (caching, rate-limit tiers, param quirks, quota API) lives in
@@ -82,7 +83,7 @@ the random-percentile representation below.
 
 ### 4. Grounding: real data + OpenAI as events
 
-Seeding worlds with **real** recent macro tails (`fetch_real_history.py`) anchors them on actual levels
+Seeding worlds with **real** recent macro tails (`//augur/data:fetch_real_history`) anchors them on actual levels
 and momentum; extending the tail 1 yr → 5 yr (so the model sees BTC's full 2021–26 boom/crash cycle)
 **modestly widens coverage** (e.g. `cpi>108` 0.73→0.94, `sfhome>110` 0.13→0.38, S&P/BTC upside off
 exactly-zero) but doesn't fix the extreme tails. **OpenAI is modelled as augur's PE issuer is** —
@@ -154,7 +155,7 @@ can be recall, not forecast. So the workhorse testbed is an **old, known-dated o
 released on date D can't have seen past D — a hard cutoff). Older = longer resolved-future window =
 real per-horizon statistics; every anchor after D is a leakage-free **rolling origin**. Tradeoff: old
 models are weaker at JSON, but the requirement is _a known date + reliable structured output_, not
-capability. Ground truth is already in hand (`fetch_real_history.py` takes date ranges). Candidates:
+capability. Ground truth is already in hand (`//augur/data:fetch_real_history` takes date ranges). Candidates:
 Llama 2 (~Sep 2022), Mistral 7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
 
 Next, in priority order:

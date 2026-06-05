@@ -1,3 +1,5 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
 package(default_visibility = ["//visibility:public"])
 
 # Public exogenous evidence blobs used by offline training and evaluation.
@@ -9,4 +11,16 @@ filegroup(
         "*.json",
         "*.md",
     ]),
+)
+
+py_library(
+    name = "fetch_real_history_lib",
+    srcs = ["fetch_real_history.py"],
+    deps = ["@pypi//tenacity"],
+)
+
+py_binary(
+    name = "fetch_real_history",
+    main_module = "augur.data.fetch_real_history",
+    deps = [":fetch_real_history_lib"],
 )

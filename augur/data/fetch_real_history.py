@@ -1,15 +1,19 @@
-"""Fetch real recent macro series from public sources -> real_history.json for the windowed spike.
+"""Fetch recent monthly macro history from public sources (Yahoo Finance + FRED).
 
-Sources (all public, keyless):
+Live-refresh companion to the checked-in snapshots in this directory (see SOURCES.md). All sources
+are public and keyless:
+
   sp500            <- Yahoo Finance ^GSPC monthly close
   crypto:BTC       <- Yahoo Finance BTC-USD monthly close
-  inflation        <- FRED CPIAUCSL (CPI all-urban)                     [normalized to 100 at now]
-  home_value:sf_ca <- FRED SFXRSA (Case-Shiller SF home-price index)    [normalized to 100 at now]
+  inflation        <- FRED CPIAUCSL (CPI all-urban)                     [normalized to 100 at the last point]
+  home_value:sf_ca <- FRED SFXRSA (Case-Shiller SF home-price index)    [normalized to 100 at the last point]
   rent:sf_ca       <- FRED CUUR0000SEHA (CPI rent of primary residence) [normalized; NATIONAL proxy]
 
-sp500 and crypto:BTC keep absolute levels; the index series are normalized so the last value = 100.0
-(augur's "index = 100 at month 0" convention) while preserving the recent shape. Writes the last 12
-monthly points per series. Run: python3 augur/x/pm_reifier/fetch_real_history.py
+`sp500` and `crypto:BTC` keep absolute levels; the index series are normalized so the last value =
+100.0 (augur's "index = 100 at month 0" convention) while preserving the recent shape. `main()` writes
+the last N monthly points per series to `real_history.json`.
+
+Run: bb run //augur/data:fetch_real_history
 """
 
 from __future__ import annotations
@@ -17,38 +21,36 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-import time
 import urllib.error
 import urllib.request
 
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
 HERE = pathlib.Path(__file__).parent
-N = 60  # months of recent history (~5 years of context for the model to infer drift/volatility)
+N = 60  # months of recent history (~5 years)
 
 FRED = {"inflation": "CPIAUCSL", "home_value:sf_ca": "SFXRSA", "rent:sf_ca": "CUUR0000SEHA"}
 YAHOO = {"sp500": "%5EGSPC", "crypto:BTC": "BTC-USD"}
 NORMALIZE = {"inflation", "home_value:sf_ca", "rent:sf_ca"}  # rebased to 100 at the last point
 
 
-def _get(url: str, ua: str, tries: int = 5) -> bytes:
+def _is_transient(exc: BaseException) -> bool:
+    """A network read worth retrying: a 429/5xx response, or a transport-level timeout/URL error."""
+    if isinstance(exc, urllib.error.HTTPError):  # HTTPError is a URLError subclass — check it first
+        return exc.code == 429 or exc.code >= 500
+    return isinstance(exc, TimeoutError | urllib.error.URLError)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient),
+    wait=wait_exponential(multiplier=2, max=30),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
+def _get(url: str, ua: str) -> bytes:
     # Yahoo needs a browser UA; FRED rejects "Mozilla/*" (anti-scraping) but serves a curl-style UA.
     req = urllib.request.Request(url, headers={"User-Agent": ua})
-    delay = 2.0
-    for i in range(tries):
-        try:
-            return urllib.request.urlopen(req, timeout=30).read()
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 503) and i < tries - 1:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-        except (TimeoutError, urllib.error.URLError):
-            if i < tries - 1:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            raise
-    raise RuntimeError("unreachable")
+    return urllib.request.urlopen(req, timeout=30).read()
 
 
 def yahoo_monthly(sym: str) -> list[tuple[str, float]]:
@@ -87,21 +89,20 @@ def main() -> None:
         vals = [v for _, v in pts]
         raw_last[wire] = round(vals[-1], 3)
         months[wire] = pts[-1][0]
-        if wire in NORMALIZE:
-            series[wire] = [round(v / vals[-1] * 100.0, 2) for v in vals]
-        else:
-            series[wire] = [round(v, 2) for v in vals]
+        series[wire] = (
+            [round(v / vals[-1] * 100.0, 2) for v in vals] if wire in NORMALIZE else [round(v, 2) for v in vals]
+        )
     out = {
         "as_of": max(months.values()),
-        "months_per_series": {w: months[w] for w in series},
+        "months_per_series": months,
         "series": series,
         "raw_last_level": raw_last,
         "sources": {**{w: f"yahoo:{s}" for w, s in YAHOO.items()}, **{w: f"fred:{s}" for w, s in FRED.items()}},
     }
     (HERE / "real_history.json").write_text(json.dumps(out, indent=2) + "\n")
     print(f"wrote real_history.json (as_of {out['as_of']})")
-    for w, vals in series.items():
-        print(f"  {w:18} last={raw_last[w]:>10} ({months[w]})  tail={vals}")
+    for wire, vals in series.items():
+        print(f"  {wire:18} last={raw_last[wire]:>10} ({months[wire]})  tail={vals}")
 
 
 if __name__ == "__main__":
