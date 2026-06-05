@@ -112,7 +112,7 @@ spec:
             - name: PROPS_REGISTRY_PORT
               value: "8000"
             - name: PROPS_REGISTRY_PULL_HOST
-              value: git.allegedly.works
+              value: props.allegedly.works
           volumeMounts:
             - name: config
               mountPath: /etc/props
