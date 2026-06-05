@@ -96,7 +96,10 @@ Same markets + reweight harness, but each world is a **conversation** advancing 
 turn; we concatenate fixed-size windows, so the horizon length is enforced by **us** (retry a window
 that miscounts) rather than begged from the model. Each world is its own conversation (an independent
 draw; `BATCH_SIZE > 1` rolls deliberately-distinct worlds per thread as a coverage knob), run in
-parallel with 429/timeout backoff.
+parallel with 429/timeout backoff. The opening prompt seeds a **12-month recent-history tail** per
+series (`HISTORY`) so worlds start from real levels and carry recent momentum/volatility forward — in
+real augur usage this is the as-of series tail from augur's data store (and anchoring as-of a past
+date is what enables rolling-origin backtests). The tail here is illustrative.
 
 ### Findings (2026-06-05, free GLM-4.5-Flash, 15 worlds, 60-month horizon, 12-month windows)
 

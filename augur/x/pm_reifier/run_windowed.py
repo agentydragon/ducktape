@@ -45,9 +45,22 @@ CONCURRENCY = 2  # free-tier rate limits are tight; keep low and back off on 429
 TEMPERATURE = 1.0  # 1.0 is accepted across GLM models; some free models 400 on temperature > 1.0
 OVAL = "openai_valuation_usd_trillions"  # PE issuer path key (in the window payload, not LEVEL_SERIES)
 
-ANCHOR0 = {"inflation": 100.0, "sp500": 5300.0, "crypto:BTC": 95000.0, f"home_value:{LOC}": 100.0, f"rent:{LOC}": 100.0}
-ANCHOR0_OVAL = 0.85
 WINDOW_SERIES = [*LEVEL_SERIES, OVAL]
+HISTORY_MONTHS = 12  # recent monthly observations shown to anchor the rollout (oldest first, last = now)
+
+# Recent 12-month history per series (oldest first; last value = month 0 = now). ILLUSTRATIVE here —
+# in real augur usage this is the actual as-of series tail from augur's data store (anchoring on real
+# levels + recent momentum/vol, and enabling rolling-origin backtests by anchoring as-of a past date).
+HISTORY: dict[str, list[float]] = {
+    "inflation": [97.9, 98.1, 98.4, 98.6, 98.9, 99.1, 99.3, 99.5, 99.6, 99.8, 99.9, 100.0],
+    "sp500": [4880, 4950, 5010, 4990, 5080, 5140, 5120, 5190, 5230, 5260, 5285, 5300],
+    "crypto:BTC": [72000, 76000, 80000, 78000, 83000, 88000, 86000, 90000, 92000, 93500, 94200, 95000],
+    f"home_value:{LOC}": [97.0, 97.4, 97.9, 98.2, 98.5, 98.8, 99.0, 99.3, 99.5, 99.7, 99.9, 100.0],
+    f"rent:{LOC}": [98.2, 98.4, 98.6, 98.8, 99.0, 99.1, 99.3, 99.5, 99.6, 99.8, 99.9, 100.0],
+    OVAL: [0.50, 0.52, 0.55, 0.58, 0.60, 0.63, 0.66, 0.70, 0.74, 0.78, 0.82, 0.85],
+}
+ANCHOR0 = {s: HISTORY[s][-1] for s in LEVEL_SERIES}  # month-0 levels = last point of each history tail
+ANCHOR0_OVAL = HISTORY[OVAL][-1]
 
 # Endpoint+model are chosen once in main() and read by worker threads.
 ENDPOINT = ""
@@ -57,7 +70,9 @@ SYSTEM = (
     "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each "
     "month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), "
     f"home_value:{LOC} (SF home-price index, 100.0 at m0), rent:{LOC} (SF rent index, 100.0 at m0), "
-    f"{OVAL} (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is "
+    f"{OVAL} (OpenAI enterprise value, TRILLIONS USD). You are given the most recent {HISTORY_MONTHS} "
+    "months of history per series; continue the world FORWARD from the last point (month 0 = now), "
+    "carrying the recent momentum and volatility. I advance the world in windows; each reply is "
     'ONLY a JSON object {"regime": short note on the current regime and what is coming, "months": '
     '{series: [k numbers], ...}, "openai_ipo_month_index": int or null (set ONLY on the window where '
     "OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth "
@@ -67,7 +82,6 @@ SYSTEM = (
 
 
 def _user_turn(start_month: int, k: int, last_levels: dict[str, float], *, fresh: bool, distinct: bool) -> str:
-    levels = ", ".join(f"{s}={last_levels[s]:g}" for s in WINDOW_SERIES)
     if fresh:
         head = (
             "Simulate a DIFFERENT world from month 0, qualitatively distinct from the previous one(s) "
@@ -75,7 +89,12 @@ def _user_turn(start_month: int, k: int, last_levels: dict[str, float], *, fresh
             if distinct
             else "Begin a new world at month 0."
         )
-        return f"{head}\nMonth-0 levels: {levels}\nReturn exactly {k} values per series for months 1..{k}."
+        hist = "\n".join(f"  {s}: {', '.join(format(v, 'g') for v in HISTORY[s])}" for s in WINDOW_SERIES)
+        return (
+            f"{head}\nRecent {HISTORY_MONTHS}-month history per series (oldest first; last value = month 0 = now):\n"
+            f"{hist}\nContinue this world forward. Return exactly {k} values per series for months 1..{k}."
+        )
+    levels = ", ".join(f"{s}={last_levels[s]:g}" for s in WINDOW_SERIES)
     return (
         f"Continue the SAME world. Month-{start_month} levels: {levels}\n"
         f"Return exactly {k} values per series for months {start_month + 1}..{start_month + k}."
