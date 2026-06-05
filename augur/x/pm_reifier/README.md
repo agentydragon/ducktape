@@ -181,6 +181,33 @@ and +20%), so the reweight can't separate them; more/finer rollouts are the fix,
 near-certain (raw 1.0), so those markets can't move. (`run_reify_joint.py`; result in
 `results/reify_joint.json`.)
 
+### 8. Leakage-free probe (llama3.1:8b) — glm-4.5's calibration is leakage-suspect
+
+glm-4.5's June-2024 cutoff is fuzzy and leaky, so "anchor at cutoff, predict to now" can be recall, not
+forecast. `llama3.1:8b` has a **documented Dec-2023 training cutoff** and open weights, so 2024-01
+onward is a **hard** leakage-free window. Running the percentile kernel on it locally via ollama
+(`backtest_llama.py`, anchor 2023-12, 18 steps 2024-01..2025-06, 79 PITs):
+
+| metric (pooled)               | llama3.1:8b (hard cutoff) | glm-4.5 percentile (leaky) | calibrated |
+| ----------------------------- | ------------------------: | -------------------------: | ---------: |
+| mean PIT                      | **0.69** (under-predicts) |                       0.48 |       0.50 |
+| tail-escape                   |       **56%** (very thin) |                        10% |        20% |
+| realized beyond stated p1/p99 |                   **32%** |                         2% |         2% |
+| JSD-to-uniform                |                0.166 bits |                  0.05 bits |          0 |
+
+The hard-cutoff model is **badly overconfident** (its stated 98% interval holds only 68% of the time)
+and **strongly under-predicts** the 2024–25 bull run. Two confounded readings, not separable from one
+model: (a) **leakage flattered glm-4.5** — its well-centred percentiles (mean 0.48, _no_ bull-run
+under-prediction) look like partial recall once a genuinely-blind model under-shoots the climb as honest
+forecasting should; (b) **capability** — an 8B is just worse at stating honest wide quantiles. The
+cleanest tell is the **under-prediction direction**: llama (0.69) and glm-4.5 _enumeration_ (0.62) both
+under-shoot the bull run while glm-4.5 _percentile_ (0.48) conspicuously doesn't. **Treat the glm-4.5
+calibration numbers as leakage-suspect**; a rigorous leakage-free verdict needs a _stronger_
+known-cutoff model (Llama-3.1-70B / a frontier open model) on a GPU. **Infra note:** CPU inference is
+~5 tok/s and ollama's OpenAI-compat `json_object` 500s on the heavy schema, so on a CPU box only the
+light percentile probe is feasible — the sharp-joint kernel and forward reify need a GPU.
+(`backtest_llama.py`; `results/backtest_llama.json`.)
+
 ## Calibration backtest — the rigorous validation
 
 Anchor `glm-4.5` at its **leakage-probed June-2024 cutoff** (it doesn't know the 2024–26 OpenAI rounds
