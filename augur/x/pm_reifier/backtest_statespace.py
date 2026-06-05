@@ -23,6 +23,7 @@ import math
 import os
 import pathlib
 import statistics
+from typing import TypedDict
 
 from augur.data.fetch_real_history import FRED, YAHOO, fred_monthly, yahoo_monthly
 
@@ -33,6 +34,11 @@ N_HIST = 24  # months of history shown each step (== the LLM kernel's window)
 # repo root so results land in the source tree. Fall back to __file__ for a plain `python3` run.
 _ROOT = pathlib.Path(os.environ.get("BUILD_WORKING_DIRECTORY", pathlib.Path(__file__).parent.parent.parent.parent))
 RESULTS = _ROOT / "augur" / "x" / "pm_reifier" / "results"
+
+
+class StepPitSummary(TypedDict):
+    month: str
+    pits: dict[str, float]
 
 
 def m_index(ym: str) -> int:
@@ -75,7 +81,7 @@ def main() -> None:
     RESULTS.mkdir(exist_ok=True)
     vals = build_series()
     common = sorted(set.intersection(*(set(v) for v in vals.values())), key=m_index)  # months with all 5 series
-    steps = []
+    steps: list[StepPitSummary] = []
     for tgt in common:
         ti = m_index(tgt)
         if ti <= m_index(T0):
