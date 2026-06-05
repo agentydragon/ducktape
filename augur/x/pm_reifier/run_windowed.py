@@ -59,20 +59,20 @@ OAI_KINDS = {"primary_round", "secondary_tender", "ipo", "collapse"}
 # dense path. OpenAI: ipo_by / oval_at (valuation from the event marks) / tender_by (any secondary
 # tender). Month indices: 2027-12=m18, 2029-12=m42, 2030-12=m54. Prices are illustrative.
 MARKETS = [
-    {"id": "sp500>9000@2027-12", "kind": "ge_at", "series": "sp500", "month": 18, "thr": 9000, "price": 0.50},
-    {"id": "sp500>12000@2030-12", "kind": "ge_at", "series": "sp500", "month": 54, "thr": 12000, "price": 0.40},
-    {"id": "btc>120k@2027-12", "kind": "ge_at", "series": "crypto:BTC", "month": 18, "thr": 120_000, "price": 0.45},
-    {"id": "btc>250k@2030-12", "kind": "ge_at", "series": "crypto:BTC", "month": 54, "thr": 250_000, "price": 0.30},
-    {"id": "cpi>110@2029-12", "kind": "ge_at", "series": "inflation", "month": 42, "thr": 110.0, "price": 0.60},
+    {"id": "sp500>8500@2027-12", "kind": "ge_at", "series": "sp500", "month": 18, "thr": 8500, "price": 0.55},
+    {"id": "sp500>11000@2030-12", "kind": "ge_at", "series": "sp500", "month": 54, "thr": 11000, "price": 0.40},
+    {"id": "btc>90k@2027-12", "kind": "ge_at", "series": "crypto:BTC", "month": 18, "thr": 90_000, "price": 0.50},
+    {"id": "btc>180k@2030-12", "kind": "ge_at", "series": "crypto:BTC", "month": 54, "thr": 180_000, "price": 0.30},
+    {"id": "cpi>108@2029-12", "kind": "ge_at", "series": "inflation", "month": 42, "thr": 108.0, "price": 0.70},
     {
-        "id": "sfhome>115@2030-12",
+        "id": "sfhome>110@2030-12",
         "kind": "ge_at",
         "series": "home_value:sf_ca",
         "month": 54,
-        "thr": 115.0,
-        "price": 0.45,
+        "thr": 110.0,
+        "price": 0.50,
     },
-    {"id": "sfrent>112@2029-12", "kind": "ge_at", "series": "rent:sf_ca", "month": 42, "thr": 112.0, "price": 0.55},
+    {"id": "sfrent>108@2029-12", "kind": "ge_at", "series": "rent:sf_ca", "month": 42, "thr": 108.0, "price": 0.60},
     {"id": "openai_tender_by_2028-06", "kind": "oai_tender_by", "month": 24, "price": 0.80},
     {"id": "openai_ipo_by_2029-12", "kind": "oai_ipo_by", "month": 42, "price": 0.45},
     {"id": "openai_val>2T@2030-12", "kind": "oai_val_at", "month": 54, "thr": 2000.0, "price": 0.50},
@@ -85,8 +85,10 @@ MODEL = ""
 
 SYSTEM = (
     "You simulate ONE plausible future world, month by month, as numeric JSON. Macro series tracked each "
-    "month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), "
-    "home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0). "
+    "month: inflation (cumulative consumer price INDEX, ~100.0 now; it CLIMBS steadily ~2-4%/yr and does "
+    "NOT revert to 100 — continue it upward, as a price level), sp500 (S&P 500 level), crypto:BTC (USD), "
+    "home_value:sf_ca (SF home-price index, ~100.0 now, also a climbing level), rent:sf_ca (SF rent index, "
+    "~100.0 now, climbing level). "
     "Separately, OpenAI is a private company whose value moves in discrete EVENTS, not a smooth path: "
     "primary_round (new funding), secondary_tender (employees/early holders sell at a set valuation), "
     "ipo (goes public), or collapse. You are given a real recent macro history and OpenAI's public "
@@ -184,7 +186,8 @@ def _call(body: dict, tag: str, max_tries: int = 6) -> dict:
         try:
             return _post(ENDPOINT, body, tag)
         except RuntimeError as e:
-            if "HTTP 429" not in str(e):
+            s = str(e)
+            if "HTTP 429" not in s and "HTTP 5" not in s:  # retry 429 + any 5xx (incl. transient 503 DNS blips)
                 raise
             last = e
         except (TimeoutError, urllib.error.URLError) as e:
