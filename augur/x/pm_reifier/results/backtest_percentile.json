@@ -1,0 +1,405 @@
+{
+  "model": "glm-4.5",
+  "kernel": "percentile",
+  "anchor": "2024-06",
+  "steps": 20,
+  "tokens": 33027,
+  "jsd_pooled": 0.05299458276980622,
+  "jsd_by_series": {
+    "inflation": 0.104592962730406,
+    "sp500": 0.32758507619400595,
+    "crypto:BTC": 0.049022499567306255,
+    "home_value:sf_ca": 0.11951797627815935,
+    "rent:sf_ca": 0.30935867736399203
+  },
+  "n_by_series": {
+    "inflation": 20,
+    "sp500": 20,
+    "crypto:BTC": 20,
+    "home_value:sf_ca": 20,
+    "rent:sf_ca": 20
+  },
+  "p1_p99_escape_rate": 0.02,
+  "per_step": [
+    {
+      "month": "2024-07",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.22578104036493976,
+        "sp500": 0.4538330078125,
+        "crypto:BTC": 0.4864017857142857,
+        "home_value:sf_ca": 0.1646282122248532,
+        "rent:sf_ca": 0.3993899527243393
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1674
+    },
+    {
+      "month": "2024-08",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.1938954268409682,
+        "sp500": 0.5604998779296875,
+        "crypto:BTC": 0.2846392299107143,
+        "home_value:sf_ca": 0.5519065784587037,
+        "rent:sf_ca": 0.39065111503748695
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1673
+    },
+    {
+      "month": "2024-09",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.5326844362666874,
+        "sp500": 0.5780999755859375,
+        "crypto:BTC": 0.604046875,
+        "home_value:sf_ca": 0.47820007644869833,
+        "rent:sf_ca": 0.5970345255718499
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1677
+    },
+    {
+      "month": "2024-10",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.6886678337017429,
+        "sp500": 0.40545019531250004,
+        "crypto:BTC": 0.6303796875000001,
+        "home_value:sf_ca": 0.44259983992611274,
+        "rent:sf_ca": 0.5554534167422583
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1671
+    },
+    {
+      "month": "2024-11",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.4455891184625863,
+        "sp500": 0.76618994140625,
+        "crypto:BTC": 0.9214968489583333,
+        "home_value:sf_ca": 0.4254762208102195,
+        "rent:sf_ca": 0.39148082708562404
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1667
+    },
+    {
+      "month": "2024-12",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.6416605972323461,
+        "sp500": 0.40135823567708334,
+        "crypto:BTC": 0.385730078125,
+        "home_value:sf_ca": 0.9492418263076174,
+        "rent:sf_ca": 0.7709445585215665
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1666
+    },
+    {
+      "month": "2025-01",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.8176122206463026,
+        "sp500": 0.59052978515625,
+        "crypto:BTC": 0.6234170572916666,
+        "home_value:sf_ca": 0.45590849673243317,
+        "rent:sf_ca": 0.5428784044060279
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1661
+    },
+    {
+      "month": "2025-02",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.5162586303096994,
+        "sp500": 0.3545,
+        "crypto:BTC": 0.144493896484375,
+        "home_value:sf_ca": 0.4215468957420202,
+        "rent:sf_ca": 0.5167255622940663
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1660
+    },
+    {
+      "month": "2025-03",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.10337141104765257,
+        "sp500": 0.10888757324218751,
+        "crypto:BTC": 0.34476904296875,
+        "home_value:sf_ca": 0.0,
+        "rent:sf_ca": 0.3733823599637045
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "below_p1",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1647
+    },
+    {
+      "month": "2025-04",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.5231548919640719,
+        "sp500": 0.3363250732421875,
+        "crypto:BTC": 0.8131096875,
+        "home_value:sf_ca": 0.0,
+        "rent:sf_ca": 0.4689962274962878
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "below_p1",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1646
+    },
+    {
+      "month": "2025-05",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.5251338469991517,
+        "sp500": 0.755844970703125,
+        "crypto:BTC": 0.7121692708333334,
+        "home_value:sf_ca": 0.08440727836030429,
+        "rent:sf_ca": 0.31545174537988435
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1646
+    },
+    {
+      "month": "2025-06",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.810340399432671,
+        "sp500": 0.7829701171875,
+        "crypto:BTC": 0.771353359375,
+        "home_value:sf_ca": 0.22250880602538672,
+        "rent:sf_ca": 0.4157394584785715
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1677
+    },
+    {
+      "month": "2025-07",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.9037314243365148,
+        "sp500": 0.5871188354492187,
+        "crypto:BTC": 0.6344775390625,
+        "home_value:sf_ca": 0.3114236766324874,
+        "rent:sf_ca": 0.3499892555274208
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1638
+    },
+    {
+      "month": "2025-08",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.6444514722105166,
+        "sp500": 0.537662353515625,
+        "crypto:BTC": 0.4706118489583333,
+        "home_value:sf_ca": 0.7774633982991432,
+        "rent:sf_ca": 0.42028795186474466
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1634
+    },
+    {
+      "month": "2025-09",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.7668547552420847,
+        "sp500": 0.735574951171875,
+        "crypto:BTC": 0.5676014322916667,
+        "home_value:sf_ca": 0.6717819029160523,
+        "rent:sf_ca": 0.5251261480667954
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1633
+    },
+    {
+      "month": "2025-11",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.5492454734797747,
+        "sp500": 0.5613623046875,
+        "crypto:BTC": 0.07697156250000001,
+        "home_value:sf_ca": 0.9133719868432143,
+        "rent:sf_ca": 0.35494962036195893
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1631
+    },
+    {
+      "month": "2025-12",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.7945854256909627,
+        "sp500": 0.45458333333333334,
+        "crypto:BTC": 0.312720703125,
+        "home_value:sf_ca": 0.504203094578358,
+        "rent:sf_ca": 0.35816102382884907
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1661
+    },
+    {
+      "month": "2026-01",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.35545695386804116,
+        "sp500": 0.4237872314453125,
+        "crypto:BTC": 0.07586512276785715,
+        "home_value:sf_ca": 0.2366318242353543,
+        "rent:sf_ca": 0.1504488801871965
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1624
+    },
+    {
+      "month": "2026-02",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.6313792949233931,
+        "sp500": 0.3990665690104167,
+        "crypto:BTC": 0.129937890625,
+        "home_value:sf_ca": 0.40512880480894753,
+        "rent:sf_ca": 0.22906260446014906
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1622
+    },
+    {
+      "month": "2026-03",
+      "n_series": 5,
+      "pits": {
+        "inflation": 0.9510088038742154,
+        "sp500": 0.164260009765625,
+        "crypto:BTC": 0.3698713942307692,
+        "home_value:sf_ca": 0.2276577566097032,
+        "rent:sf_ca": 0.22044553746239587
+      },
+      "escapes": {
+        "inflation": "inside",
+        "sp500": "inside",
+        "crypto:BTC": "inside",
+        "home_value:sf_ca": "inside",
+        "rent:sf_ca": "inside"
+      },
+      "tokens": 1619
+    }
+  ]
+}

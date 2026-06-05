@@ -26,8 +26,10 @@ are evaluated at specific month indices on the paths.
 | ------------------------ | ---------------------------------------------------------------------------- |
 | `run_spike.py`           | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
 | `run_windowed.py`        | conversational rollout — advance 12 months/turn, real history, OpenAI events |
-| `kernel.py`              | the shared per-step transition kernel: N weighted joint next-month options   |
+| `kernel.py`              | per-step transition kernel, ENUMERATION proposal: N weighted joint options   |
+| `kernel_percentile.py`   | per-step kernel, PERCENTILE proposal: elicited quantile function (p1..p99)   |
 | `backtest.py`            | teacher-forced one-step calibration backtest (PIT scoring)                   |
+| `backtest_percentile.py` | same backtest for the percentile kernel (PIT by inverse quantile function)   |
 | `backtest_rolling.py`    | rolling-origin, multi-horizon free-running calibration                       |
 | `backtest_statespace.py` | structured state-space baseline on the same window (analytic PIT, no API)    |
 | `openai_history.json`    | OpenAI's **public** funding-round/tender history (private marks excluded)    |
@@ -94,15 +96,20 @@ valuation markets reweight cleanly.
 
 ### 5. Ways the LLM can express the per-step distribution
 
-- **Sample (N weighted options)** — default. Non-parametric: multimodal / skew / fat tails + discrete
+- **Sample (N weighted options)** — `kernel.py`. Non-parametric: multimodal / skew / fat tails + discrete
   events native; gives draws directly. Cost: small N under-resolves the deep tail; needs the weights.
+  **Empirically the worst-calibrated** (thin tails + location bias — see the comparison below): "list
+  diverse options" collapses toward the mode and truncates the tail.
 - **Parametric (Gaussian / Student-t / mixture)** — cheap to over-draw but imposes a shape (Gaussian's
   thin symmetric tails are wrong for finance) and reduces the LLM to coefficient-picking.
-- **Percentiles / quantile function** — fixed grid (p10..p90) truncates the tail; **random-percentile**
-  (draw `u∼U(0,1)`, ask for the `u`-th quantile) is inverse-transform sampling via the LLM, and drawing
-  `u` tail-weighted gives **guaranteed tail coverage + built-in importance weights** — the cleanest
-  tail lever. Caveat: a quantile is scalar (awkward for the joint+events step); the N-sample handles
-  the joint natively. Hybrid: N-sample for the joint + an occasional "give me a p99-tail scenario".
+- **Percentiles / quantile function** — `kernel_percentile.py`. Elicit a fixed grid (p1..p99); PIT is
+  the inverse quantile function at the realized value, and the stated p1/p99 make tail coverage directly
+  measurable. **Empirically the best of the three** (bias removed, honest p1/p99 — see below): naming the
+  percentiles forces an explicit tail commitment the enumeration never makes. `draw()` is inverse-transform
+  sampling; drawing `u` tail-weighted would give **guaranteed tail coverage + built-in importance weights**.
+  Caveat: a quantile is per-series scalar (awkward for the joint+events step); the N-sample handles the
+  joint natively. Hybrid for the forward path: percentile marginals for the joint + the N-sample for the
+  cross-series coupling and discrete events.
 
 ## Calibration backtest — the rigorous validation
 
@@ -160,23 +167,30 @@ API. To stay apples-to-apples we fit `μ_s, σ_s` on the **identical trailing 24
 kernel saw each step (`//augur/x/pm_reifier:backtest_statespace`, runs on RBE). Both through the same
 scorecard:
 
-| metric (pooled, n=100)       |           LLM kernel (glm-4.5) |    state-space (log-ret Gaussian) |
-| ---------------------------- | -----------------------------: | --------------------------------: |
-| mean PIT [block-boot 95% CI] | **0.62 [0.50, 0.75]** (H0 out) |    **0.40 [0.32, 0.48]** (H0 out) |
-| tail-escape [CI]             | **0.31 [0.23, 0.42]** (H0 out) | **0.23 [0.11, 0.36]** (H0 **in**) |
-| JSD-to-uniform               |                     0.052 bits |                        0.056 bits |
-| verdict                      |       MISCALIBRATED (two axes) |     MISCALIBRATED (**bias only**) |
+| metric (pooled, n=100)        |         LLM enumeration (glm-4.5) |                  LLM percentile (glm-4.5) | state-space (log-ret Gaussian) |
+| ----------------------------- | --------------------------------: | ----------------------------------------: | -----------------------------: |
+| mean PIT [block-boot 95% CI]  |       **0.62 [0.50, 0.75]** (out) |            **0.48 [0.42, 0.56]** (**in**) |    **0.40 [0.32, 0.48]** (out) |
+| tail-escape [CI]              | **0.31 [0.23, 0.42]** (out, thin) |         **0.10 [0.07, 0.14]** (out, wide) | **0.23 [0.12, 0.36]** (**in**) |
+| realized beyond stated p1/p99 |                                 — |                  **2%** (honest 98% int.) |                              — |
+| JSD-to-uniform                |                        0.052 bits |                                0.053 bits |                     0.056 bits |
+| verdict                       |          MISCALIBRATED (two axes) | MISCALIBRATED (**dispersion only, mild**) |      MISCALIBRATED (bias only) |
 
-Both are biased, but in **opposite directions**: the LLM **under-predicted** the 2024–26 bull run
-(PIT piled high), while the trailing-window state-space model **over-predicted** (PIT piled low — it
-extrapolated the recent momentum, steepest on `rent:sf_ca`, which then decelerated). The decisive
-split is **dispersion**: the LLM is significantly **thin-tailed** (tail-escape CI excludes the 0.20
-null), whereas the state-space tails are **calibrated** (CI includes 0.20). So on this window the
-mechanistic baseline is the **better-calibrated** model — it fails on _one_ axis (a de-biasable
-location shift) where the LLM fails on _two_, and crucially it wins on exactly the property `Q` most
-needs: **coverage/dispersion**. The LLM's edge would have to come from _skill_ (sharper conditional
-means / regime awareness), not from honest uncertainty — and here it didn't show. (Same n≈20-effective
-caveat; the bias directions and the tail-escape split are the robust signals.)
+First-pass read (state-space vs LLM **enumeration**): both biased in **opposite directions** — the LLM
+under-predicted the 2024–26 bull run (PIT piled high); the trailing-window state-space over-predicted
+(PIT piled low, extrapolating decelerating momentum). The decisive split was **dispersion**: enumeration
+was significantly **thin-tailed** (overconfident), the state-space tails were calibrated.
+
+**The percentile kernel changes the verdict.** Asking the LLM for its quantile function (p1..p99)
+instead of N enumerated options — same model, same window — **removes both enumeration failures at
+once**: the location bias vanishes (mean PIT 0.48, CI now straddles 0.5) and the thin tails are gone.
+The explicit extreme commitment is **honest** — realized fell outside the stated p1/p99 exactly 2% of
+the time (the calibrated rate). It over-corrects only mildly: tail-escape drops to 0.10 (the p10–p90
+band is now a touch too _wide_), the opposite, gentler failure. So the elicitation format, not the
+model, was the binding constraint — naming the percentiles (and being forced to commit to a p1/p99)
+beats asking for "diverse options," which collapses toward the mode and truncates the tail. This is the
+representation `Q` should use going forward (with the README's hybrid for the joint cross-section, since
+a quantile is per-series scalar). (Same n≈20-effective caveat; the bias removal and the tail-escape sign
+flip are the robust signals.)
 
 ## Validation methodology & next steps
 
@@ -197,14 +211,17 @@ Llama 2 (~Sep 2022), Mistral 7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 20
 
 Next, in priority order:
 
-1. **Force coverage** — the binding blocker (temperature / price-conditioning / random-percentile /
-   `BATCH_SIZE>1`), measured by whether the all-zero upside markets come alive.
-2. **More anchors (rolling origin)** to tighten the borderline CIs. The structured-`Q` baseline on the
-   same scorecard is **done** (above): on this window the state-space model is better-calibrated (one
-   failure axis vs two; calibrated tails) — so the LLM's value has to come from skill, not dispersion.
-3. **Wire the kernel into the forward reify path** (the backtest uses it; the reify path still uses the
-   windowed rollout), with the **compact handoff** (carry only last levels + a regime note) to cut the
-   stateful input tokens.
+1. **Force coverage** — was the binding blocker; the **percentile kernel largely solves it** (bias gone,
+   thin tails gone, honest p1/p99 — see the comparison above). Remaining: trim the mild p10–p90
+   over-width (a sharper percentile grid / temperature), and confirm the all-zero upside markets come
+   alive in the forward reify path under percentile elicitation.
+2. **More anchors (rolling origin)** to tighten the borderline CIs, now across all three proposals. The
+   structured-`Q` baseline on the same scorecard is **done** (above); the percentile-vs-enumeration
+   comparison is **done** — percentile wins. Next is whether the percentile kernel's edge holds across
+   more anchors and a longer-cutoff model.
+3. **Wire the percentile kernel into the forward reify path** (the backtest uses it; the reify path still
+   uses the windowed enumeration rollout), with the **hybrid** for the joint cross-section (percentile
+   marginals + N-sample coupling) and the **compact handoff** (carry only last levels + a regime note).
 
 **Infra.** The known-dated-model backtest wants a 7–8B model with reliable JSON; the cluster GPU Ollama
 (wyrm2) is the natural host but is **currently down** (CPU-local is workable but slow). z.ai `glm-4.5`

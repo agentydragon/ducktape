@@ -1,6 +1,5 @@
 {
-  "llm": {
-    "model": "glm-4.5",
+  "LLM enumeration": {
     "mean_pit": 0.6203177097903758,
     "mean_ci": [0.5040879467319069, 0.7491651353747558],
     "mean_excludes_half": true,
@@ -8,21 +7,29 @@
     "tail_ci": [0.23, 0.42],
     "tail_excludes_null": true,
     "jsd": 0.051870046004174664,
-    "rho1": 0.600548520279638,
-    "n_eff": 4.991432307851215,
+    "p1_p99_escape_rate": null,
     "verdict": "MISCALIBRATED"
   },
-  "state_space": {
-    "model": "state_space (log-return Gaussian, trailing-window fit)",
+  "LLM percentile": {
+    "mean_pit": 0.47529517963171813,
+    "mean_ci": [0.424426203646623, 0.5583824155060371],
+    "mean_excludes_half": false,
+    "tail_rate": 0.1,
+    "tail_ci": [0.07, 0.14],
+    "tail_excludes_null": true,
+    "jsd": 0.05299458276980622,
+    "p1_p99_escape_rate": 0.02,
+    "verdict": "MISCALIBRATED"
+  },
+  "state-space": {
     "mean_pit": 0.4013616480018587,
-    "mean_ci": [0.3234831492585675, 0.48425820300116207],
+    "mean_ci": [0.3228929558265169, 0.4826453750236224],
     "mean_excludes_half": true,
     "tail_rate": 0.23,
-    "tail_ci": [0.11, 0.36],
+    "tail_ci": [0.12, 0.36],
     "tail_excludes_null": false,
     "jsd": 0.05596954501607279,
-    "rho1": 0.4585336610498575,
-    "n_eff": 7.42480414967445,
+    "p1_p99_escape_rate": null,
     "verdict": "MISCALIBRATED"
   }
 }
