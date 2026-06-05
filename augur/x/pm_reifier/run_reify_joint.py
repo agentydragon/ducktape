@@ -17,8 +17,10 @@ Run: PYTHONPATH=. python3 augur/x/pm_reifier/run_reify_joint.py   (writes result
 from __future__ import annotations
 
 import json
+import os
 import random
-from concurrent.futures import ThreadPoolExecutor
+import sys
+from concurrent.futures import ThreadPoolExecutor, wait
 
 import kernel_joint
 from backtest import MODEL, N_HIST, build_series, m_index, m_label
@@ -30,7 +32,8 @@ HORIZON = 12  # months rolled forward per trajectory
 ROLLOUTS = 20  # independent chains → the cloud
 N_OPTIONS = 24  # joint samples requested per step (we draw one)
 TEMP = 1.0
-CONCURRENCY = 6
+CONCURRENCY = 10  # run most chains at once so none starve at the tail
+WALL_BUDGET_S = 1500  # evaluate whatever finished within this; a slow straggler can't waste the run
 
 # Illustrative markets on the horizon-month level vs the "now" anchor: (series, +pct threshold, crowd price).
 MARKETS = [
@@ -81,8 +84,13 @@ def main() -> None:
     print(f"rolling {ROLLOUTS} chains x {HORIZON} months (concurrency {CONCURRENCY})")
 
     tasks = [(i, now, seed_history) for i in range(ROLLOUTS)]
-    with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
-        results = list(ex.map(rollout, tasks))
+    ex = ThreadPoolExecutor(max_workers=CONCURRENCY)
+    futures = [ex.submit(rollout, t) for t in tasks]
+    done, not_done = wait(futures, timeout=WALL_BUDGET_S)
+    results = [f.result() for f in done if not f.exception()]
+    ex.shutdown(wait=False, cancel_futures=True)
+    if not_done:
+        print(f"  ({len(not_done)} chains unfinished at the wall budget; evaluating the {len(results)} that completed)")
 
     # Keep only full-length trajectories; evaluate markets on the final horizon-month level.
     paths = [r["path"] for r in results if all(len(r["path"][s]) == HORIZON for s in SERIES)]
@@ -124,6 +132,9 @@ def main() -> None:
     for r in market_rows:
         print(f"  {r['market']:28} {r['price']:.2f}  {r['raw']:.2f}  ->  {r['reweighted']:.2f}")
     print(f"  tokens={summary['tokens']}  weekly quota {q0.get('weekly_7d_pct')}% -> {q1.get('weekly_7d_pct')}%")
+    sys.stdout.flush()
+    if not_done:
+        os._exit(0)  # abandon still-running chains (non-daemon executor threads would otherwise block exit)
 
 
 if __name__ == "__main__":
