@@ -272,6 +272,34 @@ scorable per step against history (CRPS on the sample/quantiles), turning one pa
 `T` resolved one-step predictions — the dense calibration signal the cutoff backtest otherwise lacks,
 and the concrete (known-)black-swan-frequency check.
 
+## Calibration backtest result (glm-4.5, 2024-06 → 2026-03)
+
+First teacher-forced calibration run (`kernel.py` + `backtest.py` + `plot_backtest.py`). `glm-4.5`
+self-reports a **June 2024 cutoff** and is leakage-probed clean (its latest OpenAI knowledge is the
+Jan-2023 $29B round; it doesn't know end-2025 BTC), so 2024-06 → today is genuinely out-of-sample.
+20 monthly steps × 5 series = **100 PITs**, 58k tokens, **0 pp weekly**.
+
+| metric (pooled)              |         value |                                                                               read |
+| ---------------------------- | ------------: | ---------------------------------------------------------------------------------: |
+| JSD-to-uniform               |    0.052 bits |         above the n=100 95th-pct noise floor (0.033) → real, modest miscalibration |
+| tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) |            **overconfident / thin-tailed** — clouds too narrow (home 40%, BTC 35%) |
+| mean PIT                     | 0.62 (vs .50) | **under-prediction** — under-shot the 2024–26 bull run (inflation 0.71, rent 0.72) |
+
+The pooled PIT histogram is right-loaded with a spike in the top bin (realized blew past the model's
+upper quantile often) — **both** failures visible at once: systematic under-prediction _and_ a
+too-thin upper tail. This matches every prior in this spike: the LLM is conservative (under-shoots a
+trend) and under-disperses (the black-swan-undercoverage problem), now measured leakage-free on real
+resolved data.
+
+Caveats: per-series JSDs (0.06–0.21) are all _within_ the n=20 noise floor (median 0.10) — ignore
+them; only pooled + the histogram shape are trustworthy. Tail-escape is the clean, direction-agnostic
+calibration signal; the mean-0.62 bias conflates model honesty with the period happening to be a
+strong uptrend. PITs autocorrelate (regimes persist) → effective n < 100. One model, one 20-month
+window; the JSD-over-time curve _hints_ calibration degraded mid-2025 (further from cutoff) but sits
+near the noise floor. **Methodology validated end-to-end** (leakage-free anchor → teacher-forced PIT →
+JSD/rank scoring → date-ranged ground truth); next is more anchors (rolling origin), the structured-Q
+baseline on the same scorecard, and an older model (Ollama) for a longer window.
+
 ## Validating the LLM base measure (plan)
 
 We are scoring a **distribution** (a base measure), not a point forecast, so metrics are

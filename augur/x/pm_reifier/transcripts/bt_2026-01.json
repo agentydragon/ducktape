@@ -1,0 +1,52 @@
+{
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You forecast the NEXT month for several US macro series, expressed as a SAMPLE of possible outcomes. Series:\n  inflation: CPI index (a cumulative price level that climbs over time)\n  sp500: S&P 500 index level\n  crypto:BTC: Bitcoin price in USD\n  home_value:sf_ca: San Francisco home-price index\n  rent:sf_ca: San Francisco rent index\nGiven the recent monthly history, output ONLY JSON: {\"options\": [{\"values\": {series: number, ...}, \"weight\": number}, ...]} with exactly 24 options. The options are diverse draws spanning your FULL belief about next month \u2014 include calm, up, down, AND tail moves (crashes, spikes), in proportion to how likely each is. weight is each option's rough probability (weights ~sum to 1). Each option is ONE joint cross-section: all series move together coherently (a risk-off month hits equities and crypto together; inflation drags rents and home prices). Every option must contain all of: inflation, sp500, crypto:BTC, home_value:sf_ca, rent:sf_ca."
+      },
+      {
+        "role": "user",
+        "content": "Recent monthly history (oldest first; the last value of each row = current month 2025-12):\n  inflation: 98.6254, 98.9311, 99.3365, 99.7767, 99.9933, 100.042, 100, 100.168, 100.325, 100.539, 100.826, 101.113, 101.457, 101.89, 102.12, 102.153, 102.319, 102.42, 102.68, 102.915, 103.273, 103.578, 103.839, 104.149\n  sp500: 4769.83, 4845.65, 5096.27, 5254.35, 5035.69, 5277.51, 5460.48, 5522.3, 5648.4, 5762.48, 5705.45, 6032.38, 5881.63, 6040.53, 5954.5, 5611.85, 5569.06, 5911.69, 6204.95, 6339.39, 6460.26, 6688.46, 6849.09, 6845.5\n  crypto:BTC: 42265.2, 42582.6, 61198.4, 71333.6, 60636.9, 67491.4, 62678.3, 64619.2, 58969.9, 63329.5, 70215.2, 96449.1, 93429.2, 102405, 84373, 82548.9, 94207.3, 104638, 107135, 115758, 108237, 114056, 90394.3, 87508.8\n  home_value:sf_ca: 98.309, 98.3901, 98.4648, 98.6188, 98.9475, 99.2557, 100, 99.8723, 100.062, 100.174, 100.208, 100.511, 101.098, 101.347, 101.406, 100.12, 99.0573, 98.4753, 97.9084, 97.8983, 98.5915, 99.3436, 100.907, 101.017\n  rent:sf_ca: 98.0388, 98.3762, 98.7763, 99.1402, 99.4188, 99.7498, 100, 100.42, 100.813, 101.194, 101.567, 101.87, 102.228, 102.551, 102.813, 103.099, 103.375, 103.552, 103.766, 103.98, 104.336, 104.63, 104.884, 105.216\nForecast the macro cross-section for the NEXT month (2026-01)."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"options\":[{\"values\":{\"inflation\":104.491,\"sp500\":7028.55,\"crypto:BTC\":95026.84,\"home_value:sf_ca\":101.328,\"rent:sf_ca\":105.572},\"weight\":0.04},{\"values\":{\"inflation\":104.412,\"sp500\":7214.21,\"crypto:BTC\":105385.63,\"home_value:sf_ca\":101.543,\"rent:sf_ca\":105.633},\"weight\":0.04},{\"values\":{\"inflation\":104.333,\"sp500\":6901.28,\"crypto:BTC\":85057.95,\"home_value:sf_ca\":100.892,\"rent:sf_ca\":105.421},\"weight\":0.04},{\"values\":{\"inflation\":104.569,\"sp500\":7145.32,\"crypto:BTC\":115278.42,\"home_value:sf_ca\":101.786,\"rent:sf_ca\":105.789},\"weight\":0.03},{\"values\":{\"inflation\":104.321,\"sp500\":6715.46,\"crypto:BTC\":73842.67,\"home_value:sf_ca\":100.514,\"rent:sf_ca\":105.347},\"weight\":0.03},{\"values\":{\"inflation\":104.729,\"sp500\":6523.17,\"crypto:BTC\":61485.32,\"home_value:sf_ca\":100.123,\"rent:sf_ca\":105.651},\"weight\":0.03},{\"values\":{\"inflation\":104.425,\"sp500\":7234.56,\"crypto:BTC\":121575.89,\"home_value:sf_ca\":101.923,\"rent:sf_ca\":105.812},\"weight\":0.03},{\"values\":{\"inflation\":104.466,\"sp500\":6967.89,\"crypto:BTC\":92145.67,\"home_value:sf_ca\":101.312,\"rent:sf_ca\":105.553},\"weight\":0.05},{\"values\":{\"inflation\":104.408,\"sp500\":6875.42,\"crypto:BTC\":88352.41,\"home_value:sf_ca\":101.076,\"rent:sf_ca\":105.478},\"weight\":0.05},{\"values\":{\"inflation\":104.352,\"sp500\":7056.73,\"crypto:BTC\":98543.26,\"home_value:sf_ca\":101.453,\"rent:sf_ca\":105.598},\"weight\":0.05},{\"values\":{\"inflation\":104.398,\"sp500\":6923.18,\"crypto:BTC\":91576.39,\"home_value:sf_ca\":101.201,\"rent:sf_ca\":105.511},\"weight\":0.05},{\"values\":{\"inflation\":104.377,\"sp500\":7002.45,\"crypto:BTC\":94213.57,\"home_value:sf_ca\":101.335,\"rent:sf_ca\":105.546},\"weight\":0.05},{\"values\":{\"inflation\":104.501,\"sp500\":7345.67,\"crypto:BTC\":106425.78,\"home_value:sf_ca\":101.623,\"rent:sf_ca\":105.673},\"weight\":0.04},{\"values\":{\"inflation\":104.285,\"sp500\":6624.39,\"crypto:BTC\":79531.24,\"home_value:sf_ca\":100.712,\"rent:sf_ca\":105.387},\"weight\":0.04},{\"values\":{\"inflation\":104.439,\"sp500\":7156.82,\"crypto:BTC\":101325.46,\"home_value:sf_ca\":101.523,\"rent:sf_ca\":105.612},\"weight\":0.04},{\"values\":{\"inflation\":104.369,\"sp500\":6783.57,\"crypto:BTC\":84392.15,\"home_value:sf_ca\":100.982,\"rent:sf_ca\":105.432},\"weight\":0.04},{\"values\":{\"inflation\":104.621,\"sp500\":7562.34,\"crypto:BTC\":125678.92,\"home_value:sf_ca\":102.014,\"rent:sf_ca\":105.834},\"weight\":0.02},{\"values\":{\"inflation\":104.194,\"sp500\":6325.67,\"crypto:BTC\":68425.31,\"home_value:sf_ca\":100.234,\"rent:sf_ca\":105.276},\"weight\":0.02},{\"values\":{\"inflation\":104.813,\"sp500\":6123.45,\"crypto:BTC\":55324.18,\"home_value:sf_ca\":99.876,\"rent:sf_ca\":105.721},\"weight\":0.02},{\"values\":{\"inflation\":104.314,\"sp500\":7456.78,\"crypto:BTC\":132456.73,\"home_value:sf_ca\":101.872,\"rent:sf_ca\":105.769},\"weight\":0.02},{\"values\":{\"inflation\":104.443,\"sp500\":6978.56,\"crypto:BTC\":93245.18,\"home_value:sf_ca\":101.287,\"rent:sf_ca\":105.534},\"weight\":0.06},{\"values\":{\"inflation\":104.385,\"sp500\":6867.23,\"crypto:BTC\":89134.75,\"home_value:sf_ca\":101.089,\"rent:sf_ca\":105.462},\"weight\":0.06},{\"values\":{\"inflation\":104.427,\"sp500\":7034.67,\"crypto:BTC\":95678.42,\"home_value:sf_ca\":101.378,\"rent:sf_ca\":105.571},\"weight\":0.06},{\"values\":{\"inflation\":104.372,\"sp500\":6925.89,\"crypto:BTC\":91892.36,\"home_value:sf_ca\":101.214,\"rent:sf_ca\":105.498},\"weight\":0.06}]}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780638054,
+    "id": "20260605134013965d76f583e648a3",
+    "model": "glm-4.5",
+    "object": "chat.completion",
+    "request_id": "20260605134013965d76f583e648a3",
+    "usage": {
+      "completion_tokens": 1999,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "prompt_tokens": 1111,
+      "prompt_tokens_details": {
+        "cached_tokens": 317
+      },
+      "total_tokens": 3110
+    }
+  },
+  "latency_s": 40.73466467857361
+}

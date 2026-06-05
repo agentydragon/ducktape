@@ -1,0 +1,52 @@
+{
+  "endpoint": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You forecast the NEXT month for several US macro series, expressed as a SAMPLE of possible outcomes. Series:\n  inflation: CPI index (a cumulative price level that climbs over time)\n  sp500: S&P 500 index level\n  crypto:BTC: Bitcoin price in USD\n  home_value:sf_ca: San Francisco home-price index\n  rent:sf_ca: San Francisco rent index\nGiven the recent monthly history, output ONLY JSON: {\"options\": [{\"values\": {series: number, ...}, \"weight\": number}, ...]} with exactly 24 options. The options are diverse draws spanning your FULL belief about next month \u2014 include calm, up, down, AND tail moves (crashes, spikes), in proportion to how likely each is. weight is each option's rough probability (weights ~sum to 1). Each option is ONE joint cross-section: all series move together coherently (a risk-off month hits equities and crypto together; inflation drags rents and home prices). Every option must contain all of: inflation, sp500, crypto:BTC, home_value:sf_ca, rent:sf_ca."
+      },
+      {
+        "role": "user",
+        "content": "Recent monthly history (oldest first; the last value of each row = current month 2024-06):\n  inflation: 94.2082, 94.2669, 94.6669, 95.1965, 95.4454, 95.4601, 95.9673, 96.2964, 96.4149, 96.742, 96.8982, 97.1154, 97.3055, 97.776, 98.1574, 98.2916, 98.436, 98.6254, 98.9311, 99.3365, 99.7767, 99.9933, 100.042, 100\n  sp500: 4130.29, 3955, 3585.62, 3871.98, 4080.11, 3839.5, 4076.6, 3970.15, 4109.31, 4169.48, 4179.83, 4450.38, 4588.96, 4507.66, 4288.05, 4193.8, 4567.8, 4769.83, 4845.65, 5096.27, 5254.35, 5035.69, 5277.51, 5460.48\n  crypto:BTC: 23336.9, 20049.8, 19431.8, 20495.8, 17168.6, 16547.5, 23139.3, 23147.4, 28478.5, 29268.8, 27219.7, 30477.3, 29230.1, 25931.5, 26967.9, 34667.8, 37712.7, 42265.2, 42582.6, 61198.4, 71333.6, 60636.9, 67491.4, 62678.3\n  home_value:sf_ca: 102.961, 99.71, 97.5916, 96.9499, 96.1767, 95.0427, 94.0955, 93.6045, 93.9547, 94.6437, 95.1711, 95.7048, 96.4993, 97.266, 98.1934, 98.6849, 98.4938, 98.309, 98.3901, 98.4648, 98.6188, 98.9475, 99.2557, 100\n  rent:sf_ca: 88.4504, 89.1273, 89.9119, 90.5964, 91.3428, 92.0799, 92.7301, 93.3912, 93.8136, 94.2882, 94.7247, 95.1705, 95.5566, 96.0429, 96.5778, 97.1021, 97.6166, 98.0388, 98.3762, 98.7763, 99.1402, 99.4188, 99.7498, 100\nForecast the macro cross-section for the NEXT month (2024-07)."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"options\":[{\"values\":{\"inflation\":100.3,\"sp500\":5530,\"crypto:BTC\":64200,\"home_value:sf_ca\":100.2,\"rent:sf_ca\":100.3},\"weight\":0.05},{\"values\":{\"inflation\":100.5,\"sp500\":5600,\"crypto:BTC\":68000,\"home_value:sf_ca\":100.3,\"rent:sf_ca\":100.4},\"weight\":0.04},{\"values\":{\"inflation\":100.7,\"sp500\":5700,\"crypto:BTC\":72000,\"home_value:sf_ca\":100.5,\"rent:sf_ca\":100.5},\"weight\":0.03},{\"values\":{\"inflation\":101.0,\"sp500\":5800,\"crypto:BTC\":78000,\"home_value:sf_ca\":100.7,\"rent:sf_ca\":100.7},\"weight\":0.02},{\"values\":{\"inflation\":99.8,\"sp500\":5350,\"crypto:BTC\":59000,\"home_value:sf_ca\":99.8,\"rent:sf_ca\":100.1},\"weight\":0.05},{\"values\":{\"inflation\":99.6,\"sp500\":5200,\"crypto:BTC\":55000,\"home_value:sf_ca\":99.6,\"rent:sf_ca\":99.9},\"weight\":0.04},{\"values\":{\"inflation\":99.3,\"sp500\":5000,\"crypto:BTC\":50000,\"home_value:sf_ca\":99.3,\"rent:sf_ca\":99.7},\"weight\":0.03},{\"values\":{\"inflation\":99.0,\"sp500\":4800,\"crypto:BTC\":45000,\"home_value:sf_ca\":99.0,\"rent:sf_ca\":99.5},\"weight\":0.02},{\"values\":{\"inflation\":100.2,\"sp500\":5480,\"crypto:BTC\":63000,\"home_value:sf_ca\":100.1,\"rent:sf_ca\":100.2},\"weight\":0.08},{\"values\":{\"inflation\":100.1,\"sp500\":5440,\"crypto:BTC\":62000,\"home_value:sf_ca\":100.0,\"rent:sf_ca\":100.1},\"weight\":0.08},{\"values\":{\"inflation\":100.0,\"sp500\":5400,\"crypto:BTC\":61000,\"home_value:sf_ca\":100.0,\"rent:sf_ca\":100.0},\"weight\":0.08},{\"values\":{\"inflation\":99.9,\"sp500\":5360,\"crypto:BTC\":60000,\"home_value:sf_ca\":99.9,\"rent:sf_ca\":99.9},\"weight\":0.08},{\"values\":{\"inflation\":98.5,\"sp500\":4200,\"crypto:BTC\":35000,\"home_value:sf_ca\":97.5,\"rent:sf_ca\":98.8},\"weight\":0.02},{\"values\":{\"inflation\":102.0,\"sp500\":6000,\"crypto:BTC\":85000,\"home_value:sf_ca\":101.0,\"rent:sf_ca\":101.0},\"weight\":0.02},{\"values\":{\"inflation\":100.4,\"sp500\":5560,\"crypto:BTC\":66000,\"home_value:sf_ca\":100.2,\"rent:sf_ca\":100.3},\"weight\":0.06},{\"values\":{\"inflation\":99.7,\"sp500\":5280,\"crypto:BTC\":57000,\"home_value:sf_ca\":99.7,\"rent:sf_ca\":99.8},\"weight\":0.06},{\"values\":{\"inflation\":100.6,\"sp500\":5650,\"crypto:BTC\":70000,\"home_value:sf_ca\":100.4,\"rent:sf_ca\":100.5},\"weight\":0.04},{\"values\":{\"inflation\":99.4,\"sp500\":5100,\"crypto:BTC\":52000,\"home_value:sf_ca\":99.4,\"rent:sf_ca\":99.6},\"weight\":0.04},{\"values\":{\"inflation\":100.3,\"sp500\":5500,\"crypto:BTC\":64000,\"home_value:sf_ca\":100.1,\"rent:sf_ca\":100.2},\"weight\":0.05},{\"values\":{\"inflation\":99.8,\"sp500\":5320,\"crypto:BTC\":58000,\"home_value:sf_ca\":99.8,\"rent:sf_ca\":100.0},\"weight\":0.05},{\"values\":{\"inflation\":100.8,\"sp500\":5750,\"crypto:BTC\":75000,\"home_value:sf_ca\":100.6,\"rent:sf_ca\":100.6},\"weight\":0.03},{\"values\":{\"inflation\":99.2,\"sp500\":4900,\"crypto:BTC\":48000,\"home_value:sf_ca\":99.1,\"rent:sf_ca\":99.4},\"weight\":0.03},{\"values\":{\"inflation\":100.5,\"sp500\":5580,\"crypto:BTC\":67000,\"home_value:sf_ca\":100.3,\"rent:sf_ca\":100.4},\"weight\":0.04},{\"values\":{\"inflation\":99.5,\"sp500\":5150,\"crypto:BTC\":53000,\"home_value:sf_ca\":99.5,\"rent:sf_ca\":99.7},\"weight\":0.04}]}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780637909,
+    "id": "2026060513375001d2dbf6fe284f85",
+    "model": "glm-4.5",
+    "object": "chat.completion",
+    "request_id": "2026060513375001d2dbf6fe284f85",
+    "usage": {
+      "completion_tokens": 1821,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "prompt_tokens": 1161,
+      "prompt_tokens_details": {
+        "cached_tokens": 4
+      },
+      "total_tokens": 2982
+    }
+  },
+  "latency_s": 40.310614824295044
+}
