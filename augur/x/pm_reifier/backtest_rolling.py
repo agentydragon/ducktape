@@ -30,7 +30,7 @@ H = 10  # horizons (months ahead) per rollout
 N_HIST = 24
 N_OPTIONS = 20
 TEMP = 1.0
-CONCURRENCY = 8
+CONCURRENCY = 4  # keep the request rate under the coding-plan 1302 limit
 
 
 def chain(args: tuple[str, int, list[tuple[str, dict[str, float]]]]) -> dict:
@@ -39,18 +39,23 @@ def chain(args: tuple[str, int, list[tuple[str, dict[str, float]]]]) -> dict:
     rng = random.Random(hash((origin, r)) & 0xFFFFFFFF)
     history = list(real_hist)
     path: dict[int, dict[str, float]] = {}
-    for h in range(1, H + 1):
-        next_label = m_label(m_index(origin) + h)
-        options, _ = kernel.sample_step(ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}")
-        if len(options) < 8:  # one retry, else truncate the chain here
+    try:  # isolate: an API/network error past backoff truncates this chain, doesn't sink the run
+        for h in range(1, H + 1):
+            next_label = m_label(m_index(origin) + h)
             options, _ = kernel.sample_step(
-                ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}b"
+                ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}"
             )
-        if len(options) < 8:
-            break
-        drawn = kernel.draw(options, rng.random())["values"]
-        path[h] = drawn
-        history = [*history, (next_label, drawn)][-N_HIST:]
+            if len(options) < 8:  # one retry, else truncate the chain here
+                options, _ = kernel.sample_step(
+                    ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}b"
+                )
+            if len(options) < 8:
+                break
+            drawn = kernel.draw(options, rng.random())["values"]
+            path[h] = drawn
+            history = [*history, (next_label, drawn)][-N_HIST:]
+    except (RuntimeError, OSError) as e:
+        print(f"  chain {origin}/{r} truncated at h={len(path) + 1}: {str(e)[:80]}")
     return {"origin": origin, "r": r, "path": path}
 
 

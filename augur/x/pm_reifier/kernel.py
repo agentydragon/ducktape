@@ -41,7 +41,7 @@ def system_prompt(n: int) -> str:
     )
 
 
-def _call(endpoint: str, body: dict, tag: str, max_tries: int = 6) -> dict:
+def _call(endpoint: str, body: dict, tag: str, max_tries: int = 8) -> dict:
     """_post with exponential backoff on 429 + any 5xx + socket timeouts/connection errors."""
     delay = 2.0
     last: Exception = RuntimeError("unreachable")
