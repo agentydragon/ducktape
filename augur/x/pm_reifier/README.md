@@ -281,22 +281,27 @@ Jan-2023 $29B round; it doesn't know end-2025 BTC), so 2024-06 → today is genu
 
 | metric (pooled)              |         value |                                                                               read |
 | ---------------------------- | ------------: | ---------------------------------------------------------------------------------: |
-| JSD-to-uniform               |    0.052 bits |         above the n=100 95th-pct noise floor (0.033) → real, modest miscalibration |
+| JSD-to-uniform               |    0.052 bits |               descriptive; formal test is below (KS/χ² + block bootstrap, not JSD) |
 | tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) |            **overconfident / thin-tailed** — clouds too narrow (home 40%, BTC 35%) |
 | mean PIT                     | 0.62 (vs .50) | **under-prediction** — under-shot the 2024–26 bull run (inflation 0.71, rent 0.72) |
 
-The pooled PIT histogram is right-loaded with a spike in the top bin (realized blew past the model's
-upper quantile often) — **both** failures visible at once: systematic under-prediction _and_ a
-too-thin upper tail. This matches every prior in this spike: the LLM is conservative (under-shoots a
-trend) and under-disperses (the black-swan-undercoverage problem), now measured leakage-free on real
-resolved data.
+**Formal test (`plot_backtest.py`, on the plot).** KS and chi-square goodness-of-fit reject PIT
+uniformity hard under an i.i.d. null (KS `p=1.4e-5`, χ² `p=6e-5`) — but the monthly PITs are strongly
+autocorrelated (`ρ₁=0.60`), so `n_eff≈5` and those i.i.d. p-values are wildly anti-conservative and
+not trustworthy. The serial-dependence-robust verdict is a **moving-block bootstrap** (4-month blocks):
+mean PIT 0.62, 95% CI **[0.50, 0.75]** (just excludes 0.5 → under-prediction); tail-escape 0.31, 95%
+CI **[0.23, 0.42]** (excludes 0.20 → thin-tailed). Both robust CIs exclude their calibrated nulls →
+**MISCALIBRATED**, though _borderline_ given the tiny effective sample. The histogram is right-loaded
+with a top-bin spike (realized blew past the model's upper quantile often) — both failures at once:
+under-prediction _and_ a too-thin upper tail. Matches every prior in this spike (conservative +
+under-dispersed / black-swan-undercoverage), now a measured, leakage-free, _tested_ result.
 
-Caveats: per-series JSDs (0.06–0.21) are all _within_ the n=20 noise floor (median 0.10) — ignore
-them; only pooled + the histogram shape are trustworthy. Tail-escape is the clean, direction-agnostic
-calibration signal; the mean-0.62 bias conflates model honesty with the period happening to be a
-strong uptrend. PITs autocorrelate (regimes persist) → effective n < 100. One model, one 20-month
-window; the JSD-over-time curve _hints_ calibration degraded mid-2025 (further from cutoff) but sits
-near the noise floor. **Methodology validated end-to-end** (leakage-free anchor → teacher-forced PIT →
+Caveats: per-series JSDs (0.06–0.21) are all _within_ the n=20 noise floor (median 0.10) — only the
+pooled bootstrap + the histogram shape are trustworthy. Tail-escape is the clean, direction-agnostic
+calibration signal; the mean-bias half conflates model honesty with the period being a strong uptrend.
+`n_eff≈5` makes both robust CIs borderline — more anchors (rolling origin) are needed to tighten them.
+One model, one 20-month window. **Methodology validated end-to-end** (leakage-free anchor →
+teacher-forced PIT →
 JSD/rank scoring → date-ranged ground truth); next is more anchors (rolling origin), the structured-Q
 baseline on the same scorecard, and an older model (Ollama) for a longer window.
 
