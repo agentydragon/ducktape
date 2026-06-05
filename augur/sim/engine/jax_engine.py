@@ -38,11 +38,9 @@ precision alone, not logic.
 
 from __future__ import annotations
 
-import hashlib
-from collections import OrderedDict
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass
 from functools import partial
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -199,44 +197,12 @@ class _ScanMeta:
     horizon: int
 
 
-# Fields that flow into the compiled program as TRACED inputs (not baked constants) are EXCLUDED from
-# the fingerprint: the same compiled program is reused across plans that differ only in these values.
-# Everything else the program bakes IS fingerprinted, so a cache hit guarantees byte-identical baked
-# config (correct reuse). Two classes of traced input:
-#   - seed-varying series (`external_values`, the PE channel arrays) → rollout-draw reuse;
-#   - swept numeric config (the income/LTCG tax brackets, rates, standard deduction, MID principal
-#     ratio, transfer amounts, and per-lot cost basis) → config-value-sweep reuse, with the structural
-#     feature/count `if`s left baked so they still ride in the fingerprint. See `_traced_config`.
-_FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("CompiledSimulation", "external_values"),
-        ("CompiledSimulation", "pe_channels"),
-        ("CompiledSimulation", "lot_cost_basis_per_unit"),
-        ("CompiledSimulation", "cash_initial_balance"),
-        ("CompiledSimulation", "lot_initial_quantity"),
-        ("TaxCompileOutput", "link_standard_deduction"),
-        ("TaxCompileOutput", "link_ordinary_upper"),
-        ("TaxCompileOutput", "link_ordinary_rate"),
-        ("TaxCompileOutput", "link_ltcg_upper"),
-        ("TaxCompileOutput", "link_ltcg_rate"),
-        ("MIDCompileOutput", "principal_ratio"),
-        ("TransferCompileOutput", "amount_fixed"),
-        ("TransferCompileOutput", "amount_base"),
-        ("PropertyCompileOutput", "adjusted_basis"),
-        ("PropertyCompileOutput", "ownership"),
-        ("PropertyCompileOutput", "equity_ledger"),
-        ("LiabilityCompileOutput", "principal"),
-        ("LiabilityCompileOutput", "monthly_payment"),
-    }
-)
-
-
 class _TracedConfig(NamedTuple):
     """JAX-native typed bundle of the swept numeric config the compiled program takes as TRACED inputs
     (a NamedTuple → native JAX pytree, so it passes through `jax.jit` typed). The cores read VALUES from
     here (`jax.Array`s) while reading structure / feature flags / counts / slot indices from the
     concrete `plan` — so nothing puns a traced array into the compiler's NumPy-typed plan fields. Each
-    field mirrors a `_FINGERPRINT_EXCLUDE` entry, so a sweep over these values reuses the program."""
+    field is a swept numeric value (not baked structure), so sweeping it reuses the compiled program."""
 
     link_standard_deduction: jnp.ndarray
     link_ordinary_upper: jnp.ndarray
@@ -257,7 +223,7 @@ class _TracedConfig(NamedTuple):
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
-    """Build the traced-config bundle from the (concrete) plan. Mirrors the fingerprint exclusions."""
+    """Build the traced-config bundle of swept numeric values from the (concrete) plan."""
     return _TracedConfig(
         link_standard_deduction=jnp.asarray(plan.tax.link_standard_deduction),
         link_ordinary_upper=jnp.asarray(plan.tax.link_ordinary_upper),
@@ -278,73 +244,11 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
-def _fingerprint_into(h: Any, obj: Any) -> None:
-    if is_dataclass(obj) and not isinstance(obj, type):
-        h.update(b"D")
-        h.update(type(obj).__name__.encode())
-        for f in fields(obj):
-            if (type(obj).__name__, f.name) in _FINGERPRINT_EXCLUDE:
-                continue
-            h.update(f.name.encode())
-            _fingerprint_into(h, getattr(obj, f.name))
-    elif isinstance(obj, np.ndarray):
-        h.update(b"A")
-        h.update(str(obj.dtype).encode())
-        h.update(repr(obj.shape).encode())
-        h.update(np.ascontiguousarray(obj).tobytes())
-    elif isinstance(obj, (list, tuple)):
-        h.update(b"L")
-        h.update(str(len(obj)).encode())
-        for x in obj:
-            _fingerprint_into(h, x)
-    elif isinstance(obj, dict):
-        h.update(b"M")
-        for k in sorted(obj, key=repr):
-            h.update(repr(k).encode())
-            _fingerprint_into(h, obj[k])
-    else:
-        # Scalars, enums, AssetKey/LevelSeriesKey (frozen value objects): stable repr captures content.
-        h.update(b"S")
-        h.update(repr(obj).encode())
-
-
-def _plan_fingerprint(plan: CompiledSimulation) -> bytes:
-    """Content hash of everything the compiled scan program bakes as a constant (all of `plan` except
-    the seed-varying traced inputs). Two plans with the same fingerprint produce byte-identical
-    programs, so the compiled executable can be safely reused."""
-    h = hashlib.blake2b(digest_size=16)
-    _fingerprint_into(h, plan)
-    return h.digest()
-
-
-# Compiled scan programs, keyed by plan fingerprint (LRU-bounded). Each entry is the jitted device
-# program plus the structural `_ScanMeta` for post-scan scatter. Bounded so a long-lived process that
-# simulates many distinct structures doesn't retain every executable.
-_PROGRAM_CACHE: OrderedDict[bytes, tuple[stages.Wrapped, _ScanMeta]] = OrderedDict()
-_PROGRAM_CACHE_MAX = 32
-
-
-def _get_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
-    key = _plan_fingerprint(plan)
-    cached = _PROGRAM_CACHE.get(key)
-    if cached is not None:
-        _PROGRAM_CACHE.move_to_end(key)
-        return cached
-    result = _build_program(plan)
-    _PROGRAM_CACHE[key] = result
-    if len(_PROGRAM_CACHE) > _PROGRAM_CACHE_MAX:
-        _PROGRAM_CACHE.popitem(last=False)
-    return result
-
-
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
-    """Cached single-program `lax.scan` engine: the whole month loop compiles into one XLA program
-    (one dispatch for all months) whose only traced inputs are the seed-varying series. The traced
-    program is cached by plan fingerprint, so repeated simulations of the same scenario structure
-    (e.g. a Monte-Carlo sweep over rollout draws) pay tracing + XLA compilation once, not per call.
-
-    The first call for a structure builds + compiles the program (`_build_program`); subsequent calls
-    reuse the cached executable, passing the new draw's `external_values` / PE channel arrays."""
+    """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
+    dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
+    config. `_build_program` builds + `jax.jit`-wraps the device program for this plan structure; JAX
+    compiles it on first invocation."""
     # PE-mark validation is seed-dependent (the marks are a sampled series), so it runs every call on
     # the concrete plan — the in-scan path can't raise.
     pe_channels = plan.pe_channels
@@ -353,7 +257,7 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
         raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
-    program, meta = _get_program(plan)
+    program, meta = _build_program(plan)
     ys, sale_disp = program(*_program_inputs(plan))
     _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
@@ -377,7 +281,7 @@ def _program_inputs(plan: CompiledSimulation) -> tuple:
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
-    program, _ = _get_program(plan)
+    program, _ = _build_program(plan)
     text = program.lower(*_program_inputs(plan)).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
@@ -387,7 +291,7 @@ def compiled_hlo_text(plan: CompiledSimulation) -> str:
 def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
     """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
     jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
-    `_ScanMeta`. Called once per fingerprint; the result is cached by `_get_program`.
+    `_ScanMeta`. Builds a fresh `jax.jit` program each call.
 
     All numeric config is baked as XLA constants here; only the seed-varying series are traced, so the
     compiled executable is reusable across rollout draws of the same scenario structure. The carry is
