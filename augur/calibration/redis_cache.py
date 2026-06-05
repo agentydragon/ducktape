@@ -9,6 +9,8 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
+from functools import partial
+from types import TracebackType
 from typing import Any, Protocol
 from urllib.parse import unquote, urlparse
 
@@ -58,7 +60,9 @@ class MarketSnapshot(BaseModel):
 
 class AsyncKeyValueContext(AbstractAsyncContextManager[AsyncKeyValue], Protocol):
     async def __aenter__(self) -> AsyncKeyValue: ...
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool | None: ...
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> bool | None: ...
 
 
 StoreFactory = Callable[[], AsyncKeyValueContext]
@@ -81,7 +85,9 @@ class ValkeyStoreContext:
         self._store = store
         return await store.__aenter__()
 
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> bool | None:
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> bool | None:
         if self._store is None:
             return None
         return await self._store.__aexit__(exc_type, exc, tb)
@@ -127,7 +133,7 @@ def wrap_price_clients_with_redis_cache(
         platform: RedisCachingPriceClient(
             platform=platform,
             upstream=client,
-            store_factory=lambda config=config: ValkeyStoreContext(config),
+            store_factory=partial(ValkeyStoreContext, config),
             ttl_seconds=config.ttl_seconds,
             retention_seconds=config.retention_seconds,
             clock=clock,
