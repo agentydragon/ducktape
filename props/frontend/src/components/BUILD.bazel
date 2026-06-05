@@ -65,11 +65,21 @@ js_library(
 )
 
 js_library(
+    name = "RawJsonSection",
+    srcs = ["RawJsonSection.svelte"],
+    deps = [
+        ":CopyButton",
+        "//props/frontend/src/lib:llmRequestUtils",
+    ],
+)
+
+js_library(
     name = "LLMRequestViewer",
     srcs = ["LLMRequestViewer.svelte"],
     deps = [
         ":LLMRequestSection",
         ":LLMResponseSection",
+        ":RawJsonSection",
         "//props/frontend/src/lib:client",
     ],
 )

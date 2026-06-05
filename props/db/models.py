@@ -34,6 +34,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
+from openai_utils.api_shape import LLMApiShape
 from props.core.agent_types import (
     AgentType,
     CriticDevImproveTypeConfig,
@@ -1025,8 +1026,13 @@ class ModelMetadata(Base):
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
     upstream_name: Mapped[str | None] = mapped_column(String, nullable=True)
     upstream_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    api_shape: Mapped[str] = mapped_column(String, nullable=False, server_default=LLMApiShape.RESPONSES.value)
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="model_metadata_api_shape_check"),
     )
 
 
@@ -1433,6 +1439,7 @@ class LLMRequest(Base):
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False, index=True
     )
     model: Mapped[str] = mapped_column(String, ForeignKey("model_metadata.model_id"), nullable=False, index=True)
+    api_shape: Mapped[str] = mapped_column(String, nullable=False, server_default=LLMApiShape.RESPONSES.value)
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1444,6 +1451,10 @@ class LLMRequest(Base):
 
     # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
+
+    __table_args__ = (
+        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="llm_requests_api_shape_check"),
+    )
 
 
 class AgentRun(Base):

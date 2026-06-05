@@ -35,6 +35,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Discriminator, Field, model_validator
 
+from openai_utils.api_shape import LLMApiShape
 from openai_utils.model_metadata import ModelMetadata as BaseModelMetadata
 
 ENV_CONFIG_FILE = "PROPS_CONFIG_FILE"
@@ -73,6 +74,7 @@ class CustomModelConfig(BaseModelMetadata):
     name: str
     upstream: str
     upstream_model: str
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES
     max_parallel_agents: int | None = None
 
 

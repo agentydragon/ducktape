@@ -46,6 +46,7 @@ py_library(
     srcs = ["llm.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//openai_utils:api_shape",
         "//openai_utils:model",
         "//props:config",
         "//props/backend:auth",
@@ -126,6 +127,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":llm",
+        "//openai_utils:api_shape",
         "//props:config",
         "//props:conftest",
         "//props/backend:conftest",

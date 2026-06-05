@@ -19,7 +19,9 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":schema",
+        "//agent_core:model",
         "//mako_utils:preprocessor",
+        "//openai_utils:api_shape",
         "//openai_utils:model",
         "//openai_utils:retry",
         "//props/db:database",

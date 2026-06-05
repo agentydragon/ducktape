@@ -8,12 +8,20 @@ Tests that _get_upstream_route correctly resolves:
 from __future__ import annotations
 
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
 import pytest_bazel
 from fastapi import HTTPException
 
-from props.backend.routes.llm import _get_upstream_route, _resolve_upstream_url
+from openai_utils.api_shape import LLMApiShape
+from props.backend.routes.llm import (
+    LLMAccess,
+    _extract_usage,
+    _get_upstream_route,
+    _merge_props_metadata,
+    _resolve_upstream_url,
+)
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.database import Database
 from props.db.models import ModelMetadata
@@ -84,7 +92,7 @@ def test_openai_model_uses_default_upstream(synced_db: Database, sample_config: 
 
     with synced_db.session() as session:
         with patch.dict("os.environ", {"OPENAI_BASE_URL": "https://api.openai.com/v1", "OPENAI_API_KEY": "sk-test"}):
-            route = _get_upstream_route("gpt-4o", session, sample_config)
+            route = _get_upstream_route("gpt-4o", session, sample_config, LLMApiShape.RESPONSES)
         assert route.url == "https://api.openai.com/v1"
         assert route.api_key == "sk-test"
         assert route.model_name == "gpt-4o"
@@ -110,7 +118,7 @@ def test_custom_model_routes_to_configured_upstream(synced_db: Database, sample_
 
     with synced_db.session() as session:
         with patch.dict("os.environ", {"LOCAL_API_KEY": "local-key"}):
-            route = _get_upstream_route("local:llama-70b", session, sample_config)
+            route = _get_upstream_route("local:llama-70b", session, sample_config, LLMApiShape.RESPONSES)
         assert route.url == "http://localhost:11434/v1"
         assert route.api_key == "local-key"
         assert route.model_name == "llama3.3:70b"
@@ -120,7 +128,7 @@ def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfi
     """Unknown model ID raises HTTPException(400)."""
     with synced_db.session() as session:
         with pytest.raises(HTTPException) as exc_info:
-            _get_upstream_route("nonexistent-model", session, sample_config)
+            _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 400
         assert "Unknown model" in exc_info.value.detail
 
@@ -145,9 +153,78 @@ def test_unknown_upstream_raises_500(synced_db: Database, sample_config: PropsCo
 
     with synced_db.session() as session:
         with pytest.raises(HTTPException) as exc_info:
-            _get_upstream_route("broken-model", session, sample_config)
+            _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
         assert exc_info.value.status_code == 500
         assert "unknown upstream" in exc_info.value.detail
+
+
+def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
+    """A chat-shaped model cannot be routed through the Responses endpoint."""
+    with synced_db.session() as session:
+        session.merge(
+            ModelMetadata(
+                model_id="chat-model",
+                input_usd_per_1m_tokens=0.0,
+                cached_input_usd_per_1m_tokens=0.0,
+                output_usd_per_1m_tokens=0.0,
+                context_window_tokens=8192,
+                max_output_tokens=2048,
+                upstream_name="local",
+                upstream_model="chat-upstream",
+                api_shape=LLMApiShape.CHAT_COMPLETIONS.value,
+            )
+        )
+        session.commit()
+
+    with synced_db.session() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)
+        assert exc_info.value.status_code == 400
+        assert "api_shape" in exc_info.value.detail
+
+
+def test_chat_usage_extraction() -> None:
+    usage = _extract_usage(
+        LLMApiShape.CHAT_COMPLETIONS,
+        {
+            "usage": {
+                "prompt_tokens": 17,
+                "prompt_tokens_details": {"cached_tokens": 5},
+                "completion_tokens": 23,
+                "total_tokens": 40,
+            }
+        },
+    )
+    assert usage.input_tokens == 17
+    assert usage.cached_input_tokens == 5
+    assert usage.output_tokens == 23
+
+
+def test_props_metadata_is_merged_for_langfuse_correlation() -> None:
+    body = {"metadata": {"client.run_id": "external"}}
+    _merge_props_metadata(
+        body,
+        access=LLMAccess(
+            agent_run_id=UUID("00000000-0000-0000-0000-000000000001"),
+            allowed_model="glm-4.6",
+            budget_usd=1.0,
+            parent_agent_run_id=UUID("00000000-0000-0000-0000-000000000002"),
+            agent_type="critic",
+        ),
+        api_shape=LLMApiShape.CHAT_COMPLETIONS,
+        logical_model="glm-4.6",
+        upstream_model="glm-4.6",
+    )
+
+    assert body["metadata"] == {
+        "client.run_id": "external",
+        "props.agent_run_id": "00000000-0000-0000-0000-000000000001",
+        "props.parent_agent_run_id": "00000000-0000-0000-0000-000000000002",
+        "props.agent_type": "critic",
+        "props.api_shape": "chat_completions",
+        "props.logical_model": "glm-4.6",
+        "props.upstream_model": "glm-4.6",
+    }
 
 
 if __name__ == "__main__":

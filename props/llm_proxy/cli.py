@@ -17,7 +17,7 @@ cli = typer.Typer(help="props LLM proxy")
 # argument the image entrypoint passes ("Got unexpected extra argument (serve)").
 @cli.callback()
 def _root() -> None:
-    """props LLM proxy — the agent data plane (/v1/responses)."""
+    """props LLM proxy — the agent data plane."""
 
 
 @cli.command()

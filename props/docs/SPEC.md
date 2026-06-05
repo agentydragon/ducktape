@@ -167,7 +167,7 @@ Critic-dev agents perform the full definition development loop:
 - Parent run link (for child agents)
 - Child run links
 - LLM requests table (from `llm_requests`):
-  - Model, latency, token counts, cost
+  - Model, API shape, latency, token counts, cost
   - Expandable request/response bodies
 - Container logs (merged stdout/stderr from Loki, via `GET /api/runs/{id}/logs`)
 - Completion summary when done

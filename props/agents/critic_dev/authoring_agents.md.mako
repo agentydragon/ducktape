@@ -40,7 +40,7 @@ The backend's LLM proxy at `OPENAI_BASE_URL` authenticates with `OPENAI_API_KEY`
 | Capability | Critic | Grader | Critic developer (you) |
 |------------|--------|--------|------------------------|
 | PostgreSQL (RLS-scoped) | Yes | Yes | Yes |
-| LLM proxy (`/v1/responses`) | Yes | Yes | Yes |
+| LLM proxy (`/v1/responses`, `/v1/chat/completions`) | Yes | Yes | Yes |
 | Runs API (`/api/runs/critic`) | No | No | Yes |
 | Registry proxy (`/v2/*`) | No | No | Yes |
 
@@ -161,7 +161,7 @@ The unified backend at `PROPS_BACKEND_URL` serves all functionality:
 |------|-------------|-------------|
 | `POST /api/runs/critic` | Run a critic agent on an example | Yes |
 | `/v2/*` | Registry proxy (OCI API) | Yes |
-| `/v1/responses` | LLM proxy (OpenAI API) | Yes |
+| `/v1/responses`, `/v1/chat/completions` | LLM proxy (OpenAI API) | Yes |
 | `/api/stats/*` | Dashboard stats | No (admin) |
 | `/api/runs/*` | Agent run management | No (admin) |
 | `/api/gt/*` | Ground truth management | No (admin) |

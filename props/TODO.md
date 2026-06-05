@@ -16,4 +16,3 @@
 
 - Sane story for applying migrations without full `db recreate` (direct `alembic upgrade head`)
 - Bulk specimen sync in `props db sync` from Bazel bundle artifacts (currently one-by-one via `sync-specimen`)
-- LLM API shape: props is OpenAI-Responses-only (`backend/routes/llm.py` proxies `/v1/responses`). z.ai (no native `/responses`) only works through LiteLLM's `use_chat_completions_api` chat→Responses bridge, which mislabels GLM reasoning content as `output_text` (worked around by `ReasoningOutputTextItem` in `openai_utils/model.py`). Find a better fix: a LiteLLM config/version that emits `reasoning_text`, or teach props to speak `chat/completions` directly so reasoning doesn't round-trip the lossy Responses bridge.

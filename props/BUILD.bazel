@@ -23,6 +23,7 @@ py_library(
     srcs = ["config.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//openai_utils:api_shape",
         "//openai_utils:model_metadata",
         "@pypi//pydantic",
     ],

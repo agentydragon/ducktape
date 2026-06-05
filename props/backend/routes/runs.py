@@ -20,7 +20,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import case, func
 
-from openai_utils.model import ResponsesRequest, ResponsesResult
 from props.backend.auth import (
     AgentRole,
     AuthenticatedIdentity,
@@ -296,16 +295,16 @@ class LLMRequestInfo(BaseModel):
     """LLM request information for API response.
 
     Directly mirrors LLMRequest ORM model fields. When the upstream returned
-    an error (4xx/5xx), the raw error JSON is in response_error_body instead
-    of response_body so it doesn't fail ResponsesResult validation.
+    an error (4xx/5xx), the raw error JSON is in response_error_body.
     """
 
     model_config = {"from_attributes": True}
 
     id: int
     model: str
-    request_body: ResponsesRequest
-    response_body: ResponsesResult | None
+    api_shape: str = "responses"
+    request_body: dict[str, Any]
+    response_body: dict[str, Any] | None
     response_error_body: dict[str, Any] | None = None
     error: str | None
     latency_ms: int | None
@@ -314,14 +313,14 @@ class LLMRequestInfo(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _split_error_response_body(cls, data: Any) -> Any:
-        """Move error response bodies to response_error_body to avoid ResponsesResult validation failure."""
-        if hasattr(data, "response_body"):
-            # ORM object path (from_attributes)
-            response_body = getattr(data, "response_body", None)
+        """Move error response bodies to response_error_body."""
+        if isinstance(data, LLMRequest):
+            response_body = data.response_body
             if isinstance(response_body, dict) and "id" not in response_body:
                 return {
                     "id": data.id,
                     "model": data.model,
+                    "api_shape": data.api_shape,
                     "request_body": data.request_body,
                     "response_body": None,
                     "response_error_body": response_body,

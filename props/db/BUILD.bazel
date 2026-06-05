@@ -64,6 +64,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":snapshots",
+        "//openai_utils:api_shape",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/core:splits",

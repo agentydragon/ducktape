@@ -52,13 +52,13 @@ async def trigger_validation(admin_db: AdminDb) -> Job:
 
 **Using AdminDb:**
 
-| Endpoint                     | Reason                   |
-| ---------------------------- | ------------------------ |
-| `POST /api/llm/v1/responses` | Proxy needs admin INSERT |
-| `POST /api/eval/*`           | Launches agent runs      |
-| `POST /api/registry/*`       | Definition push          |
-| `GET /api/ground_truth/*`    | Admin dashboard          |
-| `POST /api/runs/validation`  | Launches runs            |
+| Endpoint                    | Reason                   |
+| --------------------------- | ------------------------ |
+| `POST /api/llm/v1/*`        | Proxy needs admin INSERT |
+| `POST /api/eval/*`          | Launches agent runs      |
+| `POST /api/registry/*`      | Definition push          |
+| `GET /api/ground_truth/*`   | Admin dashboard          |
+| `POST /api/runs/validation` | Launches runs            |
 
 ## Admin Token Authentication
 

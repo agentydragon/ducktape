@@ -38,6 +38,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":tool_provider",
+        "//openai_utils:api_shape",
         "//openai_utils:model",
         "@pypi//pydantic",
     ],
@@ -114,6 +115,19 @@ py_library(
 )
 
 py_library(
+    name = "model",
+    srcs = ["model.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//openai_utils:api_shape",
+        "//openai_utils:model",
+        "//openai_utils:retry",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "agent",
     srcs = ["agent.py"],
     visibility = ["//visibility:public"],
@@ -121,6 +135,7 @@ py_library(
         ":events",
         ":handler",
         ":loop_control",
+        ":model",
         ":tool_provider",
         "//openai_utils:model",
         "//openai_utils:types",
@@ -238,6 +253,20 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_chat_model_adapter",
+    srcs = ["test_chat_model_adapter.py"],
+    deps = [
+        ":conftest",
+        ":model",
+        "//openai_utils:model",
+        "@pypi//httpx",
+        "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

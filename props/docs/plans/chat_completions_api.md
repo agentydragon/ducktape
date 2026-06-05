@@ -1,6 +1,6 @@
 # Plan: Chat Completions support in props LLM proxy
 
-**Status:** deferred design. No implementation is active.
+**Status:** implementation in progress.
 
 ## Motivation
 
@@ -29,7 +29,8 @@ path for agents and models that already use it.
 
 ## Current state
 
-- `props/backend/routes/llm.py` serves only `POST /v1/responses`.
+- `props/backend/routes/llm.py` served only `POST /v1/responses` before this
+  implementation.
 - `llm_requests` stores raw `request_body` and `response_body` as JSONB plus
   extracted token counts: `input_tokens`, `cached_input_tokens`, `output_tokens`.
 - `llm_request_costs`, `llm_run_costs`, and `agent_run_budget_status` compute
@@ -68,17 +69,15 @@ api_shape = "responses" | "chat_completions"
 
 Raw request and response payloads remain API-shape-specific JSON.
 
-Models should also declare which API shapes they support and which one should be
-used by default:
+Models declare exactly one API shape:
 
 ```text
-model_metadata.supported_api_shapes = ["responses"] | ["chat_completions"] | [...]
-model_metadata.default_api_shape = "responses" | "chat_completions"
+model_metadata.api_shape = "responses" | "chat_completions"
 ```
 
-The model declaration is a routing/capability contract. The request row's
-`llm_requests.api_shape` is the historical fact of what endpoint was actually
-called.
+The model declaration is a routing/capability contract and the agent runtime uses
+it to choose the model adapter. The request row's `llm_requests.api_shape` is the
+historical fact of what endpoint was actually called.
 
 ## Schema changes
 
@@ -93,21 +92,11 @@ ALTER TABLE llm_requests
   CHECK (api_shape IN ('responses', 'chat_completions'));
 
 ALTER TABLE model_metadata
-  ADD COLUMN supported_api_shapes text[] NOT NULL DEFAULT ARRAY['responses'];
+  ADD COLUMN api_shape text NOT NULL DEFAULT 'responses';
 
 ALTER TABLE model_metadata
-  ADD COLUMN default_api_shape text NOT NULL DEFAULT 'responses';
-
-ALTER TABLE model_metadata
-  ADD CONSTRAINT model_metadata_default_api_shape_check
-  CHECK (default_api_shape IN ('responses', 'chat_completions'));
-
-ALTER TABLE model_metadata
-  ADD CONSTRAINT model_metadata_supported_api_shapes_check
-  CHECK (
-    supported_api_shapes <@ ARRAY['responses', 'chat_completions']::text[]
-    AND default_api_shape = ANY(supported_api_shapes)
-  );
+  ADD CONSTRAINT model_metadata_api_shape_check
+  CHECK (api_shape IN ('responses', 'chat_completions'));
 ```
 
 SQLAlchemy:
@@ -115,9 +104,8 @@ SQLAlchemy:
 - Add an `LLMApiShape` `StrEnum` or literal-backed string column.
 - Set existing rows to `responses` through the default.
 - Include `api_shape` in `LLMRequestInfo`.
-- Add `supported_api_shapes` and `default_api_shape` to `ModelMetadata`.
-- Add matching fields to `CustomModelConfig`, defaulting to Responses for
-  backward compatibility.
+- Add `api_shape` to `ModelMetadata` and `CustomModelConfig`, defaulting to
+  Responses for backward compatibility.
 - Sync model API-shape fields into `model_metadata` along with the existing
   pricing, limit, and upstream routing fields.
 
@@ -181,11 +169,9 @@ details object.
    - log as `api_shape='chat_completions'`
 
 4. Enforce model API-shape capabilities.
-   - `/v1/responses` requires `responses` in `supported_api_shapes`.
-   - `/v1/chat/completions` requires `chat_completions` in
-     `supported_api_shapes`.
-   - `default_api_shape` is for clients/runtimes that select the endpoint from a
-     model name; explicit endpoint calls still record their actual endpoint in
+   - `/v1/responses` requires `api_shape='responses'`.
+   - `/v1/chat/completions` requires `api_shape='chat_completions'`.
+   - Explicit endpoint calls still record their actual endpoint in
      `llm_requests.api_shape`.
 
 5. Preserve the logical props model in `LLMRequest.model`.
@@ -336,12 +322,11 @@ shape explicitly:
 name = "glm-4.6"
 upstream = "litellm"
 upstream_model = "glm-4.6"
-supported_api_shapes = ["chat_completions"]
-default_api_shape = "chat_completions"
+api_shape = "chat_completions"
 ```
 
-If a model genuinely supports both paths, list both and set `default_api_shape`
-to the path props-controlled agents should prefer.
+If a provider supports both paths, declare the one props-controlled agents should
+use for that logical model.
 
 ## Tests
 
@@ -354,8 +339,7 @@ Backend tests should cover:
 - logical model is rewritten to the upstream model in the forwarded body.
 - chat usage is extracted into `input_tokens`, `cached_input_tokens`, and
   `output_tokens`.
-- models reject endpoint calls whose `api_shape` is not in
-  `supported_api_shapes`.
+- models reject endpoint calls that do not match `model_metadata.api_shape`.
 - chat rows affect `llm_run_costs` and `agent_run_budget_status`.
 - `GET /api/runs/{id}/llm_requests` returns both Responses and Chat Completions
   rows without validation errors.
@@ -376,7 +360,7 @@ non-trivial way.
 1. Land schema/API/backend support with no config change.
 2. Deploy props proxy/backend.
 3. Update `glm-4.6` config/model metadata to declare
-   `default_api_shape='chat_completions'`.
+   `api_shape='chat_completions'`.
 4. Smoke test `/v1/responses` on an existing model to prove no regression.
 5. Smoke test `/v1/chat/completions` with `glm-4.6` through cluster LiteLLM.
 6. Verify a matching `llm_requests` row exists with
@@ -386,9 +370,6 @@ non-trivial way.
 
 ## Open questions
 
-- Should `default_api_shape` be only advisory, or should agent runtime helpers use
-  it to choose between `responses.create` and `chat.completions.create` from a
-  generic model handle?
 - Should props log the client request, the forwarded upstream request, or both?
   Current code logs the forwarded request after model rewrite.
 - Do we want a first-class `correlation_id` column now, or is metadata-only

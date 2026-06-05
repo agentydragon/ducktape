@@ -4,9 +4,9 @@ Diagnostic queries for agent execution traces. Schema and basic queries are in t
 
 ## Extracting Tool Calls
 
-Tool calls appear as `function_call` items in `response_body->'output'`. Their results appear as `function_call_output` items in the *next* request's `request_body->'input'`.
+Tool-call JSON depends on `llm_requests.api_shape`.
 
-### Calls only
+### Responses calls
 
 ```sql
 SELECT r.created_at, r.model,
@@ -14,11 +14,12 @@ SELECT r.created_at, r.model,
 FROM llm_requests r,
     jsonb_array_elements(r.response_body->'output') AS tc
 WHERE r.agent_run_id = '<run_id>'
+  AND r.api_shape = 'responses'
   AND tc->>'type' = 'function_call'
 ORDER BY r.created_at;
 ```
 
-### Calls with outputs
+### Responses calls with outputs
 
 ```sql
 WITH calls AS (
@@ -28,6 +29,7 @@ WITH calls AS (
     FROM llm_requests r,
         jsonb_array_elements(r.response_body->'output') AS tc
     WHERE r.agent_run_id = '<run_id>'
+      AND r.api_shape = 'responses'
       AND tc->>'type' = 'function_call'
 ),
 outputs AS (
@@ -35,6 +37,7 @@ outputs AS (
     FROM llm_requests r,
         jsonb_array_elements(r.request_body->'input') AS item
     WHERE r.agent_run_id = '<run_id>'
+      AND r.api_shape = 'responses'
       AND item->>'type' = 'function_call_output'
 )
 SELECT c.created_at, c.model, c.tool_name, c.args,
@@ -42,6 +45,33 @@ SELECT c.created_at, c.model, c.tool_name, c.args,
 FROM calls c
 LEFT JOIN outputs o ON c.call_id = o.call_id
 ORDER BY c.created_at;
+```
+
+### Chat Completions calls
+
+```sql
+SELECT r.created_at, r.model,
+       tc->'function'->>'name' AS tool_name,
+       tc->'function'->>'arguments' AS args
+FROM llm_requests r,
+     jsonb_array_elements(r.response_body->'choices') AS choice,
+     jsonb_array_elements(COALESCE(choice->'message'->'tool_calls', '[]'::jsonb)) AS tc
+WHERE r.agent_run_id = '<run_id>'
+  AND r.api_shape = 'chat_completions'
+ORDER BY r.created_at;
+```
+
+### Chat Completions tool outputs
+
+```sql
+SELECT r.created_at, msg->>'tool_call_id' AS call_id,
+       LEFT(msg->>'content', 500) AS output_preview
+FROM llm_requests r,
+     jsonb_array_elements(r.request_body->'messages') AS msg
+WHERE r.agent_run_id = '<run_id>'
+  AND r.api_shape = 'chat_completions'
+  AND msg->>'role' = 'tool'
+ORDER BY r.created_at;
 ```
 
 ## Diagnostic Patterns

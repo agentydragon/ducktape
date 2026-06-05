@@ -1,7 +1,7 @@
 """Standalone LLM proxy app — the agent **data plane**, split out of the unified
 backend so the dashboard/API can roll without disrupting in-flight agents.
 
-Serves only ``/v1/responses`` (auth + budget + cost + upstream routing). It reuses
+Serves ``/v1/responses`` and ``/v1/chat/completions`` (auth + budget + cost + upstream routing). It reuses
 the backend's ``llm`` router, ``auth``, and ``deps`` unchanged — no frontend,
 orchestration, registry proxy, or SSO. The router's only app-state requirements
 are ``admin_db`` (a ``Database`` admin pool, for auth + budget/cost/upstream

@@ -40,6 +40,13 @@ def test_responses_requires_auth() -> None:
         assert resp.status_code == 401
 
 
+def test_chat_completions_requires_auth() -> None:
+    """Unauthenticated chat completions calls are also guarded by agent auth."""
+    with _client() as client:
+        resp = client.post("/v1/chat/completions", json={"model": "x", "messages": []})
+        assert resp.status_code == 401
+
+
 def test_serve_is_a_subcommand() -> None:
     """The image entrypoint runs `serve <args>`; a single-command Typer (no
     callback) rejects `serve` as an unexpected argument — the prod crash this

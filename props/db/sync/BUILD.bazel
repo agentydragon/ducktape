@@ -45,6 +45,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":stats",
+        "//openai_utils:api_shape",
         "//openai_utils:model_metadata",
         "//props:config",
         "//props/db:models",

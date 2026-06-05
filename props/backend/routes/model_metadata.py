@@ -13,6 +13,7 @@ router = APIRouter()
 
 class ModelMetadataInfo(BaseModel):
     model_id: str
+    api_shape: str
     input_usd_per_1m_tokens: float
     cached_input_usd_per_1m_tokens: float
     output_usd_per_1m_tokens: float
@@ -33,6 +34,7 @@ def list_model_metadata(admin_db: AdminDb) -> ModelMetadataResponse:
             models=[
                 ModelMetadataInfo(
                     model_id=row.model_id,
+                    api_shape=row.api_shape,
                     input_usd_per_1m_tokens=row.input_usd_per_1m_tokens,
                     cached_input_usd_per_1m_tokens=row.cached_input_usd_per_1m_tokens,
                     output_usd_per_1m_tokens=row.output_usd_per_1m_tokens,

@@ -5,6 +5,12 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 # gazelle:exclude test_pydantic_strict_mode.py
 
 py_library(
+    name = "api_shape",
+    srcs = ["api_shape.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
     name = "types",
     srcs = ["types.py"],
     visibility = ["//:__subpackages__"],
