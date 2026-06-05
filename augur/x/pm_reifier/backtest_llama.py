@@ -23,6 +23,25 @@ os.environ.setdefault("ZAI_API_KEY", "ollama-local")  # satisfy run_spike import
 import kernel_percentile
 from backtest import build_series, jsd_to_uniform, m_index
 from kernel import SERIES
+from kernel_percentile import PERCENTILES
+
+
+def _percentile_schema() -> dict:
+    """JSON schema forcing {"quantiles": {series: {p: number}}} — weak models (e.g. llama2) emit the
+    right per-series quantiles but drop the wrapper key; ollama's schema-constrained decoding fixes it."""
+    pct = {
+        "type": "object",
+        "properties": {str(p): {"type": "number"} for p in PERCENTILES},
+        "required": [str(p) for p in PERCENTILES],
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "quantiles": {"type": "object", "properties": dict.fromkeys(SERIES, pct), "required": list(SERIES)}
+        },
+        "required": ["quantiles"],
+    }
+
 
 # Parameterized via env so any local known-cutoff model can be probed:
 #   llama3.1:8b — documented cutoff Dec 2023 (anchor 2023-12)
@@ -42,7 +61,7 @@ def ollama_call(endpoint: str, body: dict, tag: str) -> dict:
         "model": body["model"],
         "messages": body["messages"],
         "stream": False,
-        "format": "json",  # ollama constrains output to valid JSON
+        "format": _percentile_schema(),  # schema-constrained: forces the exact {"quantiles":...} structure
         "options": {"temperature": body.get("temperature", 1.0), "num_ctx": 8192},
     }
     req = urllib.request.Request(
@@ -115,10 +134,13 @@ def main() -> None:
         json.dumps(summary, indent=2) + "\n"
     )
     print(f"\n=== {MODEL} (leakage-free, cutoff {CUTOFF}, anchor {T0}): {len(steps)} steps, {len(pooled)} PITs ===")
-    print(
-        f"  mean PIT {summary['mean_pit']:.3f}  tail-escape {tail:.0%}  p1/p99 escape "
-        f"{summary['p1_p99_escape_rate']:.0%}  JSD {summary['jsd_pooled']:.3f}"
-    )
+    if pooled:
+        print(
+            f"  mean PIT {summary['mean_pit']:.3f}  tail-escape {tail:.0%}  p1/p99 escape "
+            f"{summary['p1_p99_escape_rate']:.0%}  JSD {summary['jsd_pooled']:.3f}"
+        )
+    else:
+        print("  no PITs parsed")
 
 
 if __name__ == "__main__":
