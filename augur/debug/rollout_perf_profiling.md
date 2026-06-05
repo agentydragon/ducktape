@@ -383,7 +383,7 @@ Two fixes (both landed):
 2. **Series indices are traced operands, not static structure** — a series index is
    just a row into `external_values`, so it's now threaded as a traced device array
    (`_Operands.*`, dynamic gather) instead of a Python `int` baked into the jit static
-   key. The compiled program is independent of *which* row, so no series-index value
+   key. The compiled program is independent of _which_ row, so no series-index value
    can trigger a recompile by construction. The two jit-arg pytrees were renamed to say
    what they are: `_Static` (the compile cache key — counts, slot indices, folded event
    tuples, masks) and `_Operands` (every traced device array the scan closes over).

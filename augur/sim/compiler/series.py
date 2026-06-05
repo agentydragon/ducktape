@@ -37,7 +37,9 @@ def collect_level_series_keys(scenario: Scenario, external_series: ExternalSerie
     # program's STATIC structure (e.g. `_FoldedPE.floor_series`), so a non-deterministic order busts the
     # native `jax.jit` compile cache (every other compile re-traces). Sorting makes the index assignment
     # deterministic so identical scenarios produce an identical structure → one compile, then cache hits.
-    for series_id in external_series.series_values.select("series_id").unique().get_column("series_id").sort().to_list():
+    for series_id in (
+        external_series.series_values.select("series_id").unique().get_column("series_id").sort().to_list()
+    ):
         # Boundary parse: the external frame is still series_id-string keyed (typed in the frame
         # pass). Every row is a non-PE level series, so the parse must succeed.
         add(_require_level_series_key(str(series_id)))
