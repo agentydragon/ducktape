@@ -43,7 +43,9 @@ def chain(args: tuple[str, int, list[tuple[str, dict[str, float]]]]) -> dict:
         next_label = m_label(m_index(origin) + h)
         options, _ = kernel.sample_step(ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}")
         if len(options) < 8:  # one retry, else truncate the chain here
-            options, _ = kernel.sample_step(ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}b")
+            options, _ = kernel.sample_step(
+                ENDPOINT, MODEL, history, next_label, N_OPTIONS, TEMP, f"roll_{origin}_{r}_{h}b"
+            )
         if len(options) < 8:
             break
         drawn = kernel.draw(options, rng.random())["values"]
