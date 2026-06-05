@@ -31,7 +31,6 @@ are evaluated at specific month indices on the paths.
 | `backtest_rolling.py`   | rolling-origin, multi-horizon free-running calibration                       |
 | `fetch_real_history.py` | real macro series from Yahoo (sp500/BTC) + FRED (CPI/home/rent), date-ranged |
 | `openai_history.json`   | OpenAI's **public** funding-round/tender history (private marks excluded)    |
-| `cache_probe.py`        | measures z.ai prompt-cache granularity                                       |
 | `plot_*.py`             | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
 `results/` holds summaries, plots, and `quota_log.jsonl` (per-run token + z.ai-quota burn).
@@ -57,7 +56,7 @@ structural, not local.
 enforce the horizon length (retry a miscounted window). Length discipline solved — **75/75 full-length
 paths**, nothing dropped, only ~2 retries / 79 windows. The cost moves to **input tokens**: the
 stateful thread re-reads the growing history (~6.5k → ~270k with a 5-yr context), which z.ai's
-within-message prefix caching makes cheap (`cache_probe.py`).
+within-message prefix caching makes cheap (see `docs/z_ai_api.md`).
 
 **Per-step kernel** (`kernel.py`, the current architecture): the LLM as an explicit stochastic
 transition kernel `p(x_{t+1}|x_{≤t})`. At each step it returns **N weighted _joint_ options** for the
