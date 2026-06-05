@@ -12,27 +12,27 @@
     "messages": [
       {
         "role": "system",
-        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 8.)"
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Macro series tracked each month: inflation (cumulative consumer price INDEX, ~100.0 now; it CLIMBS steadily ~2-4%/yr and does NOT revert to 100 \u2014 continue it upward, as a price level), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, ~100.0 now, also a climbing level), rent:sf_ca (SF rent index, ~100.0 now, climbing level). Separately, OpenAI is a private company whose value moves in discrete EVENTS, not a smooth path: primary_round (new funding), secondary_tender (employees/early holders sell at a set valuation), ipo (goes public), or collapse. You are given a real recent macro history and OpenAI's public funding history; continue the world FORWARD from month 0 (= now), carrying recent momentum and volatility. Each reply is ONLY a JSON object: {\"regime\": short note on the regime and what is coming, \"months\": {macro_series: [k numbers], ...}, \"openai_events\": [{\"month\": int, \"kind\": \"primary_round\"|\"secondary_tender\"|\"ipo\"|\"collapse\", \"valuation_usd_b\": number, \"price_per_share\": number (optional)}, ...]}. months holds the next k consecutive macro levels; openai_events lists any OpenAI events in those k months (often empty \u2014 tenders historically recur roughly every 6-12 months). Keep macro paths smooth and correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), make OpenAI events cohere with the macro regime (a risk-off window slows or cancels rounds), and maintain the regime arc across windows.\n(diversity seed 8.)"
       },
       {
         "role": "user",
-        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+        "content": "Begin a new world at month 0.\nReal recent 12-month macro history per series (oldest first; last = month 0 = now):\n  inflation: 96.36, 96.45, 96.7, 96.92, 97.26, 97.54, 97.79, 98.08, 98.25, 98.51, 99.36, 100\n  sp500: 6339.4, 6460.3, 6688.5, 6840.2, 6849.1, 6845.5, 6939, 6878.9, 6528.5, 7209, 7580.1, 7584.3\n  crypto:BTC: 115758, 108237, 114056, 109556, 90394.3, 87508.8, 78621.1, 66995.9, 68233.3, 76304.3, 73579.7, 63182.3\n  home_value:sf_ca: 98.34, 97.77, 97.2, 97.19, 97.88, 98.63, 99.75, 100.18, 100.29, 100.23, 100.36, 100\n  rent:sf_ca: 97.29, 97.45, 97.66, 97.86, 98.19, 98.47, 98.71, 99.02, 99.26, 99.35, 99.51, 100\nOpenAI public funding history (post-money, USD billions): 2019-07 $20B (primary_round), 2023-01 $29B (primary_round), 2023-04 $28B (secondary_tender), 2024-02 $86B (secondary_tender), 2024-10 $157B (primary_round), 2024-11 $157B (secondary_tender), 2025-03 $300B (primary_round), 2025-10 $500B (secondary_tender), 2026-02 $852B (primary_round). Now (month 0): ~$852B, private.\nContinue this world forward. Return exactly 12 macro values per series for months 1..12, and openai_events for any OpenAI events in months 1..12."
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"Post-election boom with sticky inflation. AI euphoria drives OpenAI valuation higher, while sticky services inflation keeps the Fed cautious, pressuring housing affordability.\",\"months\":{\"inflation\":[100.2,100.5,100.8,101.1,101.3,101.5,101.6,101.7,101.8,101.9,102.0,102.2],\"sp500\":[5350,5380,5410,5400,5390,5420,5450,5480,5500,5520,5510,5530],\"crypto:BTC\":[96000,97000,96500,98000,99000,98500,99500,100000,101000,100500,102000,101500],\"home_value:sf_ca\":[100.5,101.0,101.5,102.0,102.4,102.8,103.0,103.2,103.3,103.4,103.5,103.6],\"rent:sf_ca\":[100.1,100.3,100.5,100.7,100.9,101.0,101.1,101.2,101.3,101.3,101.4,101.4],\"openai_valuation_usd_trillions\":[0.88,0.91,0.93,0.95,0.98,1.0,1.02,1.05,1.07,1.1,1.12,1.15]},\"openai_ipo_month_index\":null}"
+        "content": "{\"regime\":\"Post-IPO Cooling. After a record-breaking IPO at month 1, the market enters a correction phase. High inflation pressures the Fed, leading to risk-off sentiment that drags equities and crypto down. Real estate in SF feels the squeeze of high rates but is buoyed slightly by lag effects from tech wealth.\",\"months\":{\"inflation\":[100.3,100.6,101.0,101.4,101.7,102.1,102.5,102.9,103.2,103.5,103.9,104.3],\"sp500\":[7650.2,7590.5,7410.3,7350.8,7205.4,7180.1,7100.9,7050.2,7120.5,7080.8,6950.3,6890.1],\"crypto:BTC\":[64050.5,62800.2,61500.8,59800.4,58500.1,57200.6,59000.3,60500.9,59500.2,58200.5,57000.1,56000.8],\"home_value:sf_ca\":[100.1,100.0,99.8,99.6,99.4,99.2,99.1,99.0,99.0,98.9,98.8,98.7],\"rent:sf_ca\":[100.1,100.2,100.3,100.4,100.4,100.5,100.6,100.7,100.8,100.9,101.0,101.1]},\"openai_events\":[{\"month\":1,\"kind\":\"ipo\",\"valuation_usd_b\":920,\"price_per_share\":48.5},{\"month\":7,\"kind\":\"secondary_tender\",\"valuation_usd_b\":880,\"price_per_share\":46.4}]}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-12 levels: inflation=102.2, sp500=5530, crypto:BTC=101500, home_value:sf_ca=103.6, rent:sf_ca=101.4, openai_valuation_usd_trillions=1.15\nReturn exactly 12 values per series for months 13..24."
+        "content": "Continue the SAME world. Month-12 macro levels: inflation=104.3, sp500=6890.1, crypto:BTC=56000.8, home_value:sf_ca=98.7, rent:sf_ca=101.1. Last OpenAI valuation: ~$880B.\nReturn exactly 12 macro values per series for months 13..24, and openai_events for months 13..24."
       },
       {
         "role": "assistant",
-        "content": "{\"regime\":\"The AI bubble meets rate headwinds. Persistent CPI forces Fed to hold rates high, triggering a rotation out of tech and crypto. OpenAI announces blockbuster IPO plans but market volatility dampens debut pricing, while Bay Area housing demand cools.\",\"months\":{\"inflation\":[102.4,102.7,103.0,103.2,103.3,103.4,103.4,103.3,103.2,103.1,103.0,102.9],\"sp500\":[5510,5480,5400,5350,5300,5280,5250,5270,5300,5310,5290,5280],\"crypto:BTC\":[100000,98000,95000,92000,90000,89500,89000,91000,92500,91500,90500,89500],\"home_value:sf_ca\":[103.5,103.2,102.8,102.2,101.5,100.8,100.0,99.5,99.2,99.0,98.8,98.7],\"rent:sf_ca\":[101.5,101.6,101.6,101.5,101.3,101.0,100.8,100.6,100.5,100.4,100.3,100.2],\"openai_valuation_usd_trillions\":[1.18,1.2,1.22,1.25,1.28,1.3,1.32,1.35,1.38,1.4,1.42,1.45]},\"openai_ipo_month_index\":20}"
+        "content": "{\"regime\":\"Stagflation Resistance. Inflation remains sticky above 4%, maintaining pressure on asset valuations. A 'flight to quality' narrative supports mega-cap tech (OpenAI) and scarce SF housing, while speculative crypto continues to bleed out. Markets brace for prolonged higher rates.\",\"months\":{\"inflation\":[104.6,104.9,105.2,105.5,105.8,106.1,106.4,106.8,107.1,107.4,107.7,108.1],\"sp500\":[6920.5,6850.2,6780.8,6815.4,6750.1,6690.3,6720.9,6650.5,6580.2,6605.8,6550.1,6480.4],\"crypto:BTC\":[54800.2,53500.5,52200.1,51000.8,50500.3,49800.9,48500.2,47200.6,46500.1,45800.5,45000.2,44200.8],\"home_value:sf_ca\":[98.8,98.9,99.0,99.1,99.2,99.3,99.3,99.4,99.5,99.6,99.7,99.8],\"rent:sf_ca\":[101.2,101.3,101.4,101.5,101.6,101.7,101.8,101.9,102.0,102.1,102.2,102.3]},\"openai_events\":[{\"month\":14,\"kind\":\"secondary_tender\",\"valuation_usd_b\":850,\"price_per_share\":44.8},{\"month\":22,\"kind\":\"primary_round\",\"valuation_usd_b\":890,\"price_per_share\":46.9}]}"
       },
       {
         "role": "user",
-        "content": "Continue the SAME world. Month-24 levels: inflation=102.9, sp500=5280, crypto:BTC=89500, home_value:sf_ca=98.7, rent:sf_ca=100.2, openai_valuation_usd_trillions=1.45\nReturn exactly 12 values per series for months 25..36."
+        "content": "Continue the SAME world. Month-24 macro levels: inflation=108.1, sp500=6480.4, crypto:BTC=44200.8, home_value:sf_ca=99.8, rent:sf_ca=102.3. Last OpenAI valuation: ~$890B.\nReturn exactly 12 macro values per series for months 25..36, and openai_events for months 25..36."
       }
     ]
   },
@@ -42,24 +42,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"Post-IPO volatility and disinflationary drag. OpenAI's public debut sees heavy selling pressure, dragging tech indices lower. Cooling inflation reduces rent pressure, but high rates continue to suppress SF home values. Markets seek a new bottom.\",\"months\":{\"inflation\":[102.7,102.5,102.3,102.1,101.9,101.8,101.7,101.6,101.6,101.5,101.5,101.4],\"sp500\":[5200,5150,5120,5100,5080,5050,5070,5090,5110,5100,5080,5060],\"crypto:BTC\":[88000,86000,84000,83500,83000,82500,82000,81500,81000,80500,80000,79500],\"home_value:sf_ca\":[98.5,98.2,97.8,97.5,97.0,96.5,96.2,96.0,95.8,95.6,95.5,95.4],\"rent:sf_ca\":[100.1,100.0,99.9,99.8,99.7,99.6,99.5,99.4,99.4,99.3,99.3,99.2],\"openai_valuation_usd_trillions\":[1.3,1.25,1.22,1.2,1.18,1.17,1.16,1.15,1.15,1.14,1.14,1.13]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Policy Pivot and Soft Landing. The Fed signals a dovish pivot as inflation eases toward target. Equity markets rally aggressively on rate cut expectations, driving a broad risk-on surge. Crypto recovers sharply, while SF real estate accelerates as credit conditions loosen and buyers return.\",\"months\":{\"inflation\":[108.3,108.5,108.6,108.7,108.8,108.9,109.0,109.1,109.1,109.2,109.3,109.4],\"sp500\":[6600.2,6750.5,6890.8,7020.1,7150.4,7300.8,7420.2,7550.5,7680.1,7800.5,7920.2,8050.8],\"crypto:BTC\":[45500.1,47500.3,49800.2,52000.5,54000.1,55800.6,57500.2,59000.5,60500.1,61800.4,63000.2,64000.5],\"home_value:sf_ca\":[99.9,100.1,100.3,100.6,100.9,101.2,101.5,101.8,102.1,102.4,102.7,103.0],\"rent:sf_ca\":[102.4,102.5,102.6,102.7,102.8,102.9,103.0,103.1,103.2,103.3,103.4,103.5]},\"openai_events\":[{\"month\":28,\"kind\":\"secondary_tender\",\"valuation_usd_b\":950,\"price_per_share\":50.1},{\"month\":34,\"kind\":\"secondary_tender\",\"valuation_usd_b\":1050,\"price_per_share\":55.3}]}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780620181,
-    "id": "20260605084251a62dcfb167414b81",
+    "created": 1780622733,
+    "id": "202606050925236f2fa03d8bfa41ab",
     "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "20260605084251a62dcfb167414b81",
+    "request_id": "202606050925236f2fa03d8bfa41ab",
     "usage": {
-      "completion_tokens": 382,
-      "prompt_tokens": 1265,
+      "completion_tokens": 430,
+      "prompt_tokens": 2056,
       "prompt_tokens_details": {
-        "cached_tokens": 768
+        "cached_tokens": 1536
       },
-      "total_tokens": 1647
+      "total_tokens": 2486
     }
   },
-  "latency_s": 10.34912109375
+  "latency_s": 11.012729406356812
 }

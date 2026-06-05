@@ -150,10 +150,51 @@ can lift it** — you cannot upweight worlds the model never proposed. That is t
 model that hugs the median is the wrong tool. Levers to force coverage: higher temperature,
 conditioning on the prices, or the `BATCH_SIZE > 1` distinct-worlds knob.
 
-### Next: compact handoff
+### Real macro data + OpenAI as events (GLM-4.7, paid)
 
-The 97k input tokens are pure statefulness. A **compact handoff** — fresh prompt each window carrying
-only the previous window's ending levels + a one-line regime note, not the whole thread — should cut
-input toward ~1–2k/world while keeping the long arc via the regime note; that's the obvious next
-measurement, alongside prompt-caching the shared prefix, `BATCH_SIZE > 1` for the coverage knob, and
-more worlds.
+Grounded run: macro series seeded from **real** recent tails (`fetch_real_history.py` — Yahoo
+sp500/BTC, FRED CPI/Case-Shiller-SF/rent), so worlds start from the real 2026 anchors (sp500 ~7584,
+BTC ~63k mid-drawdown, indices rebased to 100) with real momentum; OpenAI modelled as augur's PE
+issuer is — discrete **events** (`primary_round`/`secondary_tender`/`ipo`/`collapse`) emitted per
+window, fed OpenAI's **public** funding history (`openai_history.json`; private marks excluded).
+15/15 valid, 75/75 full length, 0 worlds dropped (5xx retried), 66 OpenAI events over 15 worlds.
+Burn: 191k tokens, weekly **0 pp** (three runs total ≈ 0 pp weekly, ~1% on the 5 h window; see
+`quota_log.jsonl`).
+
+| market                   | target |  raw | reweighted |
+| ------------------------ | -----: | ---: | ---------: |
+| sp500>8500@2027-12       |   0.55 | 0.00 |       0.00 |
+| sp500>11000@2030-12      |   0.40 | 0.07 |       0.26 |
+| btc>90k@2027-12          |   0.50 | 0.00 |       0.00 |
+| btc>180k@2030-12         |   0.30 | 0.00 |       0.00 |
+| cpi>108@2029-12          |   0.70 | 0.73 |       0.78 |
+| sfhome>110@2030-12       |   0.50 | 0.13 |       0.41 |
+| sfrent>108@2029-12       |   0.60 | 0.27 |       0.60 |
+| openai_tender_by_2028-06 |   0.80 | 0.87 |       0.89 |
+| openai_ipo_by_2029-12    |   0.45 | 0.67 |       0.53 |
+| openai_val>2T@2030-12    |   0.50 | 0.13 |       0.36 |
+
+- **OpenAI-as-events is the right shape.** Discrete tenders/rounds/IPO match augur's PE bundle; the
+  tender-by and ipo-by markets are well-covered and reweight cleanly, and even the $2T-valuation tail
+  now gets 0.13 raw (vs 0.00 under the smooth-path model). This was your call and it lands.
+- **Upside coverage is still the binding blocker.** GLM-4.7 under-generates upside tails: **zero**
+  worlds recover BTC to $90k (from $63k) within 18 mo or reach $180k in 5 yr, and sp500 doesn't clear
+  +12% by 18 mo — so those markets stay raw 0.00 and the reweight cannot lift them. The steady
+  climbers (CPI, rent, home) and the OpenAI events match well. Same lesson, sharper: **coverage /
+  dispersion is the constraint, not calibration — a conservative model can't be reified onto the
+  upside.**
+- **Two bugs this surfaced and fixed:** the model mean-reverted the CPI _index_ around 100 instead of
+  climbing it (relabeled as a cumulative price level → `cpi>108` coverage 0.00 → 0.73); transient
+  `503 DNS resolution failure`s dropped worlds (now retried as 5xx).
+
+### Next: force coverage, then compact handoff
+
+**Force upside coverage first** — it is the binding blocker across every run. Levers: raise
+temperature, condition on the market prices (so the model is told to include the boom tails),
+`BATCH_SIZE > 1` distinct-worlds, or a less median-hugging model. Without coverage the reify is a
+fiction on exactly the markets that matter most (the upside).
+
+Then **compact handoff**: the input tokens (now ~150k, ~10k/world) are pure statefulness — each
+window re-reads the growing thread. A fresh prompt per window carrying only the previous window's
+ending levels + a one-line regime note (not the whole thread) should cut input toward ~1–2k/world
+while keeping the long arc via the regime note, plus prompt-caching the shared prefix.

@@ -12,11 +12,11 @@
     "messages": [
       {
         "role": "system",
-        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 14.)"
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Macro series tracked each month: inflation (cumulative consumer price INDEX, ~100.0 now; it CLIMBS steadily ~2-4%/yr and does NOT revert to 100 \u2014 continue it upward, as a price level), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, ~100.0 now, also a climbing level), rent:sf_ca (SF rent index, ~100.0 now, climbing level). Separately, OpenAI is a private company whose value moves in discrete EVENTS, not a smooth path: primary_round (new funding), secondary_tender (employees/early holders sell at a set valuation), ipo (goes public), or collapse. You are given a real recent macro history and OpenAI's public funding history; continue the world FORWARD from month 0 (= now), carrying recent momentum and volatility. Each reply is ONLY a JSON object: {\"regime\": short note on the regime and what is coming, \"months\": {macro_series: [k numbers], ...}, \"openai_events\": [{\"month\": int, \"kind\": \"primary_round\"|\"secondary_tender\"|\"ipo\"|\"collapse\", \"valuation_usd_b\": number, \"price_per_share\": number (optional)}, ...]}. months holds the next k consecutive macro levels; openai_events lists any OpenAI events in those k months (often empty \u2014 tenders historically recur roughly every 6-12 months). Keep macro paths smooth and correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), make OpenAI events cohere with the macro regime (a risk-off window slows or cancels rounds), and maintain the regime arc across windows.\n(diversity seed 14.)"
       },
       {
         "role": "user",
-        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+        "content": "Begin a new world at month 0.\nReal recent 12-month macro history per series (oldest first; last = month 0 = now):\n  inflation: 96.36, 96.45, 96.7, 96.92, 97.26, 97.54, 97.79, 98.08, 98.25, 98.51, 99.36, 100\n  sp500: 6339.4, 6460.3, 6688.5, 6840.2, 6849.1, 6845.5, 6939, 6878.9, 6528.5, 7209, 7580.1, 7584.3\n  crypto:BTC: 115758, 108237, 114056, 109556, 90394.3, 87508.8, 78621.1, 66995.9, 68233.3, 76304.3, 73579.7, 63182.3\n  home_value:sf_ca: 98.34, 97.77, 97.2, 97.19, 97.88, 98.63, 99.75, 100.18, 100.29, 100.23, 100.36, 100\n  rent:sf_ca: 97.29, 97.45, 97.66, 97.86, 98.19, 98.47, 98.71, 99.02, 99.26, 99.35, 99.51, 100\nOpenAI public funding history (post-money, USD billions): 2019-07 $20B (primary_round), 2023-01 $29B (primary_round), 2023-04 $28B (secondary_tender), 2024-02 $86B (secondary_tender), 2024-10 $157B (primary_round), 2024-11 $157B (secondary_tender), 2025-03 $300B (primary_round), 2025-10 $500B (secondary_tender), 2026-02 $852B (primary_round). Now (month 0): ~$852B, private.\nContinue this world forward. Return exactly 12 macro values per series for months 1..12, and openai_events for any OpenAI events in months 1..12."
       }
     ]
   },
@@ -26,24 +26,24 @@
         "finish_reason": "stop",
         "index": 0,
         "message": {
-          "content": "{\"regime\":\"The AI Boom sustains high growth but sticky inflation prompts the Fed to hold rates high, creating volatility. Housing in SF remains resilient but rent growth slows.\",\"months\":{\"inflation\":[100.2,100.4,100.5,100.8,101.1,101.3,101.5,101.6,101.8,102.0,102.1,102.3],\"sp500\":[5325,5350,5380,5360,5340,5390,5420,5460,5490,5520,5550,5580],\"crypto:BTC\":[95200,96000,97500,96500,95000,97000,98500,100500,102000,103000,104500,106000],\"home_value:sf_ca\":[100.5,101.0,101.5,101.3,101.0,101.8,102.2,102.5,102.8,103.0,103.3,103.5],\"rent:sf_ca\":[100.2,100.4,100.5,100.6,100.6,100.8,101.0,101.1,101.2,101.3,101.4,101.5],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96,0.97]},\"openai_ipo_month_index\":null}",
+          "content": "{\"regime\":\"Volatility strikes as high rates and sticky inflation trigger a broad risk-off rotation. Tech equities and crypto face a sharp correction, while real estate indexes in SF stagnate. OpenAI delays its tender offer scheduled for mid-year due to valuation disputes amid the market turbulence.\",\"months\":{\"inflation\":[100.25,100.52,100.81,101.15,101.48,101.76,102.05,102.38,102.62,102.91,103.18,103.45],\"sp500\":[7410.2,7185.5,6932.8,6885.1,6720.4,6650.8,6710.3,6895.5,7020.1,6980.4,6940.2,7050.6],\"crypto:BTC\":[60100.5,58250.2,55100.8,53200.1,51500.4,50800.2,52100.5,54000.8,55800.2,54500.1,53100.5,52000.3],\"home_value:sf_ca\":[100.12,100.05,99.85,99.60,99.45,99.35,99.40,99.50,99.65,99.70,99.80,99.95],\"rent:sf_ca\":[100.15,100.35,100.58,100.75,100.88,101.02,101.18,101.35,101.52,101.65,101.78,101.90]},\"openai_events\":[]}",
           "role": "assistant"
         }
       }
     ],
-    "created": 1780620308,
-    "id": "2026060508445955c57f40bbb84dc5",
+    "created": 1780622920,
+    "id": "202606050928301c7b6e33f8f3463c",
     "model": "glm-4.7",
     "object": "chat.completion",
-    "request_id": "2026060508445955c57f40bbb84dc5",
+    "request_id": "202606050928301c7b6e33f8f3463c",
     "usage": {
-      "completion_tokens": 457,
-      "prompt_tokens": 368,
+      "completion_tokens": 458,
+      "prompt_tokens": 1007,
       "prompt_tokens_details": {
-        "cached_tokens": 256
+        "cached_tokens": 0
       },
-      "total_tokens": 825
+      "total_tokens": 1465
     }
   },
-  "latency_s": 8.592767715454102
+  "latency_s": 11.114141702651978
 }
