@@ -1,0 +1,16 @@
+{
+  "as_of": "2026-06",
+  "anchor_valuation_usd_b": 852,
+  "note": "PUBLIC funding rounds + secondary tenders only (post-money valuations, USD billions), sourced from CNBC/Bloomberg/TechCrunch/OpenAI. Private Shareworks per-unit marks and user-reported early tender prices are intentionally excluded from this public-repo spike; the full per-issuer evidence lives in gaffer-private/gaffer_augur/openai_stock/observations.jsonl.",
+  "events": [
+    { "date": "2019-07", "kind": "primary_round", "valuation_usd_b": 20 },
+    { "date": "2023-01", "kind": "primary_round", "valuation_usd_b": 29 },
+    { "date": "2023-04", "kind": "secondary_tender", "valuation_usd_b": 28 },
+    { "date": "2024-02", "kind": "secondary_tender", "valuation_usd_b": 86 },
+    { "date": "2024-10", "kind": "primary_round", "valuation_usd_b": 157 },
+    { "date": "2024-11", "kind": "secondary_tender", "valuation_usd_b": 157 },
+    { "date": "2025-03", "kind": "primary_round", "valuation_usd_b": 300 },
+    { "date": "2025-10", "kind": "secondary_tender", "valuation_usd_b": 500 },
+    { "date": "2026-02", "kind": "primary_round", "valuation_usd_b": 852 }
+  ]
+}
