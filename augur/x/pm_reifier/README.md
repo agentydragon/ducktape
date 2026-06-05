@@ -220,6 +220,52 @@ window re-reads the growing thread. A fresh prompt per window carrying only the 
 ending levels + a one-line regime note (not the whole thread) should cut input toward ~1–2k/world
 while keeping the long arc via the regime note, plus prompt-caching the shared prefix.
 
+### Per-step kernel sampling (planned `run_kernel.py`)
+
+Sample the rollout **one step at a time as a categorical-mixture proposal**: at each step ask the LLM
+for N weighted options for the next step, draw one (keep its weight), append to a **compact history
+rebuilt into the first message**, repeat — ≤3 messages, no accumulating back-and-forth. This is the
+LLM as an explicit stochastic transition kernel `p(x_{t+1} | x_{≤t})`. Why: enumeration ("list
+diverse possibilities") beats implicit sampling (which collapses to the mode — our conservatism);
+LLM-proposes/you-draw removes the bad-RNG failure; per-step branching compounds into diverse paths.
+
+Design decisions:
+
+- **No explicit latent state.** The LLM re-infers the latent (regime/vol) from the history each step,
+  exactly as it infers the unseen latent on step 1. Carrying one explicit latent would condition on a
+  single draw and _shrink_ dispersion; re-inferring marginalizes over latent uncertainty → more
+  honest spread. (Watch: regime persistence vs over-switching — empirically checkable.)
+- **Stable cache prefix.** Order `[system+schema]` → `[growing compact history]` → `[ask]`, and **drop
+  the per-world seed** (diversity comes from the RNG draws, not a prompt token) so the prefix is
+  byte-identical across worlds. The history is large (5-yr context + growing path ⇒ ~271k prompt
+  tokens observed), so caching it is load-bearing, not second-order.
+- **z.ai caches token prefixes _within_ a message (measured, `cache_probe.py`).** A ~12.5k-token
+  prefix shared between two requests differing only in the trailing suffix is cached
+  (`cached_tokens` 0 cold → 12544 on a differing-suffix follow-up). So the rebuilt-first-message
+  growing prefix gets cached → the scheme is cheap.
+
+Ways the LLM can express the per-step distribution:
+
+- **Sample (N weighted options)** — default. Non-parametric: multimodal / skew / fat tails + discrete
+  events (tenders/IPOs) native; hands you draws directly. Cost: small N under-resolves the deep tail;
+  needs the weights for an honest density.
+- **Parametric (Gaussian / Student-t / mixture)** — resolvable and cheap to over-draw, but imposes a
+  shape (Gaussian's thin symmetric tails are wrong for finance) and reduces the LLM to
+  coefficient-picking.
+- **Percentiles / quantile function** — ask for the value at percentile `p`. A fixed grid (p10..p90)
+  is smooth but _truncates the tail_ (never draws beyond the grid). **Random-percentile** (draw
+  `u ∼ U(0,1)`, ask for the `u`-th quantile) is inverse-transform sampling via the LLM, and drawing
+  `u` from a tail-weighted distribution gives **guaranteed tail coverage + built-in importance
+  weights** — the cleanest tail-coverage lever, vs the N-sample which only covers a tail if the LLM
+  volunteers it. Caveat: a quantile is scalar → awkward for the multivariate+discrete joint step
+  (works per-component or for a scalar severity); the N-sample handles the joint natively. Hybrid:
+  N-sample for the joint, with an occasional "give me a p99-tail scenario" request to force coverage.
+
+Bonus — **validation falls out for free**: a kernel that emits a one-step-ahead distribution is
+scorable per step against history (CRPS on the sample/quantiles), turning one path realization into
+`T` resolved one-step predictions — the dense calibration signal the cutoff backtest otherwise lacks,
+and the concrete (known-)black-swan-frequency check.
+
 ## Validating the LLM base measure (plan)
 
 We are scoring a **distribution** (a base measure), not a point forecast, so metrics are
