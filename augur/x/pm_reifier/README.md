@@ -122,9 +122,40 @@ valuation markets reweight cleanly.
   > marginal-calibration problem, and proves the model _can_ state honest marginal tails when asked
   > directly. It is not a deployable kernel. The deployable kernel must emit a **joint** in a single
   > unified process (see the enumeration-reframing work below).
-  Caveat: a quantile is per-series scalar (awkward for the joint+events step); the N-sample handles the
-  joint natively. Hybrid for the forward path: percentile marginals for the joint + the N-sample for the
-  cross-series coupling and discrete events.
+  > Caveat: a quantile is per-series scalar (awkward for the joint+events step); the N-sample handles the
+  > joint natively. Hybrid for the forward path: percentile marginals for the joint + the N-sample for the
+  > cross-series coupling and discrete events.
+
+### 6. The LLM enumerates its distribution; it does not sample from it (the decisive finding)
+
+Why is freehand sampling (`kernel.py`) biased + thin-tailed while stating percentiles
+(`kernel_percentile.py`) is calibrated? Two experiments on glm-4.5, same 2024-06 window, all scoring the
+realized value's PIT against the **sample cloud** (`pit_samp`):
+
+- **Reframe the ask as honest i.i.d. sampling** (`kernel_iid.py`: "form your predictive distribution,
+  then draw N i.i.d. samples — typical often, tails rarely, frequencies match probabilities"), ±model
+  thinking. **No improvement:** mean PIT 0.585 / tail-escape 31% (thinking off), 0.598 / 38% (thinking
+  on) — vs enumeration's 0.62 / 31%. Framing and reasoning don't fix it.
+- **Commit the model to a distribution first** (`kernel_joint.py`: emit per-series percentiles _then_ N
+  joint samples; the percentiles are a **write-only commitment device** — we score only the samples). The
+  samples **widen dramatically** (spread ratio **1.5×** — wider than the stated p10–p90) but **overshoot
+  into over-dispersion**: tail-escape **4%**, PIT piled at center, JSD 0.136 (worst of all).
+
+The transcripts show why: asked for N "samples," the model returns them **evenly spaced from its stated
+p1 to p99** — a **quantile grid**, not a density-weighted i.i.d. draw (an i.i.d. sample would put ~half
+the draws inside p25–p75). So the LLM **does not distinguish "sample from my distribution" from
+"enumerate my distribution"** — it always grids. Self-anchored, the grid spans a too-_narrow_ range →
+thin tails; with committed percentiles, the grid spans the _correct_ range → ~uniform-over-range →
+over-dispersed. Its **stated quantiles are well-calibrated; its freehand sampling is unusable in both
+directions.**
+
+**Consequence for the deployable kernel:** never ask the model to draw. Have the model **state
+quantiles** (which it does well) and do the inverse-transform sampling **ourselves**. For the joint,
+that is **autoregressive conditional quantiles** — model states `p(xₖ | x₁..xₖ₋₁)` quantiles, we
+inverse-transform draw and feed back — keeping one unified process (the conditional-quantile chain is
+both scored and sampled) while sidestepping the model's broken freehand sampling. (`kernel_iid.py`,
+`kernel_joint.py`, `backtest_iid.py`, `backtest_joint.py`; results in `results/backtest_iid.json`,
+`results/backtest_joint.json`.)
 
 ## Calibration backtest — the rigorous validation
 
