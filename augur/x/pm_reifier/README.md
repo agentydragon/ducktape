@@ -1,4 +1,4 @@
-# PM-reifier spike: is an LLM a viable _base measure_?
+# PM-reifier spike: can an LLM emit augur-shaped trajectories as a _base measure_?
 
 Throwaway experiment for `augur/plans/interpolating_prediction_markets.md`. **Not production
 code** — it lives in `x/` and is not Bazel-built.
@@ -7,71 +7,85 @@ code** — it lives in `x/` and is not Bazel-built.
 
 The plan reifies prediction-market _marginals_ into a sampleable _joint_ over trajectories by
 min-KL projection from a **base measure `Q`**. `Q` can be our structured models or an LLM. This
-spike asks: **can an LLM be `Q`** — emit a diverse cloud of typed numeric scenarios that, after
-**one max-ent reweight to the market prices**, match those prices _without the effective sample
-size collapsing_? (Collapsing ESS = the LLM never proposed worlds in the market-implied region, so
-reweighting is fiction.)
+spike asks: **can an LLM be `Q`** — emit a diverse cloud of trajectories _in augur's native shape_
+that, after **one max-ent reweight to the market prices**, match those prices _without the
+effective sample size collapsing_? (Collapsing ESS = the LLM never proposed worlds in the
+market-implied region, so reweighting is fiction.)
+
+## augur's native trajectory shape
+
+augur's macro model (`augur/model/state_space.py`) emits a **dense monthly level path per factor**,
+shape `(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index),
+`sp500`, `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. So the
+LLM is asked for exactly that: **dense monthly paths** over those series (no annual knots, no
+post-hoc interpolation — month resolution end to end) plus one PE issuer (OpenAI: monthly valuation
+path + IPO month). Market thresholds are evaluated at specific **month indices** on the dense paths.
 
 ## What it does (`run_spike.py`)
 
-- prompts GLM-4.6 (z.ai coding endpoint, `thinking` disabled) for `8 × 10 = 80` scenarios, each a
-  JSON object with year-end knots (2026–2032) for `sp500`, `btc`, OpenAI valuation, plus an OpenAI
-  `ipo_month_index`. A deterministic interpolator would fill monthly; these markets only need the
-  knots, so none is needed here.
+- `pick_model()` probes a **cheapness-ordered** candidate list (free GLM-4.7-Flash / 4.5-Flash on the
+  general endpoint first, then GLM-4.7-FlashX `$0.07/$0.40`, then coding-plan models) and uses the
+  first that answers. The coding-plan key reaches the free general endpoint, so the run is **$0**.
+- prompts the picked model (`thinking` disabled, `json_object`) for `4 × 4 = 16` scenarios per
+  variant, each a dense monthly trajectory (horizon 57 months, 2026-06 → 2031-03 — just past the
+  furthest market).
 - two variants: **unconditioned** (the LLM's own world-prior — the real base-measure test) and
-  **conditioned** (the market prices are shown — an upper bound on calibration).
-- computes each market's model probability = fraction of scenarios satisfying it, then **reweights**
-  the empirical sample (`w_i ∝ exp(Σ λ_m·indicator)`, ridge-softened so incoherent targets degrade
-  gracefully) so the reweighted marginals match the crowd prices; reports **ESS = 1/Σwᵢ²**.
+  **conditioned** (the crowd prices are shown — an upper bound on calibration).
+- computes each market's model probability = fraction of scenarios satisfying it, **reweights** the
+  empirical sample (`w_i ∝ exp(Σ λ_m·indicator)`, ridge-softened) to match the crowd prices, and
+  reports **ESS = 1/Σwᵢ²**, **length discipline** (how many paths hit the exact horizon), and
+  month-to-month **smoothness**.
 - logs every request+response to `transcripts/`, scenarios + summary to `results/`, and the z.ai
   weekly-quota delta.
 
 Run: `python3 augur/x/pm_reifier/run_spike.py` (key from `$ZAI_API_KEY` or `/tmp/zai_key`, mirrored
 from the `claude-sandbox` `zai-api-key` secret). Market prices here are **illustrative** plausible
-values (a coherent monotone ladder), not pulled live.
+values, not pulled live.
 
-## Findings (2026-06-04, GLM-4.6, 160 scenarios)
+## Findings (2026-06-04, free GLM-4.7-Flash, dense monthly, 32 scenarios)
 
-**Feasibility: yes.** The LLM is a viable base measure.
+**Local form is good; the blockers are length discipline and sample size.**
 
-- **100% valid** typed-numeric JSON (80/80 each variant) — structured output is reliable.
-- **ESS does not collapse**: unconditioned **57%**, conditioned **76%** of the sample after
-  reweighting — the cloud genuinely covers the market-implied regions.
-- after reweighting, all 8 markets land on the crowd prices (units-corrected):
+| metric                                | unconditioned | conditioned |
+| ------------------------------------- | ------------: | ----------: |
+| valid scenarios                       |    **6 / 16** | **10 / 16** |
+| paths at exact length (of 80)         |         **1** |      **11** |
+| path length min / median (exp 58)     |       54 / 60 |     53 / 56 |
+| mean / p95 max monthly \|log-return\| |   0.06 / 0.12 | 0.17 / 0.40 |
+| ESS (of valid)                        |     3.5 (59%) |   3.9 (39%) |
 
-  | market             | price | raw (uncond.) | reweighted |
-  | ------------------ | ----: | ------------: | ---------: |
-  | sp500>6000@2027    |  0.55 |          0.29 |       0.47 |
-  | sp500>8000@2030    |  0.45 |          0.24 |       0.41 |
-  | sp500>10000@2032   |  0.38 |          0.20 |       0.38 |
-  | btc>150k@2027      |  0.50 |          0.23 |       0.42 |
-  | btc>500k@2030      |  0.30 |          0.09 |       0.25 |
-  | openai_ipo<=2027   |  0.30 |          0.41 |       0.43 |
-  | openai_ipo<=2029   |  0.65 |          0.64 |       0.65 |
-  | openai_val>1T@2030 |  0.55 |          0.60 |       0.60 |
-
-- **conditioning helps**: shown the prices, the LLM self-calibrates — raw marginals move much closer
-  to target (e.g. sp500>6000 0.29 → 0.42), so less tilt is needed and ESS rises (57% → 76%).
-
-**Cost: negligible.** 160 scenarios = **50,147 tokens**, and the z.ai **weekly** quota moved
-`2% → 2%` (**0 pp**). `thinking: disabled` is essential (it zeroed ~500 reasoning tokens/call seen
-with thinking on). A production-scale run (thousands of scenarios over the full catalog) is trivially
-affordable.
-
-### Two real caveats the spike surfaced
-
-1. **Numeric units discipline.** GLM emitted OpenAI valuations in **trillions** despite an "in USD"
-   schema (values like `12.5` = $12.5T) — initially read as `0.00` against a `1e12` threshold. The
-   numbers themselves are sane; the model just chose natural units. A production reifier must pin
-   units per field (or accept a units field) and range-validate before it feeds `sim`.
-2. **Conservative-upside bias.** The LLM's _raw_ marginals sit systematically **below** the crowd on
-   equity/crypto upside (it under-weights boom tails even when told to include them). Reweighting
-   corrects the marginals, but a biased base costs ESS; conditioning on the prices mitigates it.
+- **Length discipline is the dominant failure.** The model will _not_ count array entries: only
+  **1/80** (unconditioned) and **11/80** (conditioned) arrays hit the requested 58 entries; lengths
+  scatter from 53 to 60+ across the 6 series _within a single scenario_. Any scenario with one path
+  too short to reach the furthest market month is dropped — that alone discards **~⅔** of the sample.
+- **Paths are locally well-formed.** When valid, month-to-month moves are smooth (mean max monthly
+  \|log-return\| ~6% unconditioned) with sane cross-asset co-movement — no teleporting. Conditioning
+  on crowd prices makes paths **jumpier** (0.06 → 0.17 mean, p95 0.40) as the model forces tail
+  outcomes to hit the probabilities.
+- **Reweighting is directionally right but sample-starved.** Raw marginals pull toward the targets
+  after the tilt (e.g. `sp500>6000` 0.67 → 0.53 against a 0.55 target). But with only 6–10 valid
+  scenarios the indicator columns of correlated markets become **collinear**, so paired markets
+  collapse to a shared value the reweight can't separate — `sp500>6000@2027` and `>7500@2030` both
+  land at 0.53/0.56, the BTC pair both at 0.43. The binding constraint is **too few valid scenarios
+  to satisfy 9 marginals independently**, not ESS geometry.
+- **Cost: negligible.** 32 scenarios = **64,682 tokens**, all on the **free** tier; z.ai weekly quota
+  `2% → 2%` (**0 pp**). `thinking: disabled` zeroes reasoning tokens. Dense paths are token-heavy
+  (~8k tokens / 90–170 s per 4-scenario call), but free.
 
 ### Read
 
-So an LLM looks like a usable base measure for the macro/level/IPO markets: rich coupling, reliable
-typed output, cheap, and it covers the right regions. The hybrid in the plan — **LLM proposes the
-coupling, a reweight layer enforces the marginals** — is supported by this run. Next would be: real
-catalog prices, a bigger `K`, monthly interpolation for date-specific markets, and a
-structured-`Q` baseline to compare ESS/coverage against.
+Dense raw-path emission lands in augur's representation and is _locally_ faithful (smooth, coherent),
+but two things make it impractical as-is:
+
+1. **No length discipline** — the model can't reliably emit fixed-length arrays, silently shredding
+   the usable sample. A real pipeline would need to **repair/resample lengths** (truncate/pad/interp
+   to the grid) before anything downstream, or stop asking the LLM to count.
+2. **Sample economics** — independently matching `K` marginals needs many more valid scenarios than
+   dense emission cheaply yields (~⅔ wasted to (1), ~8k tokens each).
+
+Both point the same way: have the LLM emit something **augur can densify deterministically** rather
+than raw monthly arrays — i.e. a regime-segmented monthly **drift/vol/correlation** schedule
+(`monthly_log_return_mu` / `_cov`, augur's own generative primitive), expanded to dense paths by the
+state-space roller. That removes the counting problem entirely and makes each scenario cheap. Next
+run: **monthly knots done that way**, more scenarios, real catalog prices, and a structured-`Q`
+baseline to compare ESS/coverage against.

@@ -1,6 +1,8 @@
 {
-  "model": "glm-4.6",
-  "total_tokens": 50147,
+  "model": "glm-4.7-flash",
+  "endpoint": "general",
+  "horizon_months": 57,
+  "total_tokens": 64682,
   "quota_before": {
     "short_5h_pct": 5,
     "weekly_7d_pct": 2
@@ -13,115 +15,141 @@
   "reports": [
     {
       "variant": "unconditioned",
-      "scenarios_returned": 80,
-      "scenarios_valid": 80,
-      "ess": 46.11164170733289,
-      "ess_frac": 0.5763955213416612,
+      "scenarios_returned": 16,
+      "scenarios_valid": 6,
+      "ess": 3.536950982323805,
+      "ess_frac": 0.5894918303873008,
+      "horizon_months_expected": 58,
+      "paths_total": 80,
+      "paths_full_length": 1,
+      "path_len_min": 54,
+      "path_len_median": 60,
+      "max_monthly_log_jump_mean": 0.0584291347066258,
+      "max_monthly_log_jump_p95": 0.12136085700426753,
       "markets": [
         {
-          "id": "sp500>6000@2027",
+          "id": "sp500>6000@2027-12",
           "price": 0.55,
-          "raw": 0.287,
-          "reweighted": 0.479
+          "raw": 0.667,
+          "reweighted": 0.53
         },
         {
-          "id": "sp500>8000@2030",
-          "price": 0.45,
-          "raw": 0.237,
-          "reweighted": 0.414
+          "id": "sp500>7500@2030-12",
+          "price": 0.42,
+          "raw": 0.667,
+          "reweighted": 0.53
         },
         {
-          "id": "sp500>10000@2032",
-          "price": 0.38,
-          "raw": 0.2,
-          "reweighted": 0.384
-        },
-        {
-          "id": "btc>150k@2027",
+          "id": "btc>150k@2027-12",
           "price": 0.5,
-          "raw": 0.225,
-          "reweighted": 0.429
+          "raw": 0.333,
+          "reweighted": 0.433
         },
         {
-          "id": "btc>500k@2030",
-          "price": 0.3,
-          "raw": 0.087,
-          "reweighted": 0.254
+          "id": "btc>300k@2030-12",
+          "price": 0.32,
+          "raw": 0.333,
+          "reweighted": 0.433
         },
         {
-          "id": "openai_ipo<=2027",
-          "price": 0.3,
-          "raw": 0.412,
-          "reweighted": 0.429
-        },
-        {
-          "id": "openai_ipo<=2029",
-          "price": 0.65,
-          "raw": 0.637,
-          "reweighted": 0.669
-        },
-        {
-          "id": "openai_val>1T@2030",
-          "price": 0.55,
+          "id": "cpi>110@2029-12",
+          "price": 0.6,
           "raw": 0.0,
           "reweighted": 0.0
+        },
+        {
+          "id": "sfhome>115@2030-12",
+          "price": 0.45,
+          "raw": 0.5,
+          "reweighted": 0.492
+        },
+        {
+          "id": "sfrent>112@2029-12",
+          "price": 0.55,
+          "raw": 0.167,
+          "reweighted": 0.409
+        },
+        {
+          "id": "openai_ipo<=2029-12",
+          "price": 0.55,
+          "raw": 0.5,
+          "reweighted": 0.492
+        },
+        {
+          "id": "openai_val>2T@2030-12",
+          "price": 0.5,
+          "raw": 0.5,
+          "reweighted": 0.492
         }
       ]
     },
     {
       "variant": "conditioned",
-      "scenarios_returned": 80,
-      "scenarios_valid": 80,
-      "ess": 67.35143486022642,
-      "ess_frac": 0.8418929357528302,
+      "scenarios_returned": 16,
+      "scenarios_valid": 10,
+      "ess": 3.8935466390361078,
+      "ess_frac": 0.3893546639036108,
+      "horizon_months_expected": 58,
+      "paths_total": 80,
+      "paths_full_length": 11,
+      "path_len_min": 53,
+      "path_len_median": 56,
+      "max_monthly_log_jump_mean": 0.16707589640726792,
+      "max_monthly_log_jump_p95": 0.40546510810816444,
       "markets": [
         {
-          "id": "sp500>6000@2027",
+          "id": "sp500>6000@2027-12",
           "price": 0.55,
-          "raw": 0.425,
-          "reweighted": 0.513
+          "raw": 0.7,
+          "reweighted": 0.557
         },
         {
-          "id": "sp500>8000@2030",
-          "price": 0.45,
-          "raw": 0.4,
-          "reweighted": 0.452
+          "id": "sp500>7500@2030-12",
+          "price": 0.42,
+          "raw": 0.7,
+          "reweighted": 0.557
         },
         {
-          "id": "sp500>10000@2032",
-          "price": 0.38,
-          "raw": 0.362,
-          "reweighted": 0.405
-        },
-        {
-          "id": "btc>150k@2027",
+          "id": "btc>150k@2027-12",
           "price": 0.5,
-          "raw": 0.35,
-          "reweighted": 0.472
+          "raw": 0.2,
+          "reweighted": 0.428
         },
         {
-          "id": "btc>500k@2030",
-          "price": 0.3,
-          "raw": 0.163,
-          "reweighted": 0.269
+          "id": "btc>300k@2030-12",
+          "price": 0.32,
+          "raw": 0.2,
+          "reweighted": 0.428
         },
         {
-          "id": "openai_ipo<=2027",
-          "price": 0.3,
-          "raw": 0.325,
-          "reweighted": 0.335
+          "id": "cpi>110@2029-12",
+          "price": 0.6,
+          "raw": 0.2,
+          "reweighted": 0.447
         },
         {
-          "id": "openai_ipo<=2029",
-          "price": 0.65,
-          "raw": 0.613,
-          "reweighted": 0.659
+          "id": "sfhome>115@2030-12",
+          "price": 0.45,
+          "raw": 0.7,
+          "reweighted": 0.541
         },
         {
-          "id": "openai_val>1T@2030",
+          "id": "sfrent>112@2029-12",
           "price": 0.55,
-          "raw": 0.0,
-          "reweighted": 0.0
+          "raw": 0.5,
+          "reweighted": 0.47
+        },
+        {
+          "id": "openai_ipo<=2029-12",
+          "price": 0.55,
+          "raw": 0.4,
+          "reweighted": 0.501
+        },
+        {
+          "id": "openai_val>2T@2030-12",
+          "price": 0.5,
+          "raw": 0.3,
+          "reweighted": 0.476
         }
       ]
     }
