@@ -22,15 +22,16 @@ are evaluated at specific month indices on the paths.
 
 ## Components
 
-| file                  | what                                                                         |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `run_spike.py`        | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
-| `run_windowed.py`     | conversational rollout — advance 12 months/turn, real history, OpenAI events |
-| `kernel.py`           | the shared per-step transition kernel: N weighted joint next-month options   |
-| `backtest.py`         | teacher-forced one-step calibration backtest (PIT scoring)                   |
-| `backtest_rolling.py` | rolling-origin, multi-horizon free-running calibration                       |
-| `openai_history.json` | OpenAI's **public** funding-round/tender history (private marks excluded)    |
-| `plot_*.py`           | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
+| file                     | what                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `run_spike.py`           | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
+| `run_windowed.py`        | conversational rollout — advance 12 months/turn, real history, OpenAI events |
+| `kernel.py`              | the shared per-step transition kernel: N weighted joint next-month options   |
+| `backtest.py`            | teacher-forced one-step calibration backtest (PIT scoring)                   |
+| `backtest_rolling.py`    | rolling-origin, multi-horizon free-running calibration                       |
+| `backtest_statespace.py` | structured state-space baseline on the same window (analytic PIT, no API)    |
+| `openai_history.json`    | OpenAI's **public** funding-round/tender history (private marks excluded)    |
+| `plot_*.py`              | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
 Macro history is fetched by **`//augur/data:fetch_real_history`** (Yahoo for sp500/BTC, FRED for
 CPI/home/rent; date-ranged) — promoted out of `x/` into the curated `augur/data` directory.
@@ -141,6 +142,32 @@ with horizon? **No** — the two failures behave differently:
 (Caveats: M=8 ensemble, n≈20/horizon, correlated origins/series → the flat ~0.70 mean is the robust
 signal, the tail trend suggestive.)
 
+**Structured-model baseline (`backtest_statespace.py` + `plot_compare.py`).** Is the LLM's
+miscalibration actually _bad_? Score augur's structured `Q` on the **exact same window**: the
+state-space model is a joint monthly log-return Gaussian, so its one-step marginal for series _s_ is
+`N(μ_s, σ_s²)` and the analytic PIT is `Φ((log(realized/last) − μ_s)/σ_s)` — pure local compute, no
+API. To stay apples-to-apples we fit `μ_s, σ_s` on the **identical trailing 24-month window** the LLM
+kernel saw each step (`//augur/x/pm_reifier:backtest_statespace`, runs on RBE). Both through the same
+scorecard:
+
+| metric (pooled, n=100)       |           LLM kernel (glm-4.5) |    state-space (log-ret Gaussian) |
+| ---------------------------- | -----------------------------: | --------------------------------: |
+| mean PIT [block-boot 95% CI] | **0.62 [0.50, 0.75]** (H0 out) |    **0.40 [0.32, 0.48]** (H0 out) |
+| tail-escape [CI]             | **0.31 [0.23, 0.42]** (H0 out) | **0.23 [0.11, 0.36]** (H0 **in**) |
+| JSD-to-uniform               |                     0.052 bits |                        0.056 bits |
+| verdict                      |       MISCALIBRATED (two axes) |     MISCALIBRATED (**bias only**) |
+
+Both are biased, but in **opposite directions**: the LLM **under-predicted** the 2024–26 bull run
+(PIT piled high), while the trailing-window state-space model **over-predicted** (PIT piled low — it
+extrapolated the recent momentum, steepest on `rent:sf_ca`, which then decelerated). The decisive
+split is **dispersion**: the LLM is significantly **thin-tailed** (tail-escape CI excludes the 0.20
+null), whereas the state-space tails are **calibrated** (CI includes 0.20). So on this window the
+mechanistic baseline is the **better-calibrated** model — it fails on _one_ axis (a de-biasable
+location shift) where the LLM fails on _two_, and crucially it wins on exactly the property `Q` most
+needs: **coverage/dispersion**. The LLM's edge would have to come from _skill_ (sharper conditional
+means / regime awareness), not from honest uncertainty — and here it didn't show. (Same n≈20-effective
+caveat; the bias directions and the tail-escape split are the robust signals.)
+
 ## Validation methodology & next steps
 
 We are scoring a **distribution**, so the metrics are distributional (PIT/rank histograms, CRPS,
@@ -162,9 +189,9 @@ Next, in priority order:
 
 1. **Force coverage** — the binding blocker (temperature / price-conditioning / random-percentile /
    `BATCH_SIZE>1`), measured by whether the all-zero upside markets come alive.
-2. **More anchors (rolling origin) + the structured-`Q` baseline** on the same scorecard — tighten the
-   borderline calibration CIs and get the apples-to-apples "is the LLM better or worse than the
-   mechanistic model" number.
+2. **More anchors (rolling origin)** to tighten the borderline CIs. The structured-`Q` baseline on the
+   same scorecard is **done** (above): on this window the state-space model is better-calibrated (one
+   failure axis vs two; calibrated tails) — so the LLM's value has to come from skill, not dispersion.
 3. **Wire the kernel into the forward reify path** (the backtest uses it; the reify path still uses the
    windowed rollout), with the **compact handoff** (carry only last levels + a regime note) to cut the
    stateful input tokens.
