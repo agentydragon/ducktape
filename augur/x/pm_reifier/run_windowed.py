@@ -19,6 +19,7 @@ Reuses the reweight/_path harness from run_spike. Run: python3 augur/x/pm_reifie
 
 from __future__ import annotations
 
+import datetime
 import json
 import math
 import time
@@ -52,6 +53,7 @@ TEMPERATURE = 1.0  # 1.0 is accepted across GLM models; some free models 400 on 
 HISTORY: dict[str, list[float]] = REAL["series"]  # real recent tail per macro series (oldest first, last = now)
 HISTORY_MONTHS = len(next(iter(HISTORY.values())))
 ANCHOR0 = {s: HISTORY[s][-1] for s in LEVEL_SERIES}  # month-0 levels = last real point
+CURRENT_MONTH = datetime.date.fromisoformat(f"{REAL['as_of']}-01").strftime("%B %Y")  # e.g. "June 2026" (month 0)
 ANCHOR_VAL_B = OPENAI["anchor_valuation_usd_b"]  # OpenAI post-money valuation at month 0 ($B)
 OAI_KINDS = {"primary_round", "secondary_tender", "ipo", "collapse"}
 
@@ -92,7 +94,8 @@ SYSTEM = (
     "Separately, OpenAI is a private company whose value moves in discrete EVENTS, not a smooth path: "
     "primary_round (new funding), secondary_tender (employees/early holders sell at a set valuation), "
     "ipo (goes public), or collapse. You are given a real recent macro history and OpenAI's public "
-    "funding history; continue the world FORWARD from month 0 (= now), carrying recent momentum and "
+    f"funding history; continue the world FORWARD from month 0 (now = {CURRENT_MONTH}; month index m is m "
+    "months after that, so month 12 is one year out), carrying recent momentum and "
     "volatility. Each reply is ONLY a JSON object: "
     '{"regime": short note on the regime and what is coming, '
     '"months": {macro_series: [k numbers], ...}, '
@@ -125,7 +128,7 @@ def _user_turn(
             "Simulate a DIFFERENT world from month 0, qualitatively distinct from the previous one(s) in "
             "this conversation (different regime, different tails)."
             if distinct
-            else "Begin a new world at month 0."
+            else f"Begin a new world at month 0 (now = {CURRENT_MONTH})."
         )
         return (
             f"{head}\nReal recent {HISTORY_MONTHS}-month macro history per series (oldest first; last = month 0 = now):\n"
