@@ -225,8 +225,9 @@ while keeping the long arc via the regime note, plus prompt-caching the shared p
 We are scoring a **distribution** (a base measure), not a point forecast, so metrics are
 distributional and every comparison is **relative** — LLM vs the structured state-space `Q` vs the
 crowd — on the same anchor + markets: Brier / log-loss + reliability diagram for binary markets; CRPS
-+ PIT/rank histograms for continuous series; explicit **tail coverage** (we already see upside
-under-coverage, so extremes will realize _more_ often than the model implies).
+
+- PIT/rank histograms for continuous series; explicit **tail coverage** (we already see upside
+  under-coverage, so extremes will realize _more_ often than the model implies).
 
 **The leakage problem (why a naive cutoff backtest fails).** An LLM's knowledge cutoff is fuzzy and
 leaky — models routinely know post-cutoff events, so "anchor at its cutoff, predict to today" can be
