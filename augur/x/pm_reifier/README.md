@@ -35,8 +35,8 @@ path + IPO month). Market thresholds are evaluated at specific **month indices**
   empirical sample (`w_i ∝ exp(Σ λ_m·indicator)`, ridge-softened) to match the crowd prices, and
   reports **ESS = 1/Σwᵢ²**, **length discipline** (how many paths hit the exact horizon), and
   month-to-month **smoothness**.
-- logs every request+response to `transcripts/`, scenarios + summary to `results/`, and the z.ai
-  weekly-quota delta.
+- logs every request+response to `transcripts/` (git-ignored, local only), and scenarios + summary +
+  the z.ai weekly-quota delta to `results/`.
 
 Run: `python3 augur/x/pm_reifier/run_spike.py` (key from `$ZAI_API_KEY` or `/tmp/zai_key`, mirrored
 from the `claude-sandbox` `zai-api-key` secret). Market prices here are **illustrative** plausible
