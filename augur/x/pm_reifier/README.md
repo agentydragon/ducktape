@@ -1,423 +1,174 @@
-# PM-reifier spike: can an LLM emit augur-shaped trajectories as a _base measure_?
+# PM-reifier spike: can an LLM be a base measure `Q` for augur?
 
-Throwaway experiment for `augur/plans/interpolating_prediction_markets.md`. **Not production
-code** — it lives in `x/` and is not Bazel-built.
+Throwaway experiment for `augur/plans/interpolating_prediction_markets.md` (design PRs #1903 / #1904).
+**Not production code** — lives in `x/`, not Bazel-built.
 
 ## The question
 
-The plan reifies prediction-market _marginals_ into a sampleable _joint_ over trajectories by
-min-KL projection from a **base measure `Q`**. `Q` can be our structured models or an LLM. This
+The plan reifies prediction-market _marginals_ into a sampleable _joint_ over trajectories by min-KL
+projection from a **base measure `Q`**. `Q` can be our structured state-space model or an LLM. This
 spike asks: **can an LLM be `Q`** — emit a diverse cloud of trajectories _in augur's native shape_
-that, after **one max-ent reweight to the market prices**, match those prices _without the
-effective sample size collapsing_? (Collapsing ESS = the LLM never proposed worlds in the
-market-implied region, so reweighting is fiction.)
+that, after **one max-ent reweight to the market prices**, match the crowd _without the effective
+sample size collapsing_? (Collapsed ESS ⇒ the LLM never proposed worlds in the market-implied region,
+so the reweight is fiction.)
 
 ## augur's native trajectory shape
 
-augur's macro model (`augur/model/state_space.py`) emits a **dense monthly level path per factor**,
-shape `(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index),
-`sp500`, `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. So the
-LLM is asked for exactly that: **dense monthly paths** over those series (no annual knots, no
-post-hoc interpolation — month resolution end to end) plus one PE issuer (OpenAI: monthly valuation
-path + IPO month). Market thresholds are evaluated at specific **month indices** on the dense paths.
+The macro model (`augur/model/state_space.py`) emits a **dense monthly level path per factor**, shape
+`(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index), `sp500`,
+`crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. The LLM is asked for
+exactly that — dense monthly paths over those series — plus the OpenAI PE issuer. Market thresholds
+are evaluated at specific month indices on the paths.
 
-## What it does (`run_spike.py`)
+## Components
 
-- `pick_model()` probes a **cheapness-ordered** candidate list (free GLM-4.7-Flash / 4.5-Flash on the
-  general endpoint first, then GLM-4.7-FlashX `$0.07/$0.40`, then coding-plan models) and uses the
-  first that answers. The coding-plan key reaches the free general endpoint, so the run is **$0**.
-- prompts the picked model (`thinking` disabled, `json_object`) for `4 × 4 = 16` scenarios per
-  variant, each a dense monthly trajectory (horizon 57 months, 2026-06 → 2031-03 — just past the
-  furthest market).
-- two variants: **unconditioned** (the LLM's own world-prior — the real base-measure test) and
-  **conditioned** (the crowd prices are shown — an upper bound on calibration).
-- computes each market's model probability = fraction of scenarios satisfying it, **reweights** the
-  empirical sample (`w_i ∝ exp(Σ λ_m·indicator)`, ridge-softened) to match the crowd prices, and
-  reports **ESS = 1/Σwᵢ²**, **length discipline** (how many paths hit the exact horizon), and
-  month-to-month **smoothness**.
-- logs every request+response to `transcripts/` (git-ignored, local only), and scenarios + summary +
-  the z.ai weekly-quota delta to `results/`.
+| file                    | what                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `run_spike.py`          | one-shot: ask for N dense monthly scenarios in one call, reweight to markets |
+| `run_windowed.py`       | conversational rollout — advance 12 months/turn, real history, OpenAI events |
+| `kernel.py`             | the shared per-step transition kernel: N weighted joint next-month options   |
+| `backtest.py`           | teacher-forced one-step calibration backtest (PIT scoring)                   |
+| `backtest_rolling.py`   | rolling-origin, multi-horizon free-running calibration                       |
+| `fetch_real_history.py` | real macro series from Yahoo (sp500/BTC) + FRED (CPI/home/rent), date-ranged |
+| `openai_history.json`   | OpenAI's **public** funding-round/tender history (private marks excluded)    |
+| `cache_probe.py`        | measures z.ai prompt-cache granularity                                       |
+| `plot_*.py`             | rollout fan plot + calibration histograms / horizon plots → `results/*.png`  |
 
-Run: `python3 augur/x/pm_reifier/run_spike.py` (key from `$ZAI_API_KEY` or `/tmp/zai_key`, mirrored
-from the `claude-sandbox` `zai-api-key` secret). Market prices here are **illustrative** plausible
-values, not pulled live.
+`results/` holds summaries, plots, and `quota_log.jsonl` (per-run token + z.ai-quota burn).
+`transcripts/` (every request/response) is **git-ignored** — written locally, not committed.
+Operational z.ai behavior (caching, rate-limit tiers, param quirks, quota API) lives in
+`docs/z_ai_api.md`. Market prices in the reify runs are **illustrative**, not pulled live.
 
-## Findings (2026-06-04, free GLM-4.7-Flash, dense monthly, 32 scenarios)
+## What we learned
 
-**Local form is good; the blockers are length discipline and sample size.**
+### 1. Reify works, but raw dense emission doesn't
 
-| metric                                | unconditioned | conditioned |
-| ------------------------------------- | ------------: | ----------: |
-| valid scenarios                       |    **6 / 16** | **10 / 16** |
-| paths at exact length (of 80)         |         **1** |      **11** |
-| path length min / median (exp 58)     |       54 / 60 |     53 / 56 |
-| mean / p95 max monthly \|log-return\| |   0.06 / 0.12 | 0.17 / 0.40 |
-| ESS (of valid)                        |     3.5 (59%) |   3.9 (39%) |
+An LLM _is_ a viable base measure: across runs the markets reweight onto the crowd prices and ESS
+holds (the cloud covers the market-implied regions). But asking for whole dense arrays in one shot
+fails on **length discipline** — the model won't reliably count to the horizon (only **1–11 of 80**
+arrays hit the requested length; lengths scatter 53–60+ _within_ one scenario), which silently drops
+~⅔ of scenarios and leaves the reweight **sample-starved** (paired correlated markets go collinear and
+can't separate). Paths are locally well-formed (smooth, sane cross-asset co-movement) — the problem is
+structural, not local.
 
-- **Length discipline is the dominant failure.** The model will _not_ count array entries: only
-  **1/80** (unconditioned) and **11/80** (conditioned) arrays hit the requested 58 entries; lengths
-  scatter from 53 to 60+ across the 6 series _within a single scenario_. Any scenario with one path
-  too short to reach the furthest market month is dropped — that alone discards **~⅔** of the sample.
-- **Paths are locally well-formed.** When valid, month-to-month moves are smooth (mean max monthly
-  \|log-return\| ~6% unconditioned) with sane cross-asset co-movement — no teleporting. Conditioning
-  on crowd prices makes paths **jumpier** (0.06 → 0.17 mean, p95 0.40) as the model forces tail
-  outcomes to hit the probabilities.
-- **Reweighting is directionally right but sample-starved.** Raw marginals pull toward the targets
-  after the tilt (e.g. `sp500>6000` 0.67 → 0.53 against a 0.55 target). But with only 6–10 valid
-  scenarios the indicator columns of correlated markets become **collinear**, so paired markets
-  collapse to a shared value the reweight can't separate — `sp500>6000@2027` and `>7500@2030` both
-  land at 0.53/0.56, the BTC pair both at 0.43. The binding constraint is **too few valid scenarios
-  to satisfy 9 marginals independently**, not ESS geometry.
-- **Cost: negligible.** 32 scenarios = **64,682 tokens**, all on the **free** tier; z.ai weekly quota
-  `2% → 2%` (**0 pp**). `thinking: disabled` zeroes reasoning tokens. Dense paths are token-heavy
-  (~8k tokens / 90–170 s per 4-scenario call), but free.
+### 2. Windowing → the per-step kernel (the emission architecture)
 
-### Read
+**Windowed** (`run_windowed.py`): advance 12 months per conversational turn and concatenate, so _we_
+enforce the horizon length (retry a miscounted window). Length discipline solved — **75/75 full-length
+paths**, nothing dropped, only ~2 retries / 79 windows. The cost moves to **input tokens**: the
+stateful thread re-reads the growing history (~6.5k → ~270k with a 5-yr context), which z.ai's
+within-message prefix caching makes cheap (`cache_probe.py`).
 
-Dense raw-path emission lands in augur's representation and is _locally_ faithful (smooth, coherent),
-but two things make it impractical as-is:
+**Per-step kernel** (`kernel.py`, the current architecture): the LLM as an explicit stochastic
+transition kernel `p(x_{t+1}|x_{≤t})`. At each step it returns **N weighted _joint_ options** for the
+next month — each option a full cross-section over all series (cross-series dependence captured _within
+each draw_, not stitched from marginals), plus any sparse OpenAI events. You draw one and append to a
+compact history rebuilt into the first message (≤3 messages). Why per-step: enumeration ("list diverse
+possibilities") beats implicit sampling (which collapses to the mode); LLM-proposes/you-draw kills the
+bad-RNG failure; per-step branching compounds into diverse paths; and it's scorable per step (→ the
+backtest below). No explicit latent state — the LLM re-infers regime/vol from history each step, which
+_marginalizes_ over latent uncertainty (more honest spread than conditioning on one latent draw).
 
-1. **No length discipline** — the model can't reliably emit fixed-length arrays, silently shredding
-   the usable sample. A real pipeline would need to **repair/resample lengths** (truncate/pad/interp
-   to the grid) before anything downstream, or stop asking the LLM to count.
-2. **Sample economics** — independently matching `K` marginals needs many more valid scenarios than
-   dense emission cheaply yields (~⅔ wasted to (1), ~8k tokens each).
+### 3. The recurring failure: conservatism / under-dispersion (coverage, not calibration)
 
-Both point the same way: have the LLM emit something **augur can densify deterministically** rather
-than raw monthly arrays — i.e. a regime-segmented monthly **drift/vol/correlation** schedule
-(`monthly_log_return_mu` / `_cov`, augur's own generative primitive), expanded to dense paths by the
-state-space roller. That removes the counting problem entirely and makes each scenario cheap. Next
-run: **monthly knots done that way**, more scenarios, real catalog prices, and a structured-`Q`
-baseline to compare ESS/coverage against.
+The min-KL reweight is a **one-way valve** — it re-weights worlds the LLM proposed, it can't invent
+new ones (`support(P) ⊆ support(Q)`). So the binding constraint is **coverage**: where the LLM puts
+_zero_ mass on a market's region, the indicator column is all-zeros and **no reweight can lift it**
+(the concrete form of "ESS collapse = fiction"). Every run hits this on the upside tails. A sharp
+corollary: a **"smarter" model is a worse base measure** — paid `glm-4.7` hugs the median (zero of 16
+worlds cross BTC>150k or CPI>110), while the sloppier `glm-4.5-flash` covered more. **You want
+dispersion/coverage, not calibration** in `Q`; the reweight supplies the calibration. Levers to force
+coverage: higher temperature, conditioning on the prices, a `BATCH_SIZE>1` distinct-worlds knob, or
+the random-percentile representation below.
 
-## Windowed variant (`run_windowed.py`): conversational rollout
+### 4. Grounding: real data + OpenAI as events
 
-Same markets + reweight harness, but each world is a **conversation** advancing `W = 12` months per
-turn; we concatenate fixed-size windows, so the horizon length is enforced by **us** (retry a window
-that miscounts) rather than begged from the model. Each world is its own conversation (an independent
-draw; `BATCH_SIZE > 1` rolls deliberately-distinct worlds per thread as a coverage knob), run in
-parallel with 429/timeout backoff. The opening prompt seeds a **12-month recent-history tail** per
-series (`HISTORY`) so worlds start from real levels and carry recent momentum/volatility forward — in
-real augur usage this is the as-of series tail from augur's data store (and anchoring as-of a past
-date is what enables rolling-origin backtests). The tail here is illustrative.
+Seeding worlds with **real** recent macro tails (`fetch_real_history.py`) anchors them on actual levels
+and momentum; extending the tail 1 yr → 5 yr (so the model sees BTC's full 2021–26 boom/crash cycle)
+**modestly widens coverage** (e.g. `cpi>108` 0.73→0.94, `sfhome>110` 0.13→0.38, S&P/BTC upside off
+exactly-zero) but doesn't fix the extreme tails. **OpenAI is modelled as augur's PE issuer is** —
+discrete events (`primary_round`/`secondary_tender`/`ipo`/`collapse` with a post-money valuation), not
+a smooth path — fed its **public** funding history. That's the right shape: the tender-by / ipo-by /
+valuation markets reweight cleanly.
 
-### Findings (2026-06-05, free GLM-4.5-Flash, 15 worlds, 60-month horizon, 12-month windows)
-
-| metric                          | one-shot dense |             windowed |
-| ------------------------------- | -------------: | -------------------: |
-| valid scenarios                 |      6–10 / 16 |            **15/15** |
-| paths at full length            |      1–11 / 80 |            **75/75** |
-| output tokens / world           |          ~2.0k |                ~2.0k |
-| input tokens / world            |         ~0.56k |            **~6.5k** |
-| ESS (of valid)                  |        3.5–3.9 |                  6.3 |
-| mean max monthly \|log-return\| |      0.06–0.17 |                 0.09 |
-| length-enforcement cost         |              — | 2 retries / 79 calls |
-
-- **Length discipline is solved.** Chunking to 12 months and retrying a miscounted window yields
-  **75/75 full-length paths** (every path exactly 61) vs 1–11/80 one-shot. The model miscounted only
-  **twice in 79 windows**; the retry fixed both. Nothing dropped — **15/15 valid**.
-- **The cost moved to input tokens.** This run kept the full conversation thread (stateful), so each
-  window re-reads the growing history → **~6.5k input tokens/world** (97k total), ~10× the one-shot
-  prompt and ~3× this run's own output. Output/world is unchanged (~2k) because the count of emitted
-  numbers is fixed. The one-shot's length-counting problem became a context-management problem —
-  exactly the predicted trade.
-- **More valid scenarios eased sample-starvation.** With 15 valid (vs 6–10), correlated paired
-  markets no longer perfectly collapse — `sp500>6000`/`>7500` separated to 0.65/0.52 (identical
-  one-shot), the BTC pair to 0.36/0.26. Reweight fidelity improves with sample size.
-- **Free, 0 pp quota** (127k tokens; `glm-4.7-flash` was 429-saturated, so the probe fell to
-  `glm-4.5-flash`).
-
-### Paid coding tier (GLM-4.7): faster, but a worse base measure
-
-Re-run on the **paid coding endpoint** (`glm-4.7`) to escape free-tier 429s: median **9 s/window**
-(vs 25–170 s throttled on flash), **0 retries over 80 windows** (it counts to 12 flawlessly), 16/16
-valid, 80/80 full length. Burn: 138k tokens moved the **5 h** quota +1 pp and the **weekly** quota
-0 pp (below the integer-% resolution) — negligible against a 50% cap. Tracked in `quota_log.jsonl`
-(the token-quota API exposes only an integer %, so we pair it with our own token totals).
-
-But `glm-4.7` is a **worse base measure** than `glm-4.5-flash` here — it is too conservative:
-
-```
-btc>150k@2027-12   target 0.50   raw 0.00   reweighted 0.00
-cpi>110@2029-12    target 0.60   raw 0.00   reweighted 0.00
-```
-
-Zero of 16 worlds cross BTC>150k or CPI>110 (smoothness 0.05 — very tight, no tails). When the base
-measure puts **zero mass** on a market's region the indicator column is all-zeros and **no reweight
-can lift it** — you cannot upweight worlds the model never proposed. That is the concrete form of
-"ESS collapse = reweighting is fiction." The sloppier flash model actually _covered_ more (BTC raw
-0.27 vs 0.00). **Lesson: a base measure wants dispersion/coverage, not calibration** — a "smarter"
-model that hugs the median is the wrong tool. Levers to force coverage: higher temperature,
-conditioning on the prices, or the `BATCH_SIZE > 1` distinct-worlds knob.
-
-### Real macro data + OpenAI as events (GLM-4.7, paid)
-
-Grounded run: macro series seeded from **real** recent tails (`fetch_real_history.py` — Yahoo
-sp500/BTC, FRED CPI/Case-Shiller-SF/rent), so worlds start from the real 2026 anchors (sp500 ~7584,
-BTC ~63k mid-drawdown, indices rebased to 100) with real momentum; OpenAI modelled as augur's PE
-issuer is — discrete **events** (`primary_round`/`secondary_tender`/`ipo`/`collapse`) emitted per
-window, fed OpenAI's **public** funding history (`openai_history.json`; private marks excluded).
-15/15 valid, 75/75 full length, 0 worlds dropped (5xx retried), 66 OpenAI events over 15 worlds.
-Burn: 191k tokens, weekly **0 pp** (three runs total ≈ 0 pp weekly, ~1% on the 5 h window; see
-`quota_log.jsonl`).
-
-| market                   | target |  raw | reweighted |
-| ------------------------ | -----: | ---: | ---------: |
-| sp500>8500@2027-12       |   0.55 | 0.00 |       0.00 |
-| sp500>11000@2030-12      |   0.40 | 0.07 |       0.26 |
-| btc>90k@2027-12          |   0.50 | 0.00 |       0.00 |
-| btc>180k@2030-12         |   0.30 | 0.00 |       0.00 |
-| cpi>108@2029-12          |   0.70 | 0.73 |       0.78 |
-| sfhome>110@2030-12       |   0.50 | 0.13 |       0.41 |
-| sfrent>108@2029-12       |   0.60 | 0.27 |       0.60 |
-| openai_tender_by_2028-06 |   0.80 | 0.87 |       0.89 |
-| openai_ipo_by_2029-12    |   0.45 | 0.67 |       0.53 |
-| openai_val>2T@2030-12    |   0.50 | 0.13 |       0.36 |
-
-- **OpenAI-as-events is the right shape.** Discrete tenders/rounds/IPO match augur's PE bundle; the
-  tender-by and ipo-by markets are well-covered and reweight cleanly, and even the $2T-valuation tail
-  now gets 0.13 raw (vs 0.00 under the smooth-path model). This was your call and it lands.
-- **Upside coverage is still the binding blocker.** GLM-4.7 under-generates upside tails: **zero**
-  worlds recover BTC to $90k (from $63k) within 18 mo or reach $180k in 5 yr, and sp500 doesn't clear
-  +12% by 18 mo — so those markets stay raw 0.00 and the reweight cannot lift them. The steady
-  climbers (CPI, rent, home) and the OpenAI events match well. Same lesson, sharper: **coverage /
-  dispersion is the constraint, not calibration — a conservative model can't be reified onto the
-  upside.**
-- **Two bugs this surfaced and fixed:** the model mean-reverted the CPI _index_ around 100 instead of
-  climbing it (relabeled as a cumulative price level → `cpi>108` coverage 0.00 → 0.73); transient
-  `503 DNS resolution failure`s dropped worlds (now retried as 5xx).
-
-### History context length (1 yr → 5 yr)
-
-Extending the recent-history tail from 12 to **60 months** (`fetch_real_history.py` N=60; the model now
-sees BTC's full 2021 boom → 2022 crash → 2025 peak → 2026 drawdown and the post-2021 inflation/rent/home
-climb) modestly **widens coverage**, mostly on the steady climbers and the near-zero markets:
-
-| market (raw)       | 1 yr | 5 yr |
-| ------------------ | ---: | ---: |
-| sp500>8500@2027-12 | 0.00 | 0.06 |
-| btc>90k@2027-12    | 0.00 | 0.06 |
-| cpi>108@2029-12    | 0.73 | 0.94 |
-| sfhome>110@2030-12 | 0.13 | 0.38 |
-| sfrent>108@2029-12 | 0.27 | 0.38 |
-| openai_ipo_by_2029 | 0.67 | 0.81 |
-
-The multi-year drift is now grounded in the real trend (CPI/rent/home), and S&P/BTC upside moves off
-exactly-zero. But the **extreme tails stay uncovered** (btc>180k, openai_val>2T both 0.00) — a full
-cyclical history still isn't enough to make GLM-4.7 imagine the biggest booms. Cost: input ~doubles
-(60-month history carried in every stateful window → 271k tokens), still 0 pp weekly. See
-`plot_rollouts.py` / `results/rollouts.png` for the visual.
-
-### Next: force coverage, then compact handoff
-
-**Force upside coverage first** — it is the binding blocker across every run. Levers: raise
-temperature, condition on the market prices (so the model is told to include the boom tails),
-`BATCH_SIZE > 1` distinct-worlds, or a less median-hugging model. Without coverage the reify is a
-fiction on exactly the markets that matter most (the upside).
-
-Then **compact handoff**: the input tokens (now ~150k, ~10k/world) are pure statefulness — each
-window re-reads the growing thread. A fresh prompt per window carrying only the previous window's
-ending levels + a one-line regime note (not the whole thread) should cut input toward ~1–2k/world
-while keeping the long arc via the regime note, plus prompt-caching the shared prefix.
-
-### Per-step kernel sampling (planned `run_kernel.py`)
-
-Sample the rollout **one step at a time as a categorical-mixture proposal**: at each step ask the LLM
-for N weighted options for the next step, draw one (keep its weight), append to a **compact history
-rebuilt into the first message**, repeat — ≤3 messages, no accumulating back-and-forth. This is the
-LLM as an explicit stochastic transition kernel `p(x_{t+1} | x_{≤t})`. Why: enumeration ("list
-diverse possibilities") beats implicit sampling (which collapses to the mode — our conservatism);
-LLM-proposes/you-draw removes the bad-RNG failure; per-step branching compounds into diverse paths.
-
-**Each of the N options is a _joint_ cross-section** — the next single data point for _every_ series
-we model, plus any sparse events that fire that step (OpenAI tender / round / IPO / collapse). The
-options are samples of the whole next-step vector, so cross-series dependence (a risk-off step hits
-equities and crypto together; a tender coincides with a valuation jump) is captured _within each
-draw_, not stitched together from independent per-series marginals.
-
-Design decisions:
-
-- **No explicit latent state.** The LLM re-infers the latent (regime/vol) from the history each step,
-  exactly as it infers the unseen latent on step 1. Carrying one explicit latent would condition on a
-  single draw and _shrink_ dispersion; re-inferring marginalizes over latent uncertainty → more
-  honest spread. (Watch: regime persistence vs over-switching — empirically checkable.)
-- **Stable cache prefix.** Order `[system+schema]` → `[growing compact history]` → `[ask]`, and **drop
-  the per-world seed** (diversity comes from the RNG draws, not a prompt token) so the prefix is
-  byte-identical across worlds. The history is large (5-yr context + growing path ⇒ ~271k prompt
-  tokens observed), so caching it is load-bearing, not second-order.
-- **z.ai caches token prefixes _within_ a message (measured, `cache_probe.py`).** A ~12.5k-token
-  prefix shared between two requests differing only in the trailing suffix is cached
-  (`cached_tokens` 0 cold → 12544 on a differing-suffix follow-up). So the rebuilt-first-message
-  growing prefix gets cached → the scheme is cheap.
-
-Ways the LLM can express the per-step distribution:
+### 5. Ways the LLM can express the per-step distribution
 
 - **Sample (N weighted options)** — default. Non-parametric: multimodal / skew / fat tails + discrete
-  events (tenders/IPOs) native; hands you draws directly. Cost: small N under-resolves the deep tail;
-  needs the weights for an honest density.
-- **Parametric (Gaussian / Student-t / mixture)** — resolvable and cheap to over-draw, but imposes a
-  shape (Gaussian's thin symmetric tails are wrong for finance) and reduces the LLM to
-  coefficient-picking.
-- **Percentiles / quantile function** — ask for the value at percentile `p`. A fixed grid (p10..p90)
-  is smooth but _truncates the tail_ (never draws beyond the grid). **Random-percentile** (draw
-  `u ∼ U(0,1)`, ask for the `u`-th quantile) is inverse-transform sampling via the LLM, and drawing
-  `u` from a tail-weighted distribution gives **guaranteed tail coverage + built-in importance
-  weights** — the cleanest tail-coverage lever, vs the N-sample which only covers a tail if the LLM
-  volunteers it. Caveat: a quantile is scalar → awkward for the multivariate+discrete joint step
-  (works per-component or for a scalar severity); the N-sample handles the joint natively. Hybrid:
-  N-sample for the joint, with an occasional "give me a p99-tail scenario" request to force coverage.
+  events native; gives draws directly. Cost: small N under-resolves the deep tail; needs the weights.
+- **Parametric (Gaussian / Student-t / mixture)** — cheap to over-draw but imposes a shape (Gaussian's
+  thin symmetric tails are wrong for finance) and reduces the LLM to coefficient-picking.
+- **Percentiles / quantile function** — fixed grid (p10..p90) truncates the tail; **random-percentile**
+  (draw `u∼U(0,1)`, ask for the `u`-th quantile) is inverse-transform sampling via the LLM, and drawing
+  `u` tail-weighted gives **guaranteed tail coverage + built-in importance weights** — the cleanest
+  tail lever. Caveat: a quantile is scalar (awkward for the joint+events step); the N-sample handles
+  the joint natively. Hybrid: N-sample for the joint + an occasional "give me a p99-tail scenario".
 
-Bonus — **validation falls out for free**: a kernel that emits a one-step-ahead distribution is
-scorable per step against history (CRPS on the sample/quantiles), turning one path realization into
-`T` resolved one-step predictions — the dense calibration signal the cutoff backtest otherwise lacks,
-and the concrete (known-)black-swan-frequency check.
+## Calibration backtest — the rigorous validation
 
-## Calibration backtest result (glm-4.5, 2024-06 → 2026-03)
+Anchor `glm-4.5` at its **leakage-probed June-2024 cutoff** (it doesn't know the 2024–26 OpenAI rounds
+or end-2025 BTC), so 2024-06 → now is genuinely out-of-sample. Score the realized next value as a PIT
+within the kernel's options; ground truth from the date-ranged fetcher. ~0 pp weekly quota.
 
-First teacher-forced calibration run (`kernel.py` + `backtest.py` + `plot_backtest.py`). `glm-4.5`
-self-reports a **June 2024 cutoff** and is leakage-probed clean (its latest OpenAI knowledge is the
-Jan-2023 $29B round; it doesn't know end-2025 BTC), so 2024-06 → today is genuinely out-of-sample.
-20 monthly steps × 5 series = **100 PITs**, 58k tokens, **0 pp weekly**.
+**One-step (`backtest.py`, teacher-forced, 100 PITs).** Two failures, both as predicted:
 
-| metric (pooled)              |         value |                                                                               read |
-| ---------------------------- | ------------: | ---------------------------------------------------------------------------------: |
-| JSD-to-uniform               |    0.052 bits |               descriptive; formal test is below (KS/χ² + block bootstrap, not JSD) |
-| tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) |            **overconfident / thin-tailed** — clouds too narrow (home 40%, BTC 35%) |
-| mean PIT                     | 0.62 (vs .50) | **under-prediction** — under-shot the 2024–26 bull run (inflation 0.71, rent 0.72) |
+| metric (pooled)              |         value | read                                                |
+| ---------------------------- | ------------: | --------------------------------------------------- |
+| tail-escape (PIT ≤.1 or ≥.9) |  31% (vs 20%) | **overconfident / thin-tailed** (home 40%, BTC 35%) |
+| mean PIT                     | 0.62 (vs .50) | **under-prediction** (under-shot the 2024–26 climb) |
 
-**Formal test (`plot_backtest.py`, on the plot).** KS and chi-square goodness-of-fit reject PIT
-uniformity hard under an i.i.d. null (KS `p=1.4e-5`, χ² `p=6e-5`) — but the monthly PITs are strongly
-autocorrelated (`ρ₁=0.60`), so `n_eff≈5` and those i.i.d. p-values are wildly anti-conservative and
-not trustworthy. The serial-dependence-robust verdict is a **moving-block bootstrap** (4-month blocks):
-mean PIT 0.62, 95% CI **[0.50, 0.75]** (just excludes 0.5 → under-prediction); tail-escape 0.31, 95%
-CI **[0.23, 0.42]** (excludes 0.20 → thin-tailed). Both robust CIs exclude their calibrated nulls →
-**MISCALIBRATED**, though _borderline_ given the tiny effective sample. The histogram is right-loaded
-with a top-bin spike (realized blew past the model's upper quantile often) — both failures at once:
-under-prediction _and_ a too-thin upper tail. Matches every prior in this spike (conservative +
-under-dispersed / black-swan-undercoverage), now a measured, leakage-free, _tested_ result.
+The formal verdict (on `results/backtest.png`): KS/χ² reject PIT uniformity at p~1e-5 _under an i.i.d.
+null_, but the monthly PITs are strongly autocorrelated (ρ₁≈0.6 → **n_eff≈5**), so those p-values are
+anti-conservative. The serial-dependence-robust **moving-block bootstrap** gives mean PIT 0.62 CI
+`[0.50, 0.75]` and tail-escape 0.31 CI `[0.23, 0.42]` — both 95% CIs exclude their calibrated nulls →
+**MISCALIBRATED, borderline** (n_eff is tiny). Per-series JSDs are all within the n=20 noise floor;
+only the pooled bootstrap + the histogram shape are trustworthy.
 
-Caveats: per-series JSDs (0.06–0.21) are all _within_ the n=20 noise floor (median 0.10) — only the
-pooled bootstrap + the histogram shape are trustworthy. Tail-escape is the clean, direction-agnostic
-calibration signal; the mean-bias half conflates model honesty with the period being a strong uptrend.
-`n_eff≈5` makes both robust CIs borderline — more anchors (rolling origin) are needed to tighten them.
-One model, one 20-month window. **Methodology validated end-to-end** (leakage-free anchor →
-teacher-forced PIT →
-JSD/rank scoring → date-ranged ground truth); next is more anchors (rolling origin), the structured-Q
-baseline on the same scorecard, and an older model (Ollama) for a longer window.
+**Rolling-origin, multi-horizon (`backtest_rolling.py`, free-running from 4 origins).** Does it compound
+with horizon? **No** — the two failures behave differently:
 
-## Rolling-origin calibration vs horizon (glm-4.5)
+| h           | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   |
+| ----------- | --- | --- | --- | --- | --- | --- | --- | --- |
+| mean PIT    | .79 | .69 | .68 | .69 | .72 | .73 | .71 | .72 |
+| tail-escape | 60% | 45% | 40% | 20% | 39% | 45% | 30% | 15% |
 
-Free-running rollouts from multiple post-cutoff origins (`backtest_rolling.py`, 4 origins × 8 rollouts
-× 8 horizons), scoring the realized value at each horizon as its rank in that origin's ensemble.
-**Does the miscalibration compound with horizon? No — two distinct behaviors:**
+- **Under-prediction is horizon-independent** (mean PIT ~0.70 at every horizon; origin-block CI stays
+  above 0.5). The conservative bias appears at h=1 and neither compounds nor washes out.
+- **The dispersion deficit is front-loaded and self-corrects.** Tail-escape is 60% at h=1 (the one-step
+  ensemble is far too tight — chains share the same history) → ~15% by h=8 as the free-running cone
+  widens with diverging paths. So `Q` needs a de-biasing nudge at _all_ horizons and more _initial_
+  spread, not more long-horizon spread.
 
-| h           | 1    | 2    | 3    | 4    | 5    | 6    | 7    | 8    |
-| ----------- | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| mean PIT    | 0.79 | 0.69 | 0.68 | 0.69 | 0.72 | 0.73 | 0.71 | 0.72 |
-| tail-escape | 60%  | 45%  | 40%  | 20%  | 39%  | 45%  | 30%  | 15%  |
+(Caveats: M=8 ensemble, n≈20/horizon, correlated origins/series → the flat ~0.70 mean is the robust
+signal, the tail trend suggestive.)
 
-- **Under-prediction is persistent and flat** — mean PIT ~0.70 at _every_ horizon (origin-block 95% CI
-  stays above the 0.5 calibrated line). The conservative bias shows up at h=1 and neither compounds
-  nor washes out: reality stayed above glm-4.5's median throughout the 2024–26 climb.
-- **Thin tails are a near-term problem that self-corrects.** Tail-escape is 60% at h=1 — the one-step
-  ensemble is far too tight (all chains share the same real history) — and falls to ~15% by h=8 as the
-  free-running cone _widens_ with diverging paths. So the under-dispersion is worst near-term; the cone
-  does eventually fan out enough to cover reality.
+## Validation methodology & next steps
 
-Caveats: M=8 ensemble (coarse PIT resolution), n=20/horizon, origins/series correlated → per-horizon
-numbers are noisy (the flat ~0.70 mean is the robust signal; the tail trend is suggestive). Consistent
-with the one-step verdict (conservative + under-dispersed), and it adds the horizon structure: the
-**directional bias is horizon-independent, the dispersion deficit is front-loaded**.
+We are scoring a **distribution**, so the metrics are distributional (PIT/rank histograms, CRPS,
+reliability) and every comparison should be **relative** (LLM vs structured `Q` vs crowd). The clean
+verdict is **calibration separated from skill**: the rank histogram answers "are the stated
+uncertainties honest" with no baseline and _independent of how (un)predictable the era was_ (dissolving
+the "error muddied by period difficulty" worry); skill is CRPS relative to a random-walk / structured
+baseline, which cancels period difficulty.
 
-## Validating the LLM base measure (plan)
+**The leakage problem.** An LLM's cutoff is fuzzy and leaky — "anchor at its cutoff, predict to today"
+can be recall, not forecast. So the workhorse testbed is an **old, known-dated open model** (weights
+released on date D can't have seen past D — a hard cutoff). Older = longer resolved-future window =
+real per-horizon statistics; every anchor after D is a leakage-free **rolling origin**. Tradeoff: old
+models are weaker at JSON, but the requirement is _a known date + reliable structured output_, not
+capability. Ground truth is already in hand (`fetch_real_history.py` takes date ranges). Candidates:
+Llama 2 (~Sep 2022), Mistral 7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
 
-We are scoring a **distribution** (a base measure), not a point forecast, so metrics are
-distributional and every comparison is **relative** — LLM vs the structured state-space `Q` vs the
-crowd — on the same anchor + markets: Brier / log-loss + reliability diagram for binary markets; CRPS
+Next, in priority order:
 
-- PIT/rank histograms for continuous series; explicit **tail coverage** (we already see upside
-  under-coverage, so extremes will realize _more_ often than the model implies).
+1. **Force coverage** — the binding blocker (temperature / price-conditioning / random-percentile /
+   `BATCH_SIZE>1`), measured by whether the all-zero upside markets come alive.
+2. **More anchors (rolling origin) + the structured-`Q` baseline** on the same scorecard — tighten the
+   borderline calibration CIs and get the apples-to-apples "is the LLM better or worse than the
+   mechanistic model" number.
+3. **Wire the kernel into the forward reify path** (the backtest uses it; the reify path still uses the
+   windowed rollout), with the **compact handoff** (carry only last levels + a regime note) to cut the
+   stateful input tokens.
 
-**The leakage problem (why a naive cutoff backtest fails).** An LLM's knowledge cutoff is fuzzy and
-leaky — models routinely know post-cutoff events, so "anchor at its cutoff, predict to today" can be
-_recall, not forecast_, and looks artificially good. You cannot build a cleanly held-out future for a
-model whose training overlaps the test window.
-
-Three tiers:
-
-1. **Now, leakage-free, relative.** Raw-marginal divergence from _current_ crowd prices + ESS, LLM
-   vs structured-`Q`. No outcomes, no leakage — measures whether the base measure covers the regions
-   the crowd believes in (the raw/reweighted/ESS tables, with a structured-`Q` baseline column).
-2. **Cutoff backtest — smoke test only.** (a) leakage probe: dated questions about post-cutoff
-   events; if known, discount. (b) plot **relative skill** (vs random-walk / structured baseline, so
-   intrinsic predictability cancels) as a function of anchor date; leakage shows up as skill
-   approaching the _recall ceiling_ for windows inside training data, and the decay point estimates
-   the cutoff. One realization per anchor → coarse cutoff detector, not a quality grade.
-3. **Prospective scorecard — the real validation.** Log today's model distribution over dated,
-   resolvable markets/series; score with CRPS / log-loss + calibration _as they resolve_. Only
-   leakage-free distributional test; same scorecard for structured model + reified hybrid. Slow but
-   true.
-
-**Leakage-free backtest testbed: an old, known-dated open model.** A model whose weights came online
-on date D cannot have seen anything after D — a **known hard cutoff**, no leakage guessing. Older =
-longer resolved-future window = enough resolved instances for real calibration/CRPS/PIT (not the
-single realization the GLM-cutoff backtest is stuck with). Use it to validate the harness + scoring
-and characterize the calibration shape (esp. tail under-coverage); the production quality number for
-GLM still comes from tier 3. Tradeoff: old/small models are weaker and worse at structured JSON —
-fine for _methodology_ validation. The requirement is a **known training date + reliable structured
-output**, not capability. **Ground truth is already in hand**: `fetch_real_history.py` (FRED/Yahoo)
-takes date ranges, so for any past anchor we fetch the realized `[cutoff → today]` series and score
-against it. Candidates by documented cutoff (older = longer backtest): Llama 2 (~Sep 2022), Mistral
-7B (~2023), Llama 3.1 (~Dec 2023), Gemma 2 (~mid 2024).
-
-### Calibration backtest: teacher-forced rank histogram + rolling origin
-
-The concrete procedure once we have a known-dated model:
-
-1. **Anchor** at `t0` = the model's training cutoff (leakage-free by construction). Fetch the real
-   series for `[t0 − context, today]` (date-ranged FRED/Yahoo), rebase the index series to 100 at
-   `t0`; everything after `t0` is hidden ground truth.
-2. **Teacher-forced one-step walk (the workhorse).** For each month `t` from `t0` to today, feed the
-   model the **real** history up to `t` and read the N-weighted next-step joint distribution — don't
-   draw. Record where the realized `x_{t+1}` falls among the N sorted options per series → a
-   **Talagrand rank** in `0..N` (randomized-PIT to resolve the discrete jumps). Pool ranks over all
-   `t` × series.
-3. **Read the rank histogram — this _is_ the calibration.** Flat/uniform = calibrated; **U-shaped =
-   overconfident / thin-tailed** (reality escapes the option spread too often — the
-   black-swan-undercoverage failure, now quantified); dome = underconfident (too wide); sloped =
-   biased level.
-
-Two modes: **(A) teacher-forced one-step** (above) is high-power — `H × n_series` resolved
-predictions, tests the kernel `p(next | true history)` directly. **(B) free-running rollout** (feed
-the model its _own_ sampled history `t0 → today`) tests uncertainty compounding + long-horizon realism
-via the realized path's PIT at each horizon and its stay-inside-the-central-80%-band fraction — but
-it's one realized path, so a coverage check, not a grade.
-
-**Calibration vs skill, kept separate.** The rank histogram answers "are the stated uncertainties
-honest" with _no baseline_ and _independent of how (un)predictable the era was_ — so it dissolves the
-"error is muddied by period difficulty" worry. For skill, report **CRPS relative to a baseline**
-(random-walk + historical-vol band, or the structured state-space `Q`) on the same anchors; the
-relative score cancels intrinsic difficulty, leaving excess skill. Two numbers per series: honest?
-(histogram) and sharper-than-dumb? (relative CRPS).
-
-**Rolling origin — the old-dated-model unlock.** Every anchor _after_ the cutoff `D` is leakage-free,
-so slide `t0` across the whole post-`D` era and run the walk from each → many clean anchors × steps ×
-series, all uncontaminated. (Anchors before `D` leak — exclude them.)
-
-**Tails / events.** The histogram tails directly answer "do extremes land in extreme ranks as often
-as they should"; add the blunt check "did _any_ rollout ever reach the realized worst month of the
-period" (0/M = a concrete coverage failure). Discrete events (tenders/IPO) → reliability diagram on
-event probabilities / hazard timing, low-power until many accrue.
-
-**Caveats.** Run the leakage probe first (dated questions about post-`t0` events). Adjacent months'
-ranks autocorrelate (regimes persist) so the effective sample size is `< H` — block-bootstrap the
-uniformity test rather than assuming `H` independent draws.
-
-New code: a teacher-forced walk driver + rank/CRPS scorer + a random-walk baseline. Ground truth
-(date-ranged fetcher) and the per-step kernel already exist.
-
-**Infra (2026-06).** Cluster GPU Ollama (wyrm2, 2×RTX 5090, `ollama.allegedly.works`) is the natural
-host but is **currently down** — bring it up if this becomes the path. Alternatively any small model
-runnable locally that emits reliable structured JSON works. New harness pieces needed: an old-model
-endpoint, anchoring the history fetch at a past date, and the scoring (CRPS/PIT/coverage); the
-rollout harness itself is done.
+**Infra.** The known-dated-model backtest wants a 7–8B model with reliable JSON; the cluster GPU Ollama
+(wyrm2) is the natural host but is **currently down** (CPU-local is workable but slow). z.ai `glm-4.5`
+(June-2024 cutoff) is what the current backtest uses — convenient and leakage-clean, but a short window.
