@@ -102,6 +102,49 @@ As of 2026-05-08:
 | `glm-5-turbo` | GLM-5-Turbo  |
 | `glm-5.1`     | GLM-5.1      |
 
+## Prompt Caching
+
+Automatic (no request parameter); reported in `usage.prompt_tokens_details.cached_tokens`.
+
+z.ai caches token **prefixes within a single message**, not just whole identical messages or
+message-boundary prefixes. Measured 2026-06 (`glm-4.7`, coding endpoint): a ~12.5k-token prefix
+shared between two requests that differ only in the trailing suffix is cached — `cached_tokens` is
+`0` on a cold call, then `12544` on a follow-up whose first message shares that prefix but ends
+differently. So a growing common prefix (e.g. an accumulating history rebuilt into the first user
+message) is reused across calls without needing to split it into separate messages.
+
+## Rate Limits and Plan Tiers
+
+The coding-plan API key reaches **both** the general endpoint (where it can call the free `*-flash`
+models at $0) and the coding endpoint.
+
+- **Free general-endpoint models** (`glm-4.7-flash`, `glm-4.5-flash`) are aggressively shared-rate-
+  limited: frequent `429` with `code 1302` ("Rate limit reached for requests") and `1305` ("service
+  may be temporarily overloaded"). Keep concurrency low (≈2) and use exponential backoff.
+- **Paid coding-endpoint models** (`glm-4.7`, `glm-4.6`) have dedicated, much higher rate limits —
+  fast (~9 s for a small structured-JSON completion) and reliable — and draw the weekly token quota.
+- Transient `503` with body `{"error":"DNS resolution failure"}` also appears on the coding endpoint;
+  retry it as a 5xx.
+
+## Request Parameter Notes
+
+- `thinking: {"type": "disabled"}` disables reasoning (reasoning_tokens → 0). Recommended for
+  structured-output tasks that don't need chain-of-thought (e.g. JSON generation).
+- `response_format: {"type": "json_object"}` works on the paid coding models and on `glm-4.7-flash`,
+  but free `glm-4.5-flash` returns `400` (`code 1210`, "Invalid API parameter") when `thinking` /
+  `response_format` are present. **Probe a candidate model with the real generation params** before
+  relying on it, rather than a bare smoke call.
+- Some free models reject `temperature > 1.0` with `400`; `temperature: 1.0` is accepted across the
+  models tested.
+
+## Quota API (`/api/monitor/usage/quota/limit`)
+
+Returns `data.limits[]`. The token limits (`type: "TOKENS_LIMIT"`, `unit: 3` = 5 h window,
+`unit: 6` = 7 d window) expose only an integer `percentage` — **no raw used/total token counts**, so
+sub-1% burn is invisible. There is also a `TIME_LIMIT` (`unit: 5`) tool/request quota carrying
+`usage` / `currentValue` / `remaining` and per-model `usageDetails`. `data.level` reports the plan
+tier (e.g. `"max"`). Track fine-grained token burn from your own usage totals, not this endpoint.
+
 ## Integration Notes
 
 - **Claude Code** (`z-claude` alias): works via the Anthropic-compatible endpoint.
