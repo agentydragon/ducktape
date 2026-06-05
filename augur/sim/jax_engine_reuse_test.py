@@ -22,7 +22,7 @@ from augur.sim.buffers import SimulationBuffers
 from augur.sim.compiler import compile_simulation
 from augur.sim.compiler.plan import CompiledSimulation
 from augur.sim.engine import _allocate_buffers, _allocate_current_state, _run_month_step, _snapshot_current_state
-from augur.sim.engine.jax_engine import _program_impl, run_jax_scan
+from augur.sim.engine.jax_engine import _build_program, _program_impl, run_jax_scan
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
@@ -280,6 +280,79 @@ def test_native_cache_reuses_executable_across_structure_and_sweeps() -> None:
     plan_struct = _compile(_tax_scenario(), rollout_count=3, locations={})
     _run_jax(plan_struct)
     assert _program_impl._cache_size() == base + 1
+
+
+def _multi_series_scenario() -> Scenario:
+    """A mortgage-financed property (home-value price series) alongside a long-held SP500 lot (SP500
+    price series): the compiled plan references ≥2 distinct external series, so a non-deterministic
+    series *order* in the compiler would surface as a differing structure between two compiles."""
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="lender")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=300_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_sp500",
+                agent_id="alice",
+                account_id="brokerage",
+                asset=SP500AssetKey(),
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="sf",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=100_000.0,
+                buyer_closing_cost_usd=0.0,
+                rented_fraction=0.0,
+                mortgage=MortgageFinancing(
+                    liability_id="alice_mortgage",
+                    lender_agent_id="lender",
+                    principal_usd=400_000.0,
+                    annual_interest_rate=0.06,
+                    term_months=360,
+                ),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=6,
+    )
+
+
+def test_independent_compiles_of_same_scenario_are_structurally_identical() -> None:
+    """Two INDEPENDENT compiles of the same scenario must produce an equal jit static structure, so the
+    second `run_jax_scan` is a native-cache hit (zero extra compiles). Regression guard: external-series
+    row indices used to be baked into the static structure, and the compiler assigned them in a
+    non-deterministic (`polars.unique`) order, so every other compile produced a different structure and
+    silently recompiled the whole ~1.7s scan program on each call. They are now traced operands and the
+    series order is sorted; this asserts both — a structural diff or a recompile fails."""
+    scenario = _multi_series_scenario()
+    plan_a = _compile(scenario, rollout_count=2, locations=_SF)
+    plan_b = _compile(scenario, rollout_count=2, locations=_SF)
+
+    # The static jit arg (the compile cache key) must be identical across independent compiles.
+    _, static_a, _, _ = _build_program(plan_a)
+    _, static_b, _, _ = _build_program(plan_b)
+    assert static_a == static_b
+    assert hash(static_a) == hash(static_b)
+
+    # End-to-end: a second independent compile must reuse the cached executable (no recompile).
+    _run_jax(plan_a)
+    base = _program_impl._cache_size()
+    _run_jax(plan_b)
+    assert _program_impl._cache_size() == base
 
 
 if __name__ == "__main__":

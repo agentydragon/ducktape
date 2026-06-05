@@ -356,6 +356,49 @@ No per-rollout Python marshaling remains.
 3. **Process-level chunking** of the R axis for memory bounding and multi-core, now that the
    per-request boundaries are this thin.
 
+## JAX engine: per-call recompilation (2026-06-05)
+
+Profiling the JAX engine against the **real gaffer-private deployed config**
+(`//gaffer_augur:profile_rollout`, `model=bayesian`, 1 lot, 15 properties, 1 PE
+issuer; 2000 rollouts × 120 months, CPU) showed the JAX backend ~9× slower
+end-to-end than NumPy warm, and `JAX_LOG_COMPILES=1` showed why: **`_program_impl`
+(the whole scan program) re-compiled on essentially every call** — ~1.7 s of XLA
+compile baked into each "warm" run, even though the traced-arg avals were
+byte-identical across calls.
+
+Root cause: the native `jax.jit` cache keys on the static args `(p, structure)`.
+`structure` (then `_Structure`) carried **external-series row indices** — e.g.
+`_FoldedPE.floor_series`, harvest/liquidity-pool `series_index`, the lifecycle
+home-value series, the liquidity amount-spec tuples' series slot, and
+`sale_price_series`. Those indices were assigned by `collect_level_series_keys`
+in **`polars.unique()` (hash) order**, which is non-deterministic, so two compiles
+of the identical scenario produced a structure that differed only in a series
+index (observed `floor_series` flipping `1↔3`). Different static arg → cache miss
+→ full recompile, on ~every call.
+
+Two fixes (both landed):
+
+1. **Deterministic series order** — `collect_level_series_keys` now `.sort()`s the
+   unique series ids, so index assignment is reproducible (`augur/sim/compiler/series.py`).
+2. **Series indices are traced operands, not static structure** — a series index is
+   just a row into `external_values`, so it's now threaded as a traced device array
+   (`_Operands.*`, dynamic gather) instead of a Python `int` baked into the jit static
+   key. The compiled program is independent of *which* row, so no series-index value
+   can trigger a recompile by construction. The two jit-arg pytrees were renamed to say
+   what they are: `_Static` (the compile cache key — counts, slot indices, folded event
+   tuples, masks) and `_Operands` (every traced device array the scan closes over).
+
+Result on the gaffer config (2000 × 120, CPU): `_program_impl` compiles **once**
+(cold `run[0]` ≈ 3.1 s incl. the ~1.7 s XLA compile), then warm engine is a steady
+**~0.16 s** (was alternating 0.16 s hit / 2.6 s recompile). NumPy↔JAX parity
+(`scan_test`, `simulate_test`, `jax_engine_reuse_test`) stays green; a new
+`test_independent_compiles_of_same_scenario_are_structurally_identical` guards the
+invariant (two independent compiles ⇒ equal `_Static` ⇒ no recompile).
+
+JAX is still ~1.7× NumPy's 0.095 s engine on CPU at this entity scale (the always-on
+branch-free body is op-heavy — see #249's HLO breakdown); the win is on GPU / large
+fan-out, and the pathological recompile is gone.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**

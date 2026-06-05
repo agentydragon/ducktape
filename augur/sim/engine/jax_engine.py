@@ -25,8 +25,8 @@ selected by `sim_backend.current_backend()`.
 
 Caching is JAX-native. `_program_impl` is module-level and
 `@partial(jax.jit, static_argnames=("p", "structure"))`: its compiled executable is keyed by JAX on
-the structural `SlotPlan` `p` and the hashable `_Structure` (folded-event tuples + scalars — both
-natively hashable, no content hashing) plus the avals of the traced `_Baked` data pytree and the
+the structural `SlotPlan` `p` and the hashable `_Static` (folded-event tuples + scalars — both
+natively hashable, no content hashing) plus the avals of the traced `_Operands` data pytree and the
 seed/swept-config inputs. So an identical-structure plan — including sweeps over the traced numeric
 config (`_TracedConfig`) or rollout seeds — reuses the compiled program; only a structural change
 recompiles. An opt-in on-disk compilation cache (`AUGUR_JAX_COMPILATION_CACHE_DIR`) carries that reuse
@@ -137,7 +137,7 @@ class _FoldedSale:
     """One real scheduled sale, with its static FIFO data resolved host-side for the scan fold.
 
     `ordered_lots` is the FIFO lot order for the sale's (agent, account, asset) pool (a static index
-    tuple — `tuple` so the enclosing `_Structure` is hashable; convert with `np.asarray` at the use
+    tuple — `tuple` so the enclosing `_Static` is hashable; convert with `np.asarray` at the use
     site); `buffer_index` is the sale's column in the `lot_dispositions.scheduled` buffers; `month`
     is the (static) month it fires, compared against the traced scan index inside the step."""
 
@@ -173,8 +173,9 @@ class _LiquidityPool:
     """One (asset, source-account) FIFO pool a liquidity policy can sell from."""
 
     asset_idx: int  # column in the policy's asset list (the disposition buffer's asset axis)
-    series_index: int
-    ordered_lots: tuple[int, ...]  # `tuple` (not np array) so the enclosing `_Structure` is hashable
+    # NOTE: the asset price-series row index is NOT here — it's a traced operand (`_Operands.liq_pool_series`),
+    # so a non-deterministic series order can't change this static structure and trigger a recompile.
+    ordered_lots: tuple[int, ...]  # `tuple` (not np array) so the enclosing `_Static` is hashable
 
 
 @dataclass(frozen=True)
@@ -185,8 +186,9 @@ class _FoldedLiquidity:
     policy_index: int
     agent: int
     cash_slot: int
-    trigger: tuple[int, float, float, int, int, int]
-    sale: tuple[int, float, float, int, int, int]
+    # amount-spec tuples: (kind, fixed, base, base_month, period) — series row index is a traced operand.
+    trigger: tuple[int, float, float, int, int]
+    sale: tuple[int, float, float, int, int]
     pools: tuple[_LiquidityPool, ...]
 
 
@@ -255,7 +257,7 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
-class _Baked(NamedTuple):
+class _Operands(NamedTuple):
     """Every device array the scan program closes over, packed into a single pytree (a `NamedTuple` is
     an auto-registered JAX pytree node; nested `dict[str, jnp.ndarray]` values are valid pytree nodes
     too). Passed to `_program_impl` as a TRACED argument: JAX keys the native compile cache on its
@@ -285,6 +287,7 @@ class _Baked(NamedTuple):
     sale_cg_map_t: jnp.ndarray
     sale_policy_mask_t: jnp.ndarray
     sale_price_fixed_t: jnp.ndarray
+    sale_price_series: jnp.ndarray  # scheduled-sale price-series row indices (traced, dynamic gather)
     # Year-end / property tables.
     property_is_primary_table: jnp.ndarray
     tax_slot_table: jnp.ndarray
@@ -298,16 +301,23 @@ class _Baked(NamedTuple):
     salt_contributing_mask: jnp.ndarray
     lot_asset_series_index: jnp.ndarray
     pe_owner_cash_mask: jnp.ndarray  # (pe_policy, cash)
+    # Series-axis row indices, traced (dynamic gather), in phase-loop order. See `_build_program`.
+    pe_floor_series: jnp.ndarray  # (n_folded_pe,)
+    harvest_series: jnp.ndarray  # (n_folded_harvest,)
+    lifecycle_sale_series: jnp.ndarray  # (n_folded_lifecycle,)
+    liq_trigger_series: jnp.ndarray  # (n_folded_liquidity,)
+    liq_sale_series: jnp.ndarray  # (n_folded_liquidity,)
+    liq_pool_series: list[jnp.ndarray]  # per-policy (n_pools_i,) arrays (ragged)
 
 
 @dataclass(frozen=True)
 class _FoldedHarvest:
-    """One reduced-form TLH harvest policy, static data resolved host-side (hashable for `_Structure`)."""
+    """One reduced-form TLH harvest policy, static data resolved host-side (hashable for `_Static`)."""
 
     policy_idx: int
     gain_profile: int
     lot_indices: tuple[int, ...]
-    series_index: int
+    # series row index is a traced operand (`_Operands.harvest_series`), not a static field.
     peak_annual_yield: float
     floor_annual_yield: float
     maturity_decay_exponent: float
@@ -327,7 +337,7 @@ class _FoldedPE:
     floor_kind: int
     floor_fixed: float
     floor_base: float
-    floor_series: int
+    # floor series row index is a traced operand (`_Operands.pe_floor_series`), not a static field.
     floor_base_month: int
     floor_period: int
     owner_non_pe_lot_indices: tuple[int, ...]  # for `_compute_liquid_net_worth`
@@ -344,8 +354,8 @@ class _FoldedLifecycleEvent:
     rented_fraction: float  # for FRACTION events
     amount: float  # for CAPITAL_IMPROVEMENT (cash) / SALE (closing-cost pct) events
     owner_cash_slot: int  # `props.buyer_slot[property_slot]`
-    # SALE static data (resolved host-side; defaults for non-SALE events).
-    home_value_series_index: int
+    # SALE static data (resolved host-side; defaults for non-SALE events). The home-value series row
+    # index is a traced operand (`_Operands.lifecycle_sale_series`), not a static field.
     purchase_price: float
     building_basis_initial: float
     owner_profile: int
@@ -378,7 +388,7 @@ class _LinkTaxStatic:
 
 
 @dataclass(frozen=True)
-class _Structure:
+class _Static:
     """Every natively-hashable Python value the scan bodies read at TRACE TIME (counts, slot indices,
     feature flags, and the folded event lists as tuples-of-frozen-dataclasses with int/float fields).
     A frozen dataclass of `int`/`bool`/`float`/`tuple` (and tuples of small frozen dataclasses) is
@@ -419,7 +429,7 @@ class _Structure:
     sale_pslot: tuple[int, ...]
     sale_bufidx: tuple[int, ...]
     sale_olots: tuple[tuple[int, ...], ...]
-    sale_price_series: tuple[int, ...]
+    # scheduled-sale price-series row indices are a traced operand (`_Operands.sale_price_series`).
     pur_buf: tuple[int, ...]
     pur_month: tuple[int, ...]
     pur_stake: tuple[float, ...]
@@ -485,10 +495,10 @@ def compiled_hlo_text(plan: CompiledSimulation) -> str:
     return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPlan, _ScanMeta]:
+def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPlan, _ScanMeta]:
     """Host-only build of the device program inputs for one plan *structure*. Does ALL numpy/Python
-    precompute and packs the results into a `_Baked` pytree (every device array the scan closes over,
-    a TRACED arg) and a `_Structure` frozen dataclass (every natively-hashable Python value the bodies
+    precompute and packs the results into a `_Operands` pytree (every device array the scan closes over,
+    a TRACED arg) and a `_Static` frozen dataclass (every natively-hashable Python value the bodies
     read at trace time, a STATIC arg) — plus the plan's `SlotPlan` (`p`, already natively hashable) and
     the host-side `_ScanMeta` for the post-scan scatter. The compiled program is `_program_impl`, whose
     native JAX cache reuses the executable across calls of the same structure (and across traced
@@ -569,7 +579,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
             rented_fraction=float(le_all.rented_fraction[i]),
             amount=float(le_all.amount[i]),
             owner_cash_slot=int(props.buyer_slot[prop]) if prop >= 0 else NO_CODE,
-            home_value_series_index=int(plan.property_home_value_series_index[prop]) if prop >= 0 else 0,
             purchase_price=float(plan.properties.purchase_price[prop]) if prop >= 0 else 0.0,
             building_basis_initial=float(plan.property_building_basis[prop]) if prop >= 0 else 0.0,
             owner_profile=owner_profile,
@@ -794,7 +803,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                     pools.append(
                         _LiquidityPool(
                             asset_idx=asset_idx,
-                            series_index=series_index,
                             ordered_lots=tuple(int(lot) for lot in ordered),
                         )
                     )
@@ -803,11 +811,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                 policy_index=policy,
                 agent=agent_code,
                 cash_slot=int(liq_policies.cash_slot[policy]),
+                # amount-spec tuples drop the series row index (it's a traced operand,
+                # `_Operands.liq_{trigger,sale}_series`): (kind, fixed, base, base_month, period).
                 trigger=(
                     int(liq_policies.trigger_kind[policy]),
                     float(liq_policies.trigger_fixed[policy]),
                     float(liq_policies.trigger_base[policy]),
-                    int(liq_policies.trigger_series[policy]),
                     int(liq_policies.trigger_base_month[policy]),
                     int(liq_policies.trigger_period[policy]),
                 ),
@@ -815,7 +824,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                     int(liq_policies.sale_kind[policy]),
                     float(liq_policies.sale_fixed[policy]),
                     float(liq_policies.sale_base[policy]),
-                    int(liq_policies.sale_series[policy]),
                     int(liq_policies.sale_base_month[policy]),
                     int(liq_policies.sale_period[policy]),
                 ),
@@ -852,7 +860,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                     floor_kind=int(pe_policies.floor_kind[policy_idx]),
                     floor_fixed=float(pe_policies.floor_fixed[policy_idx]),
                     floor_base=float(pe_policies.floor_base[policy_idx]),
-                    floor_series=int(pe_policies.floor_series[policy_idx]),
                     floor_base_month=int(pe_policies.floor_base_month[policy_idx]),
                     floor_period=int(pe_policies.floor_period[policy_idx]),
                     owner_non_pe_lot_indices=owner_non_pe,
@@ -869,7 +876,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                     floor_kind=AMOUNT_FIXED,
                     floor_fixed=0.0,
                     floor_base=0.0,
-                    floor_series=NO_CODE,
                     floor_base_month=0,
                     floor_period=1,
                     owner_non_pe_lot_indices=(),
@@ -890,7 +896,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
                 policy_idx=policy_idx,
                 gain_profile=gain_profile,
                 lot_indices=tuple(int(lot) for lot in lot_indices),
-                series_index=int(harvest.series_index[policy_idx]),
                 peak_annual_yield=float(params.peak_annual_yield),
                 floor_annual_yield=float(params.floor_annual_yield),
                 maturity_decay_exponent=float(params.maturity_decay_exponent),
@@ -943,7 +948,33 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
         else jnp.zeros((max(1, pe_issuer_count), p.cash_count))
     )
 
-    baked = _Baked(
+    # Series-axis row indices as TRACED operands, NOT baked into the static `_Static` structure. A
+    # series index is just a row into `external_values`; threading it as a device scalar (gathered
+    # dynamically at the use site) keeps the compiled program independent of WHICH row, so a
+    # non-deterministic series order can't trigger a recompile (see the determinism note in
+    # `collect_level_series_keys`). Each array is in the SAME order its phase loop iterates the
+    # matching folded tuple; `liq_pool_series` is a per-policy list (ragged pools).
+    def _series_ops(values: list[int]) -> jnp.ndarray:
+        return jnp.asarray(np.asarray(values, dtype=np.int64))
+
+    pe_floor_series = _series_ops(
+        [int(pe_policies.floor_series[fpe.policy_idx]) if fpe.policy_idx >= 0 else NO_CODE for fpe in folded_pe]
+    )
+    harvest_series = _series_ops([int(harvest.series_index[fh.policy_idx]) for fh in folded_harvest])
+    lifecycle_sale_series = _series_ops(
+        [
+            int(plan.property_home_value_series_index[ev.property_slot]) if ev.property_slot >= 0 else 0
+            for ev in folded_lifecycle
+        ]
+    )
+    liq_trigger_series = _series_ops([int(liq_policies.trigger_series[lp.policy_index]) for lp in folded_liquidity])
+    liq_sale_series = _series_ops([int(liq_policies.sale_series[lp.policy_index]) for lp in folded_liquidity])
+    liq_pool_series = [
+        _series_ops([int(liq_policies.asset_series[lp.policy_index, pool.asset_idx]) for pool in lp.pools])
+        for lp in folded_liquidity
+    ]
+
+    baked = _Operands(
         cash0=cash0,
         ordinary0=ordinary0,
         property_tax_ytd0=property_tax_ytd0,
@@ -964,6 +995,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
         sale_cg_map_t=sale_cg_map_t,
         sale_policy_mask_t=sale_policy_mask_t,
         sale_price_fixed_t=sale_price_fixed_t,
+        sale_price_series=jnp.asarray(sale_price_series),
         property_is_primary_table=property_is_primary_table,
         tax_slot_table=tax_slot_table,
         salt_cap_table=salt_cap_table,
@@ -975,6 +1007,12 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
         salt_contributing_mask=salt_contributing_mask,
         lot_asset_series_index=jnp.asarray(plan.lot_asset_series_index),
         pe_owner_cash_mask=pe_owner_cash_mask,
+        pe_floor_series=pe_floor_series,
+        harvest_series=harvest_series,
+        lifecycle_sale_series=lifecycle_sale_series,
+        liq_trigger_series=liq_trigger_series,
+        liq_sale_series=liq_sale_series,
+        liq_pool_series=liq_pool_series,
     )
 
     # Capital-gain accrual targets: each agent code that sells (liquidity / PE owners) maps to the
@@ -1003,7 +1041,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
         )
         for link in range(link_count)
     )
-    structure = _Structure(
+    structure = _Static(
         rollout_count=r,
         horizon=horizon,
         cash_count=p.cash_count,
@@ -1034,7 +1072,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Structure, SlotPl
         sale_pslot=tuple(int(x) for x in sale_pslot),
         sale_bufidx=tuple(int(x) for x in sale_bufidx),
         sale_olots=tuple(tuple(int(x) for x in row) for row in sale_olots),
-        sale_price_series=tuple(int(x) for x in sale_price_series),
         pur_buf=tuple(int(x) for x in pur_buf),
         pur_month=tuple(int(x) for x in pur_month),
         pur_stake=tuple(float(x) for x in pur_stake),
@@ -1070,9 +1107,9 @@ def _program_impl(
     external_values: jnp.ndarray,
     pe_ch: dict[str, jnp.ndarray],
     cfg: _TracedConfig,
-    baked: _Baked,
+    baked: _Operands,
     p: SlotPlan,
-    structure: _Structure,
+    structure: _Static,
 ) -> tuple:
     """Module-level, natively-cached scan program. `external_values` / `pe_ch` / `cfg` are TRACED
     (seed-varying series + swept numeric config); `baked` is a TRACED pytree of every device array the
@@ -1107,7 +1144,7 @@ def _program_impl(
     sale_pslot = np.asarray(structure.sale_pslot, dtype=np.int64).reshape(n_sales)
     sale_bufidx = np.asarray(structure.sale_bufidx, dtype=np.int64).reshape(n_sales)
     sale_olots = np.asarray(structure.sale_olots, dtype=np.int64).reshape(n_sales, sale_max_pool)
-    sale_price_series = np.asarray(structure.sale_price_series, dtype=np.int64).reshape(n_sales)
+    sale_price_series = baked.sale_price_series  # traced (n_sales,) row indices — dynamic gather
     pur_buf = np.asarray(structure.pur_buf, dtype=np.int64)
     pur_month = np.asarray(structure.pur_month, dtype=np.int64)
     pur_stake = np.asarray(structure.pur_stake, dtype=np.float32)
@@ -1148,6 +1185,12 @@ def _program_impl(
     salt_contributing_mask = baked.salt_contributing_mask
     lot_asset_series_index = baked.lot_asset_series_index
     pe_owner_cash_mask = baked.pe_owner_cash_mask
+    pe_floor_series = baked.pe_floor_series
+    harvest_series = baked.harvest_series
+    lifecycle_sale_series = baked.lifecycle_sale_series
+    liq_trigger_series = baked.liq_trigger_series
+    liq_sale_series = baked.liq_sale_series
+    liq_pool_series = baked.liq_pool_series
     # Swept numeric config (traced): cost basis + the transfer-amount entries of the `tr` table.
     tcfg = cfg
     cost_basis_per_unit = cfg.cost_basis_per_unit
@@ -1330,7 +1373,7 @@ def _program_impl(
         pr_fired = [jnp.where(month == pr_m, active, jnp.zeros_like(active)) for _, pr_m in folded_pr]
         le_fired: list[jnp.ndarray] = []
         sale_traces: list[tuple] = []
-        for ev in folded_lifecycle:
+        for evi, ev in enumerate(folded_lifecycle):
             ev_month, ev_kind, ev_prop = ev.month, ev.kind, ev.property_slot
             fires = month == ev_month
             active_property = fires & active & property_active[ev_prop]
@@ -1360,6 +1403,7 @@ def _program_impl(
                     sale_trace,
                 ) = _scan_property_sale(
                     ev,
+                    lifecycle_sale_series[evi],
                     external_values,
                     cash=cash,
                     property_active=property_active,
@@ -1480,7 +1524,7 @@ def _program_impl(
             # Per-sale price: fixed if set, else the sampled series at this month. Guarded on the static
             # series count (and the series index clamped) so fixed-only sales never gather an empty cube.
             if external_values.shape[0] > 0:
-                safe_series = np.where(sale_price_series >= 0, sale_price_series, 0)
+                safe_series = jnp.where(sale_price_series >= 0, sale_price_series, 0)
                 unit_price = jnp.where(
                     jnp.isnan(sale_price_fixed_t)[:, None],
                     external_values[safe_series, :, month],
@@ -1566,19 +1610,20 @@ def _program_impl(
         liq_disp_basis = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
         liq_disp_proceeds = jnp.zeros((liq_policy_count, liq_max_assets, lot_axis, r))
         attempt_policy = jnp.full((slot_active.shape[0], r), NO_CODE, dtype=jnp.int64)
-        for lp in folded_liquidity:
+        for li, lp in enumerate(folded_liquidity):
             matching = (og["agent"][month] == lp.agent) & (og["from_slot"][month] == lp.cash_slot)  # (slots,)
             hard_demand = jnp.where(matching[:, None] & slot_active, accrual_due, 0.0).sum(axis=0)  # (R,)
             attempt_policy = jnp.where(matching[:, None] & slot_active, lp.policy_index, attempt_policy)
             cash_balance = cash[lp.cash_slot]
             required_sale = jnp.maximum(hard_demand - cash_balance, 0.0)
             post_required_cash = cash_balance + required_sale - hard_demand
-            trigger_val = _amount_values_tuple(lp.trigger, external_values, month, r)
-            sale_val = _amount_values_tuple(lp.sale, external_values, month, r)
+            trigger_val = _amount_values_tuple(lp.trigger, liq_trigger_series[li], external_values, month, r)
+            sale_val = _amount_values_tuple(lp.sale, liq_sale_series[li], external_values, month, r)
             buffer_sale = jnp.where((sale_val > 0.0) & (post_required_cash < trigger_val), sale_val, 0.0)
             remaining = jnp.where(active, required_sale + buffer_sale, 0.0)
-            for pool in lp.pools:
-                raw_price = external_values[pool.series_index, :, month]
+            pool_series = liq_pool_series[li]
+            for pj, pool in enumerate(lp.pools):
+                raw_price = external_values[pool_series[pj], :, month]
                 valid_price = jnp.isfinite(raw_price) & (raw_price > 0.0)
                 unit_price = jnp.where(valid_price, raw_price, 0.0)
                 pool_lots = np.asarray(pool.ordered_lots, dtype=np.int64)
@@ -1689,11 +1734,12 @@ def _program_impl(
         # TLH harvest (after settlement, before PE): book a calibrated capital loss per policy. The
         # prior price clamps to month 0 (max(0, month-1)), giving a flat period return there — so the
         # eager engine's month-0 `has_prior=False` special case is unnecessary inside the scan.
-        for fh in folded_harvest:
+        for hi, fh in enumerate(folded_harvest):
             hp_policy = fh.policy_idx
             hp_lots = np.asarray(fh.lot_indices, dtype=np.int64)
-            hp_price = external_values[fh.series_index, :, month]
-            hp_prior = external_values[fh.series_index, :, jnp.maximum(0, month - 1)]
+            hp_series_row = external_values[harvest_series[hi]]  # (rollouts, H+1) dynamic gather
+            hp_price = hp_series_row[:, month]
+            hp_prior = hp_series_row[:, jnp.maximum(0, month - 1)]
             cg_ytd, cg_active, hp_cumulative = _tlh_harvest_policy_jit(
                 lot_remaining[hp_lots, :],
                 cost_basis_per_unit[hp_lots],
@@ -1724,7 +1770,7 @@ def _program_impl(
             k: jnp.zeros((pe_issuer_count, r), dtype=(jnp.int64 if k in ("active", "outcome") else jnp.float32))
             for k in ("active", "outcome", "floor", "lnw", "shortfall", "units", "sellable", "target", "proceeds")
         }
-        for fpe in folded_pe:
+        for pei, fpe in enumerate(folded_pe):
             issuer_idx, policy_idx = fpe.issuer_idx, fpe.policy_idx
             ordered = np.asarray(fpe.ordered, dtype=np.int64)
             mark = pe_ch["marks"][issuer_idx, :, month]
@@ -1824,7 +1870,7 @@ def _program_impl(
                 amount_kind=fpe.floor_kind,
                 amount_fixed=fpe.floor_fixed,
                 amount_base=fpe.floor_base,
-                amount_series=fpe.floor_series,
+                amount_series=pe_floor_series[pei],
                 amount_base_month=fpe.floor_base_month,
                 amount_period=fpe.floor_period,
                 external_values=external_values,
@@ -2343,32 +2389,41 @@ def _amount_values(
     amount_kind: int,
     amount_fixed: float,
     amount_base: float,
-    amount_series: int,
+    amount_series: jnp.ndarray,
     amount_base_month: int,
     amount_period: int,
     external_values: jnp.ndarray,
     month: int | jnp.ndarray,
     rollout_count: int,
 ) -> jnp.ndarray:
-    """Port of `phases._amount_values`: a fixed or series-indexed per-rollout amount."""
+    """Port of `phases._amount_values`: a fixed or series-indexed per-rollout amount. `amount_series` is
+    a TRACED scalar row index (gathered dynamically), so its value never changes the compiled program —
+    see the series-index determinism note in `collect_level_series_keys`. `amount_kind` stays static (a
+    genuine FIXED-vs-series code branch)."""
     if amount_kind == AMOUNT_FIXED:
         return jnp.full(rollout_count, amount_fixed)
     reset_month = amount_base_month + ((month - amount_base_month) // amount_period) * amount_period
-    base_level = external_values[amount_series, :, amount_base_month]
-    reset_level = external_values[amount_series, :, reset_month]
+    series_row = external_values[amount_series]  # (rollouts, H+1) — dynamic gather on the traced index
+    base_level = series_row[:, amount_base_month]
+    reset_level = series_row[:, reset_month]
     return amount_base * reset_level / base_level
 
 
 def _amount_values_tuple(
-    spec: tuple[int, float, float, int, int, int], external_values: jnp.ndarray, month: int | jnp.ndarray, r: int
+    spec: tuple[int, float, float, int, int],
+    series_op: jnp.ndarray,
+    external_values: jnp.ndarray,
+    month: int | jnp.ndarray,
+    r: int,
 ) -> jnp.ndarray:
-    """`_amount_values` from a `(kind, fixed, base, series, base_month, period)` tuple."""
-    kind, fixed, base, series, base_month, period = spec
+    """`_amount_values` from a `(kind, fixed, base, base_month, period)` tuple plus a TRACED series row
+    index (`series_op`, gathered dynamically — kept out of the static structure)."""
+    kind, fixed, base, base_month, period = spec
     return _amount_values(
         amount_kind=kind,
         amount_fixed=fixed,
         amount_base=base,
-        amount_series=series,
+        amount_series=series_op,
         amount_base_month=base_month,
         amount_period=period,
         external_values=external_values,
@@ -2760,7 +2815,7 @@ def _compute_liquid_net_worth(
 ) -> jnp.ndarray:
     """Port of `phases._compute_liquid_net_worth`: owner cash + non-PE lot value at current marks.
     `owner_cash_mask` (this policy's row, device) and `lot_asset_series_index` (device) come from
-    `_Baked`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
+    `_Operands`; `owner_non_pe_lot_indices` is the resolved (host) non-PE lot list (no `plan` reference)."""
     cash_total = (cash * owner_cash_mask[:, None]).sum(axis=0)
     if not owner_non_pe_lot_indices:
         return cash_total
@@ -2956,6 +3011,7 @@ def _compute_tax_for_link(
 
 def _scan_property_sale(
     ev: _FoldedLifecycleEvent,
+    home_value_series: jnp.ndarray,
     external_values: jnp.ndarray,
     *,
     cash: jnp.ndarray,
@@ -2989,8 +3045,9 @@ def _scan_property_sale(
     All per-property statics come from the hashable `_FoldedLifecycleEvent` (no `plan` reference)."""
     prop = ev.property_slot
     closing_cost_pct = ev.amount
-    series_idx = ev.home_value_series_index
-    market_value = ev.purchase_price * external_values[series_idx, :, month] / external_values[series_idx, :, 0]
+    # `home_value_series` is a TRACED scalar row index (dynamic gather), not a baked static index.
+    series_row = external_values[home_value_series]  # (rollouts, H+1)
+    market_value = ev.purchase_price * series_row[:, month] / series_row[:, 0]
     gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
     capex = property_building_basis[prop] - ev.building_basis_initial
     cum_dep = property_cum_dep[prop]
