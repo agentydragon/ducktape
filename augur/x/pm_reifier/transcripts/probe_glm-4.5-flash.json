@@ -1,0 +1,49 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": "reply {\"ok\": true}"
+      }
+    ],
+    "max_tokens": 20
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"answer\":\"{\\\"ok\\\": true}\"}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619068,
+    "id": "202606050824277196b9d190c14402",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "202606050824277196b9d190c14402",
+    "usage": {
+      "completion_tokens": 14,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "prompt_tokens": 77,
+      "prompt_tokens_details": {
+        "cached_tokens": 66
+      },
+      "total_tokens": 91
+    }
+  },
+  "latency_s": 1.3655598163604736
+}

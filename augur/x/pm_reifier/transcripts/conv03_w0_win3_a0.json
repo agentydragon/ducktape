@@ -1,0 +1,73 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 3.)"
+      },
+      {
+        "role": "user",
+        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Early economic recovery with tech optimism, inflation moderating but remaining sticky, crypto enthusiasm continues, housing market stable\",\"months\":{\"inflation\":[100.2,100.5,100.8,101.0,101.2,101.3,101.4,101.5,101.6,101.7,101.8,101.9],\"sp500\":[5350,5400,5450,5480,5500,5520,5540,5560,5580,5600,5620,5640],\"crypto:BTC\":[97000,99000,101000,103000,105000,107000,108000,109000,110000,111000,112000,113000],\"home_value:sf_ca\":[100.1,100.3,100.5,100.7,100.8,100.9,101.0,101.1,101.2,101.3,101.4,101.5],\"rent:sf_ca\":[100.3,100.5,100.7,100.9,101.0,101.1,101.2,101.3,101.4,101.5,101.6,101.7],\"openai_valuation_usd_trillions\":[0.86,0.87,0.88,0.89,0.90,0.91,0.92,0.93,0.94,0.95,0.96,0.97]},\"openai_ipo_month_index\":null}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-12 levels: inflation=101.9, sp500=5640, crypto:BTC=113000, home_value:sf_ca=101.5, rent:sf_ca=101.7, openai_valuation_usd_trillions=0.97\nReturn exactly 12 values per series for months 13..24."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Risk-on momentum continues with AI boom accelerating, inflation peaks and begins gradual decline, crypto consolidation in anticipation of regulatory clarity, housing market softens slightly\",\"months\":{\"inflation\":[102.0,102.1,102.2,102.2,102.1,102.0,101.9,101.8,101.7,101.6,101.5,101.4],\"sp500\":[5660,5680,5700,5730,5760,5790,5820,5850,5880,5910,5940,5970],\"crypto:BTC\":[114000,115000,116000,117000,117500,117000,116500,116000,115500,115000,114500,114000],\"home_value:sf_ca\":[101.6,101.7,101.7,101.8,101.8,101.7,101.6,101.5,101.4,101.3,101.2,101.1],\"rent:sf_ca\":[101.8,101.9,102.0,102.0,102.1,102.1,102.0,101.9,101.8,101.7,101.6,101.5],\"openai_valuation_usd_trillions\":[0.98,0.99,1.00,1.01,1.03,1.05,1.07,1.09,1.11,1.13,1.15,1.17]},\"openai_ipo_month_index\":null}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-24 levels: inflation=101.4, sp500=5970, crypto:BTC=114000, home_value:sf_ca=101.1, rent:sf_ca=101.5, openai_valuation_usd_trillions=1.17\nReturn exactly 12 values per series for months 25..36."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"AI euphoria peaks, regulatory concerns mount, inflation continues moderate decline, crypto volatility increases, housing market stabilizes at lower levels\",\"months\":{\"inflation\":[101.3,101.2,101.1,101.0,100.9,100.8,100.7,100.6,100.5,100.4,100.3,100.2],\"sp500\":[5980,5990,5980,5970,5960,5950,5940,5930,5940,5950,5960,5970],\"crypto:BTC\":[113000,112000,111000,110000,109000,108000,108500,109000,109500,110000,110500,111000],\"home_value:sf_ca\":[101.0,100.9,100.8,100.7,100.6,100.5,100.4,100.3,100.2,100.1,100.0,99.9],\"rent:sf_ca\":[101.4,101.3,101.2,101.1,101.0,100.9,100.8,100.7,100.6,100.5,100.4,100.3],\"openai_valuation_usd_trillions\":[1.18,1.19,1.20,1.21,1.22,1.23,1.24,1.25,1.26,1.27,1.28,1.29]},\"openai_ipo_month_index\":32}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-36 levels: inflation=100.2, sp500=5970, crypto:BTC=111000, home_value:sf_ca=99.9, rent:sf_ca=100.3, openai_valuation_usd_trillions=1.29\nReturn exactly 12 values per series for months 37..48."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"regime\":\"Post-IPO market adjustments, AI industry consolidation begins, inflation under control, crypto finds stable equilibrium, housing market starts modest recovery\",\"months\":{\"inflation\":[100.1,100.0,99.9,99.8,99.7,99.6,99.5,99.4,99.3,99.2,99.1,99.0],\"sp500\":[5980,5990,6000,6010,6000,5990,6000,6010,6020,6030,6040,6050],\"crypto:BTC\":[111500,112000,112500,113000,113500,114000,114500,115000,115500,116000,116500,117000],\"home_value:sf_ca\":[100.0,100.1,100.2,100.3,100.4,100.5,100.6,100.7,100.8,100.9,101.0,101.1],\"rent:sf_ca\":[100.2,100.1,100.0,99.9,99.8,99.7,99.6,99.5,99.4,99.3,99.2,99.1],\"openai_valuation_usd_trillions\":[1.30,1.31,1.32,1.33,1.34,1.35,1.36,1.37,1.38,1.39,1.40,1.41]},\"openai_ipo_month_index\":null}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619209,
+    "id": "20260605082638cfec376cce7e4bef",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "20260605082638cfec376cce7e4bef",
+    "usage": {
+      "completion_tokens": 445,
+      "prompt_tokens": 1670,
+      "prompt_tokens_details": {
+        "cached_tokens": 1587
+      },
+      "total_tokens": 2115
+    }
+  },
+  "latency_s": 11.874590873718262
+}

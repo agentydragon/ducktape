@@ -1,0 +1,49 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 8.)"
+      },
+      {
+        "role": "user",
+        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"regime\":\"Early expansion phase with moderate inflation, strong tech and crypto growth, but housing showing early signs of cooling\",\"months\":{\"inflation\":[100.5,101.2,102.0,102.8,103.2,103.8,104.3,104.5,104.9,105.3,105.7,106.0],\"sp500\":[5400,5520,5680,5820,5950,6080,6120,6200,6320,6450,6580,6700],\"crypto:BTC\":[98000,102000,108000,114000,120000,125000,128000,132000,138000,145000,152000,160000],\"home_value:sf_ca\":[100.5,100.8,101.0,101.2,101.3,101.4,101.3,101.2,101.0,100.8,100.5,100.2],\"rent:sf_ca\":[100.8,101.5,102.3,103.0,103.8,104.5,105.2,105.8,106.3,106.8,107.2,107.5],\"openai_valuation_usd_trillions\":[0.92,1.00,1.08,1.16,1.25,1.34,1.43,1.52,1.61,1.70,1.79,1.88]},\"openai_ipo_month_index\":null}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619348,
+    "id": "202606050828489cbc41c79f6c4244",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "202606050828489cbc41c79f6c4244",
+    "usage": {
+      "completion_tokens": 443,
+      "prompt_tokens": 373,
+      "prompt_tokens_details": {
+        "cached_tokens": 289
+      },
+      "total_tokens": 816
+    }
+  },
+  "latency_s": 21.09191370010376
+}

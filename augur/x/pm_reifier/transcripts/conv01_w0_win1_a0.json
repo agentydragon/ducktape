@@ -1,0 +1,57 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 1.)"
+      },
+      {
+        "role": "user",
+        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Post-pandemic recovery continues with moderate inflation, strong tech growth, and surging crypto. OpenAI prepares for IPO with rising valuation.\",\"months\":{\"inflation\":[101.2,102.5,103.1,103.8,104.5,105.2,105.9,106.5,107.2,107.8,108.4,109.0],\"sp500\":[5400,5520,5650,5710,5820,5910,6030,6120,6250,6310,6420,6510],\"crypto:BTC\":[97000,105000,113000,121000,132000,141000,152000,165000,178000,192000,208000,225000],\"home_value:sf_ca\":[101,102,103,104,105,106,107,108,109,110,111,112],\"rent:sf_ca\":[101.5,102.5,103.2,103.8,104.5,105.1,105.8,106.4,107.1,107.7,108.3,108.9],\"openai_valuation_usd_trillions\":[0.92,1.05,1.18,1.32,1.45,1.58,1.72,1.85,1.98,2.12,2.25,2.38]},\"openai_ipo_month_index\":null}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-12 levels: inflation=109, sp500=6510, crypto:BTC=225000, home_value:sf_ca=112, rent:sf_ca=108.9, openai_valuation_usd_trillions=2.38\nReturn exactly 12 values per series for months 13..24."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"regime\":\"Tech sector faces regulatory headwinds while inflation persists. Crypto enters a correction phase, but AI adoption continues driving OpenAI's valuation toward IPO.\",\"months\":{\"inflation\":[109.8,110.6,111.4,112.1,112.9,113.6,114.4,115.1,115.9,116.6,117.3,118.0],\"sp500\":[6580,6620,6690,6730,6780,6820,6870,6910,6960,7000,7050,7090],\"crypto:BTC\":[218000,205000,192000,178000,165000,152000,142000,135000,128000,122000,116000,110000],\"home_value:sf_ca\":[112.5,113,113.5,114,114.5,115,115.5,116,116.5,117,117.5,118],\"rent:sf_ca\":[109.5,110.1,110.7,111.3,111.9,112.5,113.1,113.7,114.3,114.9,115.5,116.1],\"openai_valuation_usd_trillions\":[2.45,2.52,2.59,2.66,2.73,2.80,2.87,2.94,3.01,3.08,3.15,3.22]},\"openai_ipo_month_index\":null}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619115,
+    "id": "20260605082505527956142ef14c1c",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "20260605082505527956142ef14c1c",
+    "usage": {
+      "completion_tokens": 340,
+      "prompt_tokens": 780,
+      "prompt_tokens_details": {
+        "cached_tokens": 373
+      },
+      "total_tokens": 1120
+    }
+  },
+  "latency_s": 11.086534023284912
+}

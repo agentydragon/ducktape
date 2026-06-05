@@ -89,3 +89,45 @@ than raw monthly arrays — i.e. a regime-segmented monthly **drift/vol/correlat
 state-space roller. That removes the counting problem entirely and makes each scenario cheap. Next
 run: **monthly knots done that way**, more scenarios, real catalog prices, and a structured-`Q`
 baseline to compare ESS/coverage against.
+
+## Windowed variant (`run_windowed.py`): conversational rollout
+
+Same markets + reweight harness, but each world is a **conversation** advancing `W = 12` months per
+turn; we concatenate fixed-size windows, so the horizon length is enforced by **us** (retry a window
+that miscounts) rather than begged from the model. Each world is its own conversation (an independent
+draw; `BATCH_SIZE > 1` rolls deliberately-distinct worlds per thread as a coverage knob), run in
+parallel with 429/timeout backoff.
+
+### Findings (2026-06-05, free GLM-4.5-Flash, 15 worlds, 60-month horizon, 12-month windows)
+
+| metric                          | one-shot dense |             windowed |
+| ------------------------------- | -------------: | -------------------: |
+| valid scenarios                 |      6–10 / 16 |            **15/15** |
+| paths at full length            |      1–11 / 80 |            **75/75** |
+| output tokens / world           |          ~2.0k |                ~2.0k |
+| input tokens / world            |         ~0.56k |            **~6.5k** |
+| ESS (of valid)                  |        3.5–3.9 |                  6.3 |
+| mean max monthly \|log-return\| |      0.06–0.17 |                 0.09 |
+| length-enforcement cost         |              — | 2 retries / 79 calls |
+
+- **Length discipline is solved.** Chunking to 12 months and retrying a miscounted window yields
+  **75/75 full-length paths** (every path exactly 61) vs 1–11/80 one-shot. The model miscounted only
+  **twice in 79 windows**; the retry fixed both. Nothing dropped — **15/15 valid**.
+- **The cost moved to input tokens.** This run kept the full conversation thread (stateful), so each
+  window re-reads the growing history → **~6.5k input tokens/world** (97k total), ~10× the one-shot
+  prompt and ~3× this run's own output. Output/world is unchanged (~2k) because the count of emitted
+  numbers is fixed. The one-shot's length-counting problem became a context-management problem —
+  exactly the predicted trade.
+- **More valid scenarios eased sample-starvation.** With 15 valid (vs 6–10), correlated paired
+  markets no longer perfectly collapse — `sp500>6000`/`>7500` separated to 0.65/0.52 (identical
+  one-shot), the BTC pair to 0.36/0.26. Reweight fidelity improves with sample size.
+- **Free, 0 pp quota** (127k tokens; `glm-4.7-flash` was 429-saturated, so the probe fell to
+  `glm-4.5-flash`).
+
+### Next: compact handoff
+
+The 97k input tokens are pure statefulness. A **compact handoff** — fresh prompt each window carrying
+only the previous window's ending levels + a one-line regime note, not the whole thread — should cut
+input toward ~1–2k/world while keeping the long arc via the regime note; that's the obvious next
+measurement, alongside prompt-caching the shared prefix, `BATCH_SIZE > 1` for the coverage knob, and
+more worlds.

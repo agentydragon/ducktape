@@ -1,0 +1,57 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 13.)"
+      },
+      {
+        "role": "user",
+        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Initial stagflation environment with high inflation and slowing growth. Markets brace for potential Fed rate cuts. OpenAI remains private but valuation continues to climb. Housing market shows signs of cooling despite high inflation.\",\"months\":{\"inflation\":[101.2,102.5,103.8,105.1,106.3,107.4,108.2,108.9,109.5,110.0,110.4,110.7],\"sp500\":[5150,5000,4850,4700,4550,4450,4400,4450,4600,4800,5100,5400],\"crypto:BTC\":[92000,88000,84000,80000,76000,72000,70000,73000,78000,84000,90000,96000],\"home_value:sf_ca\":[99.5,98.8,98.0,97.1,96.2,95.3,94.5,93.8,93.2,92.8,92.5,92.3],\"rent:sf_ca\":[100.5,101.2,101.9,102.6,103.3,103.9,104.4,104.8,105.1,105.3,105.4,105.5],\"openai_valuation_usd_trillions\":[0.90,0.95,1.00,1.05,1.10,1.15,1.20,1.25,1.30,1.35,1.40,1.45]},\"openai_ipo_month_index\":null}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-12 levels: inflation=110.7, sp500=5400, crypto:BTC=96000, home_value:sf_ca=92.3, rent:sf_ca=105.5, openai_valuation_usd_trillions=1.45\nReturn exactly 12 values per series for months 13..24."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"regime\":\"Inflation peaks and begins a gradual decline as Fed achieves soft landing. Tech stocks surge with AI boom accelerating. Crypto recovers strongly as institutional adoption increases. Housing market stabilizes at lower prices while rent growth moderates. OpenAI prepares for blockbuster IPO.\",\"months\":{\"inflation\":[111.0,111.2,111.3,111.3,111.2,111.0,110.7,110.3,109.8,109.2,108.5,107.7],\"sp500\":[5500,5700,6000,6400,6900,7500,8200,8800,9200,9500,9800,10000],\"crypto:BTC\":[98000,101000,105000,110000,116000,123000,130000,138000,146000,154000,162000,170000],\"home_value:sf_ca\":[92.1,91.9,91.8,91.7,91.7,91.8,92.0,92.3,92.7,93.2,93.8,94.5],\"rent:sf_ca\":[105.6,105.7,105.8,105.9,106.0,106.0,106.0,105.9,105.8,105.7,105.6,105.4],\"openai_valuation_usd_trillions\":[1.50,1.55,1.60,1.65,1.70,1.75,1.80,1.85,1.90,1.95,2.00,2.05]},\"openai_ipo_month_index\":null}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619494,
+    "id": "202606050831248932a4ce88db4743",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "202606050831248932a4ce88db4743",
+    "usage": {
+      "completion_tokens": 372,
+      "prompt_tokens": 825,
+      "prompt_tokens_details": {
+        "cached_tokens": 373
+      },
+      "total_tokens": 1197
+    }
+  },
+  "latency_s": 10.237840175628662
+}

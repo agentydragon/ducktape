@@ -1,0 +1,57 @@
+{
+  "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
+  "request": {
+    "model": "glm-4.5-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "You simulate ONE plausible future world, month by month, as numeric JSON. Series to track each month: inflation (CPI index, 100.0 at month 0), sp500 (S&P 500 level), crypto:BTC (USD), home_value:sf_ca (SF home-price index, 100.0 at m0), rent:sf_ca (SF rent index, 100.0 at m0), openai_valuation_usd_trillions (OpenAI enterprise value, TRILLIONS USD). I advance the world in windows; each reply is ONLY a JSON object {\"regime\": short note on the current regime and what is coming, \"months\": {series: [k numbers], ...}, \"openai_ipo_month_index\": int or null (set ONLY on the window where OpenAI IPOs)}. The k numbers are the levels at the next k consecutive months. Keep paths smooth month-to-month, keep series correlated (risk-off hits equities and crypto together; inflation drags rents and home prices), and maintain the regime arc you establish across windows.\n(diversity seed 7.)"
+      },
+      {
+        "role": "user",
+        "content": "Begin a new world at month 0.\nMonth-0 levels: inflation=100, sp500=5300, crypto:BTC=95000, home_value:sf_ca=100, rent:sf_ca=100, openai_valuation_usd_trillions=0.85\nReturn exactly 12 values per series for months 1..12."
+      },
+      {
+        "role": "assistant",
+        "content": "{\"regime\":\"Initial tech boom with moderate inflation. AI sector surging while housing market stabilizes after pandemic fluctuations.\",\"months\":{\"inflation\":[101.2,102.5,103.1,104.3,105.2,106.1,107.3,108.5,109.2,110.1,111.4,112.7],\"sp500\":[5450,5620,5780,5910,6020,6150,6280,6350,6420,6510,6620,6730],\"crypto:BTC\":[98000,105000,113000,125000,132000,128000,135000,142000,155000,168000,175000,182000],\"home_value:sf_ca\":[101.5,102.8,104.2,105.7,107.1,108.5,109.8,111.2,112.5,113.8,114.9,116.0],\"rent:sf_ca\":[101.2,102.0,103.1,104.3,105.6,107.0,108.5,110.1,111.8,113.5,115.2,116.8],\"openai_valuation_usd_trillions\":[0.92,1.05,1.18,1.32,1.45,1.58,1.72,1.85,1.98,2.12,2.25,2.38]},\"openai_ipo_month_index\":null}"
+      },
+      {
+        "role": "user",
+        "content": "Continue the SAME world. Month-12 levels: inflation=112.7, sp500=6730, crypto:BTC=182000, home_value:sf_ca=116, rent:sf_ca=116.8, openai_valuation_usd_trillions=2.38\nReturn exactly 12 values per series for months 13..24."
+      }
+    ]
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "{\"regime\":\"Rising inflation concerns prompt central bank tightening, beginning to weigh on risk assets. Tech valuations face pressure while housing shows early signs of cooling.\",\"months\":{\"inflation\":[114.1,115.5,116.8,118.2,119.5,120.8,122.1,123.3,124.5,125.6,126.8,127.9],\"sp500\":[6650,6520,6380,6250,6120,6010,5920,5850,5780,5720,5670,5620],\"crypto:BTC\":[175000,168000,162000,155000,148000,142000,138000,132000,128000,122000,118000,115000],\"home_value:sf_ca\":[117.2,118.3,119.2,119.8,120.2,120.5,120.7,120.8,120.9,120.8,120.6,120.3],\"rent:sf_ca\":[118.2,119.5,120.8,122.1,123.3,124.5,125.6,126.6,127.5,128.3,129.0,129.6],\"openai_valuation_usd_trillions\":[2.45,2.52,2.58,2.63,2.67,2.70,2.72,2.73,2.73,2.72,2.70,2.68]},\"openai_ipo_month_index\":null}",
+          "role": "assistant"
+        }
+      }
+    ],
+    "created": 1780619294,
+    "id": "202606050828059f9802882ba844d2",
+    "model": "glm-4.5-flash",
+    "object": "chat.completion",
+    "request_id": "202606050828059f9802882ba844d2",
+    "usage": {
+      "completion_tokens": 353,
+      "prompt_tokens": 798,
+      "prompt_tokens_details": {
+        "cached_tokens": 373
+      },
+      "total_tokens": 1151
+    }
+  },
+  "latency_s": 9.432378053665161
+}

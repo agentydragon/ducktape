@@ -2,42 +2,24 @@
   "endpoint": "https://api.z.ai/api/paas/v4/chat/completions",
   "request": {
     "model": "glm-4.7-flash",
+    "temperature": 1.0,
+    "thinking": {
+      "type": "disabled"
+    },
+    "response_format": {
+      "type": "json_object"
+    },
     "messages": [
       {
         "role": "user",
-        "content": "reply ok"
+        "content": "reply {\"ok\": true}"
       }
     ],
-    "max_tokens": 4
+    "max_tokens": 20
   },
   "response": {
-    "choices": [
-      {
-        "finish_reason": "length",
-        "index": 0,
-        "message": {
-          "content": "",
-          "reasoning_content": "1.  **",
-          "role": "assistant"
-        }
-      }
-    ],
-    "created": 1780616537,
-    "id": "20260605074123c41868229b6c4f50",
-    "model": "glm-4.7-flash",
-    "object": "chat.completion",
-    "request_id": "20260605074123c41868229b6c4f50",
-    "usage": {
-      "completion_tokens": 4,
-      "completion_tokens_details": {
-        "reasoning_tokens": 4
-      },
-      "prompt_tokens": 7,
-      "prompt_tokens_details": {
-        "cached_tokens": 2
-      },
-      "total_tokens": 11
-    }
+    "error": "{\"error\":{\"code\":\"1302\",\"message\":\"Rate limit reached for requests\"}}",
+    "code": 429
   },
-  "latency_s": 54.267998695373535
+  "latency_s": 0.7254133224487305
 }
