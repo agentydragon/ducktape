@@ -89,9 +89,11 @@ def _get_upstream_route(
     metadata = session.get(ModelMetadata, model_id)
     if metadata is None:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_id}")
-    if metadata.api_shape != api_shape.value:
+    metadata_api_shape = LLMApiShape(metadata.api_shape)
+    if metadata_api_shape != api_shape:
         raise HTTPException(
-            status_code=400, detail=f"Model '{model_id}' uses api_shape='{metadata.api_shape}', not '{api_shape.value}'"
+            status_code=400,
+            detail=f"Model '{model_id}' uses api_shape='{metadata_api_shape.value}', not '{api_shape.value}'",
         )
 
     # Determine which upstream to use (NULL = "openai" default)

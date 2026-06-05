@@ -171,7 +171,7 @@ def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config: Props
                 max_output_tokens=2048,
                 upstream_name="local",
                 upstream_model="chat-upstream",
-                api_shape=LLMApiShape.CHAT_COMPLETIONS.value,
+                api_shape=LLMApiShape.CHAT_COMPLETIONS,
             )
         )
         session.commit()

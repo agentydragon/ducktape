@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import case, func
 
+from openai_utils.api_shape import LLMApiShape
 from props.backend.auth import (
     AgentRole,
     AuthenticatedIdentity,
@@ -302,7 +303,7 @@ class LLMRequestInfo(BaseModel):
 
     id: int
     model: str
-    api_shape: str = "responses"
+    api_shape: LLMApiShape = LLMApiShape.RESPONSES
     request_body: dict[str, Any]
     response_body: dict[str, Any] | None
     response_error_body: dict[str, Any] | None = None

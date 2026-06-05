@@ -39,7 +39,7 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
             max_output_tokens=meta.max_output_tokens,
             upstream_name=None,
             upstream_model=None,
-            api_shape=LLMApiShape.RESPONSES.value,
+            api_shape=LLMApiShape.RESPONSES,
         )
 
     # Add custom models from config
@@ -54,7 +54,7 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
                 max_output_tokens=custom.max_output_tokens,
                 upstream_name=custom.upstream,
                 upstream_model=custom.upstream_model,
-                api_shape=custom.api_shape.value,
+                api_shape=custom.api_shape,
             )
 
     # Full sync: make DB exactly match source
