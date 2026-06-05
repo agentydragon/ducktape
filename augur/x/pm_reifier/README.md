@@ -104,9 +104,24 @@ valuation markets reweight cleanly.
   thin symmetric tails are wrong for finance) and reduces the LLM to coefficient-picking.
 - **Percentiles / quantile function** — `kernel_percentile.py`. Elicit a fixed grid (p1..p99); PIT is
   the inverse quantile function at the realized value, and the stated p1/p99 make tail coverage directly
-  measurable. **Empirically the best of the three** (bias removed, honest p1/p99 — see below): naming the
-  percentiles forces an explicit tail commitment the enumeration never makes. `draw()` is inverse-transform
-  sampling; drawing `u` tail-weighted would give **guaranteed tail coverage + built-in importance weights**.
+  measurable. **Best _marginal_ calibration of the three** (bias removed, honest p1/p99 — see below): naming
+  the percentiles forces an explicit tail commitment the enumeration never makes.
+  > **⚠️ But the percentile approach is NOT deployable as `Q`, for two independent reasons:**
+  >
+  > 1. **It is marginal-only.** A percentile/quantile is a scalar concept; there is no canonical
+  >    multivariate percentile (no canonical order on ℝⁿ). `kernel_percentile` elicits five _independent_
+  >    univariate marginal CDFs and throws away the cross-series dependence — so it cannot produce a joint
+  >    draw (a shared `u` across series → comonotone; independent `u` → zero correlation; both wrong). The
+  >    reify path needs the joint (risk-off hits equities+crypto together), so a product-of-marginals is
+  >    unusable as the base measure.
+  > 2. **Test-what-you-deploy.** Even patched with a copula for sampling, the backtest would then score a
+  >    _different_ generative process than the one we sample from — the calibration evidence wouldn't
+  >    transfer. Whatever defines the distribution must be **one process**, scored and sampled identically.
+  >
+  > So `kernel_percentile` is a **diagnostic** — it isolates that the enumeration kernel's failures are a
+  > marginal-calibration problem, and proves the model _can_ state honest marginal tails when asked
+  > directly. It is not a deployable kernel. The deployable kernel must emit a **joint** in a single
+  > unified process (see the enumeration-reframing work below).
   Caveat: a quantile is per-series scalar (awkward for the joint+events step); the N-sample handles the
   joint natively. Hybrid for the forward path: percentile marginals for the joint + the N-sample for the
   cross-series coupling and discrete events.
