@@ -1,13 +1,15 @@
-"""Engine-level test for the JAX scan program cache's config-value reuse contract.
+"""Engine-level test for the JAX scan program's JAX-NATIVE compilation-cache reuse contract.
 
-`run_jax_scan` caches the compiled program by a content fingerprint of the plan that EXCLUDES the
-swept numeric-config fields (tax brackets/rates/standard deduction, MID principal ratio, transfer
-amounts, per-lot cost basis): those flow in as traced inputs. So two plans that differ only in those
-values share one compiled program. These tests prove that reuse is CORRECT — after caching plan A's
-program, running a plan B that perturbs a traced field reuses A's program yet still produces B's
-(NumPy-reference) result. The suite-wide parity tests each run a single scenario, so they cannot catch
-a swept field that is wrongly baked into the program (which would make plan B silently reuse plan A's
-value).
+`run_jax_scan` hands caching to `jax.jit`: `_program_impl` is module-level and jitted with the static,
+hashable `_Counts` (the plan's structure) keying the cache, while the swept numeric config (tax
+brackets/rates/standard deduction, MID principal ratio, transfer amounts, per-lot cost basis, opening
+balances) and the seed-varying series ride in as traced `cfg` / `baked` / series inputs. So two plans
+that differ only in those traced values share ONE compiled XLA executable — `_program_impl._cache_size()`
+does not grow. These tests prove reuse is both REAL (the second call adds no compilation) and CORRECT
+(the perturbed plan still matches its own NumPy reference, and the perturbation actually moved the
+output, so the reuse path isn't vacuously correct). The suite-wide parity tests each run a single
+scenario, so they cannot catch a swept field wrongly baked into the program (which would make plan B
+silently reuse plan A's value).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from augur.sim.buffers import SimulationBuffers
 from augur.sim.compiler import compile_simulation
 from augur.sim.compiler.plan import CompiledSimulation
 from augur.sim.engine import _allocate_buffers, _allocate_current_state, _run_month_step, _snapshot_current_state
-from augur.sim.engine.jax_engine import _plan_fingerprint, run_jax_scan
+from augur.sim.engine.jax_engine import _program_impl, run_jax_scan
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
@@ -152,16 +154,19 @@ def _assert_value_sweep_reuses(
     *,
     locations: dict[str, Location] | None = None,
 ) -> None:
-    """Cache plan A, perturb a traced value into plan B, and assert B reuses A's program (same
-    fingerprint) yet still matches the NumPy reference for B — and that the perturbation moved the
-    output (so the reuse path isn't vacuously correct)."""
+    """Compile plan A (one `_program_impl` XLA compile), perturb a traced value into plan B, and assert
+    B reuses A's compiled executable (`_program_impl._cache_size()` does not grow) yet still matches the
+    NumPy reference for B — and that the perturbation moved the output (so the reuse path isn't vacuously
+    correct)."""
     plan_a = _compile(scenario, rollout_count=2, locations=locations or {})
-    out_a = extract(_run_jax(plan_a)).copy()  # warms the program cache for this structure
+    out_a = extract(_run_jax(plan_a)).copy()  # warms JAX's compilation cache for this structure
+    cache_after_a = _program_impl._cache_size()
 
     plan_b = perturb(plan_a)
-    assert _plan_fingerprint(plan_b) == _plan_fingerprint(plan_a)  # B must reuse A's compiled program
-
     out_b_jax = extract(_run_jax(plan_b))
+    # B differs from A only in a traced value, so JAX reuses A's executable — no new compilation.
+    assert _program_impl._cache_size() == cache_after_a
+
     out_b_numpy = extract(_run_numpy(plan_b))
     np.testing.assert_allclose(out_b_jax, out_b_numpy, rtol=1e-5, atol=1e-3)
     assert not np.allclose(out_b_jax, out_a)
@@ -257,12 +262,29 @@ def test_mortgage_principal_sweep_reuses_program_correctly() -> None:
     )
 
 
-def test_structural_change_busts_the_fingerprint() -> None:
-    # A baked (non-traced) structural field IS fingerprinted, so changing it forces a recompile rather
-    # than incorrect reuse. `link_ordinary_count` (active bracket count) is such a baked feature.
+def test_identical_plans_compile_program_once() -> None:
+    # Two structurally-identical plans (the recompile-bug regression): the second `run_jax_scan` must
+    # reuse the first's compiled `_program_impl` executable and add NO new compilation. (The first call
+    # compiles iff JAX's process-global jit cache wasn't already warmed by an earlier test, so we assert
+    # only the second call's zero delta, which is the property that was bugged.)
+    plan_a = _compile(_tax_scenario(), rollout_count=2, locations={})
+    plan_b = _compile(_tax_scenario(), rollout_count=2, locations={})  # distinct object, same structure
+    _run_jax(plan_a)  # ensure this structure is compiled
+    after_first = _program_impl._cache_size()
+    _run_jax(plan_b)
+    assert _program_impl._cache_size() == after_first  # identical structure reuses — no recompile
+
+
+def test_structural_change_forces_a_recompile() -> None:
+    # A baked (non-traced) structural field keys JAX's compile cache (via `_Counts`), so changing it
+    # forces a fresh compile rather than incorrect reuse. `link_ordinary_count` (active bracket count)
+    # is such a baked feature: running the changed plan grows the jit cache by exactly 1.
     plan_a = _compile(_tax_scenario(), rollout_count=2, locations={})
     plan_c = replace(plan_a, tax=replace(plan_a.tax, link_ordinary_count=plan_a.tax.link_ordinary_count + 1))
-    assert _plan_fingerprint(plan_c) != _plan_fingerprint(plan_a)
+    _run_jax(plan_a)  # warm the cache for the base structure
+    before = _program_impl._cache_size()
+    _run_jax(plan_c)
+    assert _program_impl._cache_size() == before + 1
 
 
 if __name__ == "__main__":

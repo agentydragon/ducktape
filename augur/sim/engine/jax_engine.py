@@ -39,7 +39,7 @@ precision alone, not logic.
 from __future__ import annotations
 
 import hashlib
-from collections import OrderedDict
+import os
 from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
 from typing import Any, NamedTuple
@@ -47,12 +47,12 @@ from typing import Any, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax import stages
 
 from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
+from augur.sim.compiler.plan import SlotPlan
 from augur.sim.enums import (
     CapitalGainClassification,
     LifecycleKind,
@@ -64,6 +64,14 @@ from augur.sim.tensor_fifo import lot_order_for_pool
 
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
+
+# Opt-in JAX persistent on-disk compilation cache for deploy-time reuse: set AUGUR_JAX_COMPILATION_CACHE_DIR
+# to a writable path and XLA executables compiled in one process are reused across runs (the thresholds
+# force even small / fast-to-compile executables to be cached). No-op when the env var is unset.
+if _jax_cache_dir := os.environ.get("AUGUR_JAX_COMPILATION_CACHE_DIR"):
+    jax.config.update("jax_compilation_cache_dir", _jax_cache_dir)
+    jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+    jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
 
 class _ScanState(NamedTuple):
@@ -184,8 +192,7 @@ class _FoldedLiquidity:
 @dataclass(frozen=True)
 class _ScanMeta:
     """Structural (rollout-value-independent) data the post-scan host code needs to scatter the
-    stacked `ys` back into the NumPy buffers. Carried alongside the compiled program in the cache so
-    a cache hit needs no recompute — these are pure functions of the plan's *structure*."""
+    stacked `ys` back into the NumPy buffers. Pure functions of the plan's *structure*."""
 
     folded_sales: list
     folded_purchases: list
@@ -199,15 +206,121 @@ class _ScanMeta:
     horizon: int
 
 
-# Fields that flow into the compiled program as TRACED inputs (not baked constants) are EXCLUDED from
-# the fingerprint: the same compiled program is reused across plans that differ only in these values.
-# Everything else the program bakes IS fingerprinted, so a cache hit guarantees byte-identical baked
-# config (correct reuse). Two classes of traced input:
-#   - seed-varying series (`external_values`, the PE channel arrays) → rollout-draw reuse;
-#   - swept numeric config (the income/LTCG tax brackets, rates, standard deduction, MID principal
-#     ratio, transfer amounts, and per-lot cost basis) → config-value-sweep reuse, with the structural
-#     feature/count `if`s left baked so they still ride in the fingerprint. See `_traced_config`.
-_FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
+@jax.tree_util.register_static
+@dataclass(frozen=True, eq=False)
+class _Counts:
+    """STATIC (non-traced) bundle `_program_impl` takes as a hashable argument, so `jax.jit` keys its
+    compilation cache on it: two structurally-identical plans share one compiled executable, and the
+    seed/config sweeps reuse it (their differences ride in the traced `cfg` / `baked` / series inputs).
+
+    Carries the structural Python ints the `step`/`december_tax` bodies close over plus the concrete
+    `plan` (the cores read its NumPy structure — feature flags, slot indices, FIFO orders, per-property
+    floats — none of which is a traced array) and the host-side structural objects each body references
+    as a local (folded event/sale/purchase/liquidity/PE/harvest lists and the NumPy index tables they
+    scatter through). Registered `static`, so JAX treats the whole thing as a compile-time constant.
+    Equality / hash are content-based over the plan's *structure* (`_StructureKey`), so any difference
+    in a baked-structure value forces a fresh compile (correct), while traced-only differences reuse.
+    """
+
+    plan: CompiledSimulation
+    structure_key: _StructureKey
+    p: SlotPlan  # plan.slot_plan
+    r: int
+    horizon: int
+    n_sales: int
+    lot_axis: int
+    link_count: int
+    profile_count: int
+    taxliab_count: int
+    liq_policy_count: int
+    liq_max_assets: int
+    pe_issuer_count: int
+    n_pe_kinds: int
+    folded_lifecycle: tuple
+    folded_pr: tuple
+    folded_sale_events: tuple
+    folded_sales: tuple
+    folded_purchases: tuple
+    folded_liquidity: tuple
+    folded_pe: tuple
+    folded_harvest: tuple
+    # NumPy index/selection tables the step bodies scatter through (host-side, baked into the trace).
+    sale_pslot: np.ndarray
+    sale_bufidx: np.ndarray
+    sale_olots: np.ndarray
+    sale_price_series: np.ndarray
+    pur_buf: np.ndarray
+    pur_buyer: np.ndarray
+    pur_seller: np.ndarray
+    pur_mort_rows: np.ndarray
+    pur_mort_idx: np.ndarray
+    salt_link_active: np.ndarray
+    cg_rep_profile: np.ndarray
+
+    def __hash__(self) -> int:
+        return hash(self.structure_key)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Counts) and self.structure_key == other.structure_key
+
+
+class _Baked(NamedTuple):
+    """TRACED bundle of every device array the `step`/`december_tax` bodies and the cores close over —
+    the precomputed numpy tables lifted to `jnp` (transfer / obligation / accrual tables, the stacked
+    scheduled-sale FIFO data, the per-month §121 primary-residence table, the carry-init constants,
+    the year-end tax tables). A NamedTuple is an auto-registered JAX pytree, so all of these pass through
+    `jax.jit` traced: differing table VALUES (e.g. a different lot purchase month or property tax rate)
+    reuse the same executable rather than baking a fresh XLA constant."""
+
+    ordinary0: jnp.ndarray
+    property_tax_ytd0: jnp.ndarray
+    cg_active0: jnp.ndarray
+    cg_ytd0: jnp.ndarray
+    tlh0: jnp.ndarray
+    property_rented_fraction_0: jnp.ndarray
+    property_building_basis_0: jnp.ndarray
+    prop0: jnp.ndarray
+    liab0: jnp.ndarray
+    property_is_primary_table: jnp.ndarray
+    sale_months_t: jnp.ndarray
+    sale_qty_t: jnp.ndarray
+    sale_price_fixed_t: jnp.ndarray
+    sale_prior_t: jnp.ndarray
+    sale_cg_map_t: jnp.ndarray
+    sale_policy_mask_t: jnp.ndarray
+    pur_month: jnp.ndarray
+    pur_stake: jnp.ndarray
+    tr: dict
+    og: dict
+    acc: dict
+    tax_slot_table: jnp.ndarray
+    salt_cap_table: jnp.ndarray
+
+
+class _StructureKey:
+    """Hashable content key over the parts of `plan` the compiled program bakes into its *structure*
+    (everything the cores read as NumPy / Python rather than as a traced array). Equal keys ⇒ the
+    `step` / `december_tax` trace is identical ⇒ JAX may reuse the executable. Built from the full plan
+    structure (dataclasses → field tuples, NumPy arrays → `(dtype, shape, bytes)`), excluding only the
+    swept-numeric / seed-varying fields that flow in as traced `cfg` / series / `baked` inputs."""
+
+    __slots__ = ("_digest",)
+
+    def __init__(self, plan: CompiledSimulation) -> None:
+        self._digest = _structure_digest(plan)
+
+    def __hash__(self) -> int:
+        return hash(self._digest)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _StructureKey) and self._digest == other._digest
+
+
+# Plan fields that flow into the program as TRACED inputs (the swept-numeric `cfg` and the seed-varying
+# series / PE channels) are EXCLUDED from the structure digest: plans differing only in these reuse the
+# same compiled executable. Everything else is part of `_program_impl`'s trace structure, so it IS
+# digested — a difference forces a fresh `jax.jit` compile (correct).
+_STRUCTURE_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
     {
         ("CompiledSimulation", "external_values"),
         ("CompiledSimulation", "pe_channels"),
@@ -231,12 +344,51 @@ _FINGERPRINT_EXCLUDE: frozenset[tuple[str, str]] = frozenset(
 )
 
 
+def _digest_into(h: Any, obj: Any) -> None:
+    if is_dataclass(obj) and not isinstance(obj, type):
+        h.update(b"D")
+        h.update(type(obj).__name__.encode())
+        for f in fields(obj):
+            if (type(obj).__name__, f.name) in _STRUCTURE_EXCLUDE:
+                continue
+            h.update(f.name.encode())
+            _digest_into(h, getattr(obj, f.name))
+    elif isinstance(obj, np.ndarray):
+        h.update(b"A")
+        h.update(str(obj.dtype).encode())
+        h.update(repr(obj.shape).encode())
+        h.update(np.ascontiguousarray(obj).tobytes())
+    elif isinstance(obj, (list, tuple)):
+        h.update(b"L")
+        h.update(str(len(obj)).encode())
+        for x in obj:
+            _digest_into(h, x)
+    elif isinstance(obj, dict):
+        h.update(b"M")
+        for k in sorted(obj, key=repr):
+            h.update(repr(k).encode())
+            _digest_into(h, obj[k])
+    else:
+        # Scalars, enums, AssetKey/LevelSeriesKey (frozen value objects): stable repr captures content.
+        h.update(b"S")
+        h.update(repr(obj).encode())
+
+
+def _structure_digest(plan: CompiledSimulation) -> bytes:
+    """Content digest of everything `_program_impl` bakes into its trace structure (all of `plan` except
+    the traced swept-numeric / seed-varying fields). Equal digests ⇒ identical trace ⇒ safe executable
+    reuse; this is the static cache key `jax.jit` hashes via `_Counts`."""
+    h = hashlib.blake2b(digest_size=16)
+    _digest_into(h, plan)
+    return h.digest()
+
+
 class _TracedConfig(NamedTuple):
-    """JAX-native typed bundle of the swept numeric config the compiled program takes as TRACED inputs
-    (a NamedTuple → native JAX pytree, so it passes through `jax.jit` typed). The cores read VALUES from
-    here (`jax.Array`s) while reading structure / feature flags / counts / slot indices from the
-    concrete `plan` — so nothing puns a traced array into the compiler's NumPy-typed plan fields. Each
-    field mirrors a `_FINGERPRINT_EXCLUDE` entry, so a sweep over these values reuses the program."""
+    """JAX-native typed bundle of the swept numeric config `_program_impl` takes as TRACED inputs (a
+    NamedTuple → native JAX pytree, so it passes through `jax.jit` typed). The cores read VALUES from
+    here (`jax.Array`s) while reading structure / feature flags / counts / slot indices from the static
+    `counts` — so nothing puns a traced array into a NumPy-typed structural field. A sweep over these
+    values reuses the compiled program (they don't change `counts`)."""
 
     link_standard_deduction: jnp.ndarray
     link_ordinary_upper: jnp.ndarray
@@ -257,7 +409,7 @@ class _TracedConfig(NamedTuple):
 
 
 def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
-    """Build the traced-config bundle from the (concrete) plan. Mirrors the fingerprint exclusions."""
+    """Build the swept-numeric traced-config bundle from the (concrete) plan."""
     return _TracedConfig(
         link_standard_deduction=jnp.asarray(plan.tax.link_standard_deduction),
         link_ordinary_upper=jnp.asarray(plan.tax.link_ordinary_upper),
@@ -278,73 +430,14 @@ def _traced_config(plan: CompiledSimulation) -> _TracedConfig:
     )
 
 
-def _fingerprint_into(h: Any, obj: Any) -> None:
-    if is_dataclass(obj) and not isinstance(obj, type):
-        h.update(b"D")
-        h.update(type(obj).__name__.encode())
-        for f in fields(obj):
-            if (type(obj).__name__, f.name) in _FINGERPRINT_EXCLUDE:
-                continue
-            h.update(f.name.encode())
-            _fingerprint_into(h, getattr(obj, f.name))
-    elif isinstance(obj, np.ndarray):
-        h.update(b"A")
-        h.update(str(obj.dtype).encode())
-        h.update(repr(obj.shape).encode())
-        h.update(np.ascontiguousarray(obj).tobytes())
-    elif isinstance(obj, (list, tuple)):
-        h.update(b"L")
-        h.update(str(len(obj)).encode())
-        for x in obj:
-            _fingerprint_into(h, x)
-    elif isinstance(obj, dict):
-        h.update(b"M")
-        for k in sorted(obj, key=repr):
-            h.update(repr(k).encode())
-            _fingerprint_into(h, obj[k])
-    else:
-        # Scalars, enums, AssetKey/LevelSeriesKey (frozen value objects): stable repr captures content.
-        h.update(b"S")
-        h.update(repr(obj).encode())
-
-
-def _plan_fingerprint(plan: CompiledSimulation) -> bytes:
-    """Content hash of everything the compiled scan program bakes as a constant (all of `plan` except
-    the seed-varying traced inputs). Two plans with the same fingerprint produce byte-identical
-    programs, so the compiled executable can be safely reused."""
-    h = hashlib.blake2b(digest_size=16)
-    _fingerprint_into(h, plan)
-    return h.digest()
-
-
-# Compiled scan programs, keyed by plan fingerprint (LRU-bounded). Each entry is the jitted device
-# program plus the structural `_ScanMeta` for post-scan scatter. Bounded so a long-lived process that
-# simulates many distinct structures doesn't retain every executable.
-_PROGRAM_CACHE: OrderedDict[bytes, tuple[stages.Wrapped, _ScanMeta]] = OrderedDict()
-_PROGRAM_CACHE_MAX = 32
-
-
-def _get_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
-    key = _plan_fingerprint(plan)
-    cached = _PROGRAM_CACHE.get(key)
-    if cached is not None:
-        _PROGRAM_CACHE.move_to_end(key)
-        return cached
-    result = _build_program(plan)
-    _PROGRAM_CACHE[key] = result
-    if len(_PROGRAM_CACHE) > _PROGRAM_CACHE_MAX:
-        _PROGRAM_CACHE.popitem(last=False)
-    return result
-
-
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
-    """Cached single-program `lax.scan` engine: the whole month loop compiles into one XLA program
-    (one dispatch for all months) whose only traced inputs are the seed-varying series. The traced
-    program is cached by plan fingerprint, so repeated simulations of the same scenario structure
-    (e.g. a Monte-Carlo sweep over rollout draws) pay tracing + XLA compilation once, not per call.
-
-    The first call for a structure builds + compiles the program (`_build_program`); subsequent calls
-    reuse the cached executable, passing the new draw's `external_values` / PE channel arrays."""
+    """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
+    dispatch for all months). `_build_program` does the host-side precompute (numpy tables, folded
+    structural lists) and packs them into the traced `baked` pytree + the static, hashable `counts`.
+    The device program is the module-level `_program_impl`, jitted with `counts` static — so JAX's own
+    compilation cache reuses the executable across calls whose `counts` are equal (same structure) and
+    whose only differences ride in the traced `external_values` / PE channels / `cfg` / `baked`. That
+    covers both Monte-Carlo rollout-draw sweeps and config-value sweeps with a single XLA compile."""
     # PE-mark validation is seed-dependent (the marks are a sampled series), so it runs every call on
     # the concrete plan — the in-scan path can't raise.
     pe_channels = plan.pe_channels
@@ -353,14 +446,15 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
         raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
-    program, meta = _get_program(plan)
-    ys, sale_disp = program(*_program_inputs(plan))
+    baked, counts, meta = _build_program(plan)
+    external_values, pe_ch, cfg = _program_inputs(plan)
+    ys, sale_disp = _program_impl(external_values, pe_ch, cfg, baked, counts)
     _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
-def _program_inputs(plan: CompiledSimulation) -> tuple:
-    """The three traced arguments the compiled program takes: the external-series cube, the
-    seed-varying PE channel dict, and the swept-numeric `_TracedConfig`."""
+def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
+    """The seed-varying traced inputs `_program_impl` takes besides `baked`/`counts`: the external-series
+    cube, the PE channel dict, and the swept-numeric `_TracedConfig`."""
     pe_channels = plan.pe_channels
     pe_ch_dyn = {
         "marks": jnp.asarray(pe_channels.marks),
@@ -377,42 +471,30 @@ def _program_inputs(plan: CompiledSimulation) -> tuple:
 
 def compiled_hlo_text(plan: CompiledSimulation) -> str:
     """Optimized-HLO text of the compiled program for `plan` (introspection / op-count profiling)."""
-    program, _ = _get_program(plan)
-    text = program.lower(*_program_inputs(plan)).compile().as_text()
+    baked, counts, _ = _build_program(plan)
+    external_values, pe_ch, cfg = _program_inputs(plan)
+    text = _program_impl.lower(external_values, pe_ch, cfg, baked, counts).compile().as_text()
     if text is None:
         raise RuntimeError("compiled program exposes no HLO text")
     return text
 
 
-def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]:
-    """Build (host precompute) + jit-compile the device program for one plan *structure*. Returns the
-    jitted program (traced inputs: `external_values`, the PE channel dict) and the structural
-    `_ScanMeta`. Called once per fingerprint; the result is cached by `_get_program`.
-
-    All numeric config is baked as XLA constants here; only the seed-varying series are traced, so the
-    compiled executable is reusable across rollout draws of the same scenario structure. The carry is
-    the per-rollout `_ScanState` pytree; each step gathers the month's plan rows by the traced scan
-    index and runs the branch-free cores (transfers, purchases/mortgages, sales, obligations, TLH,
-    private equity, §121/§168 property accrual, year-end tax)."""
+def _build_program(plan: CompiledSimulation) -> tuple[_Baked, _Counts, _ScanMeta]:
+    """HOST-ONLY precompute for one plan *structure*: builds the numpy/Python tables and folded
+    structural lists, then packs them into the traced `baked` pytree (device arrays) + the static,
+    hashable `counts` (structural ints, folded lists, NumPy index tables, and the concrete `plan`) +
+    the post-scan `_ScanMeta`. No `jax.jit` here — the device program is the module-level
+    `_program_impl`, whose own `jax.jit` cache (keyed on the static `counts`) handles reuse."""
     p = plan.slot_plan
     r = p.rollout_count
     horizon = plan.horizon_months
-    cash0 = jnp.asarray(np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)))
     ordinary0 = jnp.zeros((p.tax_profile_count, r))
     property_tax_ytd0 = jnp.zeros((p.tax_profile_count, r))
-    lot0 = jnp.asarray(np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)))
     cg_active0 = jnp.zeros((p.capital_gain_agent_count, 2, r), dtype=bool)
     cg_ytd0 = jnp.zeros((p.capital_gain_agent_count, 2, r))
     # TLH give-back ledger stays zero here (harvest policies are barred by `scan_supported`), but the
     # capital-gains core threads it, so carry a zeroed copy.
     tlh0 = jnp.zeros((p.harvest_policy_count, r))
-    # Traced inputs: placeholders here, rebound (via `nonlocal`) to the traced arguments inside
-    # `_program_impl`. `step` / `december_tax` close over these names and read the traced values at
-    # trace time. `tcfg` carries the swept numeric VALUES; `plan` stays the concrete structure.
-    external_values: jnp.ndarray = None  # type: ignore[assignment]
-    pe_ch: dict[str, jnp.ndarray] = None  # type: ignore[assignment]
-    cost_basis_per_unit: jnp.ndarray = None  # type: ignore[assignment]
-    tcfg: _TracedConfig = None  # type: ignore[assignment]
     props = plan.properties
     # `rented_fraction`/`building_basis` are mutable (lifecycle FRACTION/CAPITAL_IMPROVEMENT/SALE
     # events), so they're carry state initialized from the compile-time broadcast.
@@ -702,7 +784,6 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
     # capacities, ...) are seed-varying, so they arrive as the traced `pe_ch` dict (see `_program_impl`)
     # rather than baked here; mark validation lives in `run_jax_scan` (it runs on every draw).
     pe_issuers = plan.pe_issuers
-    pe_policies = plan.pe_policies
     pe_issuer_count = int(pe_issuers.codes.shape[0])
     n_pe_kinds = len(PrivateEquityDispositionKind)
     folded_pe: list[tuple[int, int, np.ndarray]] = []
@@ -770,6 +851,160 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
     salt_cap_table = (
         jnp.asarray(plan.salt.cap_by_year[:, cap_year_index_by_month]) if link_count else jnp.zeros((0, horizon))
     )
+    prop0 = jnp.zeros((p.property_count, r))
+    liab0 = jnp.zeros((p.liability_count, r))
+
+    baked = _Baked(
+        ordinary0=ordinary0,
+        property_tax_ytd0=property_tax_ytd0,
+        cg_active0=cg_active0,
+        cg_ytd0=cg_ytd0,
+        tlh0=tlh0,
+        property_rented_fraction_0=property_rented_fraction_0,
+        property_building_basis_0=property_building_basis_0,
+        prop0=prop0,
+        liab0=liab0,
+        property_is_primary_table=property_is_primary_table,
+        sale_months_t=sale_months_t,
+        sale_qty_t=sale_qty_t,
+        sale_price_fixed_t=sale_price_fixed_t,
+        sale_prior_t=sale_prior_t,
+        sale_cg_map_t=sale_cg_map_t,
+        sale_policy_mask_t=sale_policy_mask_t,
+        pur_month=jnp.asarray(pur_month),
+        pur_stake=jnp.asarray(pur_stake),
+        tr=tr,
+        og=og,
+        acc=acc,
+        tax_slot_table=tax_slot_table,
+        salt_cap_table=salt_cap_table,
+    )
+    counts = _Counts(
+        plan=plan,
+        structure_key=_StructureKey(plan),
+        p=p,
+        r=r,
+        horizon=horizon,
+        n_sales=n_sales,
+        lot_axis=lot_axis,
+        link_count=link_count,
+        profile_count=profile_count,
+        taxliab_count=taxliab_count,
+        liq_policy_count=liq_policy_count,
+        liq_max_assets=liq_max_assets,
+        pe_issuer_count=pe_issuer_count,
+        n_pe_kinds=n_pe_kinds,
+        folded_lifecycle=tuple(folded_lifecycle),
+        folded_pr=tuple(folded_pr),
+        folded_sale_events=tuple(folded_sale_events),
+        folded_sales=tuple(folded_sales),
+        folded_purchases=tuple(folded_purchases),
+        folded_liquidity=tuple(folded_liquidity),
+        folded_pe=tuple(folded_pe),
+        folded_harvest=tuple(folded_harvest),
+        sale_pslot=sale_pslot,
+        sale_bufidx=sale_bufidx,
+        sale_olots=sale_olots,
+        sale_price_series=sale_price_series,
+        pur_buf=pur_buf,
+        pur_buyer=pur_buyer,
+        pur_seller=pur_seller,
+        pur_mort_rows=pur_mort_rows,
+        pur_mort_idx=pur_mort_idx,
+        salt_link_active=salt_link_active,
+        cg_rep_profile=cg_rep_profile,
+    )
+    meta = _ScanMeta(
+        folded_sales=folded_sales,
+        folded_purchases=folded_purchases,
+        folded_lifecycle=folded_lifecycle,
+        folded_pr=folded_pr,
+        folded_sale_events=folded_sale_events,
+        folded_liquidity=folded_liquidity,
+        folded_pe=folded_pe,
+        link_count=link_count,
+        liability_count=p.liability_count,
+        horizon=horizon,
+    )
+    return baked, counts, meta
+
+
+@partial(jax.jit, static_argnames=("counts",))
+def _program_impl(
+    external_values: jnp.ndarray, pe_ch: dict[str, jnp.ndarray], cfg: _TracedConfig, baked: _Baked, counts: _Counts
+) -> tuple:
+    """The whole month loop as one `lax.scan`, compiled by `jax.jit` with `counts` static so JAX caches
+    the executable on the plan's structure. Unpacks the traced `baked` device arrays and the static
+    `counts` structural data back into the local names the `step` / `december_tax` cores read, binds the
+    seed-varying / swept inputs (`external_values`, `pe_ch`, `cfg`), then runs the fold. The cores read
+    structure / feature flags / slot indices from the concrete `counts.plan`; numeric VALUES come from
+    the traced `baked` / `cfg` — so a structurally-identical plan reuses this compile."""
+    # Static structure (read by the cores as NumPy / Python, never as traced arrays).
+    plan = counts.plan
+    p = counts.p
+    r = counts.r
+    horizon = counts.horizon
+    n_sales = counts.n_sales
+    lot_axis = counts.lot_axis
+    link_count = counts.link_count
+    profile_count = counts.profile_count
+    taxliab_count = counts.taxliab_count
+    liq_policy_count = counts.liq_policy_count
+    liq_max_assets = counts.liq_max_assets
+    pe_issuer_count = counts.pe_issuer_count
+    n_pe_kinds = counts.n_pe_kinds
+    folded_lifecycle = counts.folded_lifecycle
+    folded_pr = counts.folded_pr
+    folded_sale_events = counts.folded_sale_events
+    folded_sales = counts.folded_sales
+    folded_purchases = counts.folded_purchases
+    folded_liquidity = counts.folded_liquidity
+    folded_pe = counts.folded_pe
+    folded_harvest = counts.folded_harvest
+    sale_pslot = counts.sale_pslot
+    sale_bufidx = counts.sale_bufidx
+    sale_olots = counts.sale_olots
+    sale_price_series = counts.sale_price_series
+    pur_buf = counts.pur_buf
+    pur_buyer = counts.pur_buyer
+    pur_seller = counts.pur_seller
+    pur_mort_rows = counts.pur_mort_rows
+    pur_mort_idx = counts.pur_mort_idx
+    salt_link_active = counts.salt_link_active
+    cg_rep_profile = counts.cg_rep_profile
+    # Trivial `plan.X` accessors the cores reference under their short names.
+    props = plan.properties
+    pe_policies = plan.pe_policies
+    taxc = plan.tax
+    le_all = plan.lifecycle_events
+    # Traced device arrays (numeric VALUES; differing values reuse this compile).
+    ordinary0 = baked.ordinary0
+    property_tax_ytd0 = baked.property_tax_ytd0
+    cg_active0 = baked.cg_active0
+    cg_ytd0 = baked.cg_ytd0
+    tlh0 = baked.tlh0
+    property_rented_fraction_0 = baked.property_rented_fraction_0
+    property_building_basis_0 = baked.property_building_basis_0
+    prop0 = baked.prop0
+    liab0 = baked.liab0
+    property_is_primary_table = baked.property_is_primary_table
+    sale_months_t = baked.sale_months_t
+    sale_qty_t = baked.sale_qty_t
+    sale_price_fixed_t = baked.sale_price_fixed_t
+    sale_prior_t = baked.sale_prior_t
+    sale_cg_map_t = baked.sale_cg_map_t
+    sale_policy_mask_t = baked.sale_policy_mask_t
+    pur_month = baked.pur_month
+    pur_stake = baked.pur_stake
+    og = baked.og
+    acc = baked.acc
+    tax_slot_table = baked.tax_slot_table
+    salt_cap_table = baked.salt_cap_table
+    # Swept-numeric VALUES + seed-varying inputs. The transfer-amount entries of `tr` are the swept
+    # `cfg` values (a fresh dict so the traced `baked.tr` pytree is not mutated); `tcfg` mirrors `cfg`.
+    tcfg = cfg
+    cost_basis_per_unit = cfg.cost_basis_per_unit
+    tr = {**baked.tr, "fixed": cfg.transfer_amount_fixed, "base": cfg.transfer_amount_base}
 
     def december_tax(
         ordinary: jnp.ndarray,
@@ -1657,13 +1892,13 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         )
         return carry, (*base_ys, *sale_ys, *purchase_ys, *mortgage_ys, *tax_ys, *liquidity_ys, *pe_ys, *lifecycle_ys)
 
-    prop0 = jnp.zeros((p.property_count, r))
-    liab0 = jnp.zeros((p.liability_count, r))
+    # Initial cash / lot carry: broadcast the traced per-entity opening balances (`cfg`) across rollouts;
+    # the rest of the carry inits from the `baked` constants / zeros.
     init = _ScanState(
-        cash=cash0,
+        cash=jnp.broadcast_to(cfg.cash_initial_balance[:, None], (p.cash_count, r)),
         ordinary_ytd=ordinary0,
         property_tax_ytd=property_tax_ytd0,
-        lot_remaining=lot0,
+        lot_remaining=jnp.broadcast_to(cfg.lot_initial_quantity[:, None], (p.lot_count, r)),
         capital_gain_active=cg_active0,
         capital_gain_ytd=cg_ytd0,
         tlh=tlh0,
@@ -1696,48 +1931,14 @@ def _build_program(plan: CompiledSimulation) -> tuple[stages.Wrapped, _ScanMeta]
         sale_oversell=jnp.zeros((), dtype=bool),
     )
     months = jnp.arange(horizon, dtype=jnp.int32)
-
-    def _program_impl(
-        external_values_arg: jnp.ndarray, pe_ch_arg: dict[str, jnp.ndarray], cfg_arg: _TracedConfig
-    ) -> tuple:
-        # Rebind the traced placeholders to this draw's arguments; `step`, `december_tax` and the cores
-        # read them from the enclosing scope (`tcfg` holds the swept numeric VALUES; `plan` stays the
-        # concrete structure). The transfer-amount entries of the (closed-over, mutable) `tr` table are
-        # overwritten in place.
-        nonlocal external_values, pe_ch, cost_basis_per_unit, tcfg
-        external_values = external_values_arg
-        pe_ch = pe_ch_arg
-        tcfg = cfg_arg
-        cost_basis_per_unit = cfg_arg.cost_basis_per_unit
-        tr["fixed"] = cfg_arg.transfer_amount_fixed
-        tr["base"] = cfg_arg.transfer_amount_base
-        # Initial cash / lot carry: broadcast the traced per-entity opening balances across rollouts.
-        init_traced = init._replace(
-            cash=jnp.broadcast_to(cfg_arg.cash_initial_balance[:, None], (p.cash_count, r)),
-            lot_remaining=jnp.broadcast_to(cfg_arg.lot_initial_quantity[:, None], (p.lot_count, r)),
-        )
-        final_carry, ys = jax.lax.scan(step, init_traced, months)
-        # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
-        return ys, (
-            final_carry.sale_disp_units,
-            final_carry.sale_disp_basis,
-            final_carry.sale_disp_proceeds,
-            final_carry.sale_oversell,
-        )
-
-    meta = _ScanMeta(
-        folded_sales=folded_sales,
-        folded_purchases=folded_purchases,
-        folded_lifecycle=folded_lifecycle,
-        folded_pr=folded_pr,
-        folded_sale_events=folded_sale_events,
-        folded_liquidity=folded_liquidity,
-        folded_pe=folded_pe,
-        link_count=link_count,
-        liability_count=p.liability_count,
-        horizon=horizon,
+    final_carry, ys = jax.lax.scan(step, init, months)
+    # The scheduled-sale dispositions live in the final carry (accumulated, horizon collapsed).
+    return ys, (
+        final_carry.sale_disp_units,
+        final_carry.sale_disp_basis,
+        final_carry.sale_disp_proceeds,
+        final_carry.sale_oversell,
     )
-    return jax.jit(_program_impl), meta
 
 
 def _scatter_ys_to_buffers(
