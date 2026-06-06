@@ -9,6 +9,8 @@
 # infrastructure secrets.
 #
 # Auth: fine-grained GitHub PAT stored as K8s Secret (SOPS-deployed by Flux).
+# Required PAT permissions are documented in
+# cluster/k8s/github-secrets-sync/README.md.
 
 provider "github" {
   owner = "agentydragon"
@@ -46,6 +48,13 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
 }
 
 # --- GitHub Actions Variables ---
+
+# The variable predates Terraform ownership. Import it so tofu-controller adopts
+# the existing GitHub Actions variable instead of trying to create a duplicate.
+import {
+  to = github_actions_variable.props_registry_url
+  id = "ducktape:PROPS_REGISTRY_URL"
+}
 
 # Where props CI pushes agent images: the standalone props registry proxy, which
 # records agent definitions and forwards to Forgejo's registry. CI authenticates
