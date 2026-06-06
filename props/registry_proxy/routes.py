@@ -16,7 +16,9 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
+from starlette.background import BackgroundTask
 
 from props.backend.auth import (
     AgentRole,
@@ -56,41 +58,50 @@ async def _proxy_to_upstream(request: Request) -> Response:
     if request.url.query:
         upstream_url += f"?{request.url.query}"
 
-    async with httpx.AsyncClient() as client:
-        # Preserve multi-valued headers (e.g. multiple Accept lines from Docker)
-        # by using a list of tuples instead of dict (which deduplicates keys).
-        # Strip the client's Authorization header — upstream uses its own credentials.
-        headers = [(k, v) for k, v in request.headers.raw if k not in (b"host", b"authorization")]
-        auth = upstream.auth_header()
-        if auth:
-            headers.append((b"authorization", auth.encode()))
+    client = httpx.AsyncClient()
+    # Preserve multi-valued headers (e.g. multiple Accept lines from Docker)
+    # by using a list of tuples instead of dict (which deduplicates keys).
+    # Strip the client's Authorization header — upstream uses its own credentials.
+    headers = [(k, v) for k, v in request.headers.raw if k not in (b"host", b"authorization")]
+    auth = upstream.auth_header()
+    if auth:
+        headers.append((b"authorization", auth.encode()))
 
-        body = await request.body() if request.method not in ("GET", "HEAD") else b""
+    body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
-        try:
-            # 600s: agent image layers are large and can take minutes to stream
-            # through to the upstream; the old 30s read timeout surfaced as
-            # `502 Upstream error` on big blobs.
-            upstream_response = await client.request(
-                method=request.method, url=upstream_url, headers=headers, content=body, timeout=600.0
-            )
-        except httpx.RequestError as e:
-            logger.exception("Upstream request failed")
-            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
-
-        # Rewrite Location back to the client namespace. The upstream returns
-        # blob-upload session URLs under /v2/{project}/<repo>/...; passed through
-        # verbatim, the client would push blobs to the project-prefixed path and
-        # the manifest couldn't find them (BLOB_UNKNOWN). dict(httpx.Headers)
-        # lowercases keys.
-        response_headers = dict(upstream_response.headers)
-        for header_name in ("location", "content-location"):
-            if header_name in response_headers:
-                response_headers[header_name] = upstream.rewrite_location(response_headers[header_name])
-
-        return Response(
-            content=upstream_response.content, status_code=upstream_response.status_code, headers=response_headers
+    try:
+        # 600s: agent image layers are large and can take minutes to stream
+        # through to the upstream; the old 30s read timeout surfaced as
+        # `502 Upstream error` on big blobs.
+        upstream_request = client.build_request(
+            method=request.method, url=upstream_url, headers=headers, content=body, timeout=600.0
         )
+        upstream_response = await client.send(upstream_request, stream=True)
+    except httpx.RequestError as e:
+        await client.aclose()
+        logger.exception("Upstream request failed")
+        raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+
+    # Rewrite Location back to the client namespace. The upstream returns
+    # blob-upload session URLs under /v2/{project}/<repo>/...; passed through
+    # verbatim, the client would push blobs to the project-prefixed path and
+    # the manifest couldn't find them (BLOB_UNKNOWN). dict(httpx.Headers)
+    # lowercases keys.
+    response_headers = dict(upstream_response.headers)
+    for header_name in ("location", "content-location"):
+        if header_name in response_headers:
+            response_headers[header_name] = upstream.rewrite_location(response_headers[header_name])
+
+    async def close_upstream() -> None:
+        await upstream_response.aclose()
+        await client.aclose()
+
+    return StreamingResponse(
+        upstream_response.aiter_bytes(),
+        status_code=upstream_response.status_code,
+        headers=response_headers,
+        background=BackgroundTask(close_upstream),
+    )
 
 
 @dataclass

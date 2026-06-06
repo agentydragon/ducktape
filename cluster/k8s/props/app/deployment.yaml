@@ -23,7 +23,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       # Props main image is on GHCR (public, no pull secret needed).
       # Agent images live in Forgejo's registry (git.allegedly.works/props/*),
-      # reached via the backend registry proxy using props-forgejo-upstream-creds.
+      # reached through the standalone props-registry-proxy service.
       containers:
         - name: props
           image: ghcr.io/agentydragon/props-backend:devel-20260605231043-5ce24f5 # {"$imagepolicy": "flux-system:props-backend"}
@@ -93,26 +93,14 @@ spec:
                 secretKeyRef:
                   name: props-oidc-config
                   key: session-secret
-            - name: PROPS_REGISTRY_UPSTREAM_URL
-              value: http://forgejo-http.forgejo:3000
-            - name: PROPS_REGISTRY_UPSTREAM_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: props-forgejo-upstream-creds
-                  key: username
-            - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: props-forgejo-upstream-creds
-                  key: password
             - name: PROPS_REGISTRY_UPSTREAM_PROJECT
               value: props
             - name: PROPS_REGISTRY_HOST
-              value: props
+              value: props-registry-proxy
             - name: PROPS_REGISTRY_PORT
               value: "8000"
             - name: PROPS_REGISTRY_PULL_HOST
-              value: props.allegedly.works
+              value: props-registry.allegedly.works
           volumeMounts:
             - name: config
               mountPath: /etc/props

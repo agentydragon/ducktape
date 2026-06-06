@@ -5,6 +5,8 @@ resources:
   - props-backend-image-policy.yaml
   - props-llm-proxy-image-repository.yaml
   - props-llm-proxy-image-policy.yaml
+  - props-registry-proxy-image-repository.yaml
+  - props-registry-proxy-image-policy.yaml
   - image-update-automation.yaml
   - openclaw-image-repository.yaml
   - openclaw-image-policy.yaml

@@ -251,7 +251,8 @@ async def test_po_creates_custom_critic_image(
         # Appending a layer with the same path shadows the original file.
         build_cmd = (
             "set -e && "
-            "REGISTRY=$(echo $PROPS_BACKEND_URL | sed 's|https\\?://||') && "
+            "REGISTRY=${PROPS_REGISTRY_URL#http://} && "
+            "REGISTRY=${REGISTRY#https://} && "
             "MAIN_PY=props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py && "
             "mkdir -p /tmp/layer/$(dirname $MAIN_PY) && "
             "cp /workspace/custom_main.py /tmp/layer/$MAIN_PY && "
@@ -376,7 +377,13 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
         # Try crane push from critic container — should fail because
         # critics don't have registry write access (403 Forbidden).
         result = yield from m.exec_roundtrip(
-            ["sh", "-c", "crane push /workspace/ ${PROPS_BACKEND_URL#http://}/test-push:latest --insecure 2>&1"],
+            [
+                "sh",
+                "-c",
+                "REGISTRY=${PROPS_REGISTRY_URL#http://}; "
+                "REGISTRY=${REGISTRY#https://}; "
+                "crane push /workspace/ $REGISTRY/test-push:latest --insecure 2>&1",
+            ],
             timeout_ms=30000,
         )
         stdout = result.stdout if isinstance(result.stdout, str) else ""

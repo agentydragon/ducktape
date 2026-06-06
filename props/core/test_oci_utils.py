@@ -20,20 +20,26 @@ class TestPullAuthority:
         assert config.pull_authority() == "localhost:8000"
 
     def test_pull_host_overrides(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works")
-        assert config.pull_authority() == "props.allegedly.works"
+        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
+        assert config.pull_authority() == "props-registry.allegedly.works"
 
     def test_pull_host_with_pull_port(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works", pull_port=5000)
-        assert config.pull_authority() == "props.allegedly.works:5000"
+        config = RegistryProxyConfig(
+            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=5000
+        )
+        assert config.pull_authority() == "props-registry.allegedly.works:5000"
 
     def test_standard_ports_omitted(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works", pull_port=443)
-        assert config.pull_authority() == "props.allegedly.works"
+        config = RegistryProxyConfig(
+            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=443
+        )
+        assert config.pull_authority() == "props-registry.allegedly.works"
 
     def test_port_80_omitted(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works", pull_port=80)
-        assert config.pull_authority() == "props.allegedly.works"
+        config = RegistryProxyConfig(
+            host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works", pull_port=80
+        )
+        assert config.pull_authority() == "props-registry.allegedly.works"
 
     def test_no_pull_host_uses_host_and_port(self) -> None:
         config = RegistryProxyConfig(host="127.0.0.1", port=5000)
@@ -51,9 +57,9 @@ class TestBuildOciReference:
         assert ref == f"localhost:8000/critic@{self.DIGEST}"
 
     def test_external_registry(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works")
+        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
         ref = config.build_oci_reference(AgentType.CRITIC, self.DIGEST)
-        assert ref == f"props.allegedly.works/critic@{self.DIGEST}"
+        assert ref == f"props-registry.allegedly.works/critic@{self.DIGEST}"
 
     def test_grader_agent_type(self) -> None:
         config = RegistryProxyConfig(host="localhost", port=8000)
@@ -69,8 +75,8 @@ class TestProxyUrl:
         assert config.proxy_url == "http://props:8000"
 
     def test_ignores_pull_host(self) -> None:
-        config = RegistryProxyConfig(host="props", port=8000, pull_host="props.allegedly.works")
-        assert config.proxy_url == "http://props:8000"
+        config = RegistryProxyConfig(host="props-registry-proxy", port=8000, pull_host="props-registry.allegedly.works")
+        assert config.proxy_url == "http://props-registry-proxy:8000"
 
 
 class TestIsDigest:

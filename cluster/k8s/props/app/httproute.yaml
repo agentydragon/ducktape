@@ -10,11 +10,6 @@ spec:
   hostnames:
     - "props.allegedly.works"
   rules:
-    # Large agent image layers (registry proxy /v2/* pushes) can take minutes;
-    # default gateway timeout would cut them off mid-upload.
-    - timeouts:
-        request: 600s
-        backendRequest: 600s
-      backendRefs:
+    - backendRefs:
         - name: props
           port: 8000

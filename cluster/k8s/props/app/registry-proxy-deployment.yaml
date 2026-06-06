@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: props-registry-proxy
+  namespace: props
+  annotations:
+    reloader.stakater.com/auto: "true"
+    description: >-
+      OCI registry proxy data plane — serves /v2/* for props agent image pushes
+      and pulls, split out of the props backend so large image transfers do not
+      run through the dashboard/API pod.
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: props
+      app.kubernetes.io/name: props-registry-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: registry-proxy
+        app.kubernetes.io/instance: props
+        app.kubernetes.io/name: props-registry-proxy
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      containers:
+        - name: registry-proxy
+          image: ghcr.io/agentydragon/props-registry-proxy:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:props-registry-proxy"}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PGHOST
+              value: props-db-rw
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: eval_results
+            - name: PGUSER
+              value: props
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-db-app
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_URL
+              value: http://forgejo-http.forgejo:3000
+            - name: PROPS_REGISTRY_UPSTREAM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: props-forgejo-upstream-creds
+                  key: username
+            - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-forgejo-upstream-creds
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_PROJECT
+              value: props
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10

@@ -40,8 +40,8 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 
 # z.ai (GLM) models served via the Coding Plan endpoint. The key comes from the
 # ZAI_API_KEY env var (litellm-zai-key secret). These speak OpenAI chat/completions;
-# LiteLLM bridges its /responses endpoint to chat so props' OpenAI-Responses proxy
-# (props/backend/routes/llm.py) can route to them.
+# LiteLLM bridges its /responses endpoint to chat so props' OpenAI-compatible LLM
+# proxy (props/llm_proxy/routes.py) can route to them.
 _ZAI_CODING_BASE = "https://api.z.ai/api/coding/paas/v4"
 _ZAI_MODELS: list[str] = ["glm-4.6"]
 

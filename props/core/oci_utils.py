@@ -27,13 +27,14 @@ BUILTIN_TAG = "latest"
 class RegistryProxyConfig:
     """Registry proxy configuration for image resolution and OCI references.
 
-    The registry proxy is part of the props backend - it proxies OCI API requests
-    to an upstream registry and records agent_definitions on push.
+    The registry proxy is a standalone data-plane service. It proxies OCI API
+    requests to an upstream registry and records agent_definitions on push.
 
     host/port: How the backend reaches the registry proxy (HTTP tag resolution).
     pull_host/pull_port: How the container runtime (kubelet/Docker) pulls images.
       Defaults to host/port when not set. Needed in k8s where the backend resolves
-      the service name (e.g. "props") via cluster DNS, but the kubelet can't.
+      the service name (e.g. "props-registry-proxy") via cluster DNS, but the
+      kubelet can't.
     project: Optional upstream registry project prefix (e.g. "props" for Harbor).
       When set, OCI references include it: registry.allegedly.works/props/critic@...
     """

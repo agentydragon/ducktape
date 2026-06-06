@@ -7,6 +7,7 @@ In-container architecture:
 - Container runs its own agent loop (CMD entrypoint)
 - Container talks to LLM proxy (OPENAI_BASE_URL env var)
 - Container connects to backend REST API for eval operations (PROPS_BACKEND_URL env var)
+- Critic-dev containers push/pull agent images via registry proxy (PROPS_REGISTRY_URL env var)
 - Container exits 0 on success, non-zero on failure
 - Host scaffold: creates temp DB user, starts container, waits for exit
 
@@ -20,6 +21,7 @@ Usage:
         backend_url="http://props-backend:8000",
         agent_base_env=config.agent_env,
         registry_config=RegistryProxyConfig(host="127.0.0.1", port=8000),
+        agent_registry_url="http://props-registry-proxy:8000",
     )
     async with registry:
         image = await registry.resolve_image(AgentType.CRITIC, BUILTIN_TAG)
@@ -200,6 +202,7 @@ class AgentRegistry:
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
         llm_base_url: str,
+        agent_registry_url: str | None = None,
         model_parallelism_limits: dict[str, int] | None = None,
     ) -> None:
         self._executor = executor
@@ -212,6 +215,7 @@ class AgentRegistry:
         self._llm_base_url = llm_base_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
+        self._agent_registry_url = agent_registry_url or registry_config.proxy_url
         # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
         self._running_critics: dict[UUID, asyncio.Task[None]] = {}
         self._model_semaphores: dict[str, asyncio.Semaphore] = {
@@ -338,6 +342,7 @@ class AgentRegistry:
             "PGUSER": creds.username,
             "PGPASSWORD": creds.password,
             "PROPS_BACKEND_URL": self._backend_url,
+            "PROPS_REGISTRY_URL": self._agent_registry_url,
             "OPENAI_BASE_URL": f"{self._llm_base_url}/v1",
             "OPENAI_API_KEY": api_key,
         }

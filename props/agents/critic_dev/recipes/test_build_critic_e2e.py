@@ -52,7 +52,7 @@ async def test_build_critic_sh_via_agent(
         yield None  # First request
 
         # Locate build_critic.sh via importlib.resources. The script resolves
-        # REGISTRY from PROPS_BACKEND_URL and relative paths from SCRIPT_DIR,
+        # REGISTRY from PROPS_REGISTRY_URL and relative paths from SCRIPT_DIR,
         # so custom_critic_for_test.py (a sibling file) needs no absolute path.
         build_cmd = (
             'SCRIPT=$(python3 -c "import importlib.resources; '

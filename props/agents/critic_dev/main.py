@@ -49,11 +49,11 @@ logger = logging.getLogger(__name__)
 
 def _setup_crane_auth(config: DatabaseConfig) -> None:
     """Write ~/.docker/config.json so crane can push/pull via Basic auth."""
-    backend_url = os.environ.get("PROPS_BACKEND_URL")
-    if not backend_url:
-        raise RuntimeError("PROPS_BACKEND_URL must be set for crane auth setup")
+    registry_url = os.environ.get("PROPS_REGISTRY_URL")
+    if not registry_url:
+        raise RuntimeError("PROPS_REGISTRY_URL must be set for crane auth setup")
 
-    registry = urlparse(backend_url).netloc
+    registry = urlparse(registry_url).netloc or registry_url
     write_docker_auth(registry, config.user, config.password, overwrite=True)
     logger.info("Crane auth configured for registry %s", registry)
 

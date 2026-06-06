@@ -1,11 +1,12 @@
-"""FastAPI application for props backend - unified dashboard, proxy, and run APIs.
+"""FastAPI application for props backend - dashboard and run APIs.
 
 This is the props backend that includes:
 - Dashboard API: /api/stats, /api/runs, /api/gt
-- Registry Proxy: /v2/*
 - Critic Run API: /api/runs/critic
 
-The LLM proxy (/v1/responses) is now a separate service — see props/llm_proxy.
+The data-plane proxies are separate services:
+- LLM proxy (/v1/responses and /v1/chat/completions): props/llm_proxy
+- Registry proxy (/v2/*): props/registry_proxy
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
 view directly, not as a REST endpoint.
@@ -29,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from props.backend.oidc import build_oauth, load_oidc_settings
-from props.backend.routes import agent_definitions, auth_routes, ground_truth, model_metadata, registry, runs, stats
+from props.backend.routes import agent_definitions, auth_routes, ground_truth, model_metadata, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -147,6 +148,7 @@ def _make_lifespan(deps: BackendDeps):
                 registry_config=deps.registry_proxy_config,
                 model_parallelism_limits=model_parallelism_limits,
                 llm_base_url=llm_proxy_url,
+                agent_registry_url=deps.registry_proxy_config.proxy_url,
             )
 
             if deps.grader_model:
@@ -203,7 +205,7 @@ def _make_lifespan(deps: BackendDeps):
 def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app = FastAPI(
         title="Props Backend",
-        description="Unified props backend: dashboard, proxies (LLM/registry), and eval APIs",
+        description="Props backend: dashboard and eval APIs",
         version="0.1.0",
         lifespan=_make_lifespan(deps),
         debug=True,
@@ -243,7 +245,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
     app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
     app.include_router(model_metadata.router, prefix="/api/model_metadata", tags=["model_metadata"])
-    app.include_router(registry.router, tags=["registry_proxy"])
 
     @app.get("/health")
     def health() -> dict[str, str]:

@@ -1,6 +1,6 @@
 ## Critic Developer System Access
 
-In addition to database access, you also connect to the **Backend HTTP API** at `PROPS_BACKEND_URL` for evaluation orchestration.
+In addition to database access, you also connect to the **Backend HTTP API** at `PROPS_BACKEND_URL` for evaluation orchestration and the **registry proxy** at `PROPS_REGISTRY_URL` for agent image pushes.
 
 ### Source Code Access
 
@@ -30,7 +30,7 @@ python3 -c "from props.db.snapshot_io import fetch_snapshot_to_path; from props.
 
 [^1]: VALID/TEST access restricted to prevent overfitting. See the Evaluation Flow section below for details.
 
-**Note:** `agent_definitions` rows are created automatically when you push images to the registry proxy — no manual INSERT needed.
+**Note:** `agent_definitions` rows are created automatically when you push images to the registry proxy at `PROPS_REGISTRY_URL` — no manual INSERT needed. Do not derive the registry host from `PROPS_BACKEND_URL`.
 
 ### Stats API
 

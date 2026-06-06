@@ -1,8 +1,8 @@
 """Smoke test: the standalone LLM proxy app assembles and enforces auth.
 
 Routing/budget logic is covered by the router's own helper tests
-(`props/backend/routes/test_llm_*`); this verifies the split-out app wires the
-`llm` router + auth dependency correctly.
+(`props/llm_proxy/test_*`); this verifies the split-out app wires the routes +
+auth dependency correctly.
 """
 
 from __future__ import annotations

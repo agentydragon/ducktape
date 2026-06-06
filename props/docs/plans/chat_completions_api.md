@@ -158,5 +158,5 @@ bbr test //props/frontend:svelte_check_test //props/frontend/src/components:visu
 bbr test //props/backend/routes/... //props/llm_proxy:test_app --test_tag_filters=-live_openai_api
 bbr build //props/backend/routes:model_metadata
 bbr test //props/frontend:svelte_check_test
-bbr test //props/backend/routes:test_llm_routing
+bbr test //props/llm_proxy:test_routing
 ```

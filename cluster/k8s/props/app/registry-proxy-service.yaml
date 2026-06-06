@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: props-registry-proxy
+  namespace: props
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app.kubernetes.io/component: registry-proxy
+    app.kubernetes.io/instance: props
+    app.kubernetes.io/name: props-registry-proxy

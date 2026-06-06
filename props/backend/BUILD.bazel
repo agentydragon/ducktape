@@ -78,7 +78,6 @@ py_library(
         "//props/backend/routes:auth_routes",
         "//props/backend/routes:ground_truth",
         "//props/backend/routes:model_metadata",
-        "//props/backend/routes:registry",
         "//props/backend/routes:runs",
         "//props/backend/routes:stats",
         "//props/core:oci_utils",

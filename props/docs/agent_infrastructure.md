@@ -12,7 +12,9 @@ props/
 │   ├── optimize/           # Critic developer (optimizer) agent
 │   └── improve/            # Critic developer (improver) agent
 ├── orchestration/          # Host scaffold (agent_registry)
-├── backend/                # Unified backend (LLM proxy, registry proxy, eval API)
+├── backend/                # Dashboard and eval API
+├── llm_proxy/              # LLM data plane
+├── registry_proxy/         # OCI registry data plane
 ├── db/                     # Database layer (ORM, migrations)
 ├── cli/                    # CLI commands
 ├── testing/                # Test fixtures and mocks
@@ -25,7 +27,7 @@ Agent images are built by Bazel as OCI images (`oci_image` rules in each agent's
 
 Built-in images use the `builtin` tag (constant `BUILTIN_TAG` in `props/core/oci_utils.py`). Bazel pushes them through the registry proxy with admin auth.
 
-Critic-dev agents (optimizer, improvement) can also create custom critic images at runtime by layering onto the base image with `crane` and pushing to the backend's registry proxy. The registry proxy automatically creates `agent_definitions` rows for pushed images.
+Critic-dev agents (optimizer, improvement) can also create custom critic images at runtime by layering onto the base image with `crane` and pushing to the registry proxy at `PROPS_REGISTRY_URL`. The registry proxy automatically creates `agent_definitions` rows for pushed images.
 
 ### Image Reference Policy
 
@@ -117,12 +119,13 @@ Agents push manifests by digest only (`PUT /v2/<name>/manifests/sha256:...`), en
 
 ### Key Implementation Files
 
-| File                            | Purpose                                            |
-| ------------------------------- | -------------------------------------------------- |
-| `props/backend/registry_proxy/` | Registry proxy with ACL enforcement                |
-| `props/core/oci_utils.py`       | Tag resolution (`resolve_image_ref`) and utilities |
-| `props/orchestration/`          | Launch orchestration (`agent_registry`)            |
-| `props/devenv.nix`              | Devenv config for registry + proxy + postgres      |
+| File                             | Purpose                                            |
+| -------------------------------- | -------------------------------------------------- |
+| `props/registry_proxy/routes.py` | Registry route logic with ACL enforcement          |
+| `props/registry_proxy/`          | Standalone registry proxy app and image            |
+| `props/core/oci_utils.py`        | Tag resolution (`resolve_image_ref`) and utilities |
+| `props/orchestration/`           | Launch orchestration (`agent_registry`)            |
+| `props/devenv.nix`               | Devenv config for registry + proxy + postgres      |
 
 ## Testing
 

@@ -175,7 +175,7 @@ kubectl create job --from=cronjob/props-backup props-backup-test -n props
 
 ### Registry Proxy
 
-The backend authenticates OCI requests against PostgreSQL and proxies `/v2/*` to the internal `registry:2`. CI pushes agent images via `docker login props.allegedly.works`. The registry is configured with `REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative URLs (required for external clients going through the Gateway API proxy).
+The standalone registry proxy authenticates OCI requests against PostgreSQL and proxies `/v2/*` to the upstream registry. CI pushes agent images via `docker login props-registry.allegedly.works`. The registry is configured with `REGISTRY_HTTP_RELATIVEURLS=true` so blob upload `Location` headers use relative URLs (required for external clients going through the Gateway API proxy).
 
 ## GitHub Copilot Agent Setup
 

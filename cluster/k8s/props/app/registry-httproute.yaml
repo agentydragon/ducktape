@@ -1,0 +1,20 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: props-registry
+  namespace: props
+spec:
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  hostnames:
+    - "props-registry.allegedly.works"
+  rules:
+    # Large agent image layers can take minutes; default gateway timeout would
+    # cut them off mid-upload or mid-pull.
+    - timeouts:
+        request: 600s
+        backendRequest: 600s
+      backendRefs:
+        - name: props-registry-proxy
+          port: 8000

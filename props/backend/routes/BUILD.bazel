@@ -42,40 +42,6 @@ py_library(
 )
 
 py_library(
-    name = "llm",
-    srcs = ["llm.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//openai_utils:api_shape",
-        "//openai_utils:model",
-        "//props:config",
-        "//props/backend:auth",
-        "//props/backend:deps",
-        "//props/db:models",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "registry",
-    srcs = ["registry.py"],
-    visibility = ["//props/backend:__subpackages__"],
-    deps = [
-        "//props/backend:auth",
-        "//props/backend:deps",
-        "//props/core:oci_utils",
-        "//props/db:database",
-        "//props/db:models",
-        "//props/db:notifications",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "runs",
     srcs = ["runs.py"],
     visibility = ["//props/backend:__subpackages__"],
@@ -104,43 +70,6 @@ py_library(
 )
 
 py_test(
-    name = "test_llm_budget",
-    srcs = ["test_llm_budget.py"],
-    requires_docker = True,
-    deps = [
-        ":llm",
-        "//props:conftest",
-        "//props/backend:conftest",
-        "//props/core:agent_types",
-        "//props/db:database",
-        "//props/db:models",
-        "//props/testing:constants",
-        "//props/testing/fixtures:runs",
-        "@pypi//fastapi",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_llm_routing",
-    srcs = ["test_llm_routing.py"],
-    requires_docker = True,
-    deps = [
-        ":llm",
-        "//openai_utils:api_shape",
-        "//props:config",
-        "//props:conftest",
-        "//props/backend:conftest",
-        "//props/db:database",
-        "//props/db:models",
-        "@pypi//fastapi",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_runs",
     srcs = ["test_runs.py"],
     requires_docker = True,
@@ -160,25 +89,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_registry_proxy",
-    srcs = ["test_registry_proxy.py"],
-    requires_docker = True,
-    deps = [
-        ":registry",
-        "//props:conftest",
-        "//props/core:agent_types",
-        "//props/core:oci_utils",
-        "@pypi//fastapi",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
-        "@pypi//uvicorn",
     ],
 )
 

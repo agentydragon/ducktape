@@ -16,5 +16,8 @@ resources:
   - service.yaml
   - llm-proxy-deployment.yaml
   - llm-proxy-service.yaml
+  - registry-proxy-deployment.yaml
+  - registry-proxy-service.yaml
   - httproute.yaml
+  - registry-httproute.yaml
   - rolebinding-ollama-consumer.yaml

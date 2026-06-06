@@ -3,12 +3,14 @@
 These fixtures set up the full e2e testing stack:
 - Raw Docker registry (testcontainers, from e2e_infra)
 - Real backend app (FastAPI - same as production)
+- Real registry proxy app (FastAPI - same as production)
+- Real LLM proxy app (FastAPI - same as production)
 - Fake OpenAI server (returns scripted responses)
 - AgentRegistry (orchestrates containers)
 
-The container communicates through the real backend to the fake OpenAI server,
-exercising the full production code path including auth, request logging, and
-registry proxy (which records agent_definitions on push).
+The container communicates through the real LLM proxy to the fake OpenAI server
+and through the real backend for orchestration, exercising auth, request logging,
+and registry proxy definition recording.
 
 Environment variables:
     PROPS_E2E_HOST_HOSTNAME: Hostname for containers to reach host services.
@@ -64,6 +66,7 @@ from props.llm_proxy.app import create_app as create_llm_proxy_app  # alias: bac
 from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
+from props.registry_proxy.app import create_app as create_registry_proxy_app
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
 from util.crane import BazelImage, Crane
@@ -182,7 +185,7 @@ async def _make_stack(
     model: str,
     images: Sequence[BazelImage] = (),
 ) -> AsyncIterator[E2EStack]:
-    """Shared stack setup: start fake OpenAI, backend, registry, push images."""
+    """Shared stack setup: start fake OpenAI, backend, proxies, registry, push images."""
     await fake_openai.start()
 
     try:
@@ -192,8 +195,10 @@ async def _make_stack(
 
         backend_port = pick_free_port()
         llm_proxy_port = pick_free_port()
-        registry_proxy_config = RegistryProxyConfig(host="localhost", port=backend_port)
+        registry_proxy_port = pick_free_port()
+        registry_proxy_config = RegistryProxyConfig(host="localhost", port=registry_proxy_port)
         backend_url = f"http://{E2E_HOST_HOSTNAME}:{backend_port}"
+        agent_registry_url = f"http://{E2E_HOST_HOSTNAME}:{registry_proxy_port}"
         # Agents talk to the standalone LLM proxy (the backend dropped its /v1
         # mount in #1894); the proxy reuses the backend's llm router + auth against
         # the same DB and forwards to the fake OpenAI upstream above.
@@ -212,6 +217,7 @@ async def _make_stack(
             ensure_agent_network(async_docker_client),
             _serve_app(create_app(deps=deps), backend_port, name="backend"),
             _serve_app(create_llm_proxy_app(db=db, config=config), llm_proxy_port, name="llm-proxy"),
+            _serve_app(create_registry_proxy_app(db=db), registry_proxy_port, name="registry-proxy"),
         ):
             executor = DockerExecutor(
                 async_docker_client,
@@ -227,10 +233,11 @@ async def _make_stack(
                 agent_base_env=agent_base_env,
                 registry_config=registry_proxy_config,
                 llm_base_url=llm_proxy_url,
+                agent_registry_url=agent_registry_url,
             )
 
             try:
-                proxy_url = f"localhost:{backend_port}"
+                proxy_url = f"localhost:{registry_proxy_port}"
                 crane = Crane(registry=proxy_url, username=db.config.user, password=db.config.password)
                 resolved_images: dict[str, ResolvedImage] = {}
                 for image in images:

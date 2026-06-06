@@ -15,16 +15,16 @@ import pytest_bazel
 from fastapi import HTTPException
 
 from openai_utils.api_shape import LLMApiShape
-from props.backend.routes.llm import (
+from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
+from props.db.database import Database
+from props.db.models import ModelMetadata
+from props.llm_proxy.routes import (
     LLMAccess,
     _extract_usage,
     _get_upstream_route,
     _merge_props_metadata,
     _resolve_upstream_url,
 )
-from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
-from props.db.database import Database
-from props.db.models import ModelMetadata
 
 
 @pytest.fixture

@@ -1,9 +1,8 @@
 """Standalone LLM proxy app — the agent **data plane**, split out of the unified
 backend so the dashboard/API can roll without disrupting in-flight agents.
 
-Serves ``/v1/responses`` and ``/v1/chat/completions`` (auth + budget + cost + upstream routing). It reuses
-the backend's ``llm`` router, ``auth``, and ``deps`` unchanged — no frontend,
-orchestration, registry proxy, or SSO. The router's only app-state requirements
+Serves ``/v1/responses`` and ``/v1/chat/completions`` (auth + budget + cost + upstream routing). It has
+no frontend, orchestration, registry proxy, or SSO. The router's only app-state requirements
 are ``admin_db`` (a ``Database`` admin pool, for auth + budget/cost/upstream
 queries) and ``config`` (``LLMProxyConfig``, for upstream routing); the SSO/session
 branch of ``get_request_identity`` is inert here because no ``SessionMiddleware``
@@ -20,10 +19,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
-from props.backend.routes import llm
 from props.config import LLMProxyConfig, load_proxy_config_from_env
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.llm_proxy import routes
 from util.logging import LogLevel, configure_logging
 
 configure_logging(
@@ -47,7 +46,7 @@ def create_app(*, db: Database | None = None, config: LLMProxyConfig | None = No
         yield
 
     app = FastAPI(title="props-llm-proxy", lifespan=lifespan)
-    app.include_router(llm.router)
+    app.include_router(routes.router)
 
     # The proxy has no slow startup (just DB + config wiring), so readiness is
     # equivalent to liveness.

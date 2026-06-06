@@ -27,9 +27,9 @@ cli.callback()(make_logging_callback(default_level=LogLevel.INFO))
 class _GraderSpawningServer(uvicorn.Server):
     """Server subclass that spawns grader containers after startup completes.
 
-    Avoids the chicken-and-egg problem: grader containers need the registry
-    proxy (served by this same HTTP server) to resolve images, so we can
-    only start them after uvicorn has bound its socket.
+    Avoids the chicken-and-egg problem: grader startup depends on the backend
+    lifespan finishing migrations, registry/executor setup, and supervisor
+    construction, so we only spawn after uvicorn has bound its socket.
 
     Holds a direct reference to the FastAPI app (not via config.loaded_app)
     to avoid navigating uvicorn's ASGI middleware wrappers.

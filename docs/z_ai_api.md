@@ -85,6 +85,11 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
   `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.
   If a caller needs z.ai to call a specific tool, use prompt instructions plus
   `tool_choice: "auto"` rather than the forced named object shape.
+- System-only chat requests are rejected by the coding endpoint. A request with a
+  single `{"role":"system", ...}` message plus function tools returned `400` /
+  code `1214` with message `The messages parameter is illegal. Please check the
+documentation.` The same request shape succeeds when the task is in a `user`
+  message after the system message, returning `finish_reason: "tool_calls"`.
 
 ## Not Supported
 

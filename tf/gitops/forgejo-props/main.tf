@@ -1,8 +1,8 @@
 # Forgejo registry tenant for props.
 #
 # Creates a dedicated `props` service user that owns the props agent images
-# (git.allegedly.works/props/{critic,grader,critic_dev,...}). The props backend
-# registry proxy authenticates as this user to forward pushes/pulls to Forgejo;
+# (git.allegedly.works/props/{critic,grader,critic_dev,...}). The props registry
+# proxy authenticates as this user to forward pushes/pulls to Forgejo;
 # agent pods pull via the dockerconfigjson secret. Mirrors tf/gitops/harbor-props.
 
 data "kubernetes_secret" "forgejo_admin" {
@@ -31,7 +31,7 @@ resource "forgejo_user" "props" {
   visibility           = "private"
 }
 
-# Upstream creds for the props backend registry proxy (Basic auth to Forgejo).
+# Upstream creds for the props registry proxy (Basic auth to Forgejo).
 resource "kubernetes_secret" "props_forgejo_upstream_creds" {
   metadata {
     name      = "props-forgejo-upstream-creds"
@@ -44,7 +44,8 @@ resource "kubernetes_secret" "props_forgejo_upstream_creds" {
   }
 }
 
-# imagePullSecret for agent image pulls from git.allegedly.works.
+# Bootstrap imagePullSecret for agent image pulls. The backend rewrites this
+# secret on startup with Postgres credentials for props-registry.allegedly.works.
 resource "kubernetes_secret" "props_forgejo_robot" {
   metadata {
     name      = "props-forgejo-robot"
@@ -56,7 +57,7 @@ resource "kubernetes_secret" "props_forgejo_robot" {
   data = {
     ".dockerconfigjson" = jsonencode({
       auths = {
-        "git.allegedly.works" = {
+        "props-registry.allegedly.works" = {
           username = forgejo_user.props.login
           password = random_password.props.result
           auth     = base64encode("${forgejo_user.props.login}:${random_password.props.result}")

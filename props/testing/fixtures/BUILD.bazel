@@ -67,6 +67,7 @@ py_library(
         "//props/orchestration:agent_registry",
         "//props/orchestration:docker_env",
         "//props/orchestration:docker_executor",
+        "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
         "//util:crane",

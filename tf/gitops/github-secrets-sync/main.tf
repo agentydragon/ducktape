@@ -47,13 +47,13 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
 
 # --- GitHub Actions Variables ---
 
-# Where props CI pushes agent images: the props backend registry proxy, which
+# Where props CI pushes agent images: the standalone props registry proxy, which
 # records agent definitions and forwards to Forgejo's registry. CI authenticates
 # as the evaluator Postgres role (secrets/ci/props-registry.sops.yaml).
 resource "github_actions_variable" "props_registry_url" {
   repository    = "ducktape"
   variable_name = "PROPS_REGISTRY_URL"
-  value         = "props.allegedly.works"
+  value         = "props-registry.allegedly.works"
 }
 
 # Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token, and

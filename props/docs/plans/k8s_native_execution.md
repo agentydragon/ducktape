@@ -1,10 +1,10 @@
 # Plan: k8s-native agent execution
 
-**Status:** in progress (Stage 1 landed). Splits the agent data plane from the
-dashboard control plane and replaces most of the bespoke container-orchestration
-layer (`props/orchestration/`) with native Kubernetes patterns — while **keeping** a
-slim reconcile-from-API controller to create agent pods (the cred boundary in Stage 5
-requires it).
+**Status:** in progress (Stages 1-3 landed; Stage 4 parked on RBE kernel support).
+Splits the agent data plane from the dashboard control plane and replaces most of
+the bespoke container-orchestration layer (`props/orchestration/`) with native
+Kubernetes patterns — while **keeping** a slim reconcile-from-API controller to
+create agent pods (the cred boundary in Stage 5 requires it).
 
 ## Why
 
@@ -31,19 +31,23 @@ done) and split the agent **data plane** (the LLM proxy + DB) from the dashboard
 
 ## Target architecture
 
-**Data plane (agents depend on this; roll carefully):**
+**Data plane (agents and kubelet depend on this; roll carefully):**
 
 - **LLM proxy** — standalone Deployment + `py_binary`. Owns auth (per-agent
   Postgres role), tree-aware budget enforcement, cost recording, and transcript
   capture. Agents' `OPENAI_BASE_URL` points here, not at the dashboard.
+- **Registry proxy** — standalone Deployment + `py_binary` on
+  `props-registry.allegedly.works`. Owns `/v2/*` ACLs, streams large registry
+  payloads to Forgejo, records pushed images in `agent_definitions`, and is the
+  registry URL agents/kubelet use. The dashboard backend no longer serves `/v2/*`.
 - **PostgreSQL** (unchanged) — the eval data model + RLS + drift `LISTEN/NOTIFY`.
-- **Forgejo registry** (unchanged) — agents pull images directly in-cluster.
+- **Forgejo registry** (unchanged) — upstream registry storage behind the proxy.
 
 **Control/read plane (rollable without disrupting agents):**
 
 - **API server + frontend** — dashboard, run/issue browsing, and the
   control endpoints agents call to request work (e.g. critic_dev launching a
-  critic). Also hosts the **registry proxy for external CI push** only.
+  critic). It no longer hosts LLM or registry data-plane routes.
 - **Orchestration controller** — the one irreducible custom piece: reconciles
   the snapshot set ↔ grader `Pod`s (the #1882 reconcile-from-API loop) and
   creates critic `Pod`s on request. Holds the only cluster-write RBAC **and** the
@@ -90,13 +94,13 @@ lives in the DB, logs live in Loki, transcript lives in the DB via the proxy.
 
 ## "Current grader" pointer
 
-Flux **image automation** watches the grader repo in Forgejo (an
+Target: Flux **image automation** watches the grader repo in Forgejo (an
 `ImageRepository` + `ImagePolicy`) and writes the current digest into a
 `ConfigMap`; the **controller** reads it and reconciles grader pods onto the new
-digest (it already reaps wrong-image pods, #1882). This replaces the registry-proxy
-`pg_notify` (`grader_definition_changed`) + builtin-tag mechanism entirely. (There
-is no grader `Deployment` for Flux to roll — the controller rolls the pods, for the
-cred-boundary reason in Stage 5.)
+digest (it already reaps wrong-image pods, #1882). This would replace the current
+registry-proxy `pg_notify` (`grader_definition_changed`) + builtin-tag mechanism.
+(There is no grader `Deployment` for Flux to roll — the controller rolls the pods,
+for the cred-boundary reason in Stage 5.)
 
 Grader-only: critics have **no** "current" pointer — each critic run names an
 explicit image digest chosen by the optimize loop from DB fitness.
@@ -108,7 +112,7 @@ earlier ones only where noted.
 
 ### Stage 1 — Split the LLM proxy out
 
-- Extract `props/backend/routes/llm.py` (+ auth/budget/cost helpers) into a
+- Extract `props/llm_proxy/routes.py` (+ auth/budget/cost helpers) into a
   standalone `py_binary` + `oci_image` + Deployment + Service.
 - Repoint agents' `OPENAI_BASE_URL` at the proxy Service.
 - Capture the full transcript (request + response) keyed by `agent_run_id` at
@@ -133,7 +137,9 @@ earlier ones only where noted.
     crash-looped otherwise).
   - #1890 — cutover: agents' `OPENAI_BASE_URL` derives from `llm_proxy_url` (the
     `props-llm-proxy` Service), with the backend `/v1` kept as a fallback.
-  - This PR — drop the backend `/v1` mount now that agents are on the proxy.
+  - Registry-proxy split branch — drop the backend `/v1` mount now that agents
+    are on the proxy, and move the LLM route implementation under
+    `props/llm_proxy/routes.py`.
   - Tangential fixes the rollout surfaced: graders now reconcile against the k8s
     API (#1882) and the executor SA can `list` pods (#1891), so the grader
     controller maintains one labeled grader per snapshot.
@@ -161,17 +167,37 @@ earlier ones only where noted.
   already admits only `component=backend`, not agent pods — namespace isolation
   makes that boundary structural and shrinks the agent blast radius.
 
-### Stage 3 — In-cluster Forgejo pulls
+### Stage 3 — Standalone registry proxy
 
-**Punted (2026-06-04)** — deferred for later; agent images still pull through the
-backend registry proxy for now. The rest of this stage stands as the eventual design.
+**Done (2026-06-05/06):** agent images pull through the standalone
+`props-registry-proxy` service on `props-registry.allegedly.works`, not through
+the backend API server. Direct in-cluster Forgejo pulls remain a possible future
+optimization, but pod start / grader restart no longer depends on the main API
+server serving `/v2/*`.
 
-- Point agent `imagePullSecret`s at the in-cluster Forgejo Service; kubelet pulls
-  directly.
-- Reduce the backend registry proxy to external-CI push only (keep
-  `REGISTRY_HTTP_RELATIVEURLS` / `Location` rewriting on that path as needed).
+- Moved registry route ownership to `props/registry_proxy/routes.py` and removed
+  the backend `/v2/*` mount.
+- Added `props/registry_proxy:{registry_proxy_bin,image,load}` plus Kubernetes
+  Deployment, Service, HTTPRoute, Flux image automation, webhook receiver entry,
+  and `push-images` matrix row.
+- Split the public host: `props.allegedly.works` is backend/frontend only;
+  `props-registry.allegedly.works` serves registry `/v2/*`.
+- Updated the agent contract: the orchestrator injects `PROPS_REGISTRY_URL`;
+  critic-dev code and recipes require it and do **not** fall back to
+  `PROPS_BACKEND_URL`.
+- Updated docs and Docker-backed E2E fixtures so backend, LLM proxy, and registry
+  proxy start as separate services.
+- Made registry proxying stream upstream responses instead of buffering blobs into
+  memory.
+- **Verified:** `//props/registry_proxy/...`, `//props/llm_proxy/...`,
+  `//props/backend/routes/...`, `//props/orchestration:test_agent_registry`,
+  `//props/core:test_oci_utils`, affected image builds, and the critic-dev
+  Docker E2Es (`//props/agents/critic_dev:test_e2e`,
+  `//props/agents/critic_dev/recipes:test_build_critic_e2e`) pass on RBE.
 - **Done when:** pod start / grader restart no longer depends on the API server.
-- **Risk:** low–medium (URL/pointer rewriting for the pull path).
+  Met for the registry path; deployment rollout still needs the image publish +
+  Flux cutover.
+- **Risk:** low–medium (public host and imagePullSecret cutover).
 
 ### Stage 4 — kind-based test harness
 

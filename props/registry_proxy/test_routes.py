@@ -19,9 +19,9 @@ import uvicorn
 from fastapi import FastAPI, Request
 from starlette.responses import Response
 
-from props.backend.routes.registry import _is_grader_builtin_push, _proxy_to_upstream
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG
+from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
 
 DOCKER_ACCEPT_TYPES = [
     "application/vnd.docker.distribution.manifest.v2+json",

@@ -2,7 +2,7 @@
 
 ## Overview
 
-All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy (integrated into the unified backend), executes tools via subprocess, and writes results to Postgres.
+All agent loops run inside Docker containers. Each container is a self-contained agent that talks to the LLM proxy, executes tools via subprocess, and writes results to Postgres.
 
 **Benefit:** Critic developer agents can author entire agentic systems - arbitrary LLM pipelines, workflows, subagents, classifiers, loops, tool calls, analysis, dispatch. Not limited to append-only single-agent patterns.
 
@@ -55,7 +55,7 @@ run_loop_agent()
 
 ### LLM Proxy
 
-The LLM proxy is integrated into the unified backend (`props/backend/routes/llm.py`), not a separate service.
+The LLM proxy is a separate service (`props/llm_proxy`) that reuses the backend LLM router.
 
 | Aspect            | Decision                                                       |
 | ----------------- | -------------------------------------------------------------- |
@@ -66,7 +66,20 @@ The LLM proxy is integrated into the unified backend (`props/backend/routes/llm.
 | Cost budget       | Per-agent token counts, tracked via parent-child in agent_runs |
 | Streaming         | Not supported (simplifies logging/budgeting)                   |
 | Implementation    | LLM proxy routes at `/v1/responses` and `/v1/chat/completions` |
-| Port              | 8000 (same as backend)                                         |
+| Port              | 8000                                                           |
+
+### Registry Proxy
+
+The registry proxy is a separate service (`props/registry_proxy`) that reuses the shared registry route module.
+
+| Aspect           | Decision                                                          |
+| ---------------- | ----------------------------------------------------------------- |
+| Env vars         | `PROPS_REGISTRY_URL`                                              |
+| Token            | Same as existing Postgres password (`agent_{uuid}`)               |
+| Token validation | Via Postgres auth middleware                                      |
+| Access           | Critic-dev agents can read/push by digest; critics/graders cannot |
+| Implementation   | Registry routes at `/v2/*`                                        |
+| Port             | 8000                                                              |
 
 ### Resource Limits
 
@@ -244,7 +257,9 @@ Services in `props/compose.yaml`:
 
 - `postgres` (5433:5432) - on `props-internal` + `props-agents`
 - `registry` (5000:5000) - on `props-internal` + `default`
-- `backend` (8000:8000) - on `props-internal` + `props-agents` (serves LLM proxy routes, registry proxy at `/v2/*`, critic runs API at `/api/runs/critic`, dashboard API)
+- `backend` (8000:8000) - serves critic runs API at `/api/runs/critic` and dashboard API
+- `llm-proxy` (8000) - serves LLM proxy routes
+- `registry-proxy` (8000) - serves registry proxy routes at `/v2/*`
 
 **Network topology:**
 

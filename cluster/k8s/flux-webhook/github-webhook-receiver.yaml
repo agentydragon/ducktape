@@ -70,6 +70,9 @@ spec:
       name: props-llm-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
+      name: props-registry-proxy
+    - apiVersion: image.toolkit.fluxcd.io/v1beta2
+      kind: ImageRepository
       name: manifold-mcp-server
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
