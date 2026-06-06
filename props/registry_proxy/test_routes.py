@@ -111,6 +111,40 @@ async def test_proxy_preserves_multi_valued_accept_headers(monkeypatch: pytest.M
         )
 
 
+async def test_proxy_forwards_streaming_mutation_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Blob upload PATCH requests should stream through without losing body bytes."""
+    captured_body = b""
+
+    upstream_app = FastAPI()
+
+    @upstream_app.api_route("/{path:path}", methods=["PATCH"])
+    async def catch_all(request: Request) -> Response:
+        nonlocal captured_body
+        chunks = [chunk async for chunk in request.stream()]
+        captured_body = b"".join(chunks)
+        return Response(status_code=202)
+
+    proxy_app = FastAPI()
+
+    @proxy_app.api_route("/{path:path}", methods=["PATCH"])
+    async def proxy(request: Request) -> Response:
+        return await _proxy_to_upstream(request)
+
+    async def body_chunks():
+        yield b"first-"
+        await asyncio.sleep(0)
+        yield b"second"
+
+    async with _run_server(upstream_app) as upstream_url:
+        monkeypatch.setenv("PROPS_REGISTRY_UPSTREAM_URL", upstream_url)
+
+        async with _run_server(proxy_app) as proxy_url, httpx.AsyncClient(base_url=proxy_url) as client:
+            response = await client.patch("/v2/critic/blobs/uploads/session", content=body_chunks())
+
+    assert response.status_code == 202
+    assert captured_body == b"first-second"
+
+
 def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:
     """The GraderSupervisor restart is triggered ONLY by a move of the grader's
     builtin tag. By-digest pushes and per-commit sha pins (pushed alongside

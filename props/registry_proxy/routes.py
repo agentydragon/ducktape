@@ -67,14 +67,14 @@ async def _proxy_to_upstream(request: Request) -> Response:
     if auth:
         headers.append((b"authorization", auth.encode()))
 
-    body = await request.body() if request.method not in ("GET", "HEAD") else b""
+    content = None if request.method in ("GET", "HEAD") else request.stream()
 
     try:
         # 600s: agent image layers are large and can take minutes to stream
         # through to the upstream; the old 30s read timeout surfaced as
         # `502 Upstream error` on big blobs.
         upstream_request = client.build_request(
-            method=request.method, url=upstream_url, headers=headers, content=body, timeout=600.0
+            method=request.method, url=upstream_url, headers=headers, content=content, timeout=600.0
         )
         upstream_response = await client.send(upstream_request, stream=True)
     except httpx.RequestError as e:
