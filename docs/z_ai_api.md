@@ -93,6 +93,41 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
   JSON array for a required nullable array. Required non-null string/array
   fields worked, and non-null sentinel shapes worked. Prefer non-null sentinel
   or mode-object schemas over `anyOf: [T, null]` for z.ai tool inputs.
+- The `anyOf` weakness extends to **object-typed union parameters**. A tool
+  parameter whose schema is an `anyOf`/`oneOf` of object variants (e.g. a
+  Pydantic discriminated union) comes back as a **JSON-encoded string**, not a
+  nested object: the top-level `arguments` still parses as valid JSON, but the
+  union field's value is a string, so server-side Pydantic rejects it with
+  `model_attributes_type` ("Input should be a valid dictionary or object to
+  extract fields from"). Measured 2026-06-07 against the coding endpoint and
+  reproduced in a live props `critic_dev_optimize` run (`a4cb7710`): every
+  `start_critic` call stringified its `example` union and failed validation,
+  exhausting the agent's budget on retries.
+  - The trigger is the **union combinator** (`anyOf` _and_ `oneOf`, 3/3
+    stringified each) — not `strict`, not `$ref`/`$defs`, and not the
+    discriminator (inlining or dropping them doesn't help).
+  - **Working shapes** (3/3 proper objects): a single concrete object schema
+    with defined `properties` — `const` or multi-value `enum` `kind`,
+    `additionalProperties` either `true` or `false` — and fully-flat top-level
+    scalar params (no nesting).
+  - **Root cause** (not z.ai-API-specific — a GLM model-level bug, reproduced on
+    both the z.ai API and OpenCode Zen): GLM emits tool calls in an **XML**
+    format (`<parameter name="x">…</parameter>`), and the XML→arguments parser
+    stringifies a tag's content unless the schema declares a single concrete
+    type. A plain `object` schema is JSON-parsed back into an object; an
+    `anyOf`/`oneOf`/`allOf` union is type-ambiguous, so the parser leaves the
+    raw JSON string. See
+    [zai-org/GLM-4.7 discussion #18](https://huggingface.co/zai-org/GLM-4.7/discussions/18)
+    ("Unable to produce correct `object` type tool call param", open/unresolved
+    as of 2025-12). z.ai's own
+    [function-calling docs](https://docs.z.ai/guides/capabilities/function-calling)
+    are examples-only and say nothing about schema-feature support; the single
+    explicit schema constraint they state is `tool_choice` "only supports auto".
+  - **Recipe**: represent a discriminated union as a single concrete object
+    (carry the superset of fields, keep `kind` as an `enum`, enforce the
+    per-`kind` required fields server-side) or as flat top-level params — never
+    `anyOf`/`oneOf`. Both working shapes are canaried live in
+    `agent_core/test_zai_chat_adapter_live.py`.
 - Forced named tool choice in the OpenAI object form is rejected:
   `{"type": "function", "function": {"name": "..."}}` returns `400` with
   `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.
