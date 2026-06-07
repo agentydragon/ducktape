@@ -345,6 +345,7 @@ py_test(
         ":loop_control",
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
