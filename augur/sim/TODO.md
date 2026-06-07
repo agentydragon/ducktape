@@ -301,10 +301,6 @@ What's left is load-bearing and needs a real refactor, each its own PR:
   R-first (and transposing once in `jax_scatter`, or emitting R-first from the
   scan) removes ~12 per-decode transposes. Area is perf-sensitive — see
   <augur/debug/rollout_perf_profiling.md>.
-- **On-device single-rollout reduction.** The rollout-detail endpoint
-  materializes all R rollouts' dense buffers then filters to one. It could
-  reduce on-device like `run_jax_product_summary` does for the fan, avoiding the
-  full `(…, R)` device→host copy for a single rollout.
 
 ## Future / nice-to-have
 
