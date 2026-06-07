@@ -1,9 +1,8 @@
 """Forward simulation entrypoints.
 
-`simulate(scenario, rollout_count) -> SimulationRun` materializes external
-series and runs the dense-array engine. The engine keeps the month loop in
-NumPy arrays and decodes the resulting boundary tables as Polars
-DataFrames for API and product projection code.
+`simulate(scenario, rollout_count) -> SimulationRun` materializes external series and runs the JAX
+engine: the whole month loop compiles into one XLA program, whose stacked outputs are scattered into
+NumPy buffers and decoded as Polars DataFrames for API and product projection code.
 """
 
 from __future__ import annotations

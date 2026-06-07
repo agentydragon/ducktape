@@ -70,6 +70,7 @@ from augur.product.wire import (
     SetRentedFractionEventWire,
     TerminalDistributionRequest,
 )
+from augur.sim.engine.jax_engine import ProductSummary
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
 from augur.sim.simulate import simulate_dense_with_external_series
@@ -353,20 +354,29 @@ def test_metric_fan_terminal_distribution_and_rollout_detail_behavior(
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
 
 
-def test_reduced_product_projection_matches_dense_metric_decode(
+def test_reduced_product_summary_matches_dense_metric_decode(
     product: service.ProductService, scenario_key: ScenarioKey
 ) -> None:
     seeds = (7, 8)
     dense, _model_id = product._simulate_dense(scenario_key, seeds)
     expected_metrics = decode.monthly_metric_arrays_batch(dense, primary_agent_id=product._primary_agent_id)
     expected_failed = decode.failed_month_index_batch(dense)
+    percentiles = (0.0, 25.0, 50.0, 75.0, 100.0)
 
-    actual_metrics, actual_failed, _model_id = product._simulate_product_metrics(scenario_key, seeds)
-
-    assert set(actual_metrics) == set(expected_metrics)
-    for name, expected in expected_metrics.items():
-        np.testing.assert_allclose(actual_metrics[name], expected, rtol=0.0, atol=1e-9)
-    np.testing.assert_array_equal(actual_failed, expected_failed)
+    # The reduced product projection emits the same numbers as the full dense decode, but reduced
+    # on-device to the requested metric's monthly percentile bands + per-rollout terminal samples.
+    for name, expected_series in expected_metrics.items():
+        if name == "month_index":
+            continue
+        summary, _model_id = product._simulate_product_summary(
+            scenario_key, seeds, metric=name, percentiles=percentiles
+        )
+        np.testing.assert_array_equal(summary.failed_month, expected_failed)
+        # Terminal shortfall is cumulative over the horizon; every other metric is the end snapshot.
+        expected_terminal = expected_series.sum(axis=0) if name == "shortfall_usd" else expected_series[-1]
+        np.testing.assert_allclose(summary.terminal_samples, expected_terminal, rtol=0.0, atol=1e-9)
+        expected_bands = np.percentile(expected_series, np.asarray(percentiles), axis=1, method="linear")
+        np.testing.assert_allclose(summary.monthly_bands, expected_bands, rtol=1e-9, atol=1e-6)
 
 
 def test_concurrent_fan_and_terminal_requests_run_serially(
@@ -375,16 +385,16 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
     monkeypatch: pytest.MonkeyPatch,
     scenario_key: ScenarioKey,
 ) -> None:
-    original_simulate_product_metrics = product._simulate_product_metrics
+    original_simulate_product_summary = product._simulate_product_summary
     first_simulation_started = threading.Event()
     release_first_simulation = threading.Event()
     active_simulations = 0
     max_active_simulations = 0
     active_lock = threading.Lock()
 
-    def slow_simulate_product_metrics(
-        scenario: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
+    def slow_simulate_product_summary(
+        scenario: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
+    ) -> tuple[ProductSummary, str]:
         nonlocal active_simulations, max_active_simulations
         with active_lock:
             active_simulations += 1
@@ -392,12 +402,12 @@ def test_concurrent_fan_and_terminal_requests_run_serially(
             first_simulation_started.set()
         release_first_simulation.wait(timeout=5)
         try:
-            return original_simulate_product_metrics(scenario, seeds)
+            return original_simulate_product_summary(scenario, seeds, metric=metric, percentiles=percentiles)
         finally:
             with active_lock:
                 active_simulations -= 1
 
-    monkeypatch.setattr(product, "_simulate_product_metrics", slow_simulate_product_metrics)
+    monkeypatch.setattr(product, "_simulate_product_summary", slow_simulate_product_summary)
 
     fan_request = MetricFanRequest(
         scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(5, 50, 95)
@@ -468,7 +478,7 @@ def test_terminal_distribution_samples_identify_rollout_terminal_values(
 def test_metric_fan_runs_reduced_product_projection_once_per_batch(
     product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    original = service.run_jax_product_metrics
+    original = service.run_jax_product_summary
     calls = 0
 
     def counted(*args, **kwargs):
@@ -476,7 +486,7 @@ def test_metric_fan_runs_reduced_product_projection_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "run_jax_product_metrics", counted)
+    monkeypatch.setattr(service, "run_jax_product_summary", counted)
 
     product.metric_fan(
         MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash_usd", percentiles=(50,))

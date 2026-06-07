@@ -328,15 +328,76 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
-def run_jax_product_metrics(
-    plan: CompiledSimulation, *, primary_agent_id: str
-) -> tuple[dict[str, np.ndarray], np.ndarray]:
-    """Run the JAX month loop but emit only product fan/terminal metrics.
+@dataclass(frozen=True)
+class ProductSummary:
+    """Reduced product projection for the percentile (fan / terminal) endpoints.
 
-    This keeps the accounting algorithm identical to `run_jax_scan` while avoiding the full
-    DenseSimulationResult history/event slabs. The product fan and terminal endpoints need these
-    reduced histories for all seeds; the full dense trace is reserved for the selected-rollout detail
-    endpoint.
+    Carries only what those endpoints consume — the requested metric's monthly percentile bands and
+    its per-rollout terminal samples — so the full (H+1, R) per-metric history is reduced on-device
+    and never copied to the host or re-stored per rollout.
+    """
+
+    month_index: np.ndarray  # (H+1,)
+    failed_month: np.ndarray  # (R,) int64; -1 = never failed
+    terminal_samples: np.ndarray  # (R,) requested metric's terminal value per rollout
+    monthly_bands: np.ndarray | None  # (n_percentiles, H+1) for the requested metric, or None
+
+
+# The six metrics the scan emits per month (see `product_metrics`); the wire's three remaining
+# metrics (home_equity, liquid_net_worth, net_worth) are linear combinations of these.
+_PRODUCT_BASE_METRICS = (
+    "cash_usd",
+    "holding_value_usd",
+    "private_equity_value_usd",
+    "property_value_usd",
+    "mortgage_balance_usd",
+    "shortfall_usd",
+)
+_PRODUCT_BASE_INDEX = {name: index for index, name in enumerate(_PRODUCT_BASE_METRICS)}
+
+
+def _product_metric_series(
+    metric: str, initial_ys: tuple[jnp.ndarray, ...], monthly_ys: tuple[jnp.ndarray, ...]
+) -> jnp.ndarray:
+    """Full (H+1, R) device series for one product metric, composing derived metrics from base series.
+
+    Only the base series the requested metric needs are assembled, so a single-metric fan never
+    materializes all nine metrics' histories.
+    """
+
+    def base(name: str) -> jnp.ndarray:
+        index = _PRODUCT_BASE_INDEX[name]
+        return jnp.concatenate([jnp.asarray(initial_ys[index])[None, :], jnp.asarray(monthly_ys[index])], axis=0)
+
+    match metric:
+        case "home_equity_usd":
+            return base("property_value_usd") - base("mortgage_balance_usd")
+        case "liquid_net_worth_usd":
+            # Excludes private equity by design (matches `monthly_metric_arrays_batch`): PE is only
+            # saleable at sparse tender events, so it isn't "cash you could get tomorrow".
+            return base("cash_usd") + base("holding_value_usd")
+        case "net_worth_usd":
+            return (
+                base("cash_usd")
+                + base("holding_value_usd")
+                + base("property_value_usd")
+                - base("mortgage_balance_usd")
+                + base("private_equity_value_usd")
+            )
+        case _:
+            return base(metric)
+
+
+def run_jax_product_summary(
+    plan: CompiledSimulation, *, primary_agent_id: str, metric: str, percentiles: tuple[float, ...] | None
+) -> ProductSummary:
+    """Run the JAX month loop and reduce, on-device, to the requested metric's monthly percentile
+    bands (when `percentiles` is given) and its per-rollout terminal samples.
+
+    Shares the exact accounting scan with `run_jax_scan`; only the emitted summary differs. Avoiding
+    the full DenseSimulationResult history/event slabs — and reducing each metric to percentiles
+    before the device→host copy — means neither the host nor the response ever holds per-rollout
+    monthly state. The full dense trace is reserved for the selected-rollout detail endpoint.
     """
     validate_seed_dependent_inputs(plan)
 
@@ -346,29 +407,26 @@ def run_jax_product_metrics(
     product_ys, product_tail = _program_impl(
         external, pe, cfg, baked, p, structure, product_summary=product_static, product_inputs=product_inputs
     )
-    product_ys, product_tail = jax.device_get((product_ys, product_tail))
-    (oversell, final_failed_month) = product_tail
-    if bool(np.asarray(oversell)):
+    oversell, final_failed_month = product_tail
+    if bool(np.asarray(jax.device_get(oversell))):
         raise ValueError("scheduled asset sale exceeds available lots")
+
     initial_ys, monthly_ys = product_ys
-    names = (
-        "cash_usd",
-        "holding_value_usd",
-        "private_equity_value_usd",
-        "property_value_usd",
-        "mortgage_balance_usd",
-        "shortfall_usd",
+    series = _product_metric_series(metric, initial_ys, monthly_ys)  # (H+1, R), on device
+    # Terminal sample: cumulative over the horizon for shortfall, end-of-horizon snapshot otherwise.
+    terminal = series.sum(axis=0) if metric == "shortfall_usd" else series[-1]
+    bands = (
+        jnp.quantile(series, jnp.asarray(percentiles, dtype=jnp.float64) / 100.0, axis=1, method="linear")
+        if percentiles is not None
+        else None
     )
-    arrays: dict[str, np.ndarray] = {"month_index": np.arange(plan.horizon_months + 1, dtype=np.int64)}
-    for name, initial, monthly in zip(names, initial_ys, monthly_ys, strict=True):
-        values = np.concatenate([np.asarray(initial, dtype=np.float64)[None, :], np.asarray(monthly, dtype=np.float64)])
-        arrays[name] = values
-    arrays["home_equity_usd"] = arrays["property_value_usd"] - arrays["mortgage_balance_usd"]
-    arrays["liquid_net_worth_usd"] = arrays["cash_usd"] + arrays["holding_value_usd"]
-    arrays["net_worth_usd"] = (
-        arrays["liquid_net_worth_usd"] + arrays["home_equity_usd"] + arrays["private_equity_value_usd"]
+
+    return ProductSummary(
+        month_index=np.arange(plan.horizon_months + 1, dtype=np.int64),
+        failed_month=np.asarray(jax.device_get(final_failed_month), dtype=np.int64),
+        terminal_samples=np.asarray(jax.device_get(terminal), dtype=np.float64),
+        monthly_bands=None if bands is None else np.asarray(jax.device_get(bands), dtype=np.float64),
     )
-    return arrays, np.asarray(final_failed_month, dtype=np.int64)
 
 
 def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:

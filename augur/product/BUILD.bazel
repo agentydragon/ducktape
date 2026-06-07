@@ -145,6 +145,7 @@ py_test(
         "//augur/model:provider_config",
         "//augur/model:series",
         "//augur/model:testing",
+        "//augur/sim:engine",
         "//augur/sim:external_series",
         "//augur/sim:scenario",
         "//augur/sim:simulate",

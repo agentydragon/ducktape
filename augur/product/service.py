@@ -7,8 +7,6 @@ agent, initial cash); does not know about properties, locations, or bootstrap.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
-from typing import cast
 
 import numpy as np
 
@@ -38,35 +36,21 @@ from augur.product.scenarios import (
 from augur.product.wire import (
     MetricFanRequest,
     MetricFanResponse,
-    MetricName,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
     ScenarioKey,
     TerminalDistributionRequest,
     TerminalDistributionResponse,
-    TerminalMetrics,
 )
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import compile_simulation
-from augur.sim.engine.jax_engine import run_jax_product_metrics
+from augur.sim.engine.jax_engine import ProductSummary, run_jax_product_summary
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
 from augur.sim.scenario import HarvestPolicy, Scenario
 from augur.sim.simulate import simulate_dense_with_external_series
-
-
-@dataclass(frozen=True)
-class _DecodedRollout:
-    seed: int
-    monthly_metric_arrays: dict[str, np.ndarray]
-    terminal_metrics: TerminalMetrics
-    model_id: str
-
-    @property
-    def failed(self) -> bool:
-        return self.terminal_metrics.failed_month_index is not None
 
 
 class ProductService:
@@ -107,35 +91,33 @@ class ProductService:
     def metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        percentiles = tuple(float(pct) for pct in request.percentiles)
         with self._projection_lock:
-            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-            model_id = decoded[0].model_id if decoded else request.scenario.model_id
-            percentiles = tuple(float(pct) for pct in request.percentiles)
+            summary, model_id = self._simulate_product_summary(
+                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=percentiles
+            )
             return MetricFanResponse(
                 model_id=model_id,
                 metric=request.metric,
-                monthly_metric_fan=_monthly_metric_fan(decoded, metric=request.metric, percentiles=percentiles),
-                terminal_metric_percentiles=_terminal_metric_percentiles(
-                    decoded, metric=request.metric, percentiles=percentiles
-                ),
-                failed_count=sum(1 for rollout in decoded if rollout.failed),
+                monthly_metric_fan=_monthly_fan_frame(summary, percentiles),
+                terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
+                failed_count=_failed_count(summary),
             )
 
     def terminal_distribution(self, request: TerminalDistributionRequest) -> TerminalDistributionResponse:
         if request.rollout_count > self._max_rollout_samples:
             raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        percentiles = tuple(float(pct) for pct in request.percentiles)
         with self._projection_lock:
-            decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
-            model_id = decoded[0].model_id if decoded else request.scenario.model_id
-            percentiles = tuple(float(pct) for pct in request.percentiles)
+            summary, model_id = self._simulate_product_summary(
+                request.scenario, request.rollout_seeds, metric=request.metric, percentiles=None
+            )
             return TerminalDistributionResponse(
                 model_id=model_id,
                 metric=request.metric,
-                terminal_metric_percentiles=_terminal_metric_percentiles(
-                    decoded, metric=request.metric, percentiles=percentiles
-                ),
-                terminal_metric_samples=_terminal_metric_samples(decoded, metric=request.metric),
-                failed_count=sum(1 for rollout in decoded if rollout.failed),
+                terminal_metric_percentiles=_percentile_frame(summary.terminal_samples, percentiles),
+                terminal_metric_samples=_terminal_samples_frame(request.rollout_seeds, summary),
+                failed_count=_failed_count(summary),
             )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
@@ -172,25 +154,6 @@ class ProductService:
             ),
         )
 
-    def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
-        self._validate_scenario_key(scenario_key)
-        batch_metrics, batch_failed, model_id = self._simulate_product_metrics(scenario_key, seeds)
-        month_index = batch_metrics["month_index"].copy()
-        decoded: list[_DecodedRollout] = []
-        for batch_index, seed in enumerate(seeds):
-            arrays = {
-                name: (month_index if name == "month_index" else values[:, batch_index].copy())
-                for name, values in batch_metrics.items()
-            }
-            failed_month = int(batch_failed[batch_index])
-            terminal = terminal_metrics_from_arrays(
-                arrays, failed_month_index=None if failed_month < 0 else failed_month
-            )
-            decoded.append(
-                _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, model_id=model_id)
-            )
-        return tuple(decoded)
-
     def _validate_scenario_key(self, scenario_key: ScenarioKey) -> None:
         if scenario_key.model_id not in self._models:
             raise ValueError(f"unknown model_id: {scenario_key.model_id!r} (known presets: {sorted(self._models)})")
@@ -208,9 +171,10 @@ class ProductService:
         if horizon_months > self._max_horizon_months:
             raise ValueError(f"requested horizon {horizon_months} exceeds server max {self._max_horizon_months}")
 
-    def _simulate_product_metrics(
-        self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
-    ) -> tuple[dict[str, np.ndarray], np.ndarray, str]:
+    def _simulate_product_summary(
+        self, scenario_key: ScenarioKey, seeds: tuple[int, ...], *, metric: str, percentiles: tuple[float, ...] | None
+    ) -> tuple[ProductSummary, str]:
+        self._validate_scenario_key(scenario_key)
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
         plan = compile_simulation(
             scenario,
@@ -219,8 +183,10 @@ class ProductService:
             jurisdictions=load_jurisdictions_for(scenario),
             locations=self._locations,
         )
-        batch_metrics, batch_failed = run_jax_product_metrics(plan, primary_agent_id=self._primary_agent_id)
-        return batch_metrics, batch_failed, model_id
+        summary = run_jax_product_summary(
+            plan, primary_agent_id=self._primary_agent_id, metric=metric, percentiles=percentiles
+        )
+        return summary, model_id
 
     def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[DenseSimulationResult, str]:
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
@@ -263,81 +229,31 @@ class ProductService:
         return scenario, sampled, model_id
 
 
-def _monthly_metric_fan(
-    rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName, percentiles: tuple[float, ...]
-) -> Frame:
-    matrix = _metric_matrix(rollouts, metric=metric)
-    if matrix is None:
-        return {"month_index": [], "percentile": [], "value": []}
-    month_indices, values = matrix
-    percentile_values = _percentile(values, percentiles, axis=0)
+def _monthly_fan_frame(summary: ProductSummary, percentiles: tuple[float, ...]) -> Frame:
+    month_indices = summary.month_index
+    bands = summary.monthly_bands  # (n_percentiles, H+1)
+    assert bands is not None, "monthly fan requires percentiles"
     percentile_array = np.asarray(percentiles, dtype=np.float64)
     return {
         "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
         "percentile": np.tile(percentile_array, month_indices.size).tolist(),
-        "value": percentile_values.T.reshape(-1).tolist(),
+        "value": bands.T.reshape(-1).tolist(),
     }
 
 
-def _terminal_metric_percentiles(
-    rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName, percentiles: tuple[float, ...]
-) -> Frame:
-    values = np.asarray(
-        [_terminal_metric_value(rollout.terminal_metrics, metric) for rollout in rollouts], dtype=np.float64
-    )
-    if values.size == 0:
-        return {"percentile": [], "value": []}
+def _percentile_frame(samples: np.ndarray, percentiles: tuple[float, ...]) -> Frame:
     percentile_array = np.asarray(percentiles, dtype=np.float64)
-    percentile_values = _percentile(values, percentiles, axis=0)
-    return {"percentile": percentile_array.tolist(), "value": percentile_values.tolist()}
+    values = np.percentile(samples, percentile_array, method="linear")
+    return {"percentile": percentile_array.tolist(), "value": np.asarray(values, dtype=np.float64).tolist()}
 
 
-def _terminal_metric_samples(rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName) -> Frame:
+def _terminal_samples_frame(seeds: tuple[int, ...], summary: ProductSummary) -> Frame:
     return {
-        "seed": [rollout.seed for rollout in rollouts],
-        "value": [_terminal_metric_value(rollout.terminal_metrics, metric) for rollout in rollouts],
-        "failed": [rollout.failed for rollout in rollouts],
+        "seed": list(seeds),
+        "value": summary.terminal_samples.tolist(),
+        "failed": (summary.failed_month >= 0).tolist(),
     }
 
 
-def _metric_matrix(
-    rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName
-) -> tuple[np.ndarray, np.ndarray] | None:
-    if not rollouts:
-        return None
-    month_indices = rollouts[0].monthly_metric_arrays["month_index"]
-    values = np.empty((len(rollouts), month_indices.size), dtype=np.float64)
-    for rollout_index, rollout in enumerate(rollouts):
-        rollout_months = rollout.monthly_metric_arrays["month_index"]
-        if rollout_months.shape != month_indices.shape or not np.array_equal(rollout_months, month_indices):
-            raise ValueError("metric fan rollouts have inconsistent month indices")
-        values[rollout_index] = rollout.monthly_metric_arrays[metric].astype(np.float64, copy=False)
-    return month_indices, values
-
-
-def _percentile(values: np.ndarray, percentiles: tuple[float, ...], *, axis: int) -> np.ndarray:
-    return cast(
-        np.ndarray, np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
-    )
-
-
-def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> float:
-    match metric:
-        case "cash_usd":
-            return terminal.cash_usd
-        case "holding_value_usd":
-            return terminal.holding_value_usd
-        case "private_equity_value_usd":
-            return terminal.private_equity_value_usd
-        case "property_value_usd":
-            return terminal.property_value_usd
-        case "mortgage_balance_usd":
-            return terminal.mortgage_balance_usd
-        case "home_equity_usd":
-            return terminal.home_equity_usd
-        case "liquid_net_worth_usd":
-            return terminal.liquid_net_worth_usd
-        case "net_worth_usd":
-            return terminal.net_worth_usd
-        case "shortfall_usd":
-            return terminal.shortfall_usd
+def _failed_count(summary: ProductSummary) -> int:
+    return int((summary.failed_month >= 0).sum())
