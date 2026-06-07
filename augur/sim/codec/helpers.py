@@ -100,8 +100,8 @@ def codes_to_asset_wire_ids(plan: CompiledSimulation, codes: np.ndarray) -> np.n
 
 
 def r_first_view(state: np.ndarray) -> np.ndarray:
-    """Move R (trailing axis per B0) to axis 1 so the decoders can keep using their
-    (h1, r, count[, ...]) row-major iteration order over the resulting flat buffer."""
+    """Move R from the trailing axis (the layout the JAX scan emits) to axis 1, so decoders can
+    iterate `(h1, r, count[, ...])` row-major over the resulting flat buffer."""
 
     return np.moveaxis(state, -1, 1)
 

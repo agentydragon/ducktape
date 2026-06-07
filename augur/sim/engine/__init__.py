@@ -30,7 +30,7 @@ from augur.sim.runtime import load_jurisdictions_for
 from augur.sim.scenario import Scenario
 
 
-def simulate_with_external_series_dense_result(
+def run_dense_simulation(
     scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext, locations: dict[str, Location]
 ) -> DenseSimulationResult:
     plan = compile_simulation(
@@ -54,8 +54,10 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
     liability_event_axis = max(1, p.liability_count)
     buffers = SimulationBuffers(
         state=StateHistoryBuffers(
-            # All state-history buffers are R-last per B0: (snapshot, count, R) for 2-axis
-            # state, (snapshot, count_a, count_b, R) for the 3-axis capital-gain split.
+            # State-history buffers keep the rollout axis last to match the JAX scan's output
+            # layout (it emits per-(count, R) arrays): (snapshot, count, R) for 2-axis state,
+            # (snapshot, count_a, count_b, R) for the 3-axis capital-gain split. Decoders move R
+            # to axis 1 via `r_first_view` when they read these.
             # cash_state[S, C, R]
             cash_state=np.zeros((s, p.cash_count, r), dtype=np.int64),
             # lot_state[S, L, R]

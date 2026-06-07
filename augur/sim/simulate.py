@@ -10,7 +10,7 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.codec.plan import DenseSimulationResult, SimulationRun
-from augur.sim.engine import simulate_with_external_series_dense_result
+from augur.sim.engine import run_dense_simulation
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.scenario import Scenario, SeriesIndexedAmount
@@ -35,7 +35,7 @@ def simulate_with_external_series(
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
     _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
-    return simulate_with_external_series_dense_result(
+    return run_dense_simulation(
         scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
     ).decode()
 
@@ -47,7 +47,7 @@ def simulate_dense_with_external_series(
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
     _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
-    return simulate_with_external_series_dense_result(
+    return run_dense_simulation(
         scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
     )
 
