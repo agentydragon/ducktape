@@ -283,6 +283,29 @@ recovery cashouts. Still missing:
   metadata, valuation provenance, account references, and tender-window
   metadata.
 
+### Remaining dual-backend (NumPy→JAX) indirection cleanup
+
+Only the JAX engine remains (NumPy backend removed in `cdf0ea1fe`). The safe
+naming/comment vestiges + the unused `slice.py` are gone (#1924 and follow-up).
+What's left is load-bearing and needs a real refactor, each its own PR:
+
+- **Collapse `DenseSimulationResult` into `SimulationRun`.** Both hold the same
+  `(plan, buffers, external_series)`; `DenseSimulationResult.decode()` just
+  rebuilds a `SimulationRun` from identical fields. The split only existed so
+  either backend could hand off a backend-neutral result. Merging means giving
+  `SimulationRun` public `plan`/`buffers` access and updating consumers
+  (`product/decode.py`, `product/service.py`).
+- **Flip state buffers to R-first.** `r_first_view` / `state_axes`
+  (`codec/helpers.py`) transpose `(S, C, R)` → `(S, R, C)` in every decoder
+  because the buffers keep R last to match the JAX scan output. Allocating
+  R-first (and transposing once in `jax_scatter`, or emitting R-first from the
+  scan) removes ~12 per-decode transposes. Area is perf-sensitive — see
+  <augur/debug/rollout_perf_profiling.md>.
+- **On-device single-rollout reduction.** The rollout-detail endpoint
+  materializes all R rollouts' dense buffers then filters to one. It could
+  reduce on-device like `run_jax_product_summary` does for the fan, avoiding the
+  full `(…, R)` device→host copy for a single rollout.
+
 ## Future / nice-to-have
 
 - **Stochastic tenant model.** Landlord rental income today uses a
