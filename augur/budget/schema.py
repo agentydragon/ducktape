@@ -116,6 +116,23 @@ class PfcRule(_RuleBase):
 Rule = MerchantSubstringRule | NameSubstringRule | PfcRule
 
 
+class Override(ApiModel):
+    """Manual per-transaction classification, keyed on Plaid `transaction_id`.
+
+    Highest priority -- pre-empts every rule -- and NOT direction-gated: an explicit
+    human/agent assignment routes the txn to its bucket regardless of sign (e.g. a
+    +amount "Returned Payment" reversal -> a transfer bucket). `transaction_id` is stable
+    per Plaid Item; a relink mints new ids, so the read model runs a global existence probe
+    and reports overrides matching no live row (`stale_overrides`) rather than silently
+    no-op'ing. `note` should denormalize a short date/amount/name descriptor so the YAML
+    reads without cross-referencing the DB.
+    """
+
+    transaction_id: str = Field(min_length=1)
+    bucket_id: str = Field(pattern=_ID_PATTERN)
+    note: str = Field(min_length=1)
+
+
 class BudgetSourceConfig(ApiModel):
     """Where to pull transactions from, scoped to a user's accounts."""
 
@@ -146,6 +163,10 @@ class BudgetConfig(ApiModel):
     # User-specific overrides applied BEFORE the generic defaults. First match wins, so listing
     # a private merchant rule here pre-empts the public defaults.
     rules: tuple[Rule, ...] = ()
+    # Per-transaction manual classifications, applied BEFORE any rule and ungated by
+    # direction (see `Override`). The primary tool for residual weird cases rules
+    # shouldn't generalize (reversals, one-off mislabels).
+    overrides: tuple[Override, ...] = ()
     # When True, ship `default_rules.DEFAULT_RULES` after the user's rules. Set False to
     # opt out of the public rule library entirely (rare; useful for testing).
     include_default_rules: bool = True
@@ -172,4 +193,11 @@ class BudgetConfig(ApiModel):
         for rule in self.rules:
             if rule.bucket_id not in bucket_by_id:
                 raise ValueError(f"rule references unknown bucket_id {rule.bucket_id!r}")
+        seen_override_ids: set[str] = set()
+        for override in self.overrides:
+            if override.bucket_id not in bucket_by_id:
+                raise ValueError(f"override references unknown bucket_id {override.bucket_id!r}")
+            if override.transaction_id in seen_override_ids:
+                raise ValueError(f"duplicate override for transaction_id {override.transaction_id!r}")
+            seen_override_ids.add(override.transaction_id)
         return self

@@ -25,6 +25,7 @@ from augur.budget.schema import (
     BudgetSourceConfig,
     MerchantSubstringRule,
     NameSubstringRule,
+    Override,
     TransferDirection,
 )
 from augur.dates import DAYS_PER_MONTH
@@ -91,7 +92,7 @@ async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[Asyn
         await engine.dispose()
 
 
-def _budget_config() -> BudgetConfig:
+def _budget_config(overrides: tuple[Override, ...] = ()) -> BudgetConfig:
     return BudgetConfig(
         source=BudgetSourceConfig(plaid_account_ids=("checking",), coverage_starts=date(2026, 3, 15)),
         buckets=(
@@ -122,6 +123,7 @@ def _budget_config() -> BudgetConfig:
             MerchantSubstringRule(pattern="Target", bucket_id="custom"),
             NameSubstringRule(pattern="Wealthfront", bucket_id="transfers_in"),
         ),
+        overrides=overrides,
         include_default_rules=True,
         lumpy_threshold_usd=500.0,
     )
@@ -405,6 +407,57 @@ async def test_sql_budget_drilldown_rejects_unknown_bucket(session_factory: asyn
             window_end=date(2026, 4, 30),
             account_ids=("checking",),
         )
+
+
+async def test_sql_budget_overrides_beat_rules_and_ignore_direction(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _budget_config(
+        overrides=(
+            # Pre-empts the `Target -> custom` rule.
+            Override(transaction_id="target_preempt", bucket_id="groceries", note="2026-03-20 $40 TARGET STORE"),
+            # Ungated: an inflow-signed (-12000) txn forced into an outflow expense bucket --
+            # something the direction-gated rules could never do.
+            Override(transaction_id="wealthfront_in", bucket_id="custom", note="2026-03-23 -$12000 Wealthfront"),
+        )
+    )
+
+    response = await sql_read_model.read_budget_snapshot(
+        session_factory=session_factory,
+        config=config,
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+
+    monthly = _monthly_by_bucket(response)
+    assert monthly["groceries"] == (40.0, 1000.0)  # target_preempt (Mar) joins grocery_lumpy (Apr)
+    assert monthly["custom"] == (-12000.0, 0.0)  # wealthfront_in forced here despite its inflow sign
+    assert monthly["transfers_in"] == (0.0, 0.0)  # wealthfront_in no longer lands here
+    assert response.stale_overrides == ()
+
+
+async def test_sql_budget_snapshot_reports_stale_overrides(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _budget_config(
+        overrides=(
+            Override(transaction_id="target_preempt", bucket_id="groceries", note="live row"),
+            Override(transaction_id="removed_excluded", bucket_id="groceries", note="points at a removed row"),
+            Override(transaction_id="ghost_txn_id", bucket_id="groceries", note="no such txn (e.g. post-relink)"),
+        )
+    )
+
+    response = await sql_read_model.read_budget_snapshot(
+        session_factory=session_factory,
+        config=config,
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+
+    # Global existence probe: the live row is fine; the removed row and the absent id are stale.
+    assert response.stale_overrides == ("ghost_txn_id", "removed_excluded")
 
 
 if __name__ == "__main__":

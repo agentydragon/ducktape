@@ -57,6 +57,17 @@ def _bucket_defs_json(config: BudgetConfig) -> str:
     )
 
 
+def _overrides_json(config: BudgetConfig) -> str:
+    bucket_ids = {bucket.id for bucket in config.buckets}
+    return json.dumps(
+        [
+            {"transaction_id": override.transaction_id, "bucket_id": override.bucket_id}
+            for override in config.overrides
+            if override.bucket_id in bucket_ids
+        ]
+    )
+
+
 def _rule_rows_json(config: BudgetConfig) -> str:
     bucket_ids = {bucket.id for bucket in config.buckets}
     rows: list[dict[str, Any]] = []
@@ -125,6 +136,11 @@ rules AS (
             detailed_value text
         )
 ),
+overrides AS (
+    SELECT *
+    FROM jsonb_to_recordset(CAST(:overrides_json AS jsonb))
+        AS o(transaction_id text, bucket_id text)
+),
 base_tx AS (
     SELECT
         t.transaction_id,
@@ -150,6 +166,10 @@ classified_tx AS (
     SELECT
         base_tx.*,
         COALESCE(
+            -- A per-transaction override is the highest-priority assignment and is NOT
+            -- direction-gated: an explicit human/agent call routes the txn to its bucket
+            -- regardless of sign (e.g. a +amount "Returned Payment" -> transfers_out).
+            ovr.bucket_id,
             matched.bucket_id,
             CASE
                 WHEN base_tx.amount < 0 THEN :default_inflow_bucket_id
@@ -157,6 +177,7 @@ classified_tx AS (
             END
         ) AS bucket_id
     FROM base_tx
+    LEFT JOIN overrides AS ovr ON ovr.transaction_id = base_tx.transaction_id
     LEFT JOIN LATERAL (
         SELECT rules.bucket_id
         FROM rules
@@ -241,6 +262,23 @@ ORDER BY classified_tx.date, classified_tx.transaction_id
 """
 )
 
+# Stale-override probe (decision 7): a GLOBAL existence check by transaction_id, NOT
+# scoped to the request window/accounts, so an override for an out-of-window txn is not
+# falsely flagged. An override whose txn is gone (e.g. after a relink mints new ids, or
+# the txn was removed) surfaces here instead of silently no-op'ing.
+_STALE_OVERRIDES_SQL = text(
+    "SELECT transaction_id FROM transactions "
+    "WHERE transaction_id = ANY(CAST(:override_ids AS text[])) AND removed IS FALSE"
+)
+
+
+async def _read_stale_overrides(session: AsyncSession, config: BudgetConfig) -> tuple[str, ...]:
+    override_ids = [override.transaction_id for override in config.overrides]
+    if not override_ids:
+        return ()
+    live = set((await session.execute(_STALE_OVERRIDES_SQL, {"override_ids": override_ids})).scalars())
+    return tuple(sorted({txn_id for txn_id in override_ids if txn_id not in live}))
+
 
 def _statement_params(
     *, config: BudgetConfig, window_start: date, window_end: date, account_ids: tuple[str, ...]
@@ -248,6 +286,7 @@ def _statement_params(
     return {
         "bucket_defs_json": _bucket_defs_json(config),
         "rules_json": _rule_rows_json(config),
+        "overrides_json": _overrides_json(config),
         "window_start": window_start,
         "window_end": window_end,
         "default_inflow_bucket_id": config.default_inflow_bucket_id,
@@ -279,6 +318,7 @@ async def read_budget_snapshot(
     """Return the budget snapshot with filtering, classification, and grouping done in SQL."""
     params = _statement_params(config=config, window_start=window_start, window_end=window_end, account_ids=account_ids)
     async with session_factory() as session:
+        stale_overrides = await _read_stale_overrides(session, config)
         monthly_rows = (
             await session.execute(_budget_statement(_MONTHLY_TOTALS_SQL_TEMPLATE, account_ids), params)
         ).mappings()
@@ -337,6 +377,7 @@ async def read_budget_snapshot(
         ),
         lumpy=lumpy,
         lumpy_threshold_usd=config.lumpy_threshold_usd,
+        stale_overrides=stale_overrides,
         data_window_start=window_start,
         data_window_end=window_end,
         coverage_starts=config.source.coverage_starts,

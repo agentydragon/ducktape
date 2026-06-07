@@ -92,6 +92,14 @@ class BudgetSnapshotResponse(ApiModel):
     monthly_by_bucket: tuple[BucketMonthly, ...]
     lumpy: tuple[LumpyView, ...]
     lumpy_threshold_usd: float
+    stale_overrides: tuple[str, ...] = Field(
+        default=(),
+        description=(
+            "transaction_ids of configured per-transaction overrides that matched no live "
+            "transaction (global check, not window-scoped) -- typically because a Plaid relink "
+            "minted new ids or the txn was removed. The UI should warn; the override is a no-op."
+        ),
+    )
     data_window_start: date
     data_window_end: date
     coverage_starts: date | None = Field(
