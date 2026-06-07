@@ -223,8 +223,8 @@ class AgentRegistry:
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
         self._agent_registry_url = agent_registry_url or registry_config.proxy_url
-        # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
-        self._running_critics: dict[UUID, asyncio.Task[None]] = {}
+        # Track running background agent tasks by agent_run_id to prevent GC and allow lookup
+        self._running_agents: dict[UUID, asyncio.Task[None]] = {}
         self._model_semaphores: dict[str, asyncio.Semaphore] = {
             model: asyncio.Semaphore(limit) for model, limit in (model_parallelism_limits or {}).items()
         }
@@ -592,12 +592,31 @@ class AgentRegistry:
             parent_run_id=parent_run_id,
             verify_snapshot=example.snapshot_slug,
         )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
+        return agent_run_id
+
+    def _spawn_background_run(
+        self, agent_run_id: UUID, *, image_ref: str, model: str, container_name: str, timeout_seconds: int
+    ) -> None:
+        """Start an already-created agent run in a background task and return immediately.
+
+        The task holds a model parallelism slot for the run's whole duration and finalizes
+        the run as CANCELLED on cancellation/error. The run row must already exist (via
+        _create_run). Lets HTTP handlers return the agent_run_id without blocking until the
+        container exits. The task is stashed in _running_agents to prevent GC.
+        """
 
         async def _run() -> None:
             try:
                 async with self._model_slot(model):
                     handle = await self._start_agent(
-                        agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
+                        agent_run_id, image=image_ref, timeout_seconds=timeout_seconds, name=container_name
                     )
                     await handle
             except asyncio.CancelledError:
@@ -606,15 +625,14 @@ class AgentRegistry:
                 )
                 raise
             except Exception:
-                logger.exception("Unhandled error in background critic run %s", agent_run_id)
+                logger.exception("Unhandled error in background agent run %s", agent_run_id)
                 self._finalize_run_if_in_progress(
                     agent_run_id, status=AgentRunStatus.CANCELLED, container_exit_code=None
                 )
 
-        task = asyncio.create_task(_run(), name=f"critic-{agent_run_id}")
-        self._running_critics[agent_run_id] = task
-        task.add_done_callback(lambda _: self._running_critics.pop(agent_run_id, None))
-        return agent_run_id
+        task = asyncio.create_task(_run(), name=container_name)
+        self._running_agents[agent_run_id] = task
+        task.add_done_callback(lambda _: self._running_agents.pop(agent_run_id, None))
 
     async def run_critic_dev_optimize(
         self,
@@ -689,6 +707,83 @@ class AgentRegistry:
                 timeout_seconds=timeout_seconds,
             )
             await handle
+        return agent_run_id
+
+    async def start_critic_dev_optimize(
+        self,
+        *,
+        image: ResolvedImage,
+        budget: float,
+        optimizer_model: str,
+        critic_model: str,
+        target_metric: TargetMetric,
+        timeout_seconds: int,
+    ) -> UUID:
+        """Start a critic-dev optimizer in the background. Returns agent_run_id immediately.
+
+        The container runs asynchronously; poll /api/runs/{agent_run_id} for status. The
+        optimizer holds an optimizer-model parallelism slot for its whole run.
+        """
+        agent_run_id = uuid4()
+        container_name = f"critic-dev-opt-{str(agent_run_id)[:8]}"
+        self._create_run(
+            agent_run_id,
+            image=image,
+            model=optimizer_model,
+            type_config=CriticDevOptimizeTypeConfig(
+                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
+            ),
+            budget_usd=budget,
+        )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=optimizer_model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
+        return agent_run_id
+
+    async def start_critic_dev_improve(
+        self,
+        *,
+        image: ResolvedImage,
+        examples: list[ExampleSpec],
+        baseline_image_digests: list[str],
+        budget_usd: float,
+        improvement_model: str,
+        critic_model: str,
+        timeout_seconds: int,
+    ) -> UUID:
+        """Start a critic-dev improve agent in the background. Returns agent_run_id immediately.
+
+        The container runs asynchronously; poll /api/runs/{agent_run_id} for status.
+        """
+        if not examples:
+            raise ValueError("examples must not be empty")
+        # Resolve baseline refs to digests (tags → sha256:...)
+        resolved_baselines = [await self._resolve_image_ref(AgentType.CRITIC, ref) for ref in baseline_image_digests]
+        agent_run_id = uuid4()
+        container_name = f"critic-dev-imp-{str(agent_run_id)[:8]}"
+        self._create_run(
+            agent_run_id,
+            image=image,
+            model=improvement_model,
+            type_config=CriticDevImproveTypeConfig(
+                baseline_image_digests=resolved_baselines,
+                allowed_examples=examples,
+                improvement_model=improvement_model,
+                critic_model=critic_model,
+            ),
+            budget_usd=budget_usd,
+        )
+        self._spawn_background_run(
+            agent_run_id,
+            image_ref=image.oci_ref,
+            model=improvement_model,
+            container_name=container_name,
+            timeout_seconds=timeout_seconds,
+        )
         return agent_run_id
 
     # --- State Tracking ---

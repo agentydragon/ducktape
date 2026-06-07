@@ -270,7 +270,7 @@ async def test_background_critic_start_cancellation_finalizes_run(
     )
 
     await asyncio.wait_for(started.wait(), timeout=5)
-    task = registry._running_critics[agent_run_id]
+    task = registry._running_agents[agent_run_id]
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

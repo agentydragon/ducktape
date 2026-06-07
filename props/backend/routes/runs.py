@@ -669,7 +669,7 @@ async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> Op
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
     image = await registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
-    run_id = await registry.run_critic_dev_optimize(
+    run_id = await registry.start_critic_dev_optimize(
         image=image,
         budget=body.budget_usd,
         optimizer_model=body.optimizer_model,
@@ -792,7 +792,7 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
             allowed_examples = [ex for ex, _ in sorted_examples[: body.n_examples]]
 
     image = await registry.resolve_image(AgentType.CRITIC_DEV_IMPROVE, BUILTIN_TAG)
-    run_id = await registry.run_critic_dev_improve(
+    run_id = await registry.start_critic_dev_improve(
         image=image,
         examples=allowed_examples,
         baseline_image_digests=body.baseline_image_digests or [definition_id],
