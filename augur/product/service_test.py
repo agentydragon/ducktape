@@ -73,7 +73,7 @@ from augur.product.wire import (
 from augur.sim.engine.jax_engine import ProductSummary
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
-from augur.sim.simulate import simulate_dense_with_external_series
+from augur.sim.simulate import simulate_with_external_series
 
 
 @dataclass
@@ -245,7 +245,7 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
         tax_profiles=[],
         horizon_months=1,
     )
-    dense = simulate_dense_with_external_series(
+    dense = simulate_with_external_series(
         scenario,
         rollout_count=1,
         external_series=ExternalSeriesContext(series_values=EXTERNAL_SERIES_VALUES_FRAME.empty()),

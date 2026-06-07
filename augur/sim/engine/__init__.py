@@ -19,7 +19,7 @@ from augur.sim.buffers import (
     TaxLiabilityChangeLog,
     TransferEventBuffers,
 )
-from augur.sim.codec.plan import DenseSimulationResult
+from augur.sim.codec.plan import SimulationRun
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
 from augur.sim.engine.jax_engine import run_jax_scan
@@ -32,7 +32,7 @@ from augur.sim.scenario import Scenario
 
 def run_dense_simulation(
     scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext, locations: dict[str, Location]
-) -> DenseSimulationResult:
+) -> SimulationRun:
     plan = compile_simulation(
         scenario,
         rollout_count=rollout_count,
@@ -42,7 +42,7 @@ def run_dense_simulation(
     )
     buffers = _allocate_buffers(plan)
     run_jax_scan(plan, buffers)
-    return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
+    return SimulationRun(plan=plan, buffers=buffers, external_series=external_series)
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:

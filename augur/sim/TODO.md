@@ -283,24 +283,19 @@ recovery cashouts. Still missing:
   metadata, valuation provenance, account references, and tender-window
   metadata.
 
-### Remaining dual-backend (NumPy→JAX) indirection cleanup
+### Dual-backend (NumPy→JAX) indirection cleanup — done
 
-Only the JAX engine remains (NumPy backend removed in `cdf0ea1fe`). The safe
-naming/comment vestiges + the unused `slice.py` are gone (#1924 and follow-up).
-What's left is load-bearing and needs a real refactor, each its own PR:
+The NumPy backend was removed in `cdf0ea1fe`; the leftover indirection is now
+cleared: naming/comment vestiges and the unused `slice.py` (#1924/#1925/#1926),
+and `DenseSimulationResult` collapsed into `SimulationRun` (one lazy run handle
+exposing the raw `(plan, buffers, external_series)` triple plus decoded frames).
 
-- **Collapse `DenseSimulationResult` into `SimulationRun`.** Both hold the same
-  `(plan, buffers, external_series)`; `DenseSimulationResult.decode()` just
-  rebuilds a `SimulationRun` from identical fields. The split only existed so
-  either backend could hand off a backend-neutral result. Merging means giving
-  `SimulationRun` public `plan`/`buffers` access and updating consumers
-  (`product/decode.py`, `product/service.py`).
-- **Flip state buffers to R-first.** `r_first_view` / `state_axes`
-  (`codec/helpers.py`) transpose `(S, C, R)` → `(S, R, C)` in every decoder
-  because the buffers keep R last to match the JAX scan output. Allocating
-  R-first (and transposing once in `jax_scatter`, or emitting R-first from the
-  scan) removes ~12 per-decode transposes. Area is perf-sensitive — see
-  <augur/debug/rollout_perf_profiling.md>.
+State buffers intentionally stay **R-last**: the engine's hot rollout math is
+memory-bandwidth-bound on the R axis and the metric-fan reduces over R, so R as
+the contiguous trailing axis is correct. `r_first_view` is a cheap `np.moveaxis`
+view, not a real cost. The actual dense-decode wins are orthogonal to layout —
+sparse-active decoding and not storing rarely-read state as a dense per-snapshot
+grid; see <augur/debug/rollout_perf_profiling.md>.
 
 ## Future / nice-to-have
 

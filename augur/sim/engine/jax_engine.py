@@ -395,7 +395,7 @@ def run_jax_product_summary(
     bands (when `percentiles` is given) and its per-rollout terminal samples.
 
     Shares the exact accounting scan with `run_jax_scan`; only the emitted summary differs. Avoiding
-    the full DenseSimulationResult history/event slabs — and reducing each metric to percentiles
+    the full dense `SimulationRun` history/event slabs — and reducing each metric to percentiles
     before the device→host copy — means neither the host nor the response ever holds per-rollout
     monthly state. The full dense trace is reserved for the selected-rollout detail endpoint.
     """

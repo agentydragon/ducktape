@@ -43,14 +43,14 @@ from augur.product.wire import (
     TerminalDistributionRequest,
     TerminalDistributionResponse,
 )
-from augur.sim.codec.plan import DenseSimulationResult
+from augur.sim.codec.plan import SimulationRun
 from augur.sim.compiler import compile_simulation
 from augur.sim.engine.jax_engine import ProductSummary, run_jax_product_summary
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
 from augur.sim.scenario import HarvestPolicy, Scenario
-from augur.sim.simulate import simulate_dense_with_external_series
+from augur.sim.simulate import simulate_with_external_series
 
 
 class ProductService:
@@ -136,7 +136,7 @@ class ProductService:
         events = tuple(
             event
             for event in rollout_events_from(
-                dense.decode(), primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
+                dense, primary_agent_id=self._primary_agent_id, asset_label_by_id=self._asset_label_by_id
             )
             if event.month_index < horizon_months
         )
@@ -188,9 +188,9 @@ class ProductService:
         )
         return summary, model_id
 
-    def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[DenseSimulationResult, str]:
+    def _simulate_dense(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[SimulationRun, str]:
         scenario, sampled, model_id = self._scenario_and_sample(scenario_key, seeds)
-        dense = simulate_dense_with_external_series(
+        dense = simulate_with_external_series(
             scenario,
             rollout_count=len(seeds),
             external_series=materialize_sampled_exogenous(sampled),

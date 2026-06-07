@@ -1,5 +1,5 @@
 """Compile-side plan: SlotPlan, CompiledSimulation, compile_simulation. Pairs with
-`codec/plan.py` (DenseSimulationResult, SimulationRun) at the engine boundary.
+`codec/plan.py` (SimulationRun) at the engine boundary.
 
 `compile_simulation` is the orchestrator that interns strings, builds the shared
 index maps, calls every per-domain `compile_*` helper, and assembles the

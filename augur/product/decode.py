@@ -1,7 +1,7 @@
-"""Decode a DenseSimulationResult into product-shaped metrics and events.
+"""Decode a `SimulationRun` into product-shaped metrics and events.
 
 Per-month metric reductions take a `rollout_index` and read that column directly out of a
-(possibly batched) result; event decoding operates on an already-R=1 decoded `SimulationRun`.
+(possibly batched) run's dense buffers; event decoding operates on an already-R=1 run.
 """
 
 from __future__ import annotations
@@ -38,14 +38,13 @@ from augur.product.wire import (
     TerminalMetrics,
 )
 from augur.sim.codec.plan import SimulationRun
-from augur.sim.engine import DenseSimulationResult
 from augur.sim.fixed_point import cents_array_to_usd
 from augur.sim.scenario import ObligationType
 
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
-def monthly_metric_arrays_batch(dense: DenseSimulationResult, *, primary_agent_id: str) -> dict[str, np.ndarray]:
+def monthly_metric_arrays_batch(dense: SimulationRun, *, primary_agent_id: str) -> dict[str, np.ndarray]:
     """Per-month product metrics for **every** rollout of a batched result as `{name: (H+1, R)}`.
 
     Each metric is reduced over the whole `(…, R)` batch in one vectorized pass. `month_index` is
@@ -80,7 +79,7 @@ def monthly_metric_arrays_batch(dense: DenseSimulationResult, *, primary_agent_i
 
 
 def monthly_metric_arrays(
-    dense: DenseSimulationResult, *, primary_agent_id: str, rollout_index: int = 0
+    dense: SimulationRun, *, primary_agent_id: str, rollout_index: int = 0
 ) -> dict[str, np.ndarray]:
     """Per-month product metrics for one rollout (column `rollout_index`) as `{name: (H+1,)}`."""
     batch = monthly_metric_arrays_batch(dense, primary_agent_id=primary_agent_id)
@@ -106,7 +105,7 @@ def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_
     )
 
 
-def failed_month_index_batch(dense: DenseSimulationResult) -> np.ndarray:
+def failed_month_index_batch(dense: SimulationRun) -> np.ndarray:
     """Per-rollout failure month at the final snapshot; `NO_CODE` (-1) = never failed. Shape `(R,)`."""
     return cast(np.ndarray, dense.buffers.state.rollout_failed_month_state[-1, :])
 
@@ -158,12 +157,12 @@ def rollout_events_from(
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
 
-def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _cash_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     cash_slots = np.flatnonzero(dense.plan.cash_agent_codes == primary_agent_code)
     return cast(np.ndarray, cents_array_to_usd(dense.buffers.state.cash_state[:, cash_slots, :].sum(axis=1)))
 
 
-def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _holding_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
 
     Excludes private-equity lots: PE is illiquid (saleable only at tender events) so it
@@ -176,7 +175,7 @@ def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code:
     )
 
 
-def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _private_equity_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     """Sum of private-equity lots priced at the latest sampled mark for each issuer."""
 
     return _lot_value_by_month(
@@ -185,7 +184,7 @@ def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agen
 
 
 def _lot_value_by_month(
-    dense: DenseSimulationResult, *, primary_agent_code: int, include: Callable[[AssetKey], bool]
+    dense: SimulationRun, *, primary_agent_code: int, include: Callable[[AssetKey], bool]
 ) -> np.ndarray:
     plan = dense.plan
     values = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
@@ -225,7 +224,7 @@ def _lot_value_by_month(
     return np.maximum(values, 0.0)
 
 
-def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _shortfall_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     shortfall = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
     primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
@@ -467,7 +466,7 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
     )
 
 
-def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _property_value_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     values = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
     series_index_by_id = {key: index for index, key in enumerate(plan.series_keys)}
@@ -495,7 +494,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
     return values
 
 
-def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+def _mortgage_balance_by_month(dense: SimulationRun, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     balance = np.zeros((plan.horizon_months + 1, plan.rollout_count), dtype=np.float64)
     for lia in range(plan.liabilities.codes.shape[0]):

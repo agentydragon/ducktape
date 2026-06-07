@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from augur.sim.codec.plan import DenseSimulationResult, SimulationRun
+from augur.sim.codec.plan import SimulationRun
 from augur.sim.engine import run_dense_simulation
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from augur.sim.locations import Location
@@ -31,18 +31,6 @@ def simulate(scenario: Scenario, *, rollout_count: int, locations: dict[str, Loc
 def simulate_with_external_series(
     scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext, locations: dict[str, Location]
 ) -> SimulationRun:
-    if rollout_count <= 0:
-        msg = f"rollout_count must be positive; got {rollout_count}"
-        raise ValueError(msg)
-    _validate_series_indexed_amounts(scenario, rollout_count=rollout_count, external_series=external_series)
-    return run_dense_simulation(
-        scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
-    ).decode()
-
-
-def simulate_dense_with_external_series(
-    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext, locations: dict[str, Location]
-) -> DenseSimulationResult:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)

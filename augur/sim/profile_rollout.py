@@ -42,7 +42,7 @@ from augur.sim.scenario import (
     ScheduledAssetSale,
     ScheduledPropertyPurchase,
 )
-from augur.sim.simulate import simulate, simulate_dense_with_external_series
+from augur.sim.simulate import simulate, simulate_with_external_series
 
 PROFILE_LOCATION_ID = "sf"
 
@@ -245,7 +245,7 @@ def main() -> None:
                 rollout_seeds=tuple(range(rollout_count)),
                 horizon_months=int(scenario.horizon_months),
             )
-            simulate_dense_with_external_series(
+            simulate_with_external_series(
                 scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
             )
         else:

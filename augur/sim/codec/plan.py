@@ -1,7 +1,8 @@
 """Top-level codec orchestrator: `SimulationRun` is a lazy facade over the
 per-domain decoders, producing each long-form Polars frame from a
-(plan, buffers, external_series) triple on first access. `DenseSimulationResult`
-lives here too so engine.py can stay free of the codec dependency."""
+(plan, buffers, external_series) triple on first access. The triple is exposed
+as public attributes for callers (product metrics, profiling) that read the raw
+dense buffers directly instead of the decoded frames."""
 
 from __future__ import annotations
 
@@ -40,76 +41,67 @@ from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.state import ROLLOUT_STATUS_FRAME
 
 
+# eq=False: a run is a handle around its (plan, buffers, external_series) triple, so identity
+# equality is what callers want; field-wise __eq__/__hash__ would also choke on the numpy arrays
+# inside `buffers`. frozen so the triple can't be swapped out from under the cached frames.
+@dataclass(frozen=True, eq=False)
 class SimulationRun:
-    """Lazy view of a simulation's outputs: each long-form Polars frame (and the
-    event log) is decoded from the dense buffers on first access and cached, so a
-    caller only pays to materialize the frames it actually reads. The public
-    attribute surface matches the eager frames it replaced."""
+    """Lazy view of a simulation's outputs: each long-form Polars frame (and the event log) is
+    decoded from the dense buffers on first access and cached, so a caller only pays to materialize
+    the frames it actually reads. The `(plan, buffers, external_series)` triple is public for callers
+    that read the raw dense buffers directly."""
 
-    def __init__(
-        self, plan: CompiledSimulation, buffers: SimulationBuffers, external_series: ExternalSeriesContext
-    ) -> None:
-        self._plan = plan
-        self._buffers = buffers
-        self._external_series = external_series
-
-    @cached_property
-    def cash_balances(self) -> pl.DataFrame:
-        return decode_cash(self._plan, self._buffers)
-
-    @cached_property
-    def asset_lots(self) -> pl.DataFrame:
-        return decode_asset_lots(self._plan, self._buffers)
-
-    @cached_property
-    def ordinary_income_ytd(self) -> pl.DataFrame:
-        return decode_ordinary_income(self._plan, self._buffers)
-
-    @cached_property
-    def capital_gains_ytd(self) -> pl.DataFrame:
-        return decode_capital_gains(self._plan, self._buffers)
-
-    @cached_property
-    def tax_liabilities(self) -> pl.DataFrame:
-        return decode_tax_liabilities(self._plan, self._buffers)
-
-    @cached_property
-    def property_state(self) -> pl.DataFrame:
-        return decode_property_state(self._plan, self._buffers)
-
-    @cached_property
-    def property_stakes(self) -> pl.DataFrame:
-        return decode_property_stakes(self._plan, self._buffers)
-
-    @cached_property
-    def liabilities(self) -> pl.DataFrame:
-        return decode_liabilities(self._plan, self._buffers)
-
-    @cached_property
-    def rollout_status_history(self) -> pl.DataFrame:
-        return decode_rollout_status_history(self._plan, self._buffers)
-
-    @cached_property
-    def rollout_status(self) -> pl.DataFrame:
-        return decode_final_rollout_status(self._plan, self._buffers)
-
-    @cached_property
-    def series_values(self) -> pl.DataFrame:
-        return self._external_series.series_values
-
-    @cached_property
-    def events_log(self) -> EventLog:
-        return decode_events(self._plan, self._buffers)
-
-
-@dataclass
-class DenseSimulationResult:
     plan: CompiledSimulation
     buffers: SimulationBuffers
     external_series: ExternalSeriesContext
 
-    def decode(self) -> SimulationRun:
-        return SimulationRun(self.plan, self.buffers, self.external_series)
+    @cached_property
+    def cash_balances(self) -> pl.DataFrame:
+        return decode_cash(self.plan, self.buffers)
+
+    @cached_property
+    def asset_lots(self) -> pl.DataFrame:
+        return decode_asset_lots(self.plan, self.buffers)
+
+    @cached_property
+    def ordinary_income_ytd(self) -> pl.DataFrame:
+        return decode_ordinary_income(self.plan, self.buffers)
+
+    @cached_property
+    def capital_gains_ytd(self) -> pl.DataFrame:
+        return decode_capital_gains(self.plan, self.buffers)
+
+    @cached_property
+    def tax_liabilities(self) -> pl.DataFrame:
+        return decode_tax_liabilities(self.plan, self.buffers)
+
+    @cached_property
+    def property_state(self) -> pl.DataFrame:
+        return decode_property_state(self.plan, self.buffers)
+
+    @cached_property
+    def property_stakes(self) -> pl.DataFrame:
+        return decode_property_stakes(self.plan, self.buffers)
+
+    @cached_property
+    def liabilities(self) -> pl.DataFrame:
+        return decode_liabilities(self.plan, self.buffers)
+
+    @cached_property
+    def rollout_status_history(self) -> pl.DataFrame:
+        return decode_rollout_status_history(self.plan, self.buffers)
+
+    @cached_property
+    def rollout_status(self) -> pl.DataFrame:
+        return decode_final_rollout_status(self.plan, self.buffers)
+
+    @cached_property
+    def series_values(self) -> pl.DataFrame:
+        return self.external_series.series_values
+
+    @cached_property
+    def events_log(self) -> EventLog:
+        return decode_events(self.plan, self.buffers)
 
 
 def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> EventLog:

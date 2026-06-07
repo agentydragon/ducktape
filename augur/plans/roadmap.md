@@ -45,11 +45,12 @@ then expand it back into typed backend objects.
 The intended production backend path is `augur/model -> augur/sim -> augur/api`:
 model providers sample exogenous levels/events with provenance, `augur/sim`
 deterministically evaluates typed scenarios over those paths, and `augur/api`
-serves compact projection/read models. The product metric-fan endpoint already
-runs NumPy-direct from `DenseSimulationResult.buffers`
-(`monthly_metric_arrays`). The rollout-detail endpoint still calls
-`dense.decode()` on the selected R=1 dense result for event rows while emitting
-monthly metric arrays directly. The next cutover is exposing native
+serves compact projection/read models. The product metric-fan and terminal
+endpoints reduce on-device via `run_jax_product_summary` — emitting percentile
+bands plus per-rollout terminal samples without ever materializing per-rollout
+history. The rollout-detail endpoint runs a single R=1 `SimulationRun`, reading
+`monthly_metric_arrays` directly from its dense buffers and `rollout_events_from`
+for event rows. The next cutover is exposing native
 `ProjectionRun` read models (`augur/sim/projections.py`) over product scenarios
 instead of depending on long-form `SimulationRun` dataframe materialization.
 Tracked under "Architecture / cutover" in `augur/sim/TODO.md`.
