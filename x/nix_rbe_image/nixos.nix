@@ -38,7 +38,9 @@ in
   security.sudo.wheelNeedsPassword = false;
 
   # Docker — BB starts dockerd via init-dockerd on Firecracker workers.
+  # docker_29: docker_28 was marked insecure (unmaintained since 2025-11).
   virtualisation.docker.enable = true;
+  virtualisation.docker.package = pkgs.docker_29;
 
   # Firecracker's guest kernel may lack nftables support.
   networking.nftables.enable = false;

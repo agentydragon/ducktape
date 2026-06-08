@@ -56,7 +56,8 @@ with pkgs;
   git
 
   # Docker CLI (daemon managed by BB's init-dockerd)
-  docker
+  # docker_29: docker_28 was marked insecure (unmaintained since 2025-11).
+  docker_29
 
   # iptables for Firecracker Docker compatibility
   iptables
