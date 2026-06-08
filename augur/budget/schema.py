@@ -16,6 +16,8 @@ from pydantic import Field, model_validator
 from augur.api.schemas import ApiModel
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_]*$"
+# Beancount account: a root type followed by one or more capitalized segments.
+_BEANCOUNT_ACCOUNT_PATTERN = r"^(Assets|Liabilities|Equity|Income|Expenses)(:[A-Z0-9][A-Za-z0-9-]*)+$"
 
 
 class TransferDirection(StrEnum):
@@ -62,6 +64,11 @@ class BucketDef(ApiModel):
     # must agree with the kind's semantics (expense -> outflow, inflow/income -> inflow);
     # transfer buckets can pick either.
     direction: TransferDirection
+    # Beancount contra ("category") account for this bucket in the exported ledger. The
+    # transaction's own Plaid account is the other (funding) leg; this is the category leg.
+    # Colon segments form the Fava tree (e.g. "Expenses:Food:Groceries:ThriveMarket").
+    # Optional: when omitted, the exporter derives a default path from kind + id.
+    account: str | None = Field(default=None, pattern=_BEANCOUNT_ACCOUNT_PATTERN)
 
     @model_validator(mode="after")
     def _validate_direction(self) -> BucketDef:

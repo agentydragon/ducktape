@@ -67,6 +67,22 @@ py_library(
     deps = [":wire"],
 )
 
+py_library(
+    name = "export",
+    srcs = ["export.py"],
+    deps = [":schema"],
+)
+
+py_test(
+    name = "test_export",
+    srcs = ["test_export.py"],
+    deps = [
+        ":export",
+        ":schema",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_csv_export",
     srcs = ["test_csv_export.py"],
