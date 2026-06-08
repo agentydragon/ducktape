@@ -900,34 +900,37 @@ def run_calibration(
     )
 
     categorical: list[CategoricalRow] = []
-    for family in catalog.bucket_families:
-        prices = [_live(member.market_id, family.platform) for member in family.buckets]
+    for bucket_family in catalog.bucket_families:
+        prices = [_live(member.market_id, bucket_family.platform) for member in bucket_family.buckets]
         # A bucket that failed to fetch or had no probability makes the categorical ill-defined.
         if any(live is None for live in prices):
-            logger.warning("dropping categorical family %r: a bucket failed to fetch or had no price", family.family_id)
+            logger.warning(
+                "dropping categorical family %r: a bucket failed to fetch or had no price", bucket_family.family_id
+            )
             continue
         live_prices = [live.require_probability() for live in prices if live is not None]
         total = sum(live_prices)
         # Degenerate normalizer (all-zero / non-finite prices) can't form a valid categorical.
         if not math.isfinite(total) or total <= 0.0:
-            logger.warning("dropping categorical family %r: bucket prices sum to %r", family.family_id, total)
+            logger.warning("dropping categorical family %r: bucket prices sum to %r", bucket_family.family_id, total)
             continue
         categorical.append(
             _categorical_row(
-                family, level_paths=paths, live_prices=live_prices, as_of=as_of, horizon_months=horizon_months
+                bucket_family, level_paths=paths, live_prices=live_prices, as_of=as_of, horizon_months=horizon_months
             )
         )
-    for family in catalog.threshold_ladder_families:
-        prices = [_live(member.market_id, family.platform) for member in family.thresholds]
+    for threshold_family in catalog.threshold_ladder_families:
+        prices = [_live(member.market_id, threshold_family.platform) for member in threshold_family.thresholds]
         if any(live is None for live in prices):
             logger.warning(
-                "dropping threshold ladder family %r: a threshold failed to fetch or had no price", family.family_id
+                "dropping threshold ladder family %r: a threshold failed to fetch or had no price",
+                threshold_family.family_id,
             )
             continue
         live_prices = [live.require_probability() for live in prices if live is not None]
         categorical.append(
             _threshold_ladder_row(
-                family,
+                threshold_family,
                 level_paths=paths,
                 live_prices=live_prices,
                 as_of=as_of,
@@ -935,14 +938,16 @@ def run_calibration(
                 inflation_history=inflation_history_array,
             )
         )
-    for family in catalog.date_ladder_families:
-        prices = [_live(member.market_id, family.platform) for member in family.dates]
+    for date_family in catalog.date_ladder_families:
+        prices = [_live(member.market_id, date_family.platform) for member in date_family.dates]
         if any(live is None for live in prices):
-            logger.warning("dropping date ladder family %r: a date failed to fetch or had no price", family.family_id)
+            logger.warning(
+                "dropping date ladder family %r: a date failed to fetch or had no price", date_family.family_id
+            )
             continue
         live_prices = [live.require_probability() for live in prices if live is not None]
         categorical.append(
-            _date_ladder_row(family, trajectories_by_issuer=trajectories_by_issuer, live_prices=live_prices)
+            _date_ladder_row(date_family, trajectories_by_issuer=trajectories_by_issuer, live_prices=live_prices)
         )
 
     return CalibrationResult(

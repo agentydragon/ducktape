@@ -49,7 +49,9 @@ async def _sample_tool_call_arguments(*, parameters: dict, strict: bool, user_te
     tool_calls = [item for item in result.output if isinstance(item, FunctionCallItem)]
     assert len(tool_calls) == 1
     assert tool_calls[0].arguments is not None
-    return json.loads(tool_calls[0].arguments)
+    arguments = json.loads(tool_calls[0].arguments)
+    assert isinstance(arguments, dict)
+    return arguments
 
 
 # The recommended recipe for a discriminated union: a single concrete object that carries the
