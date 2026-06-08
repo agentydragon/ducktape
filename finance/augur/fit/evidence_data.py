@@ -20,19 +20,19 @@ from util.bazel.runfiles import get_required_path
 # `ExogenousEvidence.latest_observations[*]["source"]`; `_source_path` resolves
 # it to an absolute runfiles path for reading. Refresh recipes live in
 # augur/data/SOURCES.md (don't rename the files).
-FRED_SP500_CSV = "augur/data/fred_sp500.csv"
-YAHOO_SPY_ADJUSTED_JSON = "augur/data/yahoo_spy_chart_adjusted.json"
-YAHOO_BTC_ADJUSTED_JSON = "augur/data/yahoo_btc_chart_adjusted.json"
-YAHOO_ETH_ADJUSTED_JSON = "augur/data/yahoo_eth_chart_adjusted.json"
-FRED_CPI_US_CSV = "augur/data/fred_cpi_us.csv"
+FRED_SP500_CSV = "finance/augur/data/fred_sp500.csv"
+YAHOO_SPY_ADJUSTED_JSON = "finance/augur/data/yahoo_spy_chart_adjusted.json"
+YAHOO_BTC_ADJUSTED_JSON = "finance/augur/data/yahoo_btc_chart_adjusted.json"
+YAHOO_ETH_ADJUSTED_JSON = "finance/augur/data/yahoo_eth_chart_adjusted.json"
+FRED_CPI_US_CSV = "finance/augur/data/fred_cpi_us.csv"
 # SF rent CPI: used only by the FRED-only degraded evidence path (`data.py::_evidence_fred_only`).
 # The production loader sources rent from Zillow ZORI (ZILLOW_CITY_ZORI_CSV) for SF and Vallejo.
-FRED_SF_RENT_CPI_CSV = "augur/data/fred_sf_rent_cpi.csv"
-FRED_SFXRSA_CSV = "augur/data/fred_sfxrsa.csv"
-FRED_FHFA_SF_OAKLAND_BERKELEY_CSV = "augur/data/fred_fhfa_sf_oakland_berkeley.csv"
-FRED_MORTGAGE30_CSV = "augur/data/fred_mortgage30.csv"
-ZILLOW_CITY_ZHVI_CSV = "augur/data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
-ZILLOW_CITY_ZORI_CSV = "augur/data/zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv"
+FRED_SF_RENT_CPI_CSV = "finance/augur/data/fred_sf_rent_cpi.csv"
+FRED_SFXRSA_CSV = "finance/augur/data/fred_sfxrsa.csv"
+FRED_FHFA_SF_OAKLAND_BERKELEY_CSV = "finance/augur/data/fred_fhfa_sf_oakland_berkeley.csv"
+FRED_MORTGAGE30_CSV = "finance/augur/data/fred_mortgage30.csv"
+ZILLOW_CITY_ZHVI_CSV = "finance/augur/data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
+ZILLOW_CITY_ZORI_CSV = "finance/augur/data/zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv"
 
 # Home-value location -> (Zillow RegionName, State) for the ZHVI city rows to read.
 ZILLOW_HOME_VALUE_REGIONS: dict[LocationId, tuple[str, str]] = {
