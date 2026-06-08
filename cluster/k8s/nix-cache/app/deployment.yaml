@@ -44,9 +44,19 @@ spec:
                 secretKeyRef:
                   name: attic-jwt-token
                   key: jwt-token
-          envFrom:
-            - secretRef:
-                name: attic-s3-credentials
+            # S3 backend creds from the reflected SeaweedFS s3-identity (attic is now a
+            # normal tenant; replaces the hand-rolled attic-s3-credentials secret). The
+            # identity Secret in seaweedfs ns is reflected into nix-cache by Reflector.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-attic
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-attic
+                  key: secretKey
           args:
             - "-f"
             - "/config/server.toml"
