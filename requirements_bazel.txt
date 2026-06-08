@@ -543,6 +543,51 @@ bcrypt==5.0.0 \
     #   mitmproxy
     #   paramiko
     #   pwdlib
+beancount==3.2.3 \
+    --hash=sha256:03abcc7a7ef459128bb80227830826802014de0a8a923013fe470f02aa5c07ce \
+    --hash=sha256:09f92b72096b3de8c40888bd6c5157fdcc2c2eb2229b8c9abe89a922b923a46e \
+    --hash=sha256:0fb69fb8567d57b21a722d5009a52ec5e080cc32903f2382dab3038cd607972a \
+    --hash=sha256:14fa5043ef72eadd80ec1494f466c72e260cd8144938022c858579b969e78580 \
+    --hash=sha256:1520050a64077168333ca1117e258b947952fa249ddd8e10a493b54578787064 \
+    --hash=sha256:1764843d42ff294bb3cd435bc7bfc1802d36976bb5a68ccbe9cdad36f415d88b \
+    --hash=sha256:1788319567a0dcae57a35a88592736854714a58b18b25227e5a390bf6fac6256 \
+    --hash=sha256:1c85e85ff4c3f7b180bf3b51e0829889eeab7e893b27cde6ed28ee55f340a46c \
+    --hash=sha256:211a0e0092b3ab7d5fcafc94486522338f68c0744258c2673a8f1bc67b7e6ede \
+    --hash=sha256:2c85b04653c335d677dde1b5d760097a587f020964e90d2b06904facfeb6b1a4 \
+    --hash=sha256:39a4087c24003a86932b99ec579769609ec7cdb3aae4a81f37344b968539d371 \
+    --hash=sha256:406c51bfda0617e66c0d283c31d31c17a151ec791ffeb8a2eb8063b12a8a6d12 \
+    --hash=sha256:5adeb8b07e65fcb41894796ce720d66c37b4eee789d7da4a2c93cb364399161e \
+    --hash=sha256:60a8febabd2e128c51ca1f8cdb4f86b02fd83fa20cfe9ecd74be5b1a32c3d40b \
+    --hash=sha256:652e40000a1315efcdfae37bb3bbe1b22956e5aee3297371305352e26fbb967d \
+    --hash=sha256:6b6490ac316e8f32b7f35c6088536140265ef43c5fd7555d7cb346d2b47e2862 \
+    --hash=sha256:6f4ad838e59f1ac69aad35730261b09627fee4e82b452b778a21781aedcde7b8 \
+    --hash=sha256:704ccb1143803dc1035cf30016872ee06d8c394310bf09f3691c9c44d0cf9cb8 \
+    --hash=sha256:772f15c4d12ec0cd20f603fe7bcbb91d1ba423dbc7ec5544989fec4abe2dc97e \
+    --hash=sha256:851147a9f70c8efcc3d8642916b86f09b5f2e13ed48621385525c2422d98296f \
+    --hash=sha256:856a00d8f6cdfa0fdb33811efad0dc997df4101eba1de5415bc2bdc0f9a0aa59 \
+    --hash=sha256:89e66a583b8d6d5e5e23246eb0b0d2049fff9bcbaa40cc2569ac88e90bc8c95c \
+    --hash=sha256:8d30e0c75748e2a45f8a9fb192e9d3805d636009821bc5ea105abb037e4c053b \
+    --hash=sha256:91aab58194d6f2ee38625db89d52a551196e1f03f8ce1198bf8775338face60e \
+    --hash=sha256:94a7d1713191af4645c27431b190248cc6aa3bd7535926be479723e93604459e \
+    --hash=sha256:9f745f86c2d8974814388fb4e0d827d40bf89d9ec6e564d2b23a6b60fa0597bb \
+    --hash=sha256:a2edb08d5017952980550c8a0acd7712516df7967d607a667f18030370c1075f \
+    --hash=sha256:c4b7d357c1d77948f3ec2bdab0bdf35f5be4401f0dc2fb6cf09095410ebd6db3 \
+    --hash=sha256:cb64108b3b59118db2ad9896a0485bbcd8d5b4bd4a7bd5ebfc1a7f58ba46fc62 \
+    --hash=sha256:d4ec6ed0eaac74e78fb19464b32a6fd28c6198f3770e8fb43a1d2c9d0fe0ad88 \
+    --hash=sha256:d6700a1f0d3ba6d6b244284fea5bf9a28af6804ef49d31d9a295dfd1906042d7 \
+    --hash=sha256:d9b8dcc5a3fd7eb0c21508bb76d3e57717e9bfabd5350139d180dbe31a377aa1 \
+    --hash=sha256:dc35a5c043d8d1539d5a7c0caa9a703693b300fde0b2a38b6809e2a369f64372 \
+    --hash=sha256:de11f90e59beb2c2deb389c98d208459be802a0f67308bd17d735e20ab57eae4 \
+    --hash=sha256:e17afb066d8210af078db811db3e89c0c7aa664e4ea133fd52fd88de33308e72 \
+    --hash=sha256:e54f3c8737307c7ba9ed1074ba4c99d6b0fda5fc189bbeb695cc26b634ceb557 \
+    --hash=sha256:f3035e4d81fef388bd51d28862a067e70f2c810745deadb1a1409623f30459ed \
+    --hash=sha256:f52c4d237bcb092cbf02a29373d3e59d95349c2828a91491818ae437ee220f74 \
+    --hash=sha256:f611135fb992d7fcc03cdf60954859530255a923a6deb139d63a970854975824 \
+    --hash=sha256:f6949faebf160eb33bf46899c5c16f4a0d3c2eccb2c440f09cd7570da7d9d224 \
+    --hash=sha256:f95eee3f74a18d9b68fa4a235ed7109670c1eb429d7d47b184392349d4abc4d9 \
+    --hash=sha256:fe22df7c0b3a637d17a9da37cb464a79493952894acd054307a15ab35135b83d \
+    --hash=sha256:fe57311d091d92f1d477f1b176cd00cfd8e8b167ea19cc4d8b8effb7ccdbe293
+    # via ducktape (pyproject.toml)
 beartype==0.22.9 \
     --hash=sha256:8f82b54aa723a2848a56008d18875f91c1db02c32ef6a62319a002e3e25a975f \
     --hash=sha256:d16c9bbc61ea14637596c5f6fbff2ee99cbe3573e46a716401734ef50c3060c2
@@ -1140,6 +1185,7 @@ click==8.2.1 \
     # via
     #   ducktape (pyproject.toml)
     #   aw-client
+    #   beancount
     #   crewai
     #   flask
     #   inspect-ai
@@ -6049,6 +6095,7 @@ python-dateutil==2.9.0.post0 \
     #   ducktape (pyproject.toml)
     #   aiobotocore
     #   arrow
+    #   beancount
     #   botocore
     #   hcloud
     #   jupyter-client
@@ -6425,6 +6472,7 @@ regex==2026.2.28 \
     --hash=sha256:fd0ce43e71d825b7c0661f9c54d4d74bd97c56c3fd102a8985bcfea48236bacb \
     --hash=sha256:fd63453f10d29097cc3dc62d070746523973fb5aa1c66d25f8558bebd47fed61
     # via
+    #   beancount
     #   crewai
     #   parsimonious
     #   tiktoken

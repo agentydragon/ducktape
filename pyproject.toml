@@ -81,6 +81,11 @@ dependencies = [
     "tomli>=2.0.0",
     "tomli-w>=1.0.0",
 
+    # Accounting / finance
+    # beancount: double-entry ledger model + text serializer; used by the budget
+    # Beancount exporter (//finance/beancount_export) to render the ledger.
+    "beancount>=3.2.0",
+
     # Database
     "sqlalchemy[asyncio]>=2.0.32",
     "alembic>=1.13.0",

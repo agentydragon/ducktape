@@ -59,6 +59,7 @@ manifest:
     aw_transform: aw_core
     backoff: backoff
     bcrypt: bcrypt
+    beancount: beancount
     beartype: beartype
     bitarray: bitarray
     bleach: bleach
@@ -668,4 +669,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 9c7709f1f281e5c3a2b4f6b23dba596e7868abcda318cce5ed28cd1b42dea8a7
+integrity: af17b57b1b52a8339ad023d421efb3a88540503cf3645a108bb5e32767953a5c

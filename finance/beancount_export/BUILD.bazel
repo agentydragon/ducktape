@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "export",
+    srcs = ["export.py"],
+    deps = [
+        "//augur/budget:schema",
+        "@pypi//beancount",
+    ],
+)
+
+py_test(
+    name = "test_export",
+    srcs = ["test_export.py"],
+    deps = [
+        ":export",
+        "//augur/budget:schema",
+        "@pypi//beancount",
+        "@pypi//pytest_bazel",
+    ],
+)
