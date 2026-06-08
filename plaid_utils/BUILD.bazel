@@ -44,6 +44,7 @@ py_library(
     srcs = ["schema.py"],
     visibility = [
         "//augur:__subpackages__",
+        "//finance/beancount_export:__pkg__",
         "//plaid_utils:__subpackages__",
     ],
     deps = [

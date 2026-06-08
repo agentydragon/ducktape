@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,6 +9,27 @@ py_library(
         "//augur/budget:schema",
         "@pypi//beancount",
     ],
+)
+
+py_library(
+    name = "runner",
+    srcs = ["runner.py"],
+    deps = [
+        ":export",
+        "//augur/budget:schema",
+        "//augur/budget:sql_read_model",
+        "//plaid_utils:schema",
+        "@pypi//beancount",
+        "@pypi//pyyaml",
+        "@pypi//structlog",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "export_ledger",
+    main_module = "finance.beancount_export.runner",
+    deps = [":runner"],
 )
 
 py_test(

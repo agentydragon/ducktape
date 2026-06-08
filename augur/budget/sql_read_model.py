@@ -270,6 +270,24 @@ WHERE classified_tx.bucket_id = :bucket_id
 ORDER BY classified_tx.date, classified_tx.transaction_id
 """
 
+# Every live classified txn (all buckets at once), for the Beancount exporter. Reuses the
+# same classified-tx CTE as the budget UI so the exported ledger and the in-app budget can
+# never disagree about which bucket a transaction landed in.
+_EXPORT_TAIL = """
+SELECT
+    classified_tx.transaction_id,
+    classified_tx.date,
+    classified_tx.amount,
+    classified_tx.name,
+    classified_tx.merchant_name,
+    classified_tx.pfc_primary,
+    classified_tx.pfc_detailed,
+    classified_tx.account_id,
+    classified_tx.bucket_id
+FROM classified_tx
+ORDER BY classified_tx.date, classified_tx.transaction_id
+"""
+
 # Stale-override probe (decision 7): a GLOBAL existence check by transaction_id, NOT
 # scoped to the request window/accounts, so an override for an out-of-window txn is not
 # falsely flagged. An override whose txn is gone (e.g. after a relink mints new ids, or
@@ -441,3 +459,52 @@ async def read_budget_bucket_transactions(
             for row in rows
         )
     return BudgetTransactionsResponse(bucket_id=bucket_id, transactions=transactions)
+
+
+@dataclass(frozen=True)
+class ClassifiedRow:
+    """One live classified transaction, as the Beancount exporter consumes it."""
+
+    transaction_id: str
+    date: date
+    amount: float
+    name: str
+    merchant_name: str | None
+    pfc_primary: str | None
+    pfc_detailed: str | None
+    account_id: str
+    bucket_id: str
+
+
+async def read_all_classified(
+    *, session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, window_start: date, window_end: date
+) -> tuple[ClassifiedRow, ...]:
+    """Return every live transaction in [window_start, window_end] with its bucket.
+
+    Unlike the snapshot/drilldown readers this returns all buckets at once and applies
+    no per-bucket filter -- it's the full projection the Beancount exporter renders.
+    Account scope comes from the configured source (``plaid_account_ids``).
+    """
+    stmt, params = _budget_query(
+        _EXPORT_TAIL,
+        config=config,
+        window_start=window_start,
+        window_end=window_end,
+        account_ids=tuple(config.source.plaid_account_ids),
+    )
+    async with session_factory() as session:
+        rows = (await session.execute(stmt, params)).mappings()
+        return tuple(
+            ClassifiedRow(
+                transaction_id=row["transaction_id"],
+                date=row["date"],
+                amount=float(row["amount"]),
+                name=row["name"],
+                merchant_name=row["merchant_name"],
+                pfc_primary=row["pfc_primary"],
+                pfc_detailed=row["pfc_detailed"],
+                account_id=row["account_id"],
+                bucket_id=row["bucket_id"],
+            )
+            for row in rows
+        )

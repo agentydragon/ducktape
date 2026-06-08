@@ -269,6 +269,18 @@ class BudgetSourceConfig(ApiModel):
     coverage_starts: date | None = None
 
 
+class FundingAccountDef(ApiModel):
+    """Maps a Plaid account to its Beancount funding (asset/liability) account.
+
+    The funding account is the leg opposite the bucket's contra account in each
+    exported entry (the money's source/sink: checking, a credit-card liability, a
+    brokerage). Consumed only by the Beancount exporter, not the in-app budget.
+    """
+
+    plaid_account_id: str
+    account: str = Field(pattern=_BEANCOUNT_ACCOUNT_PATTERN)
+
+
 class BudgetConfig(ApiModel):
     """Top-level budget planner config (optional; absent = budget endpoints return 400)."""
 
@@ -290,6 +302,10 @@ class BudgetConfig(ApiModel):
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
     lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)
+    # Plaid account_id -> Beancount funding account (the funding leg of each exported
+    # entry; the bucket supplies the contra leg). Consumed by the Beancount exporter,
+    # not the in-app budget. Accounts not listed fall back to the exporter's default.
+    funding_accounts: tuple[FundingAccountDef, ...] = ()
 
     @model_validator(mode="after")
     def _validate_references(self) -> BudgetConfig:
@@ -317,4 +333,9 @@ class BudgetConfig(ApiModel):
             if override.transaction_id in seen_override_ids:
                 raise ValueError(f"duplicate override for transaction_id {override.transaction_id!r}")
             seen_override_ids.add(override.transaction_id)
+        seen_funding_ids: set[str] = set()
+        for funding in self.funding_accounts:
+            if funding.plaid_account_id in seen_funding_ids:
+                raise ValueError(f"duplicate funding account for plaid_account_id {funding.plaid_account_id!r}")
+            seen_funding_ids.add(funding.plaid_account_id)
         return self

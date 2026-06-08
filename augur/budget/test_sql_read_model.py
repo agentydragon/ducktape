@@ -566,5 +566,36 @@ async def test_match_rule_account_condition(session_factory: async_sessionmaker[
     assert await _custom_bucket_txns(session_factory, config) == ["target_preempt"]
 
 
+async def test_read_all_classified_returns_every_live_txn_with_its_bucket(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _budget_config()  # source.plaid_account_ids=("checking",), coverage_starts=2026-03-15
+
+    rows = await sql_read_model.read_all_classified(
+        session_factory=session_factory, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30)
+    )
+
+    # Same classification as the snapshot, but flat (every bucket at once, no aggregation).
+    # Excludes the other-account, pending, removed, revoked-link, and out-of-window rows.
+    assert {row.transaction_id: row.bucket_id for row in rows} == {
+        "target_preempt": "custom",
+        "anthropic_default_skipped": "other",
+        "wealthfront_out": "transfers_out",
+        "wealthfront_in": "transfers_in",
+        "tax_refund": "tax_refunds",
+        "zero": "other",
+        "grocery_lumpy": "groceries",
+        "payroll": "income",
+    }
+    # Ordered by (date, transaction_id); carries the fields the exporter renders.
+    assert [(row.date, row.transaction_id) for row in rows] == sorted((row.date, row.transaction_id) for row in rows)
+    grocery = next(row for row in rows if row.transaction_id == "grocery_lumpy")
+    assert grocery.amount == 1000.0
+    assert grocery.account_id == "checking"
+    assert grocery.merchant_name == "Grocery"
+    assert grocery.pfc_primary == "FOOD_AND_DRINK"
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
