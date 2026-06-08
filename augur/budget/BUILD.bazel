@@ -12,12 +12,6 @@ py_library(
 )
 
 py_library(
-    name = "default_rules",
-    srcs = ["default_rules.py"],
-    deps = [":schema"],
-)
-
-py_library(
     name = "wire",
     srcs = ["wire.py"],
     deps = [
@@ -31,7 +25,6 @@ py_library(
     name = "sql_read_model",
     srcs = ["sql_read_model.py"],
     deps = [
-        ":default_rules",
         ":schema",
         ":wire",
         "//augur:dates",

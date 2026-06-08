@@ -1,10 +1,8 @@
 """Budget planner configuration: bucket taxonomy and merchant-classification rules.
 
-The augur framework knows nothing about specific user merchants. Generic rules
-(major chains: DoorDash, Anthropic, Lyft, ...) ship in `default_rules.py`;
-user-specific rules (medical providers, therapist, landlord, account IDs) live
-in the deployment's augur `Config` YAML, which augur loads at startup. This
-file just defines the schemas both layers populate.
+The augur framework knows nothing about specific user merchants. The deployment's
+augur `Config` YAML carries the full rule list (merchants, PFC fallbacks, account
+IDs), which augur loads at startup. This file just defines the schemas it populates.
 """
 
 from __future__ import annotations
@@ -275,16 +273,13 @@ class BudgetConfig(ApiModel):
     # validator below.
     default_outflow_bucket_id: str = Field(pattern=_ID_PATTERN)
     default_inflow_bucket_id: str = Field(pattern=_ID_PATTERN)
-    # User-specific overrides applied BEFORE the generic defaults. First match wins, so listing
-    # a private merchant rule here pre-empts the public defaults.
+    # The full ordered rule list (flat kinds and/or `match` rules). First match wins; a rule
+    # only fires on the leg whose sign matches its target bucket's direction.
     rules: tuple[Rule, ...] = ()
     # Per-transaction manual classifications, applied BEFORE any rule and ungated by
     # direction (see `Override`). The primary tool for residual weird cases rules
     # shouldn't generalize (reversals, one-off mislabels).
     overrides: tuple[Override, ...] = ()
-    # When True, ship `default_rules.DEFAULT_RULES` after the user's rules. Set False to
-    # opt out of the public rule library entirely (rare; useful for testing).
-    include_default_rules: bool = True
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
     lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)

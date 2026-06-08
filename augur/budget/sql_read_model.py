@@ -11,7 +11,6 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from augur.budget.default_rules import DEFAULT_RULES
 from augur.budget.schema import (
     AccountCondition,
     AllOfCondition,
@@ -60,12 +59,6 @@ def _enumerate_months(start: date, end: date) -> tuple[date, ...]:
         months.append(cursor)
         cursor = _add_months(cursor, 1)
     return tuple(months)
-
-
-def _effective_rules(config: BudgetConfig) -> tuple[Rule, ...]:
-    if config.include_default_rules:
-        return (*config.rules, *DEFAULT_RULES)
-    return config.rules
 
 
 def _bucket_defs_json(config: BudgetConfig) -> str:
@@ -161,7 +154,7 @@ def _compile_rules_case(config: BudgetConfig) -> tuple[str, dict[str, object]]:
         return f":{key}"
 
     arms: list[str] = []
-    for rule in _effective_rules(config):
+    for rule in config.rules:
         bucket = buckets_by_id.get(rule.bucket_id)
         if bucket is None:
             continue

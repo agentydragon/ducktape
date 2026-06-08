@@ -11,17 +11,16 @@ of force-netting, and surfaces lumpy one-offs separately.
 
 | Layer               | What it does                                                                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + categorization rules, loaded from augur YAML |
-| `default_rules.py`  | Generic public-chain rules (DoorDash, Anthropic, Lyft, …). User rules pre-empt these.                                                 |
-| `sql_read_model.py` | Reads Plaid transactions from Postgres, classifies with direction-gated rules, aggregates monthly totals, and returns drilldowns      |
+| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from augur YAML |
+| `sql_read_model.py` | Reads Plaid transactions from Postgres, compiles the rules to a first-match-wins SQL CASE, classifies (direction-gated) + applies overrides, aggregates monthly totals, returns drilldowns |
 | `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                      |
 | `wire.py`           | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                    |
 
 ## What lives in ducktape vs gaffer-private
 
-**ducktape (public):** The framework — schemas, rule kinds, the SQL read model,
-the API endpoints, the frontend tab, and the public default-rules library
-(major-chain merchants only).
+**ducktape (public):** The framework — schemas, the condition DSL + rule kinds,
+the SQL read model, the API endpoints, and the frontend tab. No rule *content*
+ships in the framework; every rule lives in the deployment's config.
 
 **gaffer-private (private):** The actual `budget:` config block in the
 deployment's `Config` YAML, listing the user's specific merchants (medical
@@ -75,16 +74,21 @@ budget:
   default_outflow_bucket_id: other
   default_inflow_bucket_id: other_in
 
-  # User rules apply BEFORE the public defaults — list private merchants here.
+  # The full ordered rule list. First match wins; a rule fires only on the leg whose
+  # sign matches its target bucket's direction. Put specific rules before broad PFC
+  # fallbacks. Flat kinds (merchant_substring / name_substring / pfc) plus the richer
+  # `match` kind (a condition tree: amount / account / regex / all_of / any_of / not).
   rules:
-    # Example shapes (replace patterns with your actual merchants — these belong
-    # in the gaffer-private copy of this YAML, not in ducktape):
+    # Example shapes (replace patterns with your actual merchants):
     # - { kind: merchant_substring, pattern: <your landlord>, bucket_id: rent }
-    # - { kind: merchant_substring, pattern: <esketamine provider>, bucket_id: esketamine }
-    # - { kind: merchant_substring, pattern: <therapist>, bucket_id: therapy }
-    # - { kind: merchant_substring, pattern: <health insurance broker>, bucket_id: insurance }
+    # - { kind: pfc, primary: FOOD_AND_DRINK, detailed: FOOD_AND_DRINK_GROCERIES, bucket_id: groceries }
+    # - { kind: pfc, primary: TRANSFER_OUT, bucket_id: transfers_out }   # PFC fallback
+    # - kind: match                                                       # rich/compound rule
+    #   bucket_id: <some_bucket>
+    #   condition: { kind: all_of, conditions: [
+    #     { kind: name_substring, pattern: <descriptor> },
+    #     { kind: amount, min: 5000 } ] }
 
-  include_default_rules: true
   lumpy_threshold_usd: 500
 ```
 

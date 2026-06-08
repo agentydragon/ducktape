@@ -33,6 +33,7 @@ from augur.budget.schema import (
     NameRegexCondition,
     NameSubstringRule,
     Override,
+    PfcRule,
     Rule,
     TransferDirection,
 )
@@ -130,16 +131,20 @@ def _budget_config(overrides: tuple[Override, ...] = ()) -> BudgetConfig:
         rules=(
             MerchantSubstringRule(pattern="Target", bucket_id="custom"),
             NameSubstringRule(pattern="Wealthfront", bucket_id="transfers_in"),
+            # PFC fallbacks (previously supplied by the now-removed default-rules layer).
+            PfcRule(primary="TRANSFER_OUT", bucket_id="transfers_out"),
+            PfcRule(primary="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_GROCERIES", bucket_id="groceries"),
+            PfcRule(primary="INCOME", detailed="INCOME_TAX_REFUND", bucket_id="tax_refunds"),
+            PfcRule(primary="INCOME", bucket_id="income"),
         ),
         overrides=overrides,
-        include_default_rules=True,
         lumpy_threshold_usd=500.0,
     )
 
 
 def _config_with_rules(rules: tuple[Rule, ...]) -> BudgetConfig:
-    """Same buckets as `_budget_config`, but exactly `rules` and no default rules (isolation)."""
-    return _budget_config().model_copy(update={"rules": rules, "include_default_rules": False})
+    """Same buckets as `_budget_config`, but with exactly `rules` (isolation for rule tests)."""
+    return _budget_config().model_copy(update={"rules": rules})
 
 
 def _tx(
