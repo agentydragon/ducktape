@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from agent_framework import ChatContext, ChatMiddleware, Message
+from agent_framework import ChatContext, Message, MiddlewareTypes
 
 if TYPE_CHECKING:
     from props.db.notifications import GradingPendingNotification
@@ -29,7 +29,7 @@ def _format_notifications(notifications: list[GradingPendingNotification]) -> st
     return "\n".join(lines)
 
 
-def notification_chat_middleware(queue: list[GradingPendingNotification]) -> ChatMiddleware:
+def notification_chat_middleware(queue: list[GradingPendingNotification]) -> MiddlewareTypes:
     """Chat middleware that drains `queue` and injects a summary user message per model call."""
 
     async def middleware(context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:

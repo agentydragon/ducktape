@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Set as AbstractSet
 
-from agent_framework import FunctionInvocationContext, FunctionMiddleware, MiddlewareTermination
+from agent_framework import FunctionInvocationContext, MiddlewareTermination, MiddlewareTypes
 
 
-def terminate_after_tools(names: AbstractSet[str]) -> FunctionMiddleware:
+def terminate_after_tools(names: AbstractSet[str]) -> MiddlewareTypes:
     """Function middleware that ends the run immediately after any named terminal tool runs.
 
     The tool executes (its DB writes / status flips happen), then the function-calling loop

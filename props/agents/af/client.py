@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 
-from agent_framework import BaseChatClient
+from agent_framework import BaseChatClient, FunctionInvocationConfiguration
 from agent_framework_anthropic import AnthropicClient
 from agent_framework_openai import OpenAIChatClient, OpenAIChatCompletionClient
 from anthropic import AsyncAnthropic
@@ -41,7 +41,7 @@ def build_chat_client_from_env(db: Database) -> BaseChatClient:
 
     # Surface tool exceptions to the model as the function result (props tools raise validation
     # errors the model is expected to read and retry) rather than aborting the run.
-    fn_config = {"include_detailed_errors": True}
+    fn_config = FunctionInvocationConfiguration(include_detailed_errors=True)
 
     match api_shape:
         case LLMApiShape.CHAT_COMPLETIONS:

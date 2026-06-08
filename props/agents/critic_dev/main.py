@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
-from agent_framework import Agent, ChatContext, MiddlewareTermination
+from agent_framework import Agent, ChatContext, MiddlewareTermination, MiddlewareTypes
 from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -284,13 +284,13 @@ def improve_termination_middleware(
     type_config: CriticDevImproveTypeConfig,
     db: Database,
     captured: dict[str, TerminationSuccess],
-) -> object:
+) -> MiddlewareTypes:
     """Chat middleware (improve mode): before each model call, end the run once a candidate
     definition beats baseline. Replaces agent_core's `ImprovementReminderHandler.on_before_sample`
     (same per-model-call cadence); the captured success drives the exit code.
     """
 
-    async def middleware(context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
+    async def middleware(_context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
         with db.session() as session:
             result = check_termination_condition(
                 session=session, improvement_run_id=improvement_run_id, type_config=type_config
@@ -329,7 +329,7 @@ async def run_agent_loop(
     state = LoopState()
     captured: dict[str, TerminationSuccess] = {}
 
-    middleware: list[object] = [terminate_after_tools({"report_success", "report_failure"})]
+    middleware: list[MiddlewareTypes] = [terminate_after_tools({"report_success", "report_failure"})]
     if isinstance(type_config, CriticDevImproveTypeConfig):
         middleware.append(improve_termination_middleware(agent_run_id, type_config, db, captured))
 
