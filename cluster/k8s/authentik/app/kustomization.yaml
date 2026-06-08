@@ -32,4 +32,5 @@ configMapGenerator:
       - blueprints/study-casino-sso.yaml
       - blueprints/claude-service-account.yaml
       - blueprints/openhands-sso.yaml
+      - blueprints/fava-sso.yaml
     namespace: authentik
