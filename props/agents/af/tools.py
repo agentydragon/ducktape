@@ -26,7 +26,9 @@ def direct_tool(fn: Callable[..., Any]) -> FunctionTool:
     """Wrap a props tool function (single Pydantic-model arg, or zero args) as a `FunctionTool`."""
     name = fn.__name__
     description = inspect.getdoc(fn) or name
-    params = list(inspect.signature(fn).parameters.values())
+    # eval_str resolves string annotations (PEP 563 / `from __future__ import annotations`) to
+    # the actual classes so the single Pydantic-model parameter can be detected.
+    params = list(inspect.signature(fn, eval_str=True).parameters.values())
 
     if not params:
 

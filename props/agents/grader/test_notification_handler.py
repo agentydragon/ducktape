@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass, field
+from typing import cast
 from uuid import UUID
 
 import pytest_bazel
+from agent_framework import ChatContext, Message
 
-from agent_core.loop_control import InjectItems, NoAction
-from openai_utils.text_extraction import extract_input_text_content
-from props.agents.grader.notification_handler import GraderNotificationsHandler
+from props.agents.grader.notification_handler import _format_notifications, notification_chat_middleware
 from props.core.ids import SnapshotSlug
 from props.db.notifications import GradingPendingNotification, Operation, ReportedIssuesItem, TruePositivesItem
 
@@ -14,51 +16,57 @@ _SLUG = SnapshotSlug("test/snapshot")
 _RUN_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
-def _make_critique_notification() -> GradingPendingNotification:
+def _critique_notification() -> GradingPendingNotification:
     return GradingPendingNotification(
         operation=Operation.INSERT, item=ReportedIssuesItem(agent_run_id=_RUN_ID, issue_id="i1"), snapshot_slug=_SLUG
     )
 
 
-def _make_tp_notification() -> GradingPendingNotification:
+def _tp_notification() -> GradingPendingNotification:
     return GradingPendingNotification(
         operation=Operation.INSERT, item=TruePositivesItem(tp_id="tp1"), snapshot_slug=_SLUG
     )
 
 
-def test_empty_queue_returns_no_action():
-    queue: list[GradingPendingNotification] = []
-    handler = GraderNotificationsHandler(queue)
-    assert isinstance(handler.on_before_sample(), NoAction)
+@dataclass
+class _FakeChatContext:
+    """Minimal stand-in: the middleware only reads/appends `messages`."""
+
+    messages: list[Message] = field(default_factory=list)
 
 
-def test_notifications_injected_as_user_message():
-    queue = [_make_critique_notification(), _make_tp_notification()]
-    handler = GraderNotificationsHandler(queue)
+async def _invoke(queue: list[GradingPendingNotification]) -> tuple[_FakeChatContext, bool]:
+    ctx = _FakeChatContext()
+    called = False
 
-    decision = handler.on_before_sample()
-    assert isinstance(decision, InjectItems)
-    assert len(decision.items) == 1
+    async def call_next() -> None:
+        nonlocal called
+        called = True
 
-    texts = extract_input_text_content(list(decision.items))
-    assert texts
-    text = texts[0]
+    await notification_chat_middleware(queue)(cast(ChatContext, ctx), call_next)
+    return ctx, called
+
+
+def test_format_notifications_text() -> None:
+    text = _format_notifications([_critique_notification(), _tp_notification()])
     assert "2 new grading notification(s)" in text
     assert "reported_issues" in text
     assert "true_positives" in text
 
 
-def test_queue_drained_after_injection():
-    queue = [_make_critique_notification()]
-    handler = GraderNotificationsHandler(queue)
+def test_empty_queue_appends_nothing() -> None:
+    ctx, called = asyncio.run(_invoke([]))
+    assert ctx.messages == []
+    assert called  # call_next still runs
 
-    decision = handler.on_before_sample()
-    assert isinstance(decision, InjectItems)
 
-    # Queue should be empty now
+def test_notifications_appended_and_drained() -> None:
+    queue = [_critique_notification(), _tp_notification()]
+    ctx, called = asyncio.run(_invoke(queue))
+    assert len(ctx.messages) == 1
+    assert "2 new grading notification(s)" in ctx.messages[0].text
     assert len(queue) == 0
-    # Second call returns NoAction
-    assert isinstance(handler.on_before_sample(), NoAction)
+    assert called
 
 
 if __name__ == "__main__":

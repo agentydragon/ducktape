@@ -11,10 +11,15 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Set as AbstractSet
 
-from agent_framework import FunctionInvocationContext, MiddlewareTermination, MiddlewareTypes
+from agent_framework import FunctionInvocationContext, MiddlewareTermination
+
+# Precise callable type for a function-invocation middleware. It is a member of MAF's
+# `MiddlewareTypes` union, so it is accepted in an `Agent(middleware=[...])` list while
+# remaining directly callable (e.g. in tests).
+FunctionMiddlewareCallable = Callable[[FunctionInvocationContext, Callable[[], Awaitable[None]]], Awaitable[None]]
 
 
-def terminate_after_tools(names: AbstractSet[str]) -> MiddlewareTypes:
+def terminate_after_tools(names: AbstractSet[str]) -> FunctionMiddlewareCallable:
     """Function middleware that ends the run immediately after any named terminal tool runs.
 
     The tool executes (its DB writes / status flips happen), then the function-calling loop
