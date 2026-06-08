@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
 import { rowsFrom } from "./lib/frame.ts";
 import { scenarioColor } from "./input_helpers.ts";
@@ -77,32 +77,33 @@ export function TerminalDistributionChart({
   metricScale = "linear",
 }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
-  const containerRef = useRef(null);
   const svgRef = useRef(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [svgWidth, setSvgWidth] = useState<number | null>(null);
   const [hoverPercentile, setHoverPercentile] = useState(null);
   const dragVariantRef = useRef({ dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false });
 
-  useLayoutEffect(() => {
-    const container = containerRef.current;
+  // Callback ref, not a one-shot mount effect: the measured container is gated behind the early
+  // `if (series.length === 0) return null` below, so it only mounts once results have loaded. A
+  // `useEffect([])` runs after the *first* commit — when results often haven't arrived and the node
+  // doesn't exist yet — bails, and (empty deps) never re-runs, leaving `svgWidth` null forever so the
+  // plot never renders. A callback ref fires whenever the node actually attaches, however late.
+  const measureContainer = useCallback((container: HTMLDivElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
     if (!container) return;
     const update = () => {
       const style = window.getComputedStyle(container);
       const horizontalPadding = parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
       const containerWidth = container.getBoundingClientRect().width - horizontalPadding;
-      const svgWidth = svgRef.current?.getBoundingClientRect().width ?? 0;
-      const width = Math.max(containerWidth, svgWidth);
+      const measuredSvgWidth = svgRef.current?.getBoundingClientRect().width ?? 0;
+      const width = Math.max(containerWidth, measuredSvgWidth);
       setSvgWidth(Math.max(1, Math.round(width)));
     };
     update();
-    const animationFrame = requestAnimationFrame(update);
     const ro = new ResizeObserver(update);
     ro.observe(container);
-    if (svgRef.current) ro.observe(svgRef.current);
-    return () => {
-      cancelAnimationFrame(animationFrame);
-      ro.disconnect();
-    };
+    resizeObserverRef.current = ro;
   }, []);
 
   // One percentile line per scenario, colored by position (matching the chips / fan legend), active
@@ -158,7 +159,7 @@ export function TerminalDistributionChart({
   if (svgWidth == null) {
     return (
       <div
-        ref={containerRef}
+        ref={measureContainer}
         className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
         data-product-terminal-distribution=""
         data-product-distribution-scale={metricScale}
@@ -324,7 +325,7 @@ export function TerminalDistributionChart({
 
   return (
     <div
-      ref={containerRef}
+      ref={measureContainer}
       className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
       data-product-terminal-distribution=""
       data-product-distribution-scale={metricScale}
