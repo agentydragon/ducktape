@@ -182,8 +182,12 @@ resources:
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
   - forgejo/props/flux-kustomization.yaml
+  - forgejo/budget-ledger/flux-kustomization.yaml
   # CLEANUP(2026-06-02): remove this line with cluster/k8s/forgejo/agent-rbac/ after 2026-06-04 (temp log access)
   - forgejo/agent-rbac/flux-kustomization.yaml
+
+  # --- budget (Beancount ledger + exporter + Fava) ---
+  - budget/namespace/flux-kustomization.yaml
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
