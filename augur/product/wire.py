@@ -305,7 +305,9 @@ class PrivateEquityOpportunityEvent(_RolloutEventBase):
     eligible_fraction: NonNegativeFloat = Field(le=1.0)
     liquidity_blocked: bool
     floor_usd: NonNegativeFloat
-    liquid_net_worth_usd: NonNegativeFloat
+    # Liquid net worth at the tender opportunity; can go negative when spending/obligations
+    # outrun liquid assets (the PE floor policy still evaluates against it).
+    liquid_net_worth_usd: float
     shortfall_usd: NonNegativeFloat
     units_held: NonNegativeFloat
     sellable_units: NonNegativeFloat
