@@ -1,0 +1,41 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:api_shape",
+        "//props/agents:runtime",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//anthropic",
+    ],
+)
+
+py_library(
+    name = "tools",
+    srcs = ["tools.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//agent_framework_core",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "middleware",
+    srcs = ["middleware.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//agent_framework_core"],
+)
+
+py_library(
+    name = "loop",
+    srcs = ["loop.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//agent_framework_core"],
+)

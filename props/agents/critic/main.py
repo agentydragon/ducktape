@@ -16,19 +16,17 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent_framework import Agent
 from pydantic import BaseModel, Field
 
-from agent_core.agent import Agent
-from agent_core.direct_provider import DirectToolProvider
-from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
-from agent_core.logging_handler import LoggingHandler
-from agent_core.loop_control import AllowAnyToolOrTextMessage
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
-from openai_utils.model import SystemMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from props.agents.af.client import build_chat_client_from_env
+from props.agents.af.loop import run_until_done
+from props.agents.af.middleware import terminate_after_tools
+from props.agents.af.tools import direct_tools
 from props.agents.runtime import (
-    create_bound_model_from_env,
     fetch_snapshot,
     get_current_agent_run,
     get_current_agent_run_id,
@@ -120,16 +118,13 @@ class ExitState:
     exit_code: int = 0
 
 
-def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProvider:
-    """Create a tool provider with critic tools."""
-    provider = DirectToolProvider()
+def _create_tools(exit_state: ExitState, db: Database) -> list:
+    """Build the critic tools (MAF FunctionTools) bound to this run's exit state and db."""
 
-    @provider.tool
     async def exec(args: DirectExecArgs) -> BaseExecResult:
         """Execute a shell command in the workspace. Use for code analysis tools like cat, rg, grep, find, etc."""
         return await run_direct_exec(args, default_cwd=WORKSPACE)
 
-    @provider.tool
     def insert_issue(args: InsertIssueArgs) -> str:
         """Insert a reported issue. Call this before adding occurrences for the issue."""
         with db.session() as session:
@@ -138,7 +133,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
             session.add(issue)
         return f"Inserted issue: {args.issue_id}"
 
-    @provider.tool
     def insert_occurrence(args: InsertOccurrenceArgs) -> str:
         """Insert a single-location occurrence for a reported issue. The issue must exist first."""
         with db.session() as session:
@@ -157,7 +151,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
                 location += f"-{args.end_line}"
         return f"Inserted occurrence for {args.issue_id}: {location}"
 
-    @provider.tool
     def insert_occurrence_multi(args: InsertOccurrenceMultiArgs) -> str:
         """Insert a multi-location occurrence (e.g., duplication across files). Use for issues spanning multiple locations."""
         with db.session() as session:
@@ -173,7 +166,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
             session.add(occurrence)
         return f"Inserted multi-location occurrence for {args.issue_id}: {len(args.locations)} locations"
 
-    @provider.tool
     def delete_issue(args: DeleteIssueArgs) -> str:
         """Delete a reported issue and all its occurrences. Use to remove incorrect issues."""
         with db.session() as session:
@@ -183,7 +175,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
             session.delete(issue)
         return f"Deleted issue: {args.issue_id}"
 
-    @provider.tool
     def list_issues() -> str:
         """List all issues reported in this critique run. Returns JSON with issue IDs, rationales, and occurrences."""
         with db.session() as session:
@@ -204,7 +195,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
 
             return ListIssuesResponse(issues=issue_infos).model_dump_json()
 
-    @provider.tool
     def submit(args: SubmitArgs) -> str:
         """Finalize and submit the critique. Validates all issues and marks the run as complete."""
         with db.session() as session:
@@ -246,7 +236,6 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
         logger.info("Critique submitted: %d issues, %d occurrences", args.issues_count, total_occurrences)
         return f"Submitted critique: {args.issues_count} issues, {total_occurrences} occurrences"
 
-    @provider.tool
     def report_failure(args: ReportFailureArgs) -> str:
         """Escape hatch: you are BLOCKED by tooling/environment/validation and cannot complete the
         review — e.g. `exec` errors on every command, you cannot read the files in scope,
@@ -260,7 +249,16 @@ def _create_tool_provider(exit_state: ExitState, db: Database) -> DirectToolProv
         logger.info("Reported failure: %s", args.message)
         return f"Reported failure: {args.message}"
 
-    return provider
+    return direct_tools(
+        exec,
+        insert_issue,
+        insert_occurrence,
+        insert_occurrence_multi,
+        delete_issue,
+        list_issues,
+        submit,
+        report_failure,
+    )
 
 
 def _validate_occurrence(occ: ReportedIssueOccurrence) -> None:
@@ -284,26 +282,16 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
         Exit code (0 for success, non-zero for failure)
     """
     exit_state = ExitState()
-    tool_provider = _create_tool_provider(exit_state, db)
-    bound_model = create_bound_model_from_env(db)
-
-    handlers: list[BaseHandler] = [
-        LoggingHandler(logger),
-        RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
-        AbortIf(lambda: exit_state.should_exit),
-    ]
-
-    agent = await Agent.create(
-        tool_provider=tool_provider,
-        handlers=handlers,
-        client=bound_model,
-        parallel_tool_calls=False,
-        tool_policy=AllowAnyToolOrTextMessage(),
+    agent = Agent(
+        client=build_chat_client_from_env(db),
+        instructions=system_prompt,
+        tools=_create_tools(exit_state, db),
+        middleware=[terminate_after_tools({"submit", "report_failure"})],
     )
 
-    agent.process_message(SystemMessage.text(system_prompt))
-
-    await agent.run()
+    await run_until_done(
+        agent, done=lambda: exit_state.should_exit, reminder=TEXT_OUTPUT_REMINDER, allow_multiple_tool_calls=False
+    )
 
     if exit_state.should_exit:
         if exit_state.exit_code == 0:
