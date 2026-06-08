@@ -59,8 +59,8 @@ in
         # them back into this file via the github-secrets-sync-pat PAT
         # (same mechanism the rotator uses for SOPS files). Pubkeys only
         # change on full cluster rebuild, so the manual step is rare.
-        "main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc="
-        "gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8="
+        "main:owYQITaq2ixR/EnqKoIQAxgjalKKVqMemFwRMaUW53U="
+        "gaffer:78zVKxf5n254+14vXQeDKV2EHk1q2I9CrG6fLdwlQws="
       ];
       netrc-file = config.sops.templates."attic-netrc".path;
       connect-timeout = 5;
