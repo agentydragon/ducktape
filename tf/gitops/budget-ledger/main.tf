@@ -44,11 +44,19 @@ resource "forgejo_repository" "ledger" {
   auto_init = true
 }
 
-# Git credentials for the exporter + Fava, in the budget namespace.
+# Git credentials for the exporter + Fava, in the budget namespace. Reflected into
+# the augur namespace (emberstack reflector) so the exporter CronJob -- which runs
+# alongside augur to reuse its config ConfigMap + plaid DB creds -- can read them.
 resource "kubernetes_secret" "budget_ledger_git_creds" {
   metadata {
     name      = "budget-ledger-git-creds"
     namespace = "budget"
+    annotations = {
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur"
+    }
   }
 
   data = {
