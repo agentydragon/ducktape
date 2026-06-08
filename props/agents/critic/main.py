@@ -16,14 +16,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_framework import Agent
 from pydantic import BaseModel, Field
 
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.agents.af.client import build_chat_client_from_env
-from props.agents.af.loop import run_until_done
+from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
 from props.agents.runtime import (
@@ -282,16 +281,14 @@ async def _run_agent_loop(system_prompt: str, db: Database) -> int:
         Exit code (0 for success, non-zero for failure)
     """
     exit_state = ExitState()
-    agent = Agent(
-        client=build_chat_client_from_env(db),
+    agent = make_agent(
+        build_chat_client_from_env(db),
         instructions=system_prompt,
         tools=_create_tools(exit_state, db),
         middleware=[terminate_after_tools({"submit", "report_failure"})],
     )
 
-    await run_until_done(
-        agent, done=lambda: exit_state.should_exit, reminder=TEXT_OUTPUT_REMINDER, allow_multiple_tool_calls=False
-    )
+    await run_until_done(agent, done=lambda: exit_state.should_exit, reminder=TEXT_OUTPUT_REMINDER)
 
     if exit_state.should_exit:
         if exit_state.exit_code == 0:

@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
-from agent_framework import Agent, ChatContext, MiddlewareTermination, MiddlewareTypes
+from agent_framework import ChatContext, MiddlewareTermination, MiddlewareTypes, chat_middleware
 from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
 from props.agents.af.client import build_chat_client_from_env
-from props.agents.af.loop import run_until_done
+from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tools
 from props.agents.runtime import get_current_agent_run, render_system_prompt, setup_logging
@@ -290,6 +290,7 @@ def improve_termination_middleware(
     (same per-model-call cadence); the captured success drives the exit code.
     """
 
+    @chat_middleware
     async def middleware(_context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
         with db.session() as session:
             result = check_termination_condition(
@@ -333,8 +334,8 @@ async def run_agent_loop(
     if isinstance(type_config, CriticDevImproveTypeConfig):
         middleware.append(improve_termination_middleware(agent_run_id, type_config, db, captured))
 
-    agent = Agent(
-        client=build_chat_client_from_env(db),
+    agent = make_agent(
+        build_chat_client_from_env(db),
         instructions=system_prompt,
         tools=create_tools(state, http_client, db),
         middleware=middleware,
@@ -345,7 +346,6 @@ async def run_agent_loop(
             agent,
             done=lambda: state.status != LoopStatus.IN_PROGRESS or "result" in captured,
             reminder=TEXT_OUTPUT_REMINDER,
-            allow_multiple_tool_calls=True,
         )
     except Exception as exc:
         # Optimize runs until the proxy rejects further LLM calls for budget (HTTP 429);

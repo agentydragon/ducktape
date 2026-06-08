@@ -16,14 +16,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from agent_framework import Agent
 from sqlalchemy import select
 
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.errors import ContextLengthExceededError, translate_context_length
 from props.agents.af.client import build_chat_client_from_env
-from props.agents.af.loop import run_until_done
+from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
 from props.agents.grader.drift_handler import Drift, get_drift as get_drift_fn
@@ -460,8 +459,8 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
     with db.session() as session:
         grader_run_id = get_current_agent_run_id(session)
 
-    agent = Agent(
-        client=build_chat_client_from_env(db),
+    agent = make_agent(
+        build_chat_client_from_env(db),
         instructions=system_prompt,
         tools=_create_grader_tools(grader_run_id, snapshot_slug, state, db),
         middleware=[notification_chat_middleware(state.notification_queue), terminate_after_tools({"report_failure"})],
@@ -470,7 +469,7 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
     # Persistent loop: the model grades and calls `sleep` (which blocks until pg_notify);
     # the run only ends on report_failure (terminate middleware) or a context-length overflow.
     await translate_context_length(
-        run_until_done, agent, done=lambda: state.failed, reminder=TEXT_OUTPUT_REMINDER, allow_multiple_tool_calls=False
+        run_until_done, agent, done=lambda: state.failed, reminder=TEXT_OUTPUT_REMINDER
     )
     if state.failed:
         raise GraderAbortError(state.failure_message)

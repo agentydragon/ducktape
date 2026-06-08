@@ -11,12 +11,34 @@ A terminal tool ends a burst early via `terminate_after_tools`; every burst re-c
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from agent_framework import Agent, MiddlewareTermination
+from agent_framework import Agent, BaseChatClient, MiddlewareTermination, MiddlewareTypes
 
 logger = logging.getLogger(__name__)
+
+
+def make_agent(
+    client: BaseChatClient,
+    *,
+    instructions: str,
+    tools: list[Any],
+    middleware: Sequence[MiddlewareTypes],
+) -> Agent:
+    """Construct a props MAF agent.
+
+    `store=False` runs the Responses-shape client statelessly (full history each turn rather than
+    server-side `previous_response_id`), which is what the props-llm-proxy supports; it's a harmless
+    no-op for the chat-completions shape.
+    """
+    return Agent(
+        client=client,
+        instructions=instructions,
+        tools=tools,
+        middleware=middleware,
+        default_options={"store": False},
+    )
 
 
 async def run_until_done(

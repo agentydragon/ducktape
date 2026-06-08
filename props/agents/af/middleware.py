@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Set as AbstractSet
 
-from agent_framework import FunctionInvocationContext, MiddlewareTermination
+from agent_framework import FunctionInvocationContext, MiddlewareTermination, function_middleware
 
 # Precise callable type for a function-invocation middleware. It is a member of MAF's
 # `MiddlewareTypes` union, so it is accepted in an `Agent(middleware=[...])` list while
@@ -27,6 +27,7 @@ def terminate_after_tools(names: AbstractSet[str]) -> FunctionMiddlewareCallable
     the next `on_before_sample` once `exit_state` was set.
     """
 
+    @function_middleware
     async def middleware(context: FunctionInvocationContext, call_next: Callable[[], Awaitable[None]]) -> None:
         await call_next()
         if context.function.name in names:

@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from agent_framework import ChatContext, Message
+from agent_framework import ChatContext, Message, chat_middleware
 
 # Precise callable type for a chat middleware (a member of MAF's MiddlewareTypes union).
 ChatMiddlewareCallable = Callable[[ChatContext, Callable[[], Awaitable[None]]], Awaitable[None]]
@@ -35,6 +35,7 @@ def _format_notifications(notifications: list[GradingPendingNotification]) -> st
 def notification_chat_middleware(queue: list[GradingPendingNotification]) -> ChatMiddlewareCallable:
     """Chat middleware that drains `queue` and injects a summary user message per model call."""
 
+    @chat_middleware
     async def middleware(context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
         if queue:
             notifications = list(queue)
