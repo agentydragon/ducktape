@@ -334,10 +334,7 @@ async def run_agent_loop(
         middleware.append(improve_termination_middleware(agent_run_id, type_config, db, captured))
 
     agent = make_agent(
-        db,
-        instructions=system_prompt,
-        tools=create_tools(state, http_client, db),
-        middleware=middleware,
+        db, instructions=system_prompt, tools=create_tools(state, http_client, db), middleware=middleware
     )
 
     try:

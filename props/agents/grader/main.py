@@ -460,9 +460,7 @@ async def _run_agent_loop(system_prompt: str, snapshot_slug: SnapshotSlug, state
 
     # Persistent loop: the model grades and calls `sleep` (which blocks until pg_notify);
     # the run only ends on report_failure (terminate middleware) or a context-length overflow.
-    await translate_context_length(
-        run_until_done, agent, done=lambda: state.failed, reminder=TEXT_OUTPUT_REMINDER
-    )
+    await translate_context_length(run_until_done, agent, done=lambda: state.failed, reminder=TEXT_OUTPUT_REMINDER)
     if state.failed:
         raise GraderAbortError(state.failure_message)
 

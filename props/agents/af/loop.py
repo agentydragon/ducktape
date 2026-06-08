@@ -22,11 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def make_agent(
-    db: Database,
-    *,
-    instructions: str,
-    tools: list[FunctionTool],
-    middleware: Sequence[MiddlewareTypes],
+    db: Database, *, instructions: str, tools: list[FunctionTool], middleware: Sequence[MiddlewareTypes]
 ) -> Agent:
     """Build a props MAF agent for the current run (client selected by the model's api_shape).
 
@@ -44,12 +40,7 @@ def make_agent(
 
 
 async def run_until_done(
-    agent: Agent,
-    *,
-    done: Callable[[], bool],
-    reminder: str,
-    kickoff: str = "Begin.",
-    max_turns: int | None = None,
+    agent: Agent, *, done: Callable[[], bool], reminder: str, kickoff: str = "Begin.", max_turns: int | None = None
 ) -> None:
     """Run `agent` until `done()` returns true (or `max_turns` bursts elapse).
 
