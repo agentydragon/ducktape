@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import os
 import time
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
-from functools import partial
-from types import TracebackType
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 from key_value.aio.protocols import AsyncKeyValue
@@ -58,39 +55,18 @@ class MarketSnapshot(BaseModel):
     market: dict[str, Any]
 
 
-class AsyncKeyValueContext(AbstractAsyncContextManager[AsyncKeyValue], Protocol):
-    async def __aenter__(self) -> AsyncKeyValue: ...
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
-    ) -> bool | None: ...
-
-
-StoreFactory = Callable[[], AsyncKeyValueContext]
-
-
-class ValkeyStoreContext:
-    def __init__(self, config: RedisMarketCacheConfig) -> None:
-        self._config = config
-        self._store: ValkeyStore | None = None
-
-    async def __aenter__(self) -> AsyncKeyValue:
-        store = ValkeyStore(
-            host=self._config.host,
-            port=self._config.port,
-            db=self._config.db,
-            username=self._config.username,
-            password=self._config.password,
-            default_collection=_CACHE_COLLECTION,
-        )
-        self._store = store
-        return await store.__aenter__()
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
-    ) -> bool | None:
-        if self._store is None:
-            return None
-        return await self._store.__aexit__(exc_type, exc, tb)
+def open_market_cache_store(config: RedisMarketCacheConfig) -> AbstractAsyncContextManager[AsyncKeyValue]:
+    """One long-lived Valkey store for the process: `async with` it once (server lifespan / CLI
+    run) and share the entered store across every platform's caching client, instead of opening a
+    fresh connection per cache read/write."""
+    return ValkeyStore(
+        host=config.host,
+        port=config.port,
+        db=config.db,
+        username=config.username,
+        password=config.password,
+        default_collection=_CACHE_COLLECTION,
+    )
 
 
 def market_cache_config_from_env(env: Mapping[str, str] = os.environ) -> RedisMarketCacheConfig | None:
@@ -127,13 +103,18 @@ def market_cache_config_from_env(env: Mapping[str, str] = os.environ) -> RedisMa
 
 
 def wrap_price_clients_with_redis_cache(
-    clients: Mapping[Platform, PriceClient], config: RedisMarketCacheConfig, *, clock: Callable[[], float] = time.time
+    clients: Mapping[Platform, PriceClient],
+    config: RedisMarketCacheConfig,
+    store: AsyncKeyValue,
+    *,
+    clock: Callable[[], float] = time.time,
 ) -> dict[Platform, PriceClient]:
+    """Wrap each upstream client in a read-through cache over the shared, already-open `store`."""
     return {
         platform: RedisCachingPriceClient(
             platform=platform,
             upstream=client,
-            store_factory=partial(ValkeyStoreContext, config),
+            store=store,
             ttl_seconds=config.ttl_seconds,
             retention_seconds=config.retention_seconds,
             clock=clock,
@@ -143,11 +124,11 @@ def wrap_price_clients_with_redis_cache(
 
 
 class RedisCachingPriceClient:
-    """Sync ``PriceClient`` wrapper backed by Redis/Valkey.
+    """Async ``PriceClient`` wrapper backed by a long-lived Valkey ``store``.
 
-    The platform clients are synchronous and the Valkey client available in this repo is async.
-    Server endpoints that call ``PriceClient`` are sync FastAPI handlers, so each cache operation is
-    bridged with ``asyncio.run`` and uses a short-lived Valkey context.
+    Reads/writes go through the one persistent store handed in at construction — no per-call
+    client creation, no ``asyncio.run`` bridge. Cache read/write failures are best-effort: a read
+    miss or a store error degrades to the upstream fetch rather than failing the request.
     """
 
     def __init__(
@@ -155,26 +136,26 @@ class RedisCachingPriceClient:
         *,
         platform: Platform,
         upstream: PriceClient,
-        store_factory: StoreFactory,
+        store: AsyncKeyValue,
         ttl_seconds: float = _DEFAULT_TTL_SECONDS,
         retention_seconds: int = _DEFAULT_RETENTION_SECONDS,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._platform = platform
         self._upstream = upstream
-        self._store_factory = store_factory
+        self._store = store
         self._ttl_seconds = ttl_seconds
         self._retention_seconds = retention_seconds
         self._clock = clock
 
-    def get_market(self, market_id: str) -> Market:
-        cached = self._load(market_id)
+    async def get_market(self, market_id: str) -> Market:
+        cached = await self._load(market_id)
         now = self._clock()
         if cached is not None and now - cached.fetched_at_epoch_seconds <= self._ttl_seconds:
             return _market_from_snapshot(cached)
 
         try:
-            market = self._upstream.get_market(market_id)
+            market = await self._upstream.get_market(market_id)
         except Exception:
             if cached is not None:
                 _LOGGER.warning(
@@ -186,7 +167,7 @@ class RedisCachingPriceClient:
                 return _market_from_snapshot(cached)
             raise
 
-        self._store(
+        await self._store_snapshot(
             MarketSnapshot(
                 platform=self._platform,
                 market_id=market_id,
@@ -196,12 +177,14 @@ class RedisCachingPriceClient:
         )
         return market
 
-    def close(self) -> None:
-        self._upstream.close()
+    async def aclose(self) -> None:
+        await self._upstream.aclose()
 
-    def _load(self, market_id: str) -> MarketSnapshot | None:
+    async def _load(self, market_id: str) -> MarketSnapshot | None:
         try:
-            raw = asyncio.run(self._async_load(market_id))
+            raw = await self._store.get(_cache_key(self._platform, market_id))
+        # Cache reads are best-effort: a store/connection error must fall through to the upstream
+        # fetch, not fail the request. Broad except is intentional here.
         except Exception:
             _LOGGER.warning("failed to read cached %s market %r", self._platform.value, market_id, exc_info=True)
             return None
@@ -217,24 +200,17 @@ class RedisCachingPriceClient:
             return None
         return snapshot
 
-    async def _async_load(self, market_id: str) -> dict[str, Any] | None:
-        async with self._store_factory() as store:
-            return await store.get(_cache_key(self._platform, market_id))
-
-    def _store(self, snapshot: MarketSnapshot) -> None:
+    async def _store_snapshot(self, snapshot: MarketSnapshot) -> None:
         try:
-            asyncio.run(self._async_store(snapshot))
-        except Exception:
-            _LOGGER.warning(
-                "failed to write cached %s market %r", self._platform.value, snapshot.market_id, exc_info=True
-            )
-
-    async def _async_store(self, snapshot: MarketSnapshot) -> None:
-        async with self._store_factory() as store:
-            await store.put(
+            await self._store.put(
                 _cache_key(self._platform, snapshot.market_id),
                 snapshot.model_dump(mode="json"),
                 ttl=self._retention_seconds,
+            )
+        # Cache writes are best-effort: a store error must not fail an otherwise-successful fetch.
+        except Exception:
+            _LOGGER.warning(
+                "failed to write cached %s market %r", self._platform.value, snapshot.market_id, exc_info=True
             )
 
 

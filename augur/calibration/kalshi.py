@@ -7,14 +7,15 @@ public reads). Raw ``httpx`` — no official Python SDK exists. The API returns
 
 from __future__ import annotations
 
+import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
 from augur.calibration.platform import Market
-from augur.calibration.transient_retry import httpx_is_transient, with_retry
+from augur.calibration.transient_retry import httpx_is_transient, with_retry_async
 
 _BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 _MARKET_URL_TEMPLATE = "https://kalshi.com/markets/{ticker}"
@@ -57,16 +58,16 @@ class KalshiClient:
         timeout: float = 30.0,
         cache_ttl_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
-        client: httpx.Client | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._client = client if client is not None else httpx.Client(timeout=timeout)
+        self._client = client if client is not None else httpx.AsyncClient(timeout=timeout)
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
         self._sleep = sleep
         self._cache: dict[str, tuple[Market, float]] = {}
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         """One market's current state, served from the TTL cache when still fresh.
 
         ``market_id`` is the Kalshi ticker (e.g. ``"KXIPOOPENAI-26DEC01"``). Kalshi's API
@@ -75,7 +76,7 @@ class KalshiClient:
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
-        market = with_retry(
+        market = await with_retry_async(
             lambda: self._fetch(market_id),
             what=f"kalshi market {market_id!r}",
             is_transient=httpx_is_transient,
@@ -84,8 +85,8 @@ class KalshiClient:
         self._cache[market_id] = (market, now)
         return market
 
-    def _fetch(self, market_id: str) -> Market:
-        response = self._client.get(f"{_BASE_URL}/markets/{market_id}")
+    async def _fetch(self, market_id: str) -> Market:
+        response = await self._client.get(f"{_BASE_URL}/markets/{market_id}")
         response.raise_for_status()
         raw = _KalshiResponse.model_validate(response.json()).market
         # Kalshi's per-market title is the event headline; the leg's distinguishing clause lives in
@@ -101,8 +102,8 @@ class KalshiClient:
             rules=raw.rules_primary,
         )
 
-    def fetch_yes_probability(self, market_id: str) -> float:
-        return self.get_market(market_id).require_probability()
+    async def fetch_yes_probability(self, market_id: str) -> float:
+        return (await self.get_market(market_id)).require_probability()
 
-    def close(self) -> None:
-        self._client.close()
+    async def aclose(self) -> None:
+        await self._client.aclose()

@@ -58,6 +58,13 @@ Remaining:
       the last-trade price. Track bid and ask separately in the platform model,
       surface stale/wide/no-quote states, and decide whether scoring should use
       midpoint, last, or a conservative interval per platform/market family.
+  - [ ] **Honest naming.** Markets expose last trade / bid / ask, not a
+        "probability". `Market.probability` / `require_probability` is really the
+        last-trade price read as an implied probability; the calibrated value comes
+        from the separate price→probability smoothing step. Rename to something like
+        `last_trade_price` / `implied_probability` so it doesn't read as a calibrated
+        probability (cross-cutting across the platform clients + calibration). See the
+        TODO at `augur/calibration/platform.py:Market.probability`.
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
       rollups of per-market KL once the weighting policy is decided.
 

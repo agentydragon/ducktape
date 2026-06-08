@@ -100,18 +100,18 @@ def price_clients() -> dict[Platform, PriceClient]:
     return mock_price_clients({Platform.MANIFOLD: {"AAA": 0.40, "BBB": 0.10, "CCC": 0.66}})
 
 
-def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
+async def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    return run_calibration(
+    return await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
 
 
-def test_clean_rows_score_events(
+async def test_clean_rows_score_events(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
-    result = _run(model, catalog, price_clients)
+    result = await _run(model, catalog, price_clients)
     assert result.rollout_count == 4
     clean = {row.market_id: row for row in result.clean}
 
@@ -136,10 +136,10 @@ def test_clean_rows_score_events(
     assert math.isclose(fail.p_model, 1 / 3)
 
 
-def test_surfaced_row_carries_augur_context(
+async def test_surfaced_row_carries_augur_context(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
-    result = _run(model, catalog, price_clients)
+    result = await _run(model, catalog, price_clients)
     assert [row.market_id for row in result.surfaced] == ["CCC"]
     surfaced = result.surfaced[0]
     assert surfaced.platform == "manifold"
@@ -153,14 +153,14 @@ def test_surfaced_row_carries_augur_context(
     assert surfaced.augur_context.p_model == 0.25
 
 
-def test_run_calibration_shares_bundle_with_mark_fan(
+async def test_run_calibration_shares_bundle_with_mark_fan(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
     # One sampled bundle drives both the clean/surfaced scoring and the issuer mark_fan, so
     # both views come from a single rollout.
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    result = run_calibration(
+    result = await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
     assert {row.market_id for row in result.clean} == {"AAA", "BBB"}
@@ -204,7 +204,7 @@ def macro_model() -> ConstantFrameModel:
     )
 
 
-def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrameModel) -> None:
+async def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrameModel) -> None:
     """A point-in-time S&P threshold market scores against the anchored sp500 channel, and a
     market on an unmodeled series (inflation) surfaces as `unmodeled` rather than failing."""
     catalog = MarketCatalog(
@@ -249,7 +249,7 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
         horizon_months=_HORIZON,
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "SPX-TOUCH": 0.45, "CPI": 0.20}})
-    result = run_calibration(
+    result = await run_calibration(
         catalog,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
@@ -274,7 +274,7 @@ def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrame
     assert cpi.p_market == 0.20
 
 
-def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) -> None:
+async def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
         markets=[],
@@ -311,7 +311,7 @@ def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) ->
     )
     # Live bucket prices 0.2/0.5/0.3 (already sum to 1); model month-7 counts [1,2,1] -> [0.25,0.5,0.25].
     clients = mock_price_clients({Platform.KALSHI: {"B-LO": 0.20, "B-MID": 0.50, "B-HI": 0.30}})
-    result = run_calibration(
+    result = await run_calibration(
         catalog,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
@@ -338,7 +338,7 @@ def _inflation_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float
     return matrix
 
 
-def test_threshold_ladder_family_derives_categorical_distribution() -> None:
+async def test_threshold_ladder_family_derives_categorical_distribution() -> None:
     model = ConstantFrameModel(
         levels={InflationKey(): _inflation_levels},
         private_equity={
@@ -382,7 +382,7 @@ def test_threshold_ladder_family_derives_categorical_distribution() -> None:
         horizon_months=_HORIZON,
     )
     clients = mock_price_clients({Platform.KALSHI: {"CPI-T3.0": 0.90, "CPI-T3.5": 0.60, "CPI-T4.0": 0.20}})
-    result = run_calibration(
+    result = await run_calibration(
         catalog,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
@@ -402,7 +402,7 @@ def test_threshold_ladder_family_derives_categorical_distribution() -> None:
     assert family.kl_bits is not None
 
 
-def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFrameModel) -> None:
+async def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-27"},
         markets=[],
@@ -422,7 +422,7 @@ def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFra
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     clients = mock_price_clients({Platform.KALSHI: {"IPO-2026": 0.30, "IPO-2031": 0.70}})
-    result = run_calibration(
+    result = await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
     )
 
@@ -448,14 +448,14 @@ class _ProbClient:
     def __init__(self, probabilities: dict[str, float | None]) -> None:
         self._probabilities = probabilities
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._probabilities[market_id])
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         pass
 
 
-def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
+async def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
     """A market the platform prices as None, and a categorical family whose bucket prices sum to
     zero, are both dropped (logged) rather than 500-ing via require_probability()."""
     catalog = MarketCatalog(
@@ -501,7 +501,7 @@ def test_none_probability_and_degenerate_family_are_dropped(macro_model: Constan
     clients: dict[Platform, PriceClient] = {
         Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})
     }
-    result = run_calibration(
+    result = await run_calibration(
         catalog,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
@@ -522,7 +522,7 @@ def test_wilson_interval_edges() -> None:
     assert math.isclose((lo + hi) / 2, 0.5, abs_tol=1e-9)
 
 
-def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) -> None:
+async def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) -> None:
     """Kalshi + Manifold markets each hit their own client and carry the right platform tag."""
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-29"},
@@ -542,7 +542,7 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
     clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    result = run_calibration(
+    result = await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
     )
     by_id = {row.market_id: row for row in result.clean}

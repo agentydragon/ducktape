@@ -18,7 +18,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from augur.api.config import Config
-from augur.api.server import create_app_from_augur_config
+from augur.api.server import create_app_from_augur_config, static_price_clients
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.platform import Platform
 from augur.calibration.testing import mock_price_clients
@@ -42,7 +42,9 @@ def _client_for(config: Config) -> TestClient:
     for date_family in catalog.date_ladder_families:
         for date_member in date_family.dates:
             by_platform[date_family.platform][date_member.market_id] = 0.5
-    return TestClient(create_app_from_augur_config(config, price_clients=mock_price_clients(dict(by_platform))))
+    return TestClient(
+        create_app_from_augur_config(config, price_clients=static_price_clients(mock_price_clients(dict(by_platform))))
+    )
 
 
 @pytest.fixture

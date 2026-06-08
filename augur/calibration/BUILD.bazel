@@ -217,6 +217,7 @@ py_test(
         "//augur/model:testing",
         "@pypi//numpy",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -243,6 +244,7 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -255,6 +257,7 @@ py_test(
         ":redis_cache",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -268,6 +271,7 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -283,6 +287,7 @@ py_test(
         "//:conftest",
         "//augur/model:private_equity_risk",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

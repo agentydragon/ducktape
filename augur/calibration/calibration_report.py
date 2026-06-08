@@ -14,6 +14,7 @@ KL divergence (loudest disagreement first).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -22,14 +23,14 @@ from tabulate import tabulate
 from augur.api.config import load_augur_config
 from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.default_clients import build_default_price_clients
+from augur.calibration.default_clients import default_price_clients
 from augur.calibration.macro_anchors import resolve_anchors
 from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId, parse_level_series_key
 
 
-def main(argv: list[str] | None = None) -> int:
+async def _run(argv: list[str] | None) -> int:
     parser = argparse.ArgumentParser(description="Run calibration against live prediction markets for a config.")
     parser.add_argument("config", type=Path, help="Path to augur config.yaml")
     parser.add_argument("--preset", default=None, help="Preset id (default = config default)")
@@ -72,9 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         horizon_months=args.horizon,
     )
 
-    price_clients = build_default_price_clients()
-    try:
-        result = run_calibration(
+    async with default_price_clients() as price_clients:
+        result = await run_calibration(
             catalog,
             horizon_months=args.horizon,
             rollout_seeds=sampling.rollout_seeds,
@@ -83,9 +83,6 @@ def main(argv: list[str] | None = None) -> int:
             level_paths=level_paths,
             inflation_history=anchors.inflation_history,
         )
-    finally:
-        for client in price_clients.values():
-            client.close()
 
     clean_rows = sorted(result.clean, key=lambda r: -abs(r.kl_bits) if r.kl_bits is not None else 0)
     clean_table = [
@@ -150,6 +147,10 @@ def main(argv: list[str] | None = None) -> int:
         print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
 
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_run(argv))
 
 
 if __name__ == "__main__":

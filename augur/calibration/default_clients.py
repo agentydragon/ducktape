@@ -7,11 +7,18 @@ being duplicated. Tests still construct their own hermetic clients directly.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
+
 from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
 from augur.calibration.platform import Platform, PriceClient
 from augur.calibration.polymarket import PolymarketClient
-from augur.calibration.redis_cache import market_cache_config_from_env, wrap_price_clients_with_redis_cache
+from augur.calibration.redis_cache import (
+    market_cache_config_from_env,
+    open_market_cache_store,
+    wrap_price_clients_with_redis_cache,
+)
 
 # These clients are constructed once per server process and reused for every calibration run, so
 # the TTL bounds how stale a surfaced price/title can be — not how often a single request re-fetches.
@@ -21,13 +28,24 @@ from augur.calibration.redis_cache import market_cache_config_from_env, wrap_pri
 _DEFAULT_CACHE_TTL_SECONDS = 12 * 60 * 60
 
 
-def build_default_price_clients() -> dict[Platform, PriceClient]:
+@asynccontextmanager
+async def default_price_clients() -> AsyncIterator[dict[Platform, PriceClient]]:
+    """One process-lifetime set of live price clients, plus the shared Valkey cache store when
+    `AUGUR_MARKET_CACHE_URL` is set. Enter once per server/CLI run (server lifespan / CLI `main`);
+    the upstream httpx/SDK clients and the persistent Valkey store are closed on exit.
+    """
     cache_config = market_cache_config_from_env()
-    platform_cache_ttl_seconds = 0 if cache_config is not None else _DEFAULT_CACHE_TTL_SECONDS
-    clients = _build_upstream_price_clients(cache_ttl_seconds=platform_cache_ttl_seconds)
-    if cache_config is None:
-        return clients
-    return wrap_price_clients_with_redis_cache(clients, cache_config)
+    # With the shared Valkey cache on, the per-client in-memory TTL is redundant (the store bounds
+    # staleness across the whole process), so disable it; otherwise keep the 12h in-memory window.
+    platform_cache_ttl_seconds = 0.0 if cache_config is not None else _DEFAULT_CACHE_TTL_SECONDS
+    upstream = _build_upstream_price_clients(cache_ttl_seconds=platform_cache_ttl_seconds)
+    async with AsyncExitStack() as stack:
+        stack.push_async_callback(_aclose_all, upstream)
+        if cache_config is None:
+            yield upstream
+            return
+        store = await stack.enter_async_context(open_market_cache_store(cache_config))
+        yield wrap_price_clients_with_redis_cache(upstream, cache_config, store)
 
 
 def _build_upstream_price_clients(*, cache_ttl_seconds: float) -> dict[Platform, PriceClient]:
@@ -36,3 +54,8 @@ def _build_upstream_price_clients(*, cache_ttl_seconds: float) -> dict[Platform,
         Platform.POLYMARKET: PolymarketClient(cache_ttl_seconds=cache_ttl_seconds),
         Platform.KALSHI: KalshiClient(cache_ttl_seconds=cache_ttl_seconds),
     }
+
+
+async def _aclose_all(clients: dict[Platform, PriceClient]) -> None:
+    for client in clients.values():
+        await client.aclose()

@@ -10,8 +10,9 @@ calibration auto-refresh doesn't re-hit Polymarket per market per request.
 
 from __future__ import annotations
 
+import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
 
 from polymarket import PublicClient
@@ -27,7 +28,7 @@ from polymarket.errors import (
 )
 
 from augur.calibration.platform import Market
-from augur.calibration.transient_retry import with_retry
+from augur.calibration.transient_retry import with_retry_async
 
 _POLYMARKET_BASE_URL = "https://polymarket.com/event"
 
@@ -57,7 +58,7 @@ class PolymarketClient:
         *,
         cache_ttl_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         sdk_client: PublicClient | None = None,
     ) -> None:
         self._sdk = sdk_client if sdk_client is not None else PublicClient()
@@ -66,18 +67,19 @@ class PolymarketClient:
         self._sleep = sleep
         self._cache: dict[str, tuple[Market, float]] = {}
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         """One market's current state, served from the TTL cache when still fresh.
 
         ``market_id`` is the Polymarket condition_id passed to
-        ``PublicClient.get_market(id=...)``. A transient 5xx/rate-limit/timeout is retried
-        with backoff before propagating.
+        ``PublicClient.get_market(id=...)``. The Polymarket SDK is synchronous, so the live
+        read runs in a worker thread; a transient 5xx/rate-limit/timeout is retried with
+        backoff before propagating.
         """
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
-        market = with_retry(
-            lambda: self._fetch(market_id),
+        market = await with_retry_async(
+            lambda: asyncio.to_thread(self._fetch, market_id),
             what=f"polymarket market {market_id!r}",
             is_transient=_polymarket_is_transient,
             sleep=self._sleep,
@@ -104,8 +106,8 @@ class PolymarketClient:
             rules=pm_market.description,
         )
 
-    def fetch_yes_probability(self, market_id: str) -> float:
-        return self.get_market(market_id).require_probability()
+    async def fetch_yes_probability(self, market_id: str) -> float:
+        return (await self.get_market(market_id)).require_probability()
 
-    def close(self) -> None:
-        self._sdk.__exit__(None, None, None)
+    async def aclose(self) -> None:
+        await asyncio.to_thread(self._sdk.__exit__, None, None, None)

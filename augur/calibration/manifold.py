@@ -15,16 +15,17 @@ Consumers use the concrete :class:`ManifoldClient`; tests inject a ``MockTranspo
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from augur.calibration.platform import Market
-from augur.calibration.transient_retry import httpx_is_transient, with_retry
+from augur.calibration.transient_retry import httpx_is_transient, with_retry_async
 
 _MARKET_ENDPOINT = "https://api.manifold.markets/v0/market/"
 _USER_AGENT = "augur-pm-calibration/1.0"
@@ -71,17 +72,17 @@ class ManifoldClient:
         timeout: float = 30.0,
         cache_ttl_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
-        client: httpx.Client | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
-        self._client = client if client is not None else httpx.Client(headers=_headers(), timeout=timeout)
+        self._client = client if client is not None else httpx.AsyncClient(headers=_headers(), timeout=timeout)
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
         self._sleep = sleep
         # market id -> (last fetched market state, monotonic timestamp of that fetch).
         self._cache: dict[str, tuple[Market, float]] = {}
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         """One market's current state, served from the TTL cache when still fresh.
 
         A transient 5xx/timeout is retried with backoff before propagating.
@@ -89,7 +90,7 @@ class ManifoldClient:
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
-        market = with_retry(
+        market = await with_retry_async(
             lambda: self._fetch(market_id),
             what=f"manifold market {market_id!r}",
             is_transient=httpx_is_transient,
@@ -98,8 +99,8 @@ class ManifoldClient:
         self._cache[market_id] = (market, now)
         return market
 
-    def _fetch(self, market_id: str) -> Market:
-        response = self._client.get(f"{_MARKET_ENDPOINT}{market_id}")
+    async def _fetch(self, market_id: str) -> Market:
+        response = await self._client.get(f"{_MARKET_ENDPOINT}{market_id}")
         response.raise_for_status()
         raw = _ManifoldResponse.model_validate(response.json())
         # Manifold's brand symbol for mana is double-struck capital M (U+1D544); RUF001 flags
@@ -114,9 +115,9 @@ class ManifoldClient:
             rules=raw.text_description,
         )
 
-    def fetch_yes_probability(self, market_id: str) -> float:
+    async def fetch_yes_probability(self, market_id: str) -> float:
         """Current YES probability for one binary market; raises if it carries none."""
-        return self.get_market(market_id).require_probability()
+        return (await self.get_market(market_id)).require_probability()
 
-    def close(self) -> None:
-        self._client.close()
+    async def aclose(self) -> None:
+        await self._client.aclose()

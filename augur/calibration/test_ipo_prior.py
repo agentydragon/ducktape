@@ -49,8 +49,8 @@ def prices() -> ManifoldClient:
     return mock_manifold_client({"B27": 0.30, "B28": 0.55, "B29": 0.93, "B30": 0.80, "BPRE": 0.99})
 
 
-def test_derives_monotone_anchors_dropping_market_noise(catalog: MarketCatalog, prices: ManifoldClient) -> None:
-    anchors = derive_public_market_anchors(catalog, price_client=prices)
+async def test_derives_monotone_anchors_dropping_market_noise(catalog: MarketCatalog, prices: ManifoldClient) -> None:
+    anchors = await derive_public_market_anchors(catalog, price_client=prices)
 
     # The before-sim-start market (month -1) and the non-monotone 2030 point are dropped.
     assert [anchor.month for anchor in anchors] == [7, 19, 31]
@@ -63,20 +63,22 @@ def test_derives_monotone_anchors_dropping_market_noise(catalog: MarketCatalog, 
     assert all(later >= earlier for earlier, later in itertools.pairwise(cumulatives))
 
 
-def test_derived_anchors_validate_against_m1_issuer_config(catalog: MarketCatalog, prices: ManifoldClient) -> None:
+async def test_derived_anchors_validate_against_m1_issuer_config(
+    catalog: MarketCatalog, prices: ManifoldClient
+) -> None:
     # The whole point of the derivation: the output must satisfy the M1 model validator
     # (strictly-increasing month, non-decreasing CDF), so the markets can feed the model.
-    anchors = derive_public_market_anchors(catalog, price_client=prices)
+    anchors = await derive_public_market_anchors(catalog, price_client=prices)
     config = PrivateEquityRiskIssuerConfig(current_mark_usd=100.0, public_market_cdf_anchors=anchors)
     assert config.public_market_cdf_anchors == anchors
 
 
-def test_probabilities_clamped_below_one() -> None:
+async def test_probabilities_clamped_below_one() -> None:
     # A near-certain (>= 1.0) market must clamp into [0, 1) so the `lt=1.0` field accepts it.
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"}, markets=[_ipo_market("CERT", "2029-01-01")]
     )
-    anchors = derive_public_market_anchors(catalog, price_client=mock_manifold_client({"CERT": 1.0}))
+    anchors = await derive_public_market_anchors(catalog, price_client=mock_manifold_client({"CERT": 1.0}))
     assert anchors[0].cumulative_probability < 1.0
 
 

@@ -1,4 +1,4 @@
-"""Tests for `with_retry`: it retries transient failures with backoff, gives up after the
+"""Tests for `with_retry_async`: it retries transient failures with backoff, gives up after the
 attempt budget, and never retries non-transient errors.
 
 The Kalshi client wiring is exercised end-to-end with a `MockTransport` that 503s a fixed
@@ -13,7 +13,11 @@ import pytest
 import pytest_bazel
 
 from augur.calibration.kalshi import KalshiClient
-from augur.calibration.transient_retry import httpx_is_transient, with_retry
+from augur.calibration.transient_retry import httpx_is_transient, with_retry_async
+
+
+async def _noop_sleep(_seconds: float) -> None:
+    pass
 
 
 def _http_status_error(status: int) -> httpx.HTTPStatusError:
@@ -21,44 +25,47 @@ def _http_status_error(status: int) -> httpx.HTTPStatusError:
     return httpx.HTTPStatusError("boom", request=request, response=httpx.Response(status, request=request))
 
 
-def test_retries_transient_then_succeeds() -> None:
+async def test_retries_transient_then_succeeds() -> None:
     attempts = {"n": 0}
     slept: list[float] = []
 
-    def fetch() -> str:
+    async def fetch() -> str:
         attempts["n"] += 1
         if attempts["n"] < 3:
             raise _http_status_error(503)
         return "ok"
 
-    result = with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=slept.append)
+    async def record_sleep(seconds: float) -> None:
+        slept.append(seconds)
+
+    result = await with_retry_async(fetch, what="thing", is_transient=httpx_is_transient, sleep=record_sleep)
     assert result == "ok"
     assert attempts["n"] == 3
     # Exponential backoff between the two failed attempts: 0.5s, then 1.0s.
     assert slept == [0.5, 1.0]
 
 
-def test_gives_up_after_max_attempts_and_reraises_last() -> None:
+async def test_gives_up_after_max_attempts_and_reraises_last() -> None:
     attempts = {"n": 0}
 
-    def fetch() -> str:
+    async def fetch() -> str:
         attempts["n"] += 1
         raise _http_status_error(503)
 
     with pytest.raises(httpx.HTTPStatusError):
-        with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=lambda _: None)
+        await with_retry_async(fetch, what="thing", is_transient=httpx_is_transient, sleep=_noop_sleep)
     assert attempts["n"] == 3
 
 
-def test_non_transient_status_is_not_retried() -> None:
+async def test_non_transient_status_is_not_retried() -> None:
     attempts = {"n": 0}
 
-    def fetch() -> str:
+    async def fetch() -> str:
         attempts["n"] += 1
         raise _http_status_error(404)
 
     with pytest.raises(httpx.HTTPStatusError):
-        with_retry(fetch, what="thing", is_transient=httpx_is_transient, sleep=lambda _: None)
+        await with_retry_async(fetch, what="thing", is_transient=httpx_is_transient, sleep=_noop_sleep)
     # A 404 won't fix itself: fail immediately without burning the retry budget.
     assert attempts["n"] == 1
 
@@ -70,7 +77,7 @@ def test_httpx_is_transient_classification() -> None:
     assert httpx_is_transient(httpx.ConnectTimeout("slow"))
 
 
-def test_kalshi_client_recovers_from_flapping_503() -> None:
+async def test_kalshi_client_recovers_from_flapping_503() -> None:
     responses = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -79,8 +86,8 @@ def test_kalshi_client_recovers_from_flapping_503() -> None:
             return httpx.Response(503)
         return httpx.Response(200, json={"market": {"last_price_dollars": 0.37}})
 
-    client = KalshiClient(client=httpx.Client(transport=httpx.MockTransport(handler)), sleep=lambda _: None)
-    assert client.get_market("KXTEST").probability == 0.37
+    client = KalshiClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sleep=_noop_sleep)
+    assert (await client.get_market("KXTEST")).probability == 0.37
     assert responses["n"] == 3
 
 

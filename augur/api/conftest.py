@@ -26,7 +26,7 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
-from augur.api.server import ApiServerConfig, create_app
+from augur.api.server import ApiServerConfig, create_app, static_price_clients
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import ProviderConfig
@@ -283,7 +283,13 @@ def make_client(augur_config: Config) -> Iterator[MakeClient]:
 
         def _make(models: dict[str, Any]) -> TestClient:
             return stack.enter_context(
-                TestClient(create_app(ApiServerConfig(augur_config=augur_config, models=models, price_clients={})))
+                TestClient(
+                    create_app(
+                        ApiServerConfig(
+                            augur_config=augur_config, models=models, price_clients=static_price_clients({})
+                        )
+                    )
+                )
             )
 
         yield _make

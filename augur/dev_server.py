@@ -10,9 +10,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
-from augur.api.server import build_configured_server_arg_parser, create_app_from_augur_config, run_app
-from augur.calibration.default_clients import build_default_price_clients
-from augur.calibration.platform import Platform, PriceClient
+from augur.api.server import (
+    PriceClientsProvider,
+    build_configured_server_arg_parser,
+    create_app_from_augur_config,
+    run_app,
+)
+from augur.calibration.default_clients import default_price_clients
 from util.bazel.runfiles import get_required_path
 
 _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
@@ -54,9 +58,7 @@ def _mount_static_bundle(app: FastAPI, static_path: StaticPathResolver) -> None:
         return FileResponse(path, headers=no_store)
 
 
-def build_dev_app(
-    augur_config: Config, *, api_only: bool = False, price_clients: dict[Platform, PriceClient]
-) -> FastAPI:
+def build_dev_app(augur_config: Config, *, api_only: bool = False, price_clients: PriceClientsProvider) -> FastAPI:
     """The combined dev app (API routes plus, unless `api_only`, the static SPA bundle).
 
     `price_clients` is the live price source map for `/api/calibration/run`."""
@@ -73,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     ).parse_args(argv)
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
-    app = build_dev_app(augur_config, api_only=args.api_only, price_clients=build_default_price_clients())
+    app = build_dev_app(augur_config, api_only=args.api_only, price_clients=default_price_clients())
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

@@ -18,6 +18,7 @@ ready-to-paste ``public_market_cdf_anchors:`` block.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 from pathlib import Path
 
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 _MAX_CUMULATIVE_PROBABILITY = 0.999
 
 
-def derive_public_market_anchors(
+async def derive_public_market_anchors(
     catalog: MarketCatalog, *, price_client: ManifoldClient
 ) -> tuple[PublicMarketCdfAnchor, ...]:
     """Build a monotone going-public CDF from the catalog's live ``ipo_by_date`` markets.
@@ -60,7 +61,7 @@ def derive_public_market_anchors(
                 "dropping %s: deadline %s is at month %d < 1 (before sim start)", market.market_id, by_date, month
             )
             continue
-        prob = min(max(price_client.fetch_yes_probability(market.market_id), 0.0), _MAX_CUMULATIVE_PROBABILITY)
+        prob = min(max(await price_client.fetch_yes_probability(market.market_id), 0.0), _MAX_CUMULATIVE_PROBABILITY)
         if month in prob_by_month and prob <= prob_by_month[month]:
             logger.info(
                 "collapsing duplicate month %d for %s: keeping higher prob %.4f",
@@ -99,7 +100,7 @@ def _render_anchors_yaml(anchors: tuple[PublicMarketCdfAnchor, ...]) -> str:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
+async def _run(argv: list[str] | None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("catalog", type=Path, help="Path to a MarketCatalog YAML.")
@@ -108,11 +109,15 @@ def main(argv: list[str] | None = None) -> int:
     catalog = MarketCatalog.from_yaml(args.catalog)
     client = ManifoldClient()
     try:
-        anchors = derive_public_market_anchors(catalog, price_client=client)
+        anchors = await derive_public_market_anchors(catalog, price_client=client)
     finally:
-        client.close()
+        await client.aclose()
     print(_render_anchors_yaml(anchors))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_run(argv))
 
 
 if __name__ == "__main__":

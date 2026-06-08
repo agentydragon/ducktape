@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -38,7 +40,7 @@ from augur.budget.wire import (
 )
 from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.default_clients import build_default_price_clients
+from augur.calibration.default_clients import default_price_clients
 from augur.calibration.macro_anchors import resolve_anchors
 from augur.calibration.platform import Platform, PriceClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
@@ -73,14 +75,25 @@ class LoadedCalibrationCatalog:
     sample_sanity_spec: SampleSanitySpec | None = None
 
 
+PriceClientsProvider = AbstractAsyncContextManager[dict[Platform, PriceClient]]
+
+
+@asynccontextmanager
+async def static_price_clients(clients: dict[Platform, PriceClient]) -> AsyncIterator[dict[Platform, PriceClient]]:
+    """A no-lifecycle price-client provider over an already-built mapping (tests, product-only apps)."""
+    yield clients
+
+
 @dataclass(frozen=True)
 class ApiServerConfig:
     augur_config: Config
     models: dict[str, Sampler]
-    # Live prediction-market price sources for `/api/calibration/run` (per-market YES probs).
-    # Maps each Platform to its client. Reused across requests, so the TTL caches serve the
-    # calibration tab's rapid auto-refreshes.
-    price_clients: dict[Platform, PriceClient]
+    # Live prediction-market price sources for `/api/calibration/run` (per-market YES probs), as an
+    # async context manager entered once for the app's lifetime (server lifespan): it yields the
+    # `{Platform: client}` map and owns the one long-lived Valkey cache store + upstream clients,
+    # closing them on shutdown. Use `default_price_clients()` in production, `static_price_clients(...)`
+    # for already-built (hermetic) clients in tests.
+    price_clients: PriceClientsProvider
     # The deployment's calibration catalog parsed into a `MarketCatalog` at startup. None only
     # when the app is assembled directly without loading it (e.g. a product-only TestClient);
     # `/api/calibration/run` then 400s. `create_app_from_augur_config` always loads it.
@@ -115,7 +128,16 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         max_horizon_months=augur_config.max_horizon_months,
     )
 
-    app = FastAPI(title="Augur scenario API")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Enter the price-client provider once for the process: it builds the one long-lived Valkey
+        # store + upstream clients in the serving loop (so they're bound to it) and closes them on
+        # shutdown. `/api/calibration/run` reads them off `app.state`.
+        async with config.price_clients as price_clients:
+            app.state.price_clients = price_clients
+            yield
+
+    app = FastAPI(title="Augur scenario API", lifespan=lifespan)
     no_store = {"cache-control": "no-store"}
 
     def error(status_code: int, detail: Any) -> JSONResponse:
@@ -175,7 +197,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         return JSONResponse(content=value.model_dump(mode="json", exclude_none=True), headers=no_store)
 
     @app.post("/api/calibration/run", response_model=CalibrationRunResponse)
-    def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
+    async def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
         loaded = config.calibration_catalog
         if loaded is None:
             return error(400, "calibration catalog is not loaded for this server instance")
@@ -226,11 +248,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             rollout_count=request.rollouts,
             horizon_months=request.horizon_months,
         )
-        result = run_calibration(
+        result = await run_calibration(
             loaded.catalog,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            price_clients=config.price_clients,
+            price_clients=app.state.price_clients,
             bundle=bundle,
             level_paths=level_paths,
             inflation_history=anchors.inflation_history,
@@ -346,11 +368,12 @@ def _load_sample_sanity_spec(path: Path | None) -> SampleSanitySpec | None:
     return SampleSanitySpec.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Platform, PriceClient]) -> FastAPI:
+def create_app_from_augur_config(augur_config: Config, *, price_clients: PriceClientsProvider) -> FastAPI:
     """Build the app from a `Config`.
 
-    `price_clients` is the live prediction-market price source map for
-    `/api/calibration/run` (callers construct the appropriate clients)."""
+    `price_clients` is the live prediction-market price-source provider for `/api/calibration/run`,
+    entered once for the app's lifetime (server lifespan). Production passes `default_price_clients()`;
+    tests pass `static_price_clients(...)` over hermetic clients."""
     models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in augur_config.models.items()
     }
@@ -409,7 +432,7 @@ def build_configured_server_arg_parser(
 
 
 def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> int:
-    app = create_app_from_augur_config(augur_config, price_clients=build_default_price_clients())
+    app = create_app_from_augur_config(augur_config, price_clients=default_price_clients())
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

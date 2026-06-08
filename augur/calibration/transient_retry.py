@@ -17,12 +17,12 @@ flakiness entirely. Tracked in augur/TODO.md.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
-from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -41,16 +41,16 @@ def httpx_is_transient(exc: BaseException) -> bool:
     return isinstance(exc, httpx.TransportError)
 
 
-def with_retry[T](
-    fetch: Callable[[], T],
+async def with_retry_async[T](
+    fetch: Callable[[], Awaitable[T]],
     *,
     what: str,
     is_transient: Callable[[BaseException], bool],
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     backoff_base_seconds: float = DEFAULT_BACKOFF_BASE_SECONDS,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> T:
-    """Call ``fetch`` via tenacity, retrying with exponential backoff only failures for
+    """Await ``fetch`` via tenacity, retrying with exponential backoff only failures for
     which ``is_transient`` returns True; any other exception (and the final transient one,
     once the attempt budget is spent) propagates. ``what`` labels the resource in the log.
     """
@@ -65,7 +65,7 @@ def with_retry[T](
             exc,
         )
 
-    retrying = Retrying(
+    retrying = AsyncRetrying(
         retry=retry_if_exception(is_transient),
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=backoff_base_seconds, exp_base=2),
@@ -73,4 +73,11 @@ def with_retry[T](
         before_sleep=_log_retry,
         reraise=True,
     )
-    return retrying(fetch)
+
+    # tenacity only awaits the retried callable when it's a coroutine *function*; `fetch` is often a
+    # plain lambda returning a coroutine (so the client can bind args), which tenacity would call but
+    # not await. Wrap it in an `async def` so each attempt is awaited.
+    async def _attempt() -> T:
+        return await fetch()
+
+    return await retrying(_attempt)

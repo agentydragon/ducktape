@@ -38,7 +38,9 @@ def mock_manifold_client(
         )
 
     return ManifoldClient(
-        clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))
+        clock=clock,
+        cache_ttl_seconds=cache_ttl_seconds,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
 
 
@@ -62,7 +64,9 @@ def mock_kalshi_client(
         )
 
     return KalshiClient(
-        clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))
+        clock=clock,
+        cache_ttl_seconds=cache_ttl_seconds,
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
     )
 
 
@@ -72,7 +76,7 @@ class _StaticClient:
     def __init__(self, prices: Mapping[str, float]) -> None:
         self._prices = prices
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         return Market(
             id=market_id,
             url=f"https://test.example/{market_id}",
@@ -81,7 +85,7 @@ class _StaticClient:
             rules=f"Resolves per market {market_id}.",
         )
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         pass
 
 

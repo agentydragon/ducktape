@@ -19,7 +19,7 @@ from augur.api.config import AgentDefinition, CalibrationCatalogConfig, Config, 
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
-from augur.api.server import create_app_from_augur_config
+from augur.api.server import create_app_from_augur_config, static_price_clients
 from augur.api.wire import ActorRole, Property
 from augur.model.independent import IndependentProviderConfig
 
@@ -91,7 +91,8 @@ def main() -> None:
         print(
             json.dumps(
                 create_app_from_augur_config(
-                    _schema_export_config(properties_path, calibration_catalog_path), price_clients={}
+                    _schema_export_config(properties_path, calibration_catalog_path),
+                    price_clients=static_price_clients({}),
                 ).openapi(),
                 indent=2,
             )

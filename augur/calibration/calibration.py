@@ -19,6 +19,7 @@ hermetic mock clients.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 from collections import Counter
@@ -81,6 +82,11 @@ logger = logging.getLogger(__name__)
 # whole calibration run: httpx for the manifold + kalshi clients, PolymarketError for the
 # polymarket SDK (covers "id is invalid", rate limits, transport errors, timeouts).
 _LIVE_FETCH_ERRORS: tuple[type[BaseException], ...] = (httpx.HTTPError, PolymarketError)
+
+# Cap concurrent live market fetches so a large catalog can't open hundreds of simultaneous
+# upstream connections (and trip rate limits) on a cold cache. Warm-cache reads hit the shared
+# Valkey store and rarely reach the upstreams at all.
+_MAX_CONCURRENT_MARKET_FETCHES = 16
 
 
 def wilson_interval(yes: int, n: int) -> tuple[float, float]:
@@ -820,7 +826,7 @@ def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRo
     )
 
 
-def run_calibration(
+async def run_calibration(
     catalog: MarketCatalog,
     *,
     horizon_months: int,
@@ -859,25 +865,52 @@ def run_calibration(
         for issuer in sorted(catalog.referenced_issuers() & emitted_issuers)
     }
 
-    def _live(market_id: str, platform: Platform) -> Market | None:
+    fetch_slots = asyncio.Semaphore(_MAX_CONCURRENT_MARKET_FETCHES)
+
+    async def _live(market_id: str, platform: Platform) -> Market | None:
         # A single broken catalog row (bad market_id), a transient API hiccup, or a market the
         # platform priced as None (e.g. Kalshi `last_price_dollars: null`) must not 500 the whole
         # calibration endpoint -- log + drop just that row instead. Dropping None-probability
         # markets here keeps every downstream `require_probability()` call safe.
-        try:
-            market = price_clients[platform].get_market(market_id)
-        except _LIVE_FETCH_ERRORS:
-            logger.warning("dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True)
-            return None
+        async with fetch_slots:
+            try:
+                market = await price_clients[platform].get_market(market_id)
+            except _LIVE_FETCH_ERRORS:
+                logger.warning(
+                    "dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True
+                )
+                return None
         if market.probability is None:
             logger.warning("dropping calibration row: %s market %r returned no YES probability", platform, market_id)
             return None
         return market
 
+    # Every (platform, market_id) the catalog references, deduped (one market can back several rows),
+    # fetched concurrently once; the row builders below read from this resolved map.
+    needed: set[tuple[Platform, str]] = set()
+    needed.update((market.platform, market.market_id) for market in catalog.exact_markets())
+    needed.update((market.platform, market.market_id) for market in catalog.surfaced_markets())
+    needed.update(
+        (family.platform, bucket.market_id) for family in catalog.bucket_families for bucket in family.buckets
+    )
+    needed.update(
+        (family.platform, threshold.market_id)
+        for family in catalog.threshold_ladder_families
+        for threshold in family.thresholds
+    )
+    needed.update(
+        (family.platform, date_member.market_id)
+        for family in catalog.date_ladder_families
+        for date_member in family.dates
+    )
+    keys = list(needed)
+    fetched = await asyncio.gather(*(_live(market_id, platform) for platform, market_id in keys))
+    live_markets: dict[tuple[Platform, str], Market | None] = dict(zip(keys, fetched, strict=True))
+
     clean: list[CleanRow] = []
     surfaced: list[SurfacedRow] = []
     for market in catalog.exact_markets():
-        live = _live(market.market_id, market.platform)
+        live = live_markets[market.platform, market.market_id]
         if live is None:
             continue
         outcome = _exact_market_counts(
@@ -893,15 +926,14 @@ def run_calibration(
         else:
             counts, channel = outcome
             clean.append(_clean_row(market, counts, live, channel=channel))
-    surfaced.extend(
-        _surfaced_row(market, trajectories_by_issuer, live)
-        for market in catalog.surfaced_markets()
-        if (live := _live(market.market_id, market.platform)) is not None
-    )
+    for surfaced_market in catalog.surfaced_markets():
+        live = live_markets[surfaced_market.platform, surfaced_market.market_id]
+        if live is not None:
+            surfaced.append(_surfaced_row(surfaced_market, trajectories_by_issuer, live))
 
     categorical: list[CategoricalRow] = []
     for bucket_family in catalog.bucket_families:
-        prices = [_live(member.market_id, bucket_family.platform) for member in bucket_family.buckets]
+        prices = [live_markets[bucket_family.platform, bucket.market_id] for bucket in bucket_family.buckets]
         # A bucket that failed to fetch or had no probability makes the categorical ill-defined.
         if any(live is None for live in prices):
             logger.warning(
@@ -920,7 +952,9 @@ def run_calibration(
             )
         )
     for threshold_family in catalog.threshold_ladder_families:
-        prices = [_live(member.market_id, threshold_family.platform) for member in threshold_family.thresholds]
+        prices = [
+            live_markets[threshold_family.platform, threshold.market_id] for threshold in threshold_family.thresholds
+        ]
         if any(live is None for live in prices):
             logger.warning(
                 "dropping threshold ladder family %r: a threshold failed to fetch or had no price",
@@ -939,7 +973,7 @@ def run_calibration(
             )
         )
     for date_family in catalog.date_ladder_families:
-        prices = [_live(member.market_id, date_family.platform) for member in date_family.dates]
+        prices = [live_markets[date_family.platform, date_member.market_id] for date_member in date_family.dates]
         if any(live is None for live in prices):
             logger.warning(
                 "dropping date ladder family %r: a date failed to fetch or had no price", date_family.family_id

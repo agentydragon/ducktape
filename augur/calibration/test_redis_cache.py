@@ -9,16 +9,12 @@ from augur.calibration.platform import Market, Platform
 from augur.calibration.redis_cache import MarketSnapshot, RedisCachingPriceClient, market_cache_config_from_env
 
 
-class _FakeStoreContext:
+class _FakeStore:
+    """Minimal in-memory ``AsyncKeyValue`` for the read-through cache, already 'open'."""
+
     def __init__(self, data: dict[str, dict[str, Any]], ttls: dict[str, int]) -> None:
         self._data = data
         self._ttls = ttls
-
-    async def __aenter__(self) -> _FakeStoreContext:
-        return self
-
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-        return None
 
     async def get(self, key: str) -> dict[str, Any] | None:
         return self._data.get(key)
@@ -36,18 +32,18 @@ class _FakeUpstream:
         self.calls: list[str] = []
         self.closed = False
 
-    def get_market(self, market_id: str) -> Market:
+    async def get_market(self, market_id: str) -> Market:
         self.calls.append(market_id)
         if self.error is not None:
             raise self.error
         assert self.market is not None
         return self.market
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         self.closed = True
 
 
-def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
+async def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
     data = {
         "manifold:m1": _snapshot(
             market_id="m1",
@@ -59,11 +55,13 @@ def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
     upstream = _FakeUpstream(error=RuntimeError("should not fetch"))
     client = _client(upstream=upstream, data=data, ttls=ttls, now=20.0, ttl_seconds=30.0)
 
-    assert client.get_market("m1") == Market(id="m1", url="https://example.com/m1", probability=0.4, title="cached")
+    assert await client.get_market("m1") == Market(
+        id="m1", url="https://example.com/m1", probability=0.4, title="cached"
+    )
     assert upstream.calls == []
 
 
-def test_stale_cache_refreshes_from_upstream_and_updates_cache() -> None:
+async def test_stale_cache_refreshes_from_upstream_and_updates_cache() -> None:
     data = {
         "manifold:m1": _snapshot(
             market_id="m1", fetched_at=10.0, market=Market(id="m1", url="https://example.com/stale", probability=0.4)
@@ -74,39 +72,39 @@ def test_stale_cache_refreshes_from_upstream_and_updates_cache() -> None:
     upstream = _FakeUpstream(market=upstream_market)
     client = _client(upstream=upstream, data=data, ttls=ttls, now=50.0, ttl_seconds=30.0, retention_seconds=120)
 
-    assert client.get_market("m1") == upstream_market
+    assert await client.get_market("m1") == upstream_market
     assert upstream.calls == ["m1"]
     assert MarketSnapshot.model_validate(data["manifold:m1"]).market["url"] == "https://example.com/fresh"
     assert ttls == {"manifold:m1": 120}
 
 
-def test_stale_cache_survives_upstream_failure() -> None:
+async def test_stale_cache_survives_upstream_failure() -> None:
     cached_market = Market(id="m1", url="https://example.com/stale", probability=0.4)
     data = {"manifold:m1": _snapshot(market_id="m1", fetched_at=10.0, market=cached_market)}
     ttls: dict[str, int] = {}
     upstream = _FakeUpstream(error=RuntimeError("upstream down"))
     client = _client(upstream=upstream, data=data, ttls=ttls, now=50.0, ttl_seconds=30.0)
 
-    assert client.get_market("m1") == cached_market
+    assert await client.get_market("m1") == cached_market
     assert upstream.calls == ["m1"]
 
 
-def test_cache_miss_propagates_upstream_failure() -> None:
+async def test_cache_miss_propagates_upstream_failure() -> None:
     upstream = _FakeUpstream(error=RuntimeError("upstream down"))
     client = _client(upstream=upstream, data={}, ttls={}, now=50.0)
 
     with pytest.raises(RuntimeError, match="upstream down"):
-        client.get_market("m1")
+        await client.get_market("m1")
 
 
-def test_invalid_cache_payload_is_ignored() -> None:
+async def test_invalid_cache_payload_is_ignored() -> None:
     data = {"manifold:m1": {"schema_version": 1, "platform": "kalshi", "market_id": "m1"}}
     ttls: dict[str, int] = {}
     upstream_market = Market(id="m1", url="https://example.com/fresh", probability=0.7)
     upstream = _FakeUpstream(market=upstream_market)
     client = _client(upstream=upstream, data=data, ttls=ttls, now=20.0)
 
-    assert client.get_market("m1") == upstream_market
+    assert await client.get_market("m1") == upstream_market
     assert upstream.calls == ["m1"]
 
 
@@ -141,7 +139,7 @@ def _client(
     return RedisCachingPriceClient(
         platform=Platform.MANIFOLD,
         upstream=upstream,
-        store_factory=lambda: _FakeStoreContext(data, ttls),
+        store=_FakeStore(data, ttls),
         ttl_seconds=ttl_seconds,
         retention_seconds=retention_seconds,
         clock=lambda: now,

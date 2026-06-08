@@ -46,6 +46,12 @@ class Market:
 
     id: str
     url: str
+    # TODO(naming): markets don't expose a "probability" — they expose a last trade / bid / ask, and
+    # `probability` here is really the last-trade price read as an implied probability (e.g. Kalshi
+    # `last_price_dollars`, Manifold `probability`, Polymarket yes.price). The actual probability comes
+    # from the separate price->probability smoothing step. Rename this (and `require_probability`) to
+    # something honest like `last_trade_price` / `implied_probability` so it doesn't read as a
+    # calibrated probability. Cross-cutting across the platform clients + calibration; see augur/TODO.md.
     probability: float | None
     volume: float | None = None
     volume_unit: str | None = None
@@ -62,5 +68,5 @@ class Market:
 
 
 class PriceClient(Protocol):
-    def get_market(self, market_id: str) -> Market: ...
-    def close(self) -> None: ...
+    async def get_market(self, market_id: str) -> Market: ...
+    async def aclose(self) -> None: ...
