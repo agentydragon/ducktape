@@ -37,5 +37,9 @@ py_library(
     name = "loop",
     srcs = ["loop.py"],
     visibility = ["//props:__subpackages__"],
-    deps = ["@pypi//agent_framework_core"],
+    deps = [
+        ":client",
+        "//props/db:database",
+        "@pypi//agent_framework_core",
+    ],
 )

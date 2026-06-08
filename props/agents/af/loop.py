@@ -14,26 +14,29 @@ import logging
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from agent_framework import Agent, BaseChatClient, MiddlewareTermination, MiddlewareTypes
+from agent_framework import Agent, MiddlewareTermination, MiddlewareTypes
+
+from props.agents.af.client import build_chat_client_from_env
+from props.db.database import Database
 
 logger = logging.getLogger(__name__)
 
 
 def make_agent(
-    client: BaseChatClient,
+    db: Database,
     *,
     instructions: str,
     tools: list[Any],
     middleware: Sequence[MiddlewareTypes],
 ) -> Agent:
-    """Construct a props MAF agent.
+    """Build a props MAF agent for the current run (client selected by the model's api_shape).
 
     `store=False` runs the Responses-shape client statelessly (full history each turn rather than
     server-side `previous_response_id`), which is what the props-llm-proxy supports; it's a harmless
     no-op for the chat-completions shape.
     """
     return Agent(
-        client=client,
+        client=build_chat_client_from_env(db),
         instructions=instructions,
         tools=tools,
         middleware=middleware,

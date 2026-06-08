@@ -41,7 +41,7 @@ def notification_chat_middleware(queue: list[GradingPendingNotification]) -> Cha
             notifications = list(queue)
             queue.clear()
             logger.info("Delivering %d grading notification(s)", len(notifications))
-            context.messages.append(Message("user", [_format_notifications(notifications)]))
+            context.messages = [*context.messages, Message("user", [_format_notifications(notifications)])]
         await call_next()
 
     return middleware

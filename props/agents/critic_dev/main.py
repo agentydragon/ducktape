@@ -26,7 +26,6 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
-from props.agents.af.client import build_chat_client_from_env
 from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tools
@@ -335,7 +334,7 @@ async def run_agent_loop(
         middleware.append(improve_termination_middleware(agent_run_id, type_config, db, captured))
 
     agent = make_agent(
-        build_chat_client_from_env(db),
+        db,
         instructions=system_prompt,
         tools=create_tools(state, http_client, db),
         middleware=middleware,

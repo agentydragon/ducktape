@@ -61,7 +61,6 @@ py_library(
     deps = [
         ":loop",
         "//props/agents:runtime",
-        "//props/agents/af:client",
         "//props/agents/af:loop",
         "//props/agents/af:middleware",
         "//props/agents/critic_dev/recipes:examples_and_scopes",

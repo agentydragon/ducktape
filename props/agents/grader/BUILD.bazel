@@ -59,7 +59,6 @@ py_library(
         "//mcp_infra/exec:subprocess",
         "//openai_utils:errors",
         "//props/agents:runtime",
-        "//props/agents/af:client",
         "//props/agents/af:loop",
         "//props/agents/af:middleware",
         "//props/agents/af:tools",
