@@ -1,0 +1,239 @@
+"""Tax compile output: per-profile + per-(profile, jurisdiction) link tables, plus the
+year-end TaxLiability slots. Pairs with `codec/tax.py`.
+
+`TaxCompileOutput` and `TaxLiabilityCompileOutput` live together because the year-end
+tax-liability slots are derived purely from the tax link table — same domain. The §1250
+federal cap rate, the §121 primary-residence exclusion lookup, and the per-scenario
+capital-gain-agent index also live here since they're tax-routing concerns."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import numpy as np
+from numpy.typing import NDArray
+
+from finance.augur.sim.compiler.helpers import StringTable, slot
+from finance.augur.sim.fixed_point import usd_to_cents
+from finance.augur.sim.jurisdictions import Jurisdiction
+from finance.augur.sim.scenario import FilingStatus, Scenario
+
+SECTION_1250_FEDERAL_CAP_RATE = 0.25
+SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
+
+# §121 primary-residence exclusion cap (post-recapture LTCG that can be excluded from federal
+# capital gains on a sale of a qualifying residence). Single filer: $250k. The lookup table
+# is the single source of truth; new `FilingStatus` variants must add an entry here or
+# `section_121_exclusion_for` raises NotImplementedError — which keeps "I forgot this
+# branch" from silently falling through to a wrong tax number.
+_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS: dict[FilingStatus, float] = {FilingStatus.SINGLE: 250_000.0}
+_OPEN_ENDED_BRACKET_UPPER_CENTS = np.iinfo(np.int64).max
+
+
+def section_121_exclusion_for(filing_status: FilingStatus) -> float:
+    if filing_status not in _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS:
+        raise NotImplementedError(
+            f"§121 exclusion cap is not implemented for filing_status={filing_status!r}; "
+            f"add a {filing_status} entry to _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS "
+            f"and audit every other place that branches on filing status (jurisdiction "
+            f"bracket lookups, standard-deduction lookups, MID, SALT cap, NIIT thresholds)."
+        )
+    return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
+
+
+def _bracket_upper_to_cents(upper_usd: float) -> np.int64:
+    if math.isinf(upper_usd):
+        return np.int64(_OPEN_ENDED_BRACKET_UPPER_CENTS)
+    return usd_to_cents(upper_usd)
+
+
+@dataclass(frozen=True)
+class TaxCompileOutput:
+    """Tax-profile + tax-link arrays produced by `compile_tax`. Each row of
+    `profile_*` is one TaxProfile; each row of `link_*` is one (profile, jurisdiction)
+    pair. `*_upper/*_rate/*_count` are rectangular bracket tables — `count[link]` is
+    the active prefix length for that link's brackets (zero-padded beyond).
+
+    Notable fields:
+
+    - `profile_section_121_exclusion`: §121 primary-residence exclusion cap, USD.
+      Looked up by filing status at compile time
+      (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired today
+      ($250k). Engine reads on every property sale to compute the exclusion ceiling.
+    - `link_section_1250_rate`: §1250 unrecaptured-depreciation rate cap. Positive ⇒
+      federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
+      is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
+
+    profile_agent: NDArray[np.int64]
+    profile_payment_slot: NDArray[np.int64]
+    profile_payment_account: NDArray[np.int64]
+    profile_authority_agent: NDArray[np.int64]
+    profile_authority_account: NDArray[np.int64]
+    profile_prior_year_tax: NDArray[np.int64]
+    profile_section_121_exclusion: NDArray[np.int64]
+    link_profile: NDArray[np.int64]
+    link_jurisdiction: NDArray[np.int64]
+    link_standard_deduction: NDArray[np.int64]
+    link_has_ltcg: NDArray[np.int64]
+    link_section_1250_rate: NDArray[np.float64]
+    link_ordinary_upper: NDArray[np.int64]
+    link_ordinary_rate: NDArray[np.float64]
+    link_ordinary_count: NDArray[np.int64]
+    link_ltcg_upper: NDArray[np.int64]
+    link_ltcg_rate: NDArray[np.float64]
+    link_ltcg_count: NDArray[np.int64]
+
+
+def compile_tax(
+    scenario: Scenario,
+    strings: StringTable,
+    account_slot_by_key: dict[tuple[str, str], int],
+    jurisdictions: dict[str, Jurisdiction],
+) -> TaxCompileOutput:
+    profile_agent: list[int] = []
+    payment_slot: list[int] = []
+    payment_account: list[int] = []
+    authority_agent: list[int] = []
+    authority_account: list[int] = []
+    prior_year_tax: list[np.int64] = []
+    link_profile: list[int] = []
+    link_jurisdiction: list[int] = []
+    standard_deduction: list[np.int64] = []
+    has_ltcg: list[int] = []
+    section_1250_rate: list[float] = []
+    ordinary_brackets: list[list[tuple[np.int64, float]]] = []
+    ltcg_brackets: list[list[tuple[np.int64, float]]] = []
+    section_121_exclusion: list[np.int64] = []
+
+    max_ord = 1
+    max_ltcg = 1
+    for profile_index, profile in enumerate(scenario.tax_profiles):
+        profile_agent.append(strings.require(profile.agent_id))
+        payment_slot.append(slot(account_slot_by_key, profile.agent_id, profile.payment_account_id))
+        payment_account.append(strings.require(profile.payment_account_id))
+        authority_agent.append(strings.require(profile.tax_authority_agent_id))
+        authority_account.append(strings.require(profile.tax_authority_account_id))
+        prior_year_tax.append(usd_to_cents(profile.prior_year_tax_usd))
+        section_121_exclusion.append(usd_to_cents(section_121_exclusion_for(profile.filing_status)))
+        for jurisdiction_id in profile.jurisdiction_ids:
+            jurisdiction = jurisdictions[jurisdiction_id]
+            ordinary = [
+                (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                for bracket in jurisdiction.ordinary_income_brackets[profile.filing_status]
+            ]
+            ltcg = (
+                [
+                    (_bracket_upper_to_cents(bracket.upper_usd), float(bracket.rate))
+                    for bracket in jurisdiction.ltcg_brackets[profile.filing_status]
+                ]
+                if jurisdiction.ltcg_brackets is not None
+                else []
+            )
+            max_ord = max(max_ord, len(ordinary))
+            max_ltcg = max(max_ltcg, len(ltcg))
+            link_profile.append(profile_index)
+            link_jurisdiction.append(strings.require(jurisdiction_id))
+            standard_deduction.append(usd_to_cents(jurisdiction.standard_deduction[profile.filing_status]))
+            has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
+            # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
+            # unrecaptured-depreciation as ordinary income (CA, etc.).
+            section_1250_rate.append(
+                SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+            )
+            ordinary_brackets.append(ordinary)
+            ltcg_brackets.append(ltcg)
+
+    link_count = len(link_profile)
+    ordinary_upper = np.zeros((max(1, link_count), max_ord), dtype=np.int64)
+    ordinary_rate = np.zeros((max(1, link_count), max_ord), dtype=np.float64)
+    ordinary_count = np.zeros(max(1, link_count), dtype=np.int64)
+    ltcg_upper = np.zeros((max(1, link_count), max_ltcg), dtype=np.int64)
+    ltcg_rate = np.zeros((max(1, link_count), max_ltcg), dtype=np.float64)
+    ltcg_count = np.zeros(max(1, link_count), dtype=np.int64)
+    for idx, ordinary in enumerate(ordinary_brackets):
+        ordinary_count[idx] = len(ordinary)
+        for bracket_idx, (upper, rate) in enumerate(ordinary):
+            ordinary_upper[idx, bracket_idx] = upper
+            ordinary_rate[idx, bracket_idx] = rate
+    for idx, ltcg in enumerate(ltcg_brackets):
+        ltcg_count[idx] = len(ltcg)
+        for bracket_idx, (upper, rate) in enumerate(ltcg):
+            ltcg_upper[idx, bracket_idx] = upper
+            ltcg_rate[idx, bracket_idx] = rate
+
+    return TaxCompileOutput(
+        profile_agent=np.asarray(profile_agent, dtype=np.int64),
+        profile_payment_slot=np.asarray(payment_slot, dtype=np.int64),
+        profile_payment_account=np.asarray(payment_account, dtype=np.int64),
+        profile_authority_agent=np.asarray(authority_agent, dtype=np.int64),
+        profile_authority_account=np.asarray(authority_account, dtype=np.int64),
+        profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.int64),
+        profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.int64),
+        link_profile=np.asarray(link_profile, dtype=np.int64),
+        link_jurisdiction=np.asarray(link_jurisdiction, dtype=np.int64),
+        link_standard_deduction=np.asarray(standard_deduction, dtype=np.int64),
+        link_has_ltcg=np.asarray(has_ltcg, dtype=np.int64),
+        link_section_1250_rate=np.asarray(section_1250_rate, dtype=np.float64),
+        link_ordinary_upper=ordinary_upper,
+        link_ordinary_rate=ordinary_rate,
+        link_ordinary_count=ordinary_count,
+        link_ltcg_upper=ltcg_upper,
+        link_ltcg_rate=ltcg_rate,
+        link_ltcg_count=ltcg_count,
+    )
+
+
+def compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tuple[np.ndarray, np.ndarray]:
+    agent_ids: list[str] = []
+    seen: set[str] = set()
+
+    def add(agent_id: str) -> None:
+        if agent_id in seen:
+            return
+        seen.add(agent_id)
+        agent_ids.append(agent_id)
+
+    for profile in scenario.tax_profiles:
+        add(profile.agent_id)
+    for lot in scenario.initial_lots:
+        add(lot.agent_id)
+    for sale in scenario.scheduled_asset_sales:
+        add(sale.agent_id)
+    for policy in scenario.liquidity_policies:
+        add(policy.agent_id)
+
+    index_by_agent = {agent_id: idx for idx, agent_id in enumerate(agent_ids)}
+    return (
+        np.asarray([strings.require(agent_id) for agent_id in agent_ids], dtype=np.int64),
+        np.asarray([index_by_agent[profile.agent_id] for profile in scenario.tax_profiles], dtype=np.int64),
+    )
+
+
+@dataclass(frozen=True)
+class TaxLiabilityCompileOutput:
+    """Per-tax-liability arrays produced by `compile_tax_liability_slots`. One row per
+    (link, year-end-month) pair where a tax liability accrues. Engine looks up the
+    profile + link + payment month to schedule estimated-tax/true-up obligations."""
+
+    profile_index: NDArray[np.int64]
+    link_index: NDArray[np.int64]
+    year_end_month: NDArray[np.int64]
+
+
+def compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiabilityCompileOutput:
+    profile_indices: list[int] = []
+    link_indices: list[int] = []
+    end_months: list[int] = []
+    for month in range(horizon):
+        if month % 12 != 11:
+            continue
+        for link_index, profile_index in enumerate(tax.link_profile.tolist()):
+            profile_indices.append(profile_index)
+            link_indices.append(link_index)
+            end_months.append(month)
+    return TaxLiabilityCompileOutput(
+        profile_index=np.asarray(profile_indices, dtype=np.int64),
+        link_index=np.asarray(link_indices, dtype=np.int64),
+        year_end_month=np.asarray(end_months, dtype=np.int64),
+    )

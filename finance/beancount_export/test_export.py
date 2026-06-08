@@ -15,7 +15,7 @@ from beancount import loader
 from beancount.core import data
 from beancount.core.amount import Amount
 
-from augur.budget.schema import BucketDef, BucketKind, TransferDirection
+from finance.augur.budget.schema import BucketDef, BucketKind, TransferDirection
 from finance.beancount_export.export import ClassifiedTxn, contra_account, default_account, render_ledger
 
 

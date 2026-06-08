@@ -1,0 +1,18 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "scenarios",
+    srcs = ["scenarios.py"],
+    deps = [
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "_density",
+    srcs = ["_density.py"],
+    deps = ["@pypi//numpy"],
+)

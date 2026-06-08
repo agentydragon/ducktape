@@ -26,8 +26,8 @@ import yaml
 from beancount import loader
 from beancount.parser import printer
 
-from augur.budget.schema import BudgetConfig
-from augur.budget.sql_read_model import ClassifiedRow, read_all_classified
+from finance.augur.budget.schema import BudgetConfig
+from finance.augur.budget.sql_read_model import ClassifiedRow, read_all_classified
 from finance.beancount_export.export import ClassifiedTxn, render_ledger
 from plaid_utils.schema import async_session_factory
 

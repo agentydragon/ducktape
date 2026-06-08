@@ -1,0 +1,26 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Public exogenous evidence blobs used by offline training and evaluation.
+# Refreshed per the recipes in SOURCES.md.
+filegroup(
+    name = "evidence_source_files",
+    srcs = glob([
+        "*.csv",
+        "*.json",
+        "*.md",
+    ]),
+)
+
+py_library(
+    name = "fetch_real_history_lib",
+    srcs = ["fetch_real_history.py"],
+    deps = ["@pypi//tenacity"],
+)
+
+py_binary(
+    name = "fetch_real_history",
+    main_module = "finance.augur.data.fetch_real_history",
+    deps = [":fetch_real_history_lib"],
+)

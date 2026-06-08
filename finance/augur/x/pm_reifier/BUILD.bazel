@@ -1,0 +1,16 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+# Throwaway spike (augur/x): only the API-key-free, pure-compute baseline is wired into Bazel so it
+# can run via bazelisk with the session truststore (no cert errors). The LLM kernel scripts hit z.ai
+# and stay uncommitted to Bazel.
+py_library(
+    name = "backtest_statespace_lib",
+    srcs = ["backtest_statespace.py"],
+    deps = ["//finance/augur/data:fetch_real_history_lib"],
+)
+
+py_binary(
+    name = "backtest_statespace",
+    main_module = "finance.augur.x.pm_reifier.backtest_statespace",
+    deps = [":backtest_statespace_lib"],
+)

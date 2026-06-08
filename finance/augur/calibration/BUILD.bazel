@@ -1,0 +1,293 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "example_openai_catalog",
+    srcs = ["example_openai_catalog.yaml"],
+)
+
+py_library(
+    name = "platform",
+    srcs = ["platform.py"],
+    deps = [],
+)
+
+py_library(
+    name = "resolvers",
+    srcs = ["resolvers.py"],
+    deps = [
+        ":platform",
+        "//finance/augur:dates",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        ":platform",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "transient_retry",
+    srcs = ["transient_retry.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "manifold",
+    srcs = ["manifold.py"],
+    deps = [
+        ":platform",
+        ":transient_retry",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "polymarket",
+    srcs = ["polymarket.py"],
+    deps = [
+        ":platform",
+        ":transient_retry",
+        "@pypi//polymarket_client",
+    ],
+)
+
+py_library(
+    name = "kalshi",
+    srcs = ["kalshi.py"],
+    deps = [
+        ":platform",
+        ":transient_retry",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "default_clients",
+    srcs = ["default_clients.py"],
+    deps = [
+        ":kalshi",
+        ":manifold",
+        ":platform",
+        ":polymarket",
+        ":redis_cache",
+    ],
+)
+
+py_library(
+    name = "redis_cache",
+    srcs = ["redis_cache.py"],
+    deps = [
+        ":platform",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+        "@pypi//valkey_glide",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":kalshi",
+        ":manifold",
+        ":platform",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "calibration",
+    srcs = ["calibration.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":platform",
+        ":resolvers",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "@pypi//httpx",
+        "@pypi//numpy",
+        "@pypi//polymarket_client",
+        "@pypi//pydantic",
+        "@pypi//statsmodels",
+    ],
+)
+
+py_library(
+    name = "macro_anchors",
+    srcs = ["macro_anchors.py"],
+    deps = [
+        ":catalog",
+        "//finance/augur/fit:evidence_data",
+    ],
+)
+
+py_library(
+    name = "ipo_prior",
+    srcs = ["ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":resolvers",
+        "//finance/augur/model:private_equity_risk",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "derive_ipo_prior",
+    main_module = "finance.augur.calibration.ipo_prior",
+    deps = [":ipo_prior"],
+)
+
+py_binary(
+    name = "calibration_report",
+    srcs = ["calibration_report.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":default_clients",
+        ":macro_anchors",
+        "//finance/augur/api:config",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
+        "//finance/augur/model:series",
+        "@pypi//tabulate",
+    ],
+)
+
+py_test(
+    name = "test_resolvers",
+    srcs = ["test_resolvers.py"],
+    deps = [
+        ":platform",
+        ":resolvers",
+        "//:conftest",
+        "//finance/augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog",
+    srcs = ["test_catalog.py"],
+    data = ["example_openai_catalog.yaml"],
+    deps = [
+        ":catalog",
+        ":platform",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_calibration",
+    srcs = ["test_calibration.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":testing",
+        "//:conftest",
+        "//finance/augur/model:exogenous",
+        "//finance/augur/model:series",
+        "//finance/augur/model:testing",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_macro_anchors",
+    srcs = ["test_macro_anchors.py"],
+    deps = [
+        ":catalog",
+        ":macro_anchors",
+        ":platform",
+        "//:conftest",
+        "//finance/augur/fit:evidence_data",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_manifold",
+    srcs = ["test_manifold.py"],
+    deps = [
+        ":manifold",
+        ":testing",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_redis_cache",
+    srcs = ["test_redis_cache.py"],
+    deps = [
+        ":platform",
+        ":redis_cache",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_transient_retry",
+    srcs = ["test_transient_retry.py"],
+    deps = [
+        ":kalshi",
+        ":transient_retry",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ipo_prior",
+    srcs = ["test_ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":ipo_prior",
+        ":manifold",
+        ":testing",
+        "//:conftest",
+        "//finance/augur/model:private_equity_risk",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

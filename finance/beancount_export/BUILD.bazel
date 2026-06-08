@@ -9,7 +9,7 @@ py_library(
     name = "export",
     srcs = ["export.py"],
     deps = [
-        "//augur/budget:schema",
+        "//finance/augur/budget:schema",
         "@pypi//beancount",
     ],
 )
@@ -19,8 +19,8 @@ py_library(
     srcs = ["runner.py"],
     deps = [
         ":export",
-        "//augur/budget:schema",
-        "//augur/budget:sql_read_model",
+        "//finance/augur/budget:schema",
+        "//finance/augur/budget:sql_read_model",
         "//plaid_utils:schema",
         "@pypi//beancount",
         "@pypi//pyyaml",
@@ -40,7 +40,7 @@ py_test(
     srcs = ["test_export.py"],
     deps = [
         ":export",
-        "//augur/budget:schema",
+        "//finance/augur/budget:schema",
         "@pypi//beancount",
         "@pypi//pytest_bazel",
     ],

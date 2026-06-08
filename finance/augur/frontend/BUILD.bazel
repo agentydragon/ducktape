@@ -1,0 +1,522 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("@npm_ducktape//:eslint/package_json.bzl", eslint_bin = "bin")
+load("@npm_ducktape//:typescript/package_json.bzl", tsc_bin = "bin")
+load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+package(default_visibility = ["//visibility:public"])
+
+# -- Frontend bundle -----------------------------------------------------------
+#
+# Generic augur React app + its tailwind-driven stylesheet. `:bundle_base`
+# contains everything nginx needs to serve the app; `:image` packages it on
+# top of `nginx_unprivileged`. Deployments that need extra static assets
+# (e.g. gaffer-private's property photos) can overlay `:image` or mount
+# additional files at runtime via a volume.
+
+# -- Pure JS helpers (no React) -------------------------------------------------
+
+js_library(
+    name = "input_helpers",
+    srcs = ["input_helpers.ts"],
+    deps = [
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:frame",
+    ],
+)
+
+js_library(
+    name = "client",
+    srcs = ["client.ts"],
+    deps = [
+        "//finance/augur/frontend/lib:casing",
+        "//finance/augur/frontend/lib:schema_zod",
+    ],
+)
+
+js_library(
+    name = "data_helpers",
+    srcs = ["data_helpers.ts"],
+    deps = [
+        ":input_helpers",
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:frame",
+    ],
+)
+
+js_library(
+    name = "hooks",
+    srcs = ["hooks.ts"],
+    deps = [
+        ":data_helpers",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "sanity_bands",
+    srcs = ["sanity_bands.ts"],
+    deps = ["//finance/augur/frontend/lib:format"],
+)
+
+# -- React components -----------------------------------------------------------
+
+js_library(
+    name = "header",
+    srcs = ["header.tsx"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "skeleton",
+    srcs = ["skeleton.tsx"],
+    deps = [
+        ":header",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "events_panel",
+    srcs = ["events_panel.tsx"],
+    deps = [
+        ":data_helpers",
+        ":scenario_tabs",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "fan_chart",
+    srcs = ["fan_chart.tsx"],
+    deps = [
+        ":data_helpers",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "terminal_distribution",
+    srcs = ["terminal_distribution.tsx"],
+    deps = [
+        ":data_helpers",
+        ":hooks",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:frame",
+    ],
+)
+
+js_library(
+    name = "metric_table",
+    srcs = ["metric_table.tsx"],
+    deps = [
+        ":data_helpers",
+        ":hooks",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "scenario_tabs",
+    srcs = ["scenario_tabs.tsx"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "scenario_editor",
+    srcs = ["scenario_editor.tsx"],
+    deps = [
+        ":forms",
+        ":input_helpers",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:controls",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "forms",
+    srcs = ["forms.tsx"],
+    deps = [
+        ":data_helpers",
+        ":header",
+        ":input_helpers",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:controls",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "calibration",
+    srcs = ["calibration.tsx"],
+    deps = [
+        ":client",
+        ":data_helpers",
+        ":fan_chart",
+        ":hooks",
+        ":input_helpers",
+        ":sanity_bands",
+        ":skeleton",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:toast",
+    ],
+)
+
+# Pure planning-adjustment model (hidden / override) + URL encoding + adjusted-total math for the
+# budget tab (no React/DOM; see `:budget_adjustments_test`).
+js_library(
+    name = "budget_adjustments",
+    srcs = ["budget_adjustments.ts"],
+)
+
+js_library(
+    name = "budget",
+    srcs = ["budget.tsx"],
+    deps = [
+        ":budget_adjustments",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:toast",
+    ],
+)
+
+js_library(
+    name = "product",
+    srcs = ["product.tsx"],
+    deps = [
+        ":client",
+        ":data_helpers",
+        ":events_panel",
+        ":fan_chart",
+        ":header",
+        ":hooks",
+        ":input_helpers",
+        ":metric_table",
+        ":scenario_editor",
+        ":scenario_tabs",
+        ":skeleton",
+        ":terminal_distribution",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:toast",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = ["app.tsx"],
+    deps = [
+        ":budget",
+        ":calibration",
+        ":client",
+        ":header",
+        ":hooks",
+        ":input_helpers",
+        ":product",
+        ":skeleton",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/react",
+    ],
+)
+
+# -- Bundle entry point ---------------------------------------------------------
+
+js_library(
+    name = "main_lib",
+    srcs = ["main.tsx"],
+    deps = [
+        ":app",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+esbuild(
+    name = "main_bundle",
+    config = {
+        "jsx": "automatic",
+    },
+    entry_point = "main.tsx",
+    format = "esm",
+    output = "dist/main.js",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":main_lib"],
+)
+
+# Tailwind v4 scans `@source`-declared files for class names. We concatenate
+# every .jsx/.js source whose classes we want to keep into a single text file
+# the stylesheet references.
+filegroup(
+    name = "tailwind_content_srcs",
+    srcs = [
+        "app.tsx",
+        "budget.tsx",
+        "calibration.tsx",
+        "client.ts",
+        "data_helpers.ts",
+        "events_panel.tsx",
+        "fan_chart.tsx",
+        "forms.tsx",
+        "header.tsx",
+        "hooks.ts",
+        "index.html",
+        "input_helpers.ts",
+        "main.tsx",
+        "metric_table.tsx",
+        "product.tsx",
+        "sanity_bands.ts",
+        "scenario_editor.tsx",
+        "scenario_tabs.tsx",
+        "skeleton.tsx",
+        "terminal_distribution.tsx",
+        "//finance/augur/frontend/lib:casing",
+        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:controls",
+        "//finance/augur/frontend/lib:format",
+        "//finance/augur/frontend/lib:frame",
+    ],
+)
+
+genrule(
+    name = "tailwind_content_index",
+    srcs = [":tailwind_content_srcs"],
+    outs = ["tailwind_content.txt"],
+    cmd = "cat $(SRCS) > $@",
+)
+
+tailwindcss_bin.tailwindcss_binary(
+    name = "tailwind_cli",
+    data = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@mantine/notifications",
+        "//:node_modules/@tailwindcss/cli",
+        # `@import "tailwindcss"` in styles.src.css resolves to this package.
+        "//:node_modules/tailwindcss",
+    ],
+)
+
+js_run_binary(
+    name = "styles_css",
+    srcs = [
+        "styles.src.css",
+        ":tailwind_content_index",
+    ],
+    outs = ["dist/styles.css"],
+    args = [
+        "--input",
+        "styles.src.css",
+        "--output",
+        "dist/styles.css",
+        "--minify",
+    ],
+    chdir = package_name(),
+    tool = ":tailwind_cli",
+)
+
+copy_file(
+    name = "bundle_index_html",
+    src = "index.html",
+    out = "dist/index.html",
+)
+
+copy_file(
+    name = "bundle_favicon",
+    src = "favicon.svg",
+    out = "dist/favicon.svg",
+)
+
+filegroup(
+    name = "bundle_base",
+    srcs = [
+        ":bundle_favicon",
+        ":bundle_index_html",
+        ":main_bundle",
+        ":styles_css",
+    ],
+)
+
+# -- OCI image -----------------------------------------------------------------
+#
+# Static-assets sidecar: `nginx_unprivileged` serving the React bundle from
+# `/usr/share/nginx/html`. The nginx config itself is mounted into the pod
+# at runtime via a ConfigMap (see gaffer-private's k8s/augur/nginx.conf).
+
+copy_to_directory(
+    name = "frontend_files",
+    srcs = [":bundle_base"],
+    out = "usr/share/nginx/html",
+    root_paths = ["augur/frontend/dist"],
+)
+
+pkg_tar(
+    name = "frontend_tar",
+    srcs = [":frontend_files"],
+    package_dir = "/usr/share/nginx",
+)
+
+oci_image(
+    name = "image",
+    base = "@nginx_unprivileged_linux_amd64",
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "augur-frontend",
+    },
+    tars = [":frontend_tar"],
+)
+
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["augur-frontend:dev"],
+)
+
+build_test(
+    name = "image_build_test",
+    targets = [
+        ":image",
+        ":image.digest",
+    ],
+)
+
+# -- Type-check + unit tests ----------------------------------------------------
+
+# Full TypeScript type-check over the app (the hard correctness gate). `tsc --noEmit`
+# resolves free identifiers and prop shapes that esbuild bundling silently ignores
+# (e.g. a component referencing an undestructured prop).
+tsc_bin.tsc_test(
+    name = "tsc_test",
+    args = [
+        "--noEmit",
+        "-p",
+        "tsconfig.json",
+    ],
+    chdir = package_name(),
+    data = [
+        "budget_adjustments.test.ts",
+        "format.test.ts",
+        "input_helpers.test.ts",
+        "sanity_bands.test.ts",
+        "tsconfig.json",
+        ":budget_adjustments",
+        ":main_lib",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
+    tags = ["lint"],
+)
+
+# Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
+# Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware
+# rules need the full TS program (built from tsconfig.json), which only a
+# whole-package sandbox provides. Mirrors tsc_test's inputs. See P3 in
+# plans/eslint_tightening.md.
+eslint_bin.eslint_test(
+    name = "eslint_typed_test",
+    args = [
+        "--no-config-lookup",
+        "--config",
+        "eslint.typed.config.js",
+        ".",
+    ],
+    chdir = package_name(),
+    data = [
+        "budget_adjustments.test.ts",
+        "eslint.typed.config.js",
+        "format.test.ts",
+        "input_helpers.test.ts",
+        "sanity_bands.test.ts",
+        "tsconfig.json",
+        ":budget_adjustments",
+        ":main_lib",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
+    tags = ["lint"],
+)
+
+vitest_bin.vitest_test(
+    name = "sanity_bands_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "sanity_bands.test.ts",
+        "vitest.config.ts",
+        ":sanity_bands",
+        "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "budget_adjustments_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "budget_adjustments.test.ts",
+        "vitest.config.ts",
+        ":budget_adjustments",
+        "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "input_helpers_test",
+    args = ["run"],
+    chdir = package_name(),
+    data = [
+        "input_helpers.test.ts",
+        "vitest.config.ts",
+        ":input_helpers",
+        "//:node_modules",
+    ],
+)
+
+vitest_bin.vitest_test(
+    name = "format_test",
+    args = [
+        "run",
+        "format.test.ts",
+    ],
+    chdir = package_name(),
+    data = [
+        "format.test.ts",
+        "vitest.config.ts",
+        "//:node_modules",
+        "//finance/augur/frontend/lib:format",
+    ],
+)
+
+filegroup(
+    name = "visual_golden_snapshots",
+    testonly = True,
+    srcs = glob(
+        ["__screenshots__/*.png"],
+        allow_empty = True,
+    ),
+)

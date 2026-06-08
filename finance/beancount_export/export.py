@@ -34,7 +34,7 @@ from beancount.core import data
 from beancount.core.amount import Amount
 from beancount.parser import printer
 
-from augur.budget.schema import BucketDef, BucketKind
+from finance.augur.budget.schema import BucketDef, BucketKind
 
 _CENTS = Decimal("0.01")
 _GENERATED = "<augur-budget-exporter>"

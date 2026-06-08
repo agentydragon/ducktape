@@ -67,11 +67,11 @@ jobs:
           # Test-gated images: push only if their tests pass.
           - { image: "//airlock:image", image_name: airlock, test_target: "//airlock/..." }
           - { image: "//airlock/auth_proxy:image", image_name: auth-proxy, test_target: "//airlock/auth_proxy/..." }
-          - { image: "//augur/api:image", image_name: augur, test_target: "//augur/api/..." }
+          - { image: "//finance/augur/api:image", image_name: augur, test_target: "//finance/augur/api/..." }
           - {
-              image: "//augur/frontend:image",
+              image: "//finance/augur/frontend:image",
               image_name: augur-frontend,
-              test_target: "//augur/frontend:image_build_test",
+              test_target: "//finance/augur/frontend:image_build_test",
             }
           - {
               image: "//homeassistant/proxy:image",
