@@ -42,11 +42,17 @@ def direct_tool(fn: Callable[..., Any]) -> FunctionTool:
     if not (inspect.isclass(args_model) and issubclass(args_model, BaseModel)):
         raise TypeError(f"direct_tool expects a single Pydantic-model parameter; {name} takes {args_model!r}")
 
+    # Pass the JSON schema (not the model) so MAF type-checks the model's raw JSON args against it.
+    # Validating into the Pydantic model here (rather than letting MAF do it) avoids MAF coercing
+    # JSON-native fields to Python types (e.g. a UUID string → uuid.UUID) and then rejecting them
+    # against the string schema — which breaks every tool with a UUID/datetime/etc. field.
+    schema = args_model.model_json_schema()
+
     async def call_with_model(**fields: Any) -> Any:
-        return await _maybe_await(fn(args_model(**fields)))
+        return await _maybe_await(fn(args_model.model_validate(fields)))
 
     call_with_model.__name__ = name
-    return FunctionTool(func=call_with_model, name=name, description=description, input_model=args_model)
+    return FunctionTool(func=call_with_model, name=name, description=description, input_model=schema)
 
 
 def direct_tools(*fns: Callable[..., Any]) -> list[FunctionTool]:
