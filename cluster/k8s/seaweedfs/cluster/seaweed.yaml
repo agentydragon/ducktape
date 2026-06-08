@@ -135,9 +135,12 @@ spec:
     configSecret:
       name: seaweedfs-s3-config
       key: seaweedfs_s3_config.json
-    # Roll the s3 deployment whenever seaweedfs-s3-config changes —
-    # ESO assembles that Secret from per-tenant identities/*.sops.yaml,
-    # and `weed s3` only reads the config file at startup.
+    # `weed s3` only reads seaweedfs-s3-config at startup, so it must roll when ESO
+    # reassembles that Secret (tenant added/rotated). NOTE: this annotation lands on
+    # the *pod template*, not the Deployment's own metadata, and Reloader only reads
+    # the workload-level annotation — so it is INERT here. The actual roll comes from
+    # Reloader's cluster-wide `autoReloadAll: true` (see cluster/k8s/reloader/). Kept
+    # for intent/future-proofing if the operator ever sets Deployment annotations.
     annotations:
       reloader.stakater.com/auto: "true"
     metricsPort: 9327
