@@ -9,17 +9,17 @@ of force-netting, and surfaces lumpy one-offs separately.
 
 ## Architecture
 
-| Layer               | What it does                                                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from augur YAML |
+| Layer               | What it does                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `schema.py`         | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + the condition DSL and rule kinds, loaded from augur YAML                                          |
 | `sql_read_model.py` | Reads Plaid transactions from Postgres, compiles the rules to a first-match-wins SQL CASE, classifies (direction-gated) + applies overrides, aggregates monthly totals, returns drilldowns |
-| `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                      |
-| `wire.py`           | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                    |
+| `service.py`        | Orchestrates request windows, database session reuse, CSV export, and wire types                                                                                                           |
+| `wire.py`           | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                                                                         |
 
 ## What lives in ducktape vs gaffer-private
 
 **ducktape (public):** The framework — schemas, the condition DSL + rule kinds,
-the SQL read model, the API endpoints, and the frontend tab. No rule *content*
+the SQL read model, the API endpoints, and the frontend tab. No rule _content_
 ships in the framework; every rule lives in the deployment's config.
 
 **gaffer-private (private):** The actual `budget:` config block in the

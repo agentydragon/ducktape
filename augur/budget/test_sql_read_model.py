@@ -501,10 +501,7 @@ async def test_match_rule_all_of_combines_merchant_and_amount(
             MatchRule(
                 bucket_id="custom",
                 condition=AllOfCondition(
-                    conditions=(
-                        MerchantSubstringCondition(pattern="Grocery"),
-                        AmountCondition(min=500.0),
-                    )
+                    conditions=(MerchantSubstringCondition(pattern="Grocery"), AmountCondition(min=500.0))
                 ),
             ),
         )

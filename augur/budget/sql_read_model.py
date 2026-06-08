@@ -299,9 +299,7 @@ def _budget_query(
 ) -> tuple[Any, dict[str, object]]:
     """Build an executable statement (classified-tx CTE + `tail`) and its bind params."""
     matched_case, rule_params = _compile_rules_case(config)
-    cte = _CLASSIFIED_TX_CTE_TEMPLATE.format(
-        account_filter=_account_filter_sql(account_ids), matched_case=matched_case
-    )
+    cte = _CLASSIFIED_TX_CTE_TEMPLATE.format(account_filter=_account_filter_sql(account_ids), matched_case=matched_case)
     params: dict[str, object] = {
         "bucket_defs_json": _bucket_defs_json(config),
         "overrides_json": _overrides_json(config),
