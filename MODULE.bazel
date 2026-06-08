@@ -323,7 +323,15 @@ apt.install(
     lock = "//gnome/test_image:apt.lock.json",
     manifest = "//gnome/test_image:apt.yaml",
 )
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_e2e", "trixie_jwt_rotation")
+
+# Budget exporter image: git + ca-certificates on debian:trixie-slim so the
+# export_ledger CronJob can clone/commit/push the Beancount ledger repo.
+apt.install(
+    name = "trixie_budget_exporter",
+    lock = "//finance/beancount_export:trixie_budget_exporter.lock.json",
+    manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
+)
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

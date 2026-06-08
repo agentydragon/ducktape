@@ -119,6 +119,11 @@ jobs:
               image_name: plaid-mcp-sync,
               test_target: "//plaid_utils/...",
             }
+          - {
+              image: "//finance/beancount_export:image",
+              image_name: budget-exporter,
+              test_target: "//finance/beancount_export/...",
+            }
           - { image: "//x/study_casino:image", image_name: study-casino, test_target: "//x/study_casino/..." }
           # Untested images: always-push if content changed. Explicit
           # `test_target: ""` so the `matrix.test_target != ''` check on

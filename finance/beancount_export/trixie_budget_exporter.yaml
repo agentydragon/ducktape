@@ -1,0 +1,21 @@
+# Deb packages for the budget exporter image.
+# `git` (+ ca-certificates for HTTPS to Forgejo) on debian:trixie-slim, so the
+# `export_ledger sync` command can clone/commit/push the ledger repo. The Python
+# interpreter + app come from the rules_py image layers, not from apt.
+#
+# Regenerate the lock file after any change:
+#   bazel run @trixie_budget_exporter//:lock
+version: 1
+
+sources:
+  - channel: trixie main
+    url: https://snapshot.debian.org/archive/debian/20260301T000000Z
+  - channel: trixie-security main
+    url: https://snapshot.debian.org/archive/debian-security/20260301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  - "ca-certificates"
+  - "git"
