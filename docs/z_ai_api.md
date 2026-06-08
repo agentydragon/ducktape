@@ -123,11 +123,22 @@ Empirical notes for the coding endpoint (`glm-4.6`, measured 2026-06-05):
     [function-calling docs](https://docs.z.ai/guides/capabilities/function-calling)
     are examples-only and say nothing about schema-feature support; the single
     explicit schema constraint they state is `tool_choice` "only supports auto".
-  - **Recipe**: represent a discriminated union as a single concrete object
-    (carry the superset of fields, keep `kind` as an `enum`, enforce the
-    per-`kind` required fields server-side) or as flat top-level params — never
-    `anyOf`/`oneOf`. Both working shapes are canaried live in
-    `agent_core/test_zai_chat_adapter_live.py`.
+  - **The bug is chat-completions-shape-specific.** The same `anyOf`/`oneOf`
+    union, sent to z.ai's **Anthropic Messages** endpoint
+    (`/api/anthropic/v1/messages`) with the schema as the tool `input_schema`,
+    comes back as a proper nested object (3/3 for both `anyOf` and `oneOf`,
+    measured 2026-06-07). The Anthropic wire format requires `tool_use.input` to
+    be a JSON object, so z.ai's Anthropic adapter parses GLM's XML tool call back
+    into a structured object instead of leaving the raw string. So routing
+    glm-4.6 through the Anthropic shape avoids the bug without flattening any
+    schema. Canaried live in `agent_core/test_zai_chat_adapter_live.py`
+    (`test_zai_anthropic_shape_union_tool_param_returned_as_object_live`).
+  - **Recipe**: either (a) route glm-4.6 through the Anthropic Messages shape and
+    keep union schemas as-is, or (b) on chat-completions, represent a
+    discriminated union as a single concrete object (carry the superset of
+    fields, keep `kind` as an `enum`, enforce the per-`kind` required fields
+    server-side) or as flat top-level params — never `anyOf`/`oneOf`. All working
+    shapes are canaried live in `agent_core/test_zai_chat_adapter_live.py`.
 - Forced named tool choice in the OpenAI object form is rejected:
   `{"type": "function", "function": {"name": "..."}}` returns `400` with
   `{"error":{"code":"1210","message":"Invalid API parameter, please check the documentation."}}`.

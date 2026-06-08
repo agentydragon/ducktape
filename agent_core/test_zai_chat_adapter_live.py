@@ -5,6 +5,7 @@ import os
 
 import pytest
 import pytest_bazel
+from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from agent_core.model import AgentModelRequest, ChatCompletionsAgentModel
@@ -12,6 +13,8 @@ from openai_utils.api_shape import LLMApiShape
 from openai_utils.model import FunctionCallItem, FunctionToolParam, UserMessage
 
 _ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
+# z.ai also exposes an Anthropic Messages-shaped endpoint; the SDK posts to {base_url}/v1/messages.
+_ZAI_ANTHROPIC_BASE_URL = "https://api.z.ai/api/anthropic"
 
 
 async def _sample_tool_call_arguments(*, parameters: dict, strict: bool, user_text: str) -> dict:
@@ -175,6 +178,59 @@ async def test_zai_union_tool_param_returned_as_object_live(combinator: str) -> 
         user_text=_START_CRITIC_USER_TEXT,
     )
     assert isinstance(args["example"], dict), f"glm-4.6 stringified the {combinator} union: {args['example']!r}"
+
+
+async def _sample_anthropic_tool_input(*, example_schema: dict, user_text: str) -> dict:
+    """Call z.ai's Anthropic Messages endpoint with a start_critic tool; return tool_use.input.
+
+    The Anthropic wire format carries tool inputs as a structured object (tool_use.input), not a
+    stringified arguments blob — so it sidesteps glm-4.6's chat-completions union-stringification bug.
+    """
+    api_key = os.environ.get("ZAI_API_KEY")
+    assert api_key, "ZAI_API_KEY must be set for the live z.ai tool-schema tests"
+
+    client = AsyncAnthropic(base_url=_ZAI_ANTHROPIC_BASE_URL, api_key=api_key)
+    try:
+        message = await client.messages.create(
+            model=os.environ.get("ZAI_MODEL", "glm-4.6"),
+            max_tokens=1024,
+            messages=[{"role": "user", "content": user_text}],
+            tools=[
+                {
+                    "name": "start_critic",
+                    "description": "Start a critic run on a single example.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"definition_id": {"type": "string"}, "example": example_schema},
+                        "required": ["definition_id", "example"],
+                    },
+                }
+            ],
+        )
+    finally:
+        await client.close()
+
+    tool_uses = [block for block in message.content if block.type == "tool_use"]
+    assert len(tool_uses) == 1
+    return tool_uses[0].input
+
+
+@pytest.mark.parametrize("combinator", ["anyOf", "oneOf"])
+async def test_zai_anthropic_shape_union_tool_param_returned_as_object_live(combinator: str) -> None:
+    """z.ai's Anthropic Messages shape returns anyOf/oneOf union object params as nested objects.
+
+    This is the escape hatch for glm-4.6's chat-completions union-stringification bug (the xfail
+    canary above): the very same union that stringifies over chat-completions comes through as a
+    structured object over the Anthropic wire format, because tool_use.input must be a JSON object.
+    """
+    tool_input = await _sample_anthropic_tool_input(
+        example_schema=_example_union(combinator), user_text=_START_CRITIC_USER_TEXT
+    )
+    example = tool_input["example"]
+    assert isinstance(example, dict), f"Anthropic shape stringified the {combinator} union: {example!r}"
+    assert example["kind"] == "file_set"
+    assert example["snapshot_slug"] == "crush/2025-08-30-internal_db"
+    assert example["files_hash"] == "c27fe50118b25dbc185f00315006c37b"
 
 
 async def test_zai_chat_adapter_tool_call_live() -> None:

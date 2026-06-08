@@ -105,11 +105,30 @@ GLM-4.7's Notion `update-page` `allOf`/`anyOf` schema; open/unresolved as of 202
 [function-calling docs](https://docs.z.ai/guides/capabilities/function-calling) are examples-only and
 document no schema-feature constraints beyond `tool_choice` "only supports auto".
 
+### The bug is chat-completions-shape-specific
+
+z.ai also exposes an **Anthropic Messages** endpoint (`/api/anthropic/v1/messages`). Sending the
+**same** `anyOf`/`oneOf` union as the tool `input_schema` there returns a proper nested object (3/3
+for both combinators, measured 2026-06-07) — because the Anthropic wire format requires
+`tool_use.input` to be a JSON object, so z.ai's Anthropic adapter parses GLM's XML tool call back into
+a structured object instead of leaving the raw string. So routing glm-4.6 through the Anthropic shape
+avoids the bug entirely, without flattening any schema. Canaried live in
+`agent_core/test_zai_chat_adapter_live.py`
+(`test_zai_anthropic_shape_union_tool_param_returned_as_object_live` passes).
+
 ### Decision
 
-For z.ai tool inputs, represent a discriminated union as a **single concrete object** schema (carry
-the superset of fields, keep `kind` as an `enum` over the variants, and enforce the per-`kind`
-required fields server-side after validation) — or as flat top-level params. Never `anyOf`/`oneOf`.
-Both working shapes are canaried live in `agent_core/test_zai_chat_adapter_live.py`
-(`test_zai_object_tool_param_returned_as_object_live` passes; the `anyOf` union variant is `xfail`).
-See also <../../docs/z_ai_api.md> "Tool Use / Function Calling".
+Two options for unblocking glm-4.6 tool inputs:
+
+1. **Route glm-4.6 through the Anthropic Messages shape** — unions (and the existing `ExampleSpec`
+   discriminated union) work as-is, no schema changes. Needs an Anthropic-shaped model adapter /
+   litellm route (props currently wires glm-4.6 as `api_shape: chat_completions`).
+2. **Stay on chat-completions** and represent a discriminated union as a **single concrete object**
+   schema (carry the superset of fields, keep `kind` as an `enum` over the variants, and enforce the
+   per-`kind` required fields server-side after validation) — or as flat top-level params. Never
+   `anyOf`/`oneOf`.
+
+All shapes above are canaried live in `agent_core/test_zai_chat_adapter_live.py`
+(`test_zai_object_tool_param_returned_as_object_live` passes; the chat-completions `anyOf`/`oneOf`
+variant is `xfail`; the Anthropic-shape union variant passes). See also
+<../../docs/z_ai_api.md> "Tool Use / Function Calling".

@@ -289,6 +289,7 @@ py_test(
         ":model",
         "//openai_utils:api_shape",
         "//openai_utils:model",
+        "@pypi//anthropic",
         "@pypi//openai",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
