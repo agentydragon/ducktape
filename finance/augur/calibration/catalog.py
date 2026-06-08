@@ -14,7 +14,7 @@ resolver's contract -- resolution lives in ``resolvers.py`` and scoring in
 
 The catalog stores NEITHER live prices NOR human-readable market text (the
 ``question``/title and verbatim resolution criterion): all three are fetched live at
-scoring time via the platform clients (``Market.probability`` / ``.title`` / ``.rules``),
+scoring time via the platform clients (``Market.quote`` / ``.title`` / ``.rules``),
 so they can never drift from the platform. The catalog is the stable mapping + provenance
 (IDs, ``notes``) only.
 """

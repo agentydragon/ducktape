@@ -16,10 +16,13 @@ from key_value.aio.stores.valkey import ValkeyStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from finance.augur.calibration.platform import Market, Platform, PriceClient
+from finance.augur.calibration.quote import BookQuote, PoolQuote, Quote
 
 _LOGGER = logging.getLogger(__name__)
 
-_CACHE_COLLECTION = "augur-market-cache-v1"
+# v2: snapshots store the structured `quote` (book/pool), not the legacy single `probability`.
+_CACHE_COLLECTION = "augur-market-cache-v2"
+_CACHE_SCHEMA_VERSION = 2
 _DEFAULT_REDIS_PORT = 6379
 _DEFAULT_TTL_SECONDS = 12 * 60 * 60
 _DEFAULT_RETENTION_SECONDS = 48 * 60 * 60
@@ -48,7 +51,7 @@ class MarketSnapshot(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(default=1)
+    schema_version: int = Field(default=_CACHE_SCHEMA_VERSION)
     platform: Platform
     market_id: str
     fetched_at_epoch_seconds: float
@@ -195,7 +198,11 @@ class RedisCachingPriceClient:
         except ValidationError:
             _LOGGER.warning("ignoring invalid cached %s market %r", self._platform.value, market_id, exc_info=True)
             return None
-        if snapshot.schema_version != 1 or snapshot.platform != self._platform or snapshot.market_id != market_id:
+        if (
+            snapshot.schema_version != _CACHE_SCHEMA_VERSION
+            or snapshot.platform != self._platform
+            or snapshot.market_id != market_id
+        ):
             _LOGGER.warning("ignoring mismatched cached %s market %r", self._platform.value, market_id)
             return None
         return snapshot
@@ -222,7 +229,7 @@ def _market_to_dict(market: Market) -> dict[str, Any]:
     return {
         "id": market.id,
         "url": market.url,
-        "probability": market.probability,
+        "quote": _quote_to_dict(market.quote),
         "volume": market.volume,
         "volume_unit": market.volume_unit,
         "title": market.title,
@@ -230,8 +237,52 @@ def _market_to_dict(market: Market) -> dict[str, Any]:
     }
 
 
+def _quote_to_dict(quote: Quote) -> dict[str, Any] | None:
+    match quote:
+        case BookQuote():
+            return {
+                "kind": "book",
+                "bid": quote.bid,
+                "ask": quote.ask,
+                "bid_size": quote.bid_size,
+                "ask_size": quote.ask_size,
+                "last_trade": quote.last_trade,
+            }
+        case PoolQuote(price=price):
+            return {"kind": "pool", "price": price}
+        case None:
+            return None
+
+
+def _quote_from_dict(data: dict[str, Any] | None) -> Quote:
+    if data is None:
+        return None
+    match data["kind"]:
+        case "book":
+            return BookQuote(
+                bid=data["bid"],
+                ask=data["ask"],
+                bid_size=data["bid_size"],
+                ask_size=data["ask_size"],
+                last_trade=data["last_trade"],
+            )
+        case "pool":
+            return PoolQuote(price=data["price"])
+        case other:
+            raise ValueError(f"unknown cached quote kind {other!r}")
+
+
 def _market_from_snapshot(snapshot: MarketSnapshot) -> Market:
-    return Market(**snapshot.market)
+    data = snapshot.market
+    return Market(
+        id=data["id"],
+        url=data["url"],
+        quote=_quote_from_dict(data["quote"]),
+        volume=data.get("volume"),
+        volume_unit=data.get("volume_unit"),
+        title=data.get("title"),
+        rules=data.get("rules"),
+    )
 
 
 def _parse_db(path: str) -> int:

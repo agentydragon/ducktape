@@ -53,18 +53,19 @@ Remaining:
 
 - [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
       (today's `mark_fan` is PE-only).
-- [ ] **Prediction-market quote quality.** Calibration currently consumes each
-      platform client's single `Market.probability` value, which for Kalshi is
-      the last-trade price. Track bid and ask separately in the platform model,
-      surface stale/wide/no-quote states, and decide whether scoring should use
-      midpoint, last, or a conservative interval per platform/market family.
-  - [ ] **Honest naming.** Markets expose last trade / bid / ask, not a
-        "probability". `Market.probability` / `require_probability` is really the
-        last-trade price read as an implied probability; the calibrated value comes
-        from the separate price→probability smoothing step. Rename to something like
-        `last_trade_price` / `implied_probability` so it doesn't read as a calibrated
-        probability (cross-cutting across the platform clients + calibration). See the
-        TODO at `augur/calibration/platform.py:Market.probability`.
+- [ ] **Prediction-market quote quality.** _Mostly landed:_ `Market` now carries a structured
+      `quote` (`calibration/quote.py`: `BookQuote` bid/ask/size/last, `PoolQuote` for AMMs);
+      `implied_probability` uses the Stoikov micro-price (mid-else-vol-backed-last-else-None, no
+      fake `0`/`0.5`); ladders aggregate via confidence-weighted isotonic regression + discrete
+      Breeden–Litzenberger differencing (`calibration._fit_ladder_curve`). RCA + before/after in
+      `augur/debug/cpi_yoy_market_line_spikiness.md`. **Remaining:**
+  - [ ] **Surface quote quality in the UI.** Show stale / wide-spread / one-sided / no-quote
+        states (and per-rung confidence) in `frontend/calibration.tsx`; today low-confidence rungs
+        are silently down-weighted in the fit but the user can't see which.
+  - [ ] **Polymarket depth for micro-price.** The gamma response carries best bid/ask but no size,
+        so Polymarket degenerates to the plain midpoint; fetch the CLOB order book for true depth.
+  - [x] **Honest naming.** `Market.probability` / `require_probability` renamed to
+        `Market.quote` / `require_implied_probability`; markets expose quotes, not probabilities.
 - [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
       rollups of per-market KL once the weighting policy is decided.
 

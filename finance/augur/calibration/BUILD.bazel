@@ -8,9 +8,15 @@ filegroup(
 )
 
 py_library(
+    name = "quote",
+    srcs = ["quote.py"],
+    deps = [],
+)
+
+py_library(
     name = "platform",
     srcs = ["platform.py"],
-    deps = [],
+    deps = [":quote"],
 )
 
 py_library(
@@ -50,6 +56,7 @@ py_library(
     srcs = ["manifold.py"],
     deps = [
         ":platform",
+        ":quote",
         ":transient_retry",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -61,6 +68,7 @@ py_library(
     srcs = ["polymarket.py"],
     deps = [
         ":platform",
+        ":quote",
         ":transient_retry",
         "@pypi//polymarket_client",
     ],
@@ -71,6 +79,7 @@ py_library(
     srcs = ["kalshi.py"],
     deps = [
         ":platform",
+        ":quote",
         ":transient_retry",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -94,6 +103,7 @@ py_library(
     srcs = ["redis_cache.py"],
     deps = [
         ":platform",
+        ":quote",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
         "@pypi//valkey_glide",
@@ -108,6 +118,7 @@ py_library(
         ":kalshi",
         ":manifold",
         ":platform",
+        ":quote",
         "@pypi//httpx",
     ],
 )
@@ -119,6 +130,7 @@ py_library(
         ":catalog",
         ":manifold",
         ":platform",
+        ":quote",
         ":resolvers",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
@@ -177,6 +189,17 @@ py_binary(
 )
 
 py_test(
+    name = "test_quote",
+    srcs = ["test_quote.py"],
+    deps = [
+        ":quote",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_resolvers",
     srcs = ["test_resolvers.py"],
     deps = [
@@ -210,6 +233,7 @@ py_test(
     deps = [
         ":calibration",
         ":catalog",
+        ":quote",
         ":testing",
         "//:conftest",
         "//finance/augur/model:exogenous",
@@ -240,6 +264,7 @@ py_test(
     srcs = ["test_manifold.py"],
     deps = [
         ":manifold",
+        ":quote",
         ":testing",
         "//:conftest",
         "@pypi//httpx",
@@ -254,6 +279,7 @@ py_test(
     srcs = ["test_redis_cache.py"],
     deps = [
         ":platform",
+        ":quote",
         ":redis_cache",
         "//:conftest",
         "@pypi//pytest",

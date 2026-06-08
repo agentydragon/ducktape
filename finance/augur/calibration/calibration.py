@@ -50,6 +50,7 @@ from finance.augur.calibration.catalog import (
     ThresholdLadderFamily,
 )
 from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
+from finance.augur.calibration.quote import implied_probability, quote_confidence
 from finance.augur.calibration.resolvers import (
     Resolution,
     ResolutionCounts,
@@ -251,7 +252,7 @@ class MarkFan(BaseModel):
 
 
 def _clean_row(market: ExactMarket, counts: ResolutionCounts, live: Market, *, channel: str | None) -> CleanRow:
-    p_market = live.require_probability()
+    p_market = live.require_implied_probability()
     p_model = counts.p_model
     return CleanRow(
         market_id=market.market_id,
@@ -423,22 +424,28 @@ def _threshold_ladder_row(
     family: ThresholdLadderFamily,
     *,
     level_paths: Mapping[LevelSeriesKey, npt.NDArray[np.float64]],
-    live_prices: list[float],
+    live_markets: list[Market | None],
     as_of: date,
     horizon_months: int,
     inflation_history: npt.NDArray[np.float64] | None,
-) -> CategoricalRow:
+) -> CategoricalRow | None:
     """Convert cumulative threshold contracts into one categorical distribution row.
 
     `family.thresholds` are cumulative contracts, not buckets: for `direction=above`,
-    each live price is a survival point `P(value > threshold)`; for `direction=below`,
-    each is a CDF point `P(value < threshold)`. Fit the points to a monotone curve and
-    difference adjacent thresholds into bucket probabilities.
+    each rung is a survival point `P(value > threshold)`; for `direction=below`,
+    each is a CDF point `P(value < threshold)`. Each priced rung contributes its implied
+    probability (mid/micro-price) with a confidence weight; a confidence-weighted monotone fit
+    interpolates across unpriced rungs, and differencing adjacent thresholds recovers the bucket
+    probabilities (the discrete Breeden-Litzenberger identity). Returns None when fewer than two
+    rungs are priced (no curve to fit).
     """
-    ordered = sorted(zip(family.thresholds, live_prices, strict=True), key=lambda item: item[0].threshold)
-    thresholds = [member.threshold for member, _price in ordered]
-    raw_curve = [price for _member, price in ordered]
-    fitted_curve = _monotone_probabilities(raw_curve, increasing=family.direction is Direction.BELOW)
+    ordered = sorted(zip(family.thresholds, live_markets, strict=True), key=lambda item: item[0].threshold)
+    thresholds = [member.threshold for member, _market in ordered]
+    fitted_curve = _fit_ladder_curve(
+        thresholds, [market for _member, market in ordered], increasing=family.direction is Direction.BELOW
+    )
+    if fitted_curve is None:
+        return None
     derived_buckets = _threshold_ladder_buckets(family, thresholds=thresholds, curve=fitted_curve)
     lows = [bucket.low for bucket in derived_buckets]
     highs = [bucket.high for bucket in derived_buckets]
@@ -488,13 +495,22 @@ def _threshold_ladder_row(
 
 
 def _date_ladder_row(
-    family: DateLadderFamily, *, trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]], live_prices: list[float]
-) -> CategoricalRow:
-    """Convert cumulative event-by-date contracts into one timing distribution row."""
-    ordered = sorted(zip(family.dates, live_prices, strict=True), key=lambda item: item[0].by_date)
-    by_dates = [member.by_date for member, _price in ordered]
-    raw_curve = [price for _member, price in ordered]
-    fitted_curve = _monotone_probabilities(raw_curve, increasing=True)
+    family: DateLadderFamily,
+    *,
+    trajectories_by_issuer: Mapping[str, list[RolloutTrajectory]],
+    live_markets: list[Market | None],
+) -> CategoricalRow | None:
+    """Convert cumulative event-by-date contracts into one timing distribution row.
+
+    Returns None when fewer than two dates are priced (no curve to fit).
+    """
+    ordered = sorted(zip(family.dates, live_markets, strict=True), key=lambda item: item[0].by_date)
+    by_dates = [member.by_date for member, _market in ordered]
+    fitted_curve = _fit_ladder_curve(
+        [float(by_date.toordinal()) for by_date in by_dates], [market for _member, market in ordered], increasing=True
+    )
+    if fitted_curve is None:
+        return None
     derived_buckets = _date_ladder_buckets(family, by_dates=by_dates, curve=fitted_curve)
     trajectories = trajectories_by_issuer.get(family.issuer)
     model_counts = None if trajectories is None else ipo_by_date_bucket_counts(trajectories, by_dates=by_dates)
@@ -523,14 +539,62 @@ def _date_ladder_row(
     )
 
 
-def _monotone_probabilities(values: list[float], *, increasing: bool) -> list[float]:
-    """Least-squares monotone fit for probabilities using the pool-adjacent-violators algorithm."""
+def _fit_ladder_curve(positions: list[float], markets: list[Market | None], *, increasing: bool) -> list[float] | None:
+    """Fit a monotone cumulative curve to a ladder's priced rungs and evaluate it at every rung.
+
+    `positions` are the rungs' numeric coordinates (thresholds, or date ordinals) in ascending
+    order, aligned with `markets`. Each priced rung contributes its implied probability with a
+    confidence weight; weighted isotonic regression yields a monotone fit through the priced rungs,
+    which is then linearly interpolated (flat past the ends) at every rung's position so the
+    configured bucket structure is preserved even where a rung was unpriced. Returns None when
+    fewer than two rungs are priced.
+    """
+    observed: list[tuple[float, float, float]] = []  # (position, implied probability, weight)
+    for position, market in zip(positions, markets, strict=True):
+        if market is None:
+            continue
+        probability = implied_probability(market.quote, volume=market.volume)
+        if probability is None:
+            continue
+        observed.append((position, probability, quote_confidence(market.quote, volume=market.volume)))
+    if len(observed) < 2:
+        return None
+    fitted_observed = _monotone_probabilities(
+        [probability for _position, probability, _weight in observed],
+        [weight for _position, _weight, weight in observed],
+        increasing=increasing,
+    )
+    observed_positions = [position for position, _probability, _weight in observed]
+    return [_interpolate(position, observed_positions, fitted_observed) for position in positions]
+
+
+def _interpolate(x: float, xs: list[float], ys: list[float]) -> float:
+    """Piecewise-linear interpolation of `ys` at `x`, holding the end values flat past `xs`'
+    range. `xs` is ascending; preserves monotonicity of `ys`."""
+    if x <= xs[0]:
+        return ys[0]
+    if x >= xs[-1]:
+        return ys[-1]
+    for left in range(len(xs) - 1):
+        if xs[left] <= x <= xs[left + 1]:
+            span = xs[left + 1] - xs[left]
+            if span == 0.0:
+                return ys[left]
+            t = (x - xs[left]) / span
+            return ys[left] + t * (ys[left + 1] - ys[left])
+    return ys[-1]
+
+
+def _monotone_probabilities(values: list[float], weights: list[float], *, increasing: bool) -> list[float]:
+    """Weighted least-squares monotone fit for probabilities via the pool-adjacent-violators
+    algorithm. `weights` are per-point confidences: a high-weight point pins the curve while a
+    low-weight one is freely pooled toward its neighbors."""
     y = [max(0.0, min(1.0, float(value))) for value in values]
     if not increasing:
         y = [-value for value in y]
     blocks: list[_PavaBlock] = []
-    for i, value in enumerate(y):
-        blocks.append(_PavaBlock(start=i, end=i, weight=1.0, value_sum=value))
+    for i, (value, weight) in enumerate(zip(y, weights, strict=True)):
+        blocks.append(_PavaBlock(start=i, end=i, weight=weight, value_sum=value * weight))
         while len(blocks) >= 2 and blocks[-2].average > blocks[-1].average:
             right = blocks.pop()
             left = blocks.pop()
@@ -762,7 +826,7 @@ def _surfaced_row(
         platform=market.platform,
         mappability=market.mappability,
         correlate_of=market.correlate_of if isinstance(market, CorrelateMarket) else None,
-        p_market=live.require_probability(),
+        p_market=live.require_implied_probability(),
         reason=" ".join(market.reason.split()) if market.reason else None,
         augur_context=_augur_context(market, trajectories_by_issuer),
         volume=live.volume,
@@ -819,7 +883,7 @@ def _unmodeled_row(market: ExactMarket, live: Market, target: str) -> SurfacedRo
         url=live.url,
         platform=market.platform,
         mappability="unmodeled",
-        p_market=live.require_probability(),
+        p_market=live.require_implied_probability(),
         reason=f"{target!r} is not emitted by this model preset",
         volume=live.volume,
         volume_unit=live.volume_unit,
@@ -868,10 +932,11 @@ async def run_calibration(
     fetch_slots = asyncio.Semaphore(_MAX_CONCURRENT_MARKET_FETCHES)
 
     async def _live(market_id: str, platform: Platform) -> Market | None:
-        # A single broken catalog row (bad market_id), a transient API hiccup, or a market the
-        # platform priced as None (e.g. Kalshi `last_price_dollars: null`) must not 500 the whole
-        # calibration endpoint -- log + drop just that row instead. Dropping None-probability
-        # markets here keeps every downstream `require_probability()` call safe.
+        # A single broken catalog row (bad market_id), a transient API hiccup, or a market whose
+        # quote carries no information (untraded / one-sided book, no usable last trade) must not
+        # 500 the whole calibration endpoint -- log + drop just that row instead. Dropping markets
+        # with no implied probability here keeps every downstream `require_implied_probability()`
+        # call safe; ladder families tolerate dropped rungs by interpolating across them.
         async with fetch_slots:
             try:
                 market = await price_clients[platform].get_market(market_id)
@@ -880,8 +945,8 @@ async def run_calibration(
                     "dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True
                 )
                 return None
-        if market.probability is None:
-            logger.warning("dropping calibration row: %s market %r returned no YES probability", platform, market_id)
+        if implied_probability(market.quote, volume=market.volume) is None:
+            logger.warning("dropping calibration row: %s market %r carried no informative quote", platform, market_id)
             return None
         return market
 
@@ -940,7 +1005,7 @@ async def run_calibration(
                 "dropping categorical family %r: a bucket failed to fetch or had no price", bucket_family.family_id
             )
             continue
-        live_prices = [live.require_probability() for live in prices if live is not None]
+        live_prices = [live.require_implied_probability() for live in prices if live is not None]
         total = sum(live_prices)
         # Degenerate normalizer (all-zero / non-finite prices) can't form a valid categorical.
         if not math.isfinite(total) or total <= 0.0:
@@ -952,37 +1017,32 @@ async def run_calibration(
             )
         )
     for threshold_family in catalog.threshold_ladder_families:
-        prices = [
+        # Unlike a bucket family, a ladder tolerates dropped rungs: the monotone fit interpolates
+        # across an untraded/illiquid threshold rather than discarding the whole family.
+        threshold_markets = [
             live_markets[threshold_family.platform, threshold.market_id] for threshold in threshold_family.thresholds
         ]
-        if any(live is None for live in prices):
+        row = _threshold_ladder_row(
+            threshold_family,
+            level_paths=paths,
+            live_markets=threshold_markets,
+            as_of=as_of,
+            horizon_months=horizon_months,
+            inflation_history=inflation_history_array,
+        )
+        if row is None:
             logger.warning(
-                "dropping threshold ladder family %r: a threshold failed to fetch or had no price",
-                threshold_family.family_id,
+                "dropping threshold ladder family %r: fewer than 2 priced thresholds", threshold_family.family_id
             )
             continue
-        live_prices = [live.require_probability() for live in prices if live is not None]
-        categorical.append(
-            _threshold_ladder_row(
-                threshold_family,
-                level_paths=paths,
-                live_prices=live_prices,
-                as_of=as_of,
-                horizon_months=horizon_months,
-                inflation_history=inflation_history_array,
-            )
-        )
+        categorical.append(row)
     for date_family in catalog.date_ladder_families:
-        prices = [live_markets[date_family.platform, date_member.market_id] for date_member in date_family.dates]
-        if any(live is None for live in prices):
-            logger.warning(
-                "dropping date ladder family %r: a date failed to fetch or had no price", date_family.family_id
-            )
+        date_markets = [live_markets[date_family.platform, date_member.market_id] for date_member in date_family.dates]
+        row = _date_ladder_row(date_family, trajectories_by_issuer=trajectories_by_issuer, live_markets=date_markets)
+        if row is None:
+            logger.warning("dropping date ladder family %r: fewer than 2 priced dates", date_family.family_id)
             continue
-        live_prices = [live.require_probability() for live in prices if live is not None]
-        categorical.append(
-            _date_ladder_row(date_family, trajectories_by_issuer=trajectories_by_issuer, live_prices=live_prices)
-        )
+        categorical.append(row)
 
     return CalibrationResult(
         as_of=as_of,

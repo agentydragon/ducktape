@@ -16,6 +16,8 @@ import pytest
 import pytest_bazel
 
 from finance.augur.calibration.calibration import (
+    _fit_ladder_curve,
+    _monotone_probabilities,
     build_anchored_level_paths,
     mark_fan,
     run_calibration,
@@ -42,7 +44,8 @@ from finance.augur.calibration.catalog import (
     ThresholdLadderMember,
 )
 from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
-from finance.augur.calibration.testing import mock_price_clients
+from finance.augur.calibration.quote import BookQuote, PoolQuote
+from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import InflationKey, IssuerId, PrivateEquityEventKindCode, SP500Key
@@ -402,6 +405,108 @@ async def test_threshold_ladder_family_derives_categorical_distribution() -> Non
     assert family.kl_bits is not None
 
 
+def test_weighted_isotonic_lets_confident_points_pin_the_curve() -> None:
+    """A low-confidence rung that violates monotonicity is pooled toward its confident neighbor,
+    rather than dragging the confident value to the unweighted midpoint."""
+    values = [0.80, 0.60, 0.65, 0.20]  # the 0.60 -> 0.65 step violates a decreasing survival curve
+    uniform = _monotone_probabilities(values, [1.0, 1.0, 1.0, 1.0], increasing=False)
+    # T3.5 confident (weight 10), the violating T4.0 wide/low-confidence (weight 0.1).
+    weighted = _monotone_probabilities(values, [1.0, 10.0, 0.1, 1.0], increasing=False)
+    assert uniform[1] == pytest.approx(0.625)  # unweighted pools 0.60 & 0.65 to their mean
+    assert weighted[1] < 0.605  # weighted keeps the confident rung near its own 0.60
+
+
+def test_fit_ladder_curve_interpolates_unpriced_rungs() -> None:
+    def market(mid: float) -> Market:
+        return Market(
+            id="x", url="u", quote=BookQuote(bid=mid, ask=mid, bid_size=None, ask_size=None, last_trade=mid), volume=1.0
+        )
+
+    # Position 1 is unpriced: the fitted survival curve interpolates between its priced neighbors
+    # (0.8 at 0 and 0.4 at 2) to 0.6 — never injecting a 0.
+    curve = _fit_ladder_curve([0.0, 1.0, 2.0, 3.0], [market(0.8), None, market(0.4), market(0.2)], increasing=False)
+    assert curve == pytest.approx([0.8, 0.6, 0.4, 0.2])
+    # Fewer than two priced rungs -> no curve.
+    assert _fit_ladder_curve([0.0, 1.0], [market(0.5), None], increasing=False) is None
+
+
+async def test_threshold_ladder_uses_quote_mids_and_interpolates_unpriced() -> None:
+    """End-to-end on Kalshi mock responses: bucket masses come from order-book MIDS (not the spiky
+    last trades) and an untraded rung is interpolated across, not dropped or read as zero."""
+    model = ConstantFrameModel(
+        levels={InflationKey(): _inflation_levels},
+        private_equity={
+            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
+        },
+    )
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"inflation": 100.0}},
+        markets=[],
+        threshold_ladder_families=[
+            ThresholdLadderFamily(
+                family_id="cpi_yoy",
+                question="CPI YoY threshold ladder",
+                platform=Platform.KALSHI,
+                series="inflation",
+                value_kind="inflation_yoy",
+                direction=Direction.ABOVE,
+                at_date=date(2026, 12, 31),
+                thresholds=[
+                    ThresholdLadderMember(market_id="CPI-T3.0", threshold=0.03),
+                    ThresholdLadderMember(market_id="CPI-T3.5", threshold=0.035),
+                    ThresholdLadderMember(market_id="CPI-T4.0", threshold=0.04),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_index_series=frozenset({InflationKey()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"inflation": 100.0},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    clients = mock_price_clients(
+        {
+            Platform.KALSHI: {
+                # Tight books at mid 0.90 / 0.20; the last trades (0.10, 0.95) are deliberately
+                # spiky and must be ignored in favor of the mids.
+                "CPI-T3.0": KalshiRungQuote(
+                    bid=0.88, ask=0.92, bid_size=100.0, ask_size=100.0, last=0.10, volume=500.0
+                ),
+                # Untraded one-sided rung (only a 1c-equivalent ask, no bid/last/volume) -> dropped
+                # from the fit and interpolated across.
+                "CPI-T3.5": KalshiRungQuote(ask=0.99, ask_size=75.0),
+                "CPI-T4.0": KalshiRungQuote(
+                    bid=0.18, ask=0.22, bid_size=100.0, ask_size=100.0, last=0.95, volume=500.0
+                ),
+            }
+        }
+    )
+    result = await run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+        inflation_history=[100.0] * 5,
+    )
+
+    family = result.categorical[0]
+    # Survival from mids: 0.90 @3.0, interpolated 0.55 @3.5, 0.20 @4.0 -> buckets below.
+    assert [bucket.p_market for bucket in family.buckets] == pytest.approx([0.10, 0.35, 0.35, 0.20])
+
+
 async def test_date_ladder_family_derives_event_timing_distribution(model: ConstantFrameModel) -> None:
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-27"},
@@ -443,21 +548,26 @@ async def test_date_ladder_family_derives_event_timing_distribution(model: Const
 
 
 class _ProbClient:
-    """A minimal PriceClient returning a Market with a fixed (possibly None) probability."""
+    """A minimal PriceClient returning a Market with a fixed (possibly None) implied probability."""
 
     def __init__(self, probabilities: dict[str, float | None]) -> None:
         self._probabilities = probabilities
 
     async def get_market(self, market_id: str) -> Market:
-        return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._probabilities[market_id])
+        probability = self._probabilities[market_id]
+        return Market(
+            id=market_id,
+            url=f"https://test.example/{market_id}",
+            quote=None if probability is None else PoolQuote(price=probability),
+        )
 
     async def aclose(self) -> None:
         pass
 
 
 async def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
-    """A market the platform prices as None, and a categorical family whose bucket prices sum to
-    zero, are both dropped (logged) rather than 500-ing via require_probability()."""
+    """A market whose quote carries no probability, and a categorical family whose bucket prices
+    sum to zero, are both dropped (logged) rather than 500-ing via require_implied_probability()."""
     catalog = MarketCatalog(
         metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
         markets=[

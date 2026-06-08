@@ -84,10 +84,10 @@ async def test_kalshi_client_recovers_from_flapping_503() -> None:
         responses["n"] += 1
         if responses["n"] < 3:
             return httpx.Response(503)
-        return httpx.Response(200, json={"market": {"last_price_dollars": 0.37}})
+        return httpx.Response(200, json={"market": {"yes_bid_dollars": "0.36", "yes_ask_dollars": "0.38"}})
 
     client = KalshiClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), sleep=_noop_sleep)
-    assert (await client.get_market("KXTEST")).probability == 0.37
+    assert (await client.get_market("KXTEST")).require_implied_probability() == 0.37
     assert responses["n"] == 3
 
 

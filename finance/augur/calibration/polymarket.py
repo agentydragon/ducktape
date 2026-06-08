@@ -1,8 +1,10 @@
 """Live Polymarket prices via the ``polymarket-client`` SDK.
 
-Read-only market lookups using :class:`polymarket.PublicClient` (no auth
-required). The SDK's ``Market.outcomes.yes.price`` (a ``Decimal``) is converted
-to a plain ``float`` for the generic :class:`Market` probability.
+Read-only market lookups using :class:`polymarket.PublicClient` (no auth required). The gamma
+``Market.prices`` block already carries the top-of-book quote (``best_bid``/``best_ask``/
+``last_trade_price``) in the same response, so no extra CLOB call is needed. The gamma response
+does not surface resting size, so the order book is recorded without depth (the micro-price then
+degenerates to the plain midpoint).
 
 Same TTL-cache + clock-seam pattern as :class:`ManifoldClient` so the live
 calibration auto-refresh doesn't re-hit Polymarket per market per request.
@@ -28,6 +30,7 @@ from polymarket.errors import (
 )
 
 from finance.augur.calibration.platform import Market
+from finance.augur.calibration.quote import BookQuote
 from finance.augur.calibration.transient_retry import with_retry_async
 
 _POLYMARKET_BASE_URL = "https://polymarket.com/event"
@@ -41,10 +44,8 @@ def _polymarket_is_transient(exc: BaseException) -> bool:
     return isinstance(exc, RateLimitError | PolymarketTransportError | PolymarketTimeoutError)
 
 
-def _yes_price_to_probability(price: Decimal | None) -> float | None:
-    if price is None:
-        return None
-    return float(price)
+def _to_float(price: Decimal | None) -> float | None:
+    return None if price is None else float(price)
 
 
 class PolymarketClient:
@@ -89,17 +90,22 @@ class PolymarketClient:
 
     def _fetch(self, market_id: str) -> Market:
         pm_market = self._sdk.get_market(id=market_id)
-        probability = _yes_price_to_probability(
-            pm_market.outcomes.yes.price if pm_market.outcomes is not None else None
-        )
         slug = pm_market.slug or market_id
         # All-time traded volume in USD per the gamma `metrics.volume` field. The SDK's
         # Market.metrics is non-optional but each volume sub-field is.
         volume = float(pm_market.metrics.volume) if pm_market.metrics.volume is not None else None
+        prices = pm_market.prices
         return Market(
             id=market_id,
             url=f"{_POLYMARKET_BASE_URL}/{slug}",
-            probability=probability,
+            # Gamma carries the top-of-book quote but no resting size; depth is therefore unknown.
+            quote=BookQuote(
+                bid=_to_float(prices.best_bid),
+                ask=_to_float(prices.best_ask),
+                bid_size=None,
+                ask_size=None,
+                last_trade=_to_float(prices.last_trade_price),
+            ),
             volume=volume,
             volume_unit="USD" if volume is not None else None,
             title=pm_market.question,
@@ -107,7 +113,7 @@ class PolymarketClient:
         )
 
     async def fetch_yes_probability(self, market_id: str) -> float:
-        return (await self.get_market(market_id)).require_probability()
+        return (await self.get_market(market_id)).require_implied_probability()
 
     async def aclose(self) -> None:
         await asyncio.to_thread(self._sdk.__exit__, None, None, None)

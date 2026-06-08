@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+from finance.augur.calibration.quote import Quote, implied_probability
+
 
 class Platform(StrEnum):
     MANIFOLD = "manifold"
@@ -46,13 +48,9 @@ class Market:
 
     id: str
     url: str
-    # TODO(naming): markets don't expose a "probability" — they expose a last trade / bid / ask, and
-    # `probability` here is really the last-trade price read as an implied probability (e.g. Kalshi
-    # `last_price_dollars`, Manifold `probability`, Polymarket yes.price). The actual probability comes
-    # from the separate price->probability smoothing step. Rename this (and `require_probability`) to
-    # something honest like `last_trade_price` / `implied_probability` so it doesn't read as a
-    # calibrated probability. Cross-cutting across the platform clients + calibration; see augur/TODO.md.
-    probability: float | None
+    # The live quote (order book or AMM pool price). `implied_probability(quote, volume=...)` turns
+    # it into a single YES probability; markets expose trades/quotes, not a probability directly.
+    quote: Quote
     volume: float | None = None
     volume_unit: str | None = None
     # The market's current title/question and verbatim resolution rules, fetched LIVE alongside the
@@ -61,10 +59,11 @@ class Market:
     title: str | None = None
     rules: str | None = None
 
-    def require_probability(self) -> float:
-        if self.probability is None:
-            raise ValueError(f"Market {self.id!r} returned no YES probability")
-        return self.probability
+    def require_implied_probability(self) -> float:
+        probability = implied_probability(self.quote, volume=self.volume)
+        if probability is None:
+            raise ValueError(f"Market {self.id!r} carried no informative quote")
+        return probability
 
 
 class PriceClient(Protocol):

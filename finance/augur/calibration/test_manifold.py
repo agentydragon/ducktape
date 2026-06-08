@@ -13,6 +13,7 @@ import pytest
 import pytest_bazel
 
 from finance.augur.calibration.manifold import ManifoldClient
+from finance.augur.calibration.quote import PoolQuote
 from finance.augur.calibration.testing import mock_manifold_client
 
 
@@ -29,8 +30,8 @@ async def test_fetch_yes_probability_raises_when_probability_missing() -> None:
         return httpx.Response(200, json={"id": "NOPROB", "url": "https://manifold.markets/test/NOPROB"})
 
     client = ManifoldClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-    assert (await client.get_market("NOPROB")).probability is None
-    with pytest.raises(ValueError, match="no YES probability"):
+    assert (await client.get_market("NOPROB")).quote is None
+    with pytest.raises(ValueError, match="no informative quote"):
         await client.fetch_yes_probability("NOPROB")
 
 
@@ -47,15 +48,15 @@ async def test_get_market_caches_within_ttl_and_refetches_after() -> None:
     )
 
     # First read hits the network; a second read inside the TTL is served from cache.
-    assert (await client.get_market("AAA")).probability == 0.3
+    assert (await client.get_market("AAA")).quote == PoolQuote(price=0.3)
     assert calls["count"] == 1
     now[0] += 119.0
-    assert (await client.get_market("AAA")).probability == 0.3
+    assert (await client.get_market("AAA")).quote == PoolQuote(price=0.3)
     assert calls["count"] == 1
 
     # Crossing the TTL forces a fresh network read.
     now[0] += 2.0
-    assert (await client.get_market("AAA")).probability == 0.3
+    assert (await client.get_market("AAA")).quote == PoolQuote(price=0.3)
     assert calls["count"] == 2
 
 

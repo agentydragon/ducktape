@@ -6,7 +6,13 @@ import pytest
 import pytest_bazel
 
 from finance.augur.calibration.platform import Market, Platform
-from finance.augur.calibration.redis_cache import MarketSnapshot, RedisCachingPriceClient, market_cache_config_from_env
+from finance.augur.calibration.quote import PoolQuote
+from finance.augur.calibration.redis_cache import (
+    MarketSnapshot,
+    RedisCachingPriceClient,
+    _market_to_dict,
+    market_cache_config_from_env,
+)
 
 
 class _FakeStore:
@@ -48,7 +54,7 @@ async def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
         "manifold:m1": _snapshot(
             market_id="m1",
             fetched_at=10.0,
-            market=Market(id="m1", url="https://example.com/m1", probability=0.4, title="cached"),
+            market=Market(id="m1", url="https://example.com/m1", quote=PoolQuote(price=0.4), title="cached"),
         )
     }
     ttls: dict[str, int] = {}
@@ -56,7 +62,7 @@ async def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
     client = _client(upstream=upstream, data=data, ttls=ttls, now=20.0, ttl_seconds=30.0)
 
     assert await client.get_market("m1") == Market(
-        id="m1", url="https://example.com/m1", probability=0.4, title="cached"
+        id="m1", url="https://example.com/m1", quote=PoolQuote(price=0.4), title="cached"
     )
     assert upstream.calls == []
 
@@ -64,11 +70,13 @@ async def test_fresh_cache_hit_avoids_upstream_fetch() -> None:
 async def test_stale_cache_refreshes_from_upstream_and_updates_cache() -> None:
     data = {
         "manifold:m1": _snapshot(
-            market_id="m1", fetched_at=10.0, market=Market(id="m1", url="https://example.com/stale", probability=0.4)
+            market_id="m1",
+            fetched_at=10.0,
+            market=Market(id="m1", url="https://example.com/stale", quote=PoolQuote(price=0.4)),
         )
     }
     ttls: dict[str, int] = {}
-    upstream_market = Market(id="m1", url="https://example.com/fresh", probability=0.7, volume=12.0)
+    upstream_market = Market(id="m1", url="https://example.com/fresh", quote=PoolQuote(price=0.7), volume=12.0)
     upstream = _FakeUpstream(market=upstream_market)
     client = _client(upstream=upstream, data=data, ttls=ttls, now=50.0, ttl_seconds=30.0, retention_seconds=120)
 
@@ -79,7 +87,7 @@ async def test_stale_cache_refreshes_from_upstream_and_updates_cache() -> None:
 
 
 async def test_stale_cache_survives_upstream_failure() -> None:
-    cached_market = Market(id="m1", url="https://example.com/stale", probability=0.4)
+    cached_market = Market(id="m1", url="https://example.com/stale", quote=PoolQuote(price=0.4))
     data = {"manifold:m1": _snapshot(market_id="m1", fetched_at=10.0, market=cached_market)}
     ttls: dict[str, int] = {}
     upstream = _FakeUpstream(error=RuntimeError("upstream down"))
@@ -100,7 +108,7 @@ async def test_cache_miss_propagates_upstream_failure() -> None:
 async def test_invalid_cache_payload_is_ignored() -> None:
     data = {"manifold:m1": {"schema_version": 1, "platform": "kalshi", "market_id": "m1"}}
     ttls: dict[str, int] = {}
-    upstream_market = Market(id="m1", url="https://example.com/fresh", probability=0.7)
+    upstream_market = Market(id="m1", url="https://example.com/fresh", quote=PoolQuote(price=0.7))
     upstream = _FakeUpstream(market=upstream_market)
     client = _client(upstream=upstream, data=data, ttls=ttls, now=20.0)
 
@@ -151,15 +159,7 @@ def _snapshot(*, market_id: str, fetched_at: float, market: Market) -> dict[str,
         platform=Platform.MANIFOLD,
         market_id=market_id,
         fetched_at_epoch_seconds=fetched_at,
-        market={
-            "id": market.id,
-            "url": market.url,
-            "probability": market.probability,
-            "volume": market.volume,
-            "volume_unit": market.volume_unit,
-            "title": market.title,
-            "rules": market.rules,
-        },
+        market=_market_to_dict(market),
     ).model_dump(mode="json")
 
 

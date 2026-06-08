@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from finance.augur.calibration.platform import Market
+from finance.augur.calibration.quote import PoolQuote
 from finance.augur.calibration.transient_retry import httpx_is_transient, with_retry_async
 
 _MARKET_ENDPOINT = "https://api.manifold.markets/v0/market/"
@@ -108,7 +109,9 @@ class ManifoldClient:
         return Market(
             id=raw.id,
             url=raw.url,
-            probability=raw.probability,
+            # Manifold is a CPMM AMM: its `probability` is the pool-implied fair price (a mid), with
+            # no separate order book — so a PoolQuote, not a BookQuote.
+            quote=PoolQuote(price=raw.probability) if raw.probability is not None else None,
             volume=raw.volume,
             volume_unit="𝕄",  # noqa: RUF001
             title=raw.question,
@@ -117,7 +120,7 @@ class ManifoldClient:
 
     async def fetch_yes_probability(self, market_id: str) -> float:
         """Current YES probability for one binary market; raises if it carries none."""
-        return (await self.get_market(market_id)).require_probability()
+        return (await self.get_market(market_id)).require_implied_probability()
 
     async def aclose(self) -> None:
         await self._client.aclose()
