@@ -1,19 +1,18 @@
-"""Handler that injects pg_notify notifications into the grader's context.
+"""Chat middleware that injects pg_notify notifications into the grader's context.
 
-Drains GraderState.notification_queue on each on_before_sample() call.
-If notifications are pending, returns InjectItems with a UserMessage
-summarizing them. This covers both wake-from-sleep and mid-work arrivals
-through a single code path.
+Drains `GraderState.notification_queue` before each model call. If notifications are
+pending, appends a single user message summarizing them so the model sees newly-arrived
+work — covering both wake-from-sleep and mid-work arrivals through one code path. (Port of
+the agent_core `GraderNotificationsHandler` that returned `InjectItems` on `on_before_sample`.)
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import InjectItems, LoopDecision, NoAction
-from openai_utils.model import UserMessage
+from agent_framework import ChatContext, ChatMiddleware, Message
 
 if TYPE_CHECKING:
     from props.db.notifications import GradingPendingNotification
@@ -21,32 +20,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _format_notifications(notifications: list[GradingPendingNotification]) -> UserMessage:
-    """Format drained notifications as a single UserMessage."""
+def _format_notifications(notifications: list[GradingPendingNotification]) -> str:
     lines = [
         f"{len(notifications)} new grading notification(s):",
         *[f"  - {n.operation} on {n.item.table}" for n in notifications],
-        "Check list_pending for updated work.",
+        "Check pending work and continue grading.",
     ]
-    return UserMessage.text("\n".join(lines))
+    return "\n".join(lines)
 
 
-class GraderNotificationsHandler(BaseHandler):
-    """Deliver pg_notify notifications as a batched UserMessage via InjectItems.
+def notification_chat_middleware(queue: list[GradingPendingNotification]) -> ChatMiddleware:
+    """Chat middleware that drains `queue` and injects a summary user message per model call."""
 
-    Polls GraderState.notification_queue. If non-empty, drains it and
-    returns InjectItems with a summary message. Otherwise returns NoAction.
-    """
+    async def middleware(context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
+        if queue:
+            notifications = list(queue)
+            queue.clear()
+            logger.info("Delivering %d grading notification(s)", len(notifications))
+            context.messages.append(Message("user", [_format_notifications(notifications)]))
+        await call_next()
 
-    def __init__(self, queue: list[GradingPendingNotification]) -> None:
-        self._queue = queue
-
-    def on_before_sample(self) -> LoopDecision:
-        if not self._queue:
-            return NoAction()
-
-        notifications = list(self._queue)
-        self._queue.clear()
-
-        logger.info("Delivering %d grading notification(s)", len(notifications))
-        return InjectItems(items=[_format_notifications(notifications)])
+    return middleware

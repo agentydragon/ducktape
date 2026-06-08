@@ -12,25 +12,25 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
+from agent_framework import Agent, ChatContext, MiddlewareTermination
 from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
-from agent_core.agent import Agent
-from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
-from agent_core.logging_handler import LoggingHandler
-from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
-from openai_utils.model import SystemMessage, UserMessage
-from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tool_provider
-from props.agents.runtime import create_bound_model_from_env, get_current_agent_run, render_system_prompt, setup_logging
+from props.agents.af.client import build_chat_client_from_env
+from props.agents.af.loop import run_until_done
+from props.agents.af.middleware import terminate_after_tools
+from props.agents.critic_dev.loop import TEXT_OUTPUT_REMINDER, LoopState, LoopStatus, create_tools
+from props.agents.runtime import get_current_agent_run, render_system_prompt, setup_logging
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig
 from props.core.ids import DefinitionId
 from props.core.models.examples import SingleFileSetExample
@@ -279,69 +279,34 @@ def check_termination_condition(
     )
 
 
-class ImprovementReminderHandler(BaseHandler):
-    def __init__(self, improvement_run_id: UUID, type_config: CriticDevImproveTypeConfig, db: Database):
-        self._improvement_run_id = improvement_run_id
-        self._type_config = type_config
-        self._db = db
-        self._text_detected = False
-        self._last_result: TerminationResult | None = None
+def improve_termination_middleware(
+    improvement_run_id: UUID,
+    type_config: CriticDevImproveTypeConfig,
+    db: Database,
+    captured: dict[str, TerminationSuccess],
+) -> object:
+    """Chat middleware (improve mode): before each model call, end the run once a candidate
+    definition beats baseline. Replaces agent_core's `ImprovementReminderHandler.on_before_sample`
+    (same per-model-call cadence); the captured success drives the exit code.
+    """
 
-    def on_assistant_text_event(self, evt) -> None:
-        self._text_detected = True
-
-    def on_before_sample(self) -> LoopDecision:
-        with self._db.session() as session:
+    async def middleware(context: ChatContext, call_next: Callable[[], Awaitable[None]]) -> None:
+        with db.session() as session:
             result = check_termination_condition(
-                session=session, improvement_run_id=self._improvement_run_id, type_config=self._type_config
+                session=session, improvement_run_id=improvement_run_id, type_config=type_config
             )
-
-        self._last_result = result
-
         if isinstance(result, TerminationSuccess):
             logger.info(
-                f"Critic developer terminating: "
-                f"definition '{result.definition_id}' with {result.total_credit:.1f} credit "
-                f"beats baseline avg {result.baseline_avg:.1f}"
+                "Critic developer terminating: definition '%s' with %.1f credit beats baseline avg %.1f",
+                result.definition_id,
+                result.total_credit,
+                result.baseline_avg,
             )
-            return Abort()
+            captured["result"] = result
+            raise MiddlewareTermination("candidate beats baseline")
+        await call_next()
 
-        if self._text_detected:
-            self._text_detected = False
-            return InjectItems(items=[UserMessage.text(self._build_reminder(result))])
-
-        return NoAction()
-
-    def _build_reminder(self, status: BlockingStatus) -> str:
-        lines = ["=== Critic Developer Status ===", "", f"Blocking: {status.message}", ""]
-
-        if status.baseline_avg_credit is not None:
-            lines.append(f"Baseline average credit: {status.baseline_avg_credit:.1f}")
-
-        if status.best_candidate_credit is not None:
-            lines.append(f"Best candidate credit: {status.best_candidate_credit:.1f} ({status.best_candidate_id})")
-
-        if status.edges_needing_grading_count > 0:
-            lines.append(f"Edges awaiting grading: {status.edges_needing_grading_count}")
-
-        lines.extend(
-            [
-                "",
-                "Next steps:",
-                "1. Build a custom critic image with crane (overlay main.py, push by digest)",
-                "2. Run evals on your definition with run_critic (pass the digest as definition_id)",
-                "3. Wait for grading with wait_until_graded_tool, then check recall views",
-                "4. Iterate: refine definition, re-eval, until you beat baseline",
-                "",
-                "Do NOT send text messages - execute your plan with tools.",
-            ]
-        )
-
-        return "\n".join(lines)
-
-    @property
-    def last_result(self) -> TerminationResult | None:
-        return self._last_result
+    return middleware
 
 
 # =============================================================================
@@ -362,33 +327,36 @@ async def run_agent_loop(
     For improve: auto-terminates when a candidate beats baseline.
     """
     state = LoopState()
-    tool_provider = create_tool_provider(state, http_client, db)
-    bound_model = create_bound_model_from_env(db)
+    captured: dict[str, TerminationSuccess] = {}
 
-    handlers: list[BaseHandler] = [
-        LoggingHandler(logger),
-        RedirectOnTextMessageHandler(TEXT_OUTPUT_REMINDER),
-        AbortIf(lambda: state.status != LoopStatus.IN_PROGRESS),
-    ]
-
-    reminder_handler: ImprovementReminderHandler | None = None
+    middleware: list[object] = [terminate_after_tools({"report_success", "report_failure"})]
     if isinstance(type_config, CriticDevImproveTypeConfig):
-        reminder_handler = ImprovementReminderHandler(improvement_run_id=agent_run_id, type_config=type_config, db=db)
-        handlers.append(reminder_handler)
+        middleware.append(improve_termination_middleware(agent_run_id, type_config, db, captured))
 
-    agent = await Agent.create(
-        tool_provider=tool_provider,
-        handlers=handlers,
-        client=bound_model,
-        parallel_tool_calls=True,
-        tool_policy=AllowAnyToolOrTextMessage(),
+    agent = Agent(
+        client=build_chat_client_from_env(db),
+        instructions=system_prompt,
+        tools=create_tools(state, http_client, db),
+        middleware=middleware,
     )
 
-    agent.process_message(SystemMessage.text(system_prompt))
-    await agent.run()
+    try:
+        await run_until_done(
+            agent,
+            done=lambda: state.status != LoopStatus.IN_PROGRESS or "result" in captured,
+            reminder=TEXT_OUTPUT_REMINDER,
+            allow_multiple_tool_calls=True,
+        )
+    except Exception as exc:
+        # Optimize runs until the proxy rejects further LLM calls for budget (HTTP 429);
+        # that is the normal terminal condition, not a failure.
+        if isinstance(type_config, CriticDevOptimizeTypeConfig) and "budget exceeded" in str(exc).lower():
+            logger.info("Optimization completed (exhausted budget)")
+            return 0
+        raise
 
-    if reminder_handler is not None and isinstance(reminder_handler.last_result, TerminationSuccess):
-        result = reminder_handler.last_result
+    if "result" in captured:
+        result = captured["result"]
         logger.info(
             "Critic developer succeeded: definition '%s' with %.1f credit beats baseline avg %.1f",
             result.definition_id,

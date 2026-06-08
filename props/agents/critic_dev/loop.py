@@ -17,10 +17,10 @@ from uuid import UUID
 import httpx
 from pydantic import Field
 
-from agent_core.direct_provider import DirectToolProvider
 from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.exec.subprocess import DirectExecArgs, run_direct_exec
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from props.agents.af.tools import direct_tools
 from props.agents.critic_dev.grading import wait_until_graded
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.db.database import Database
@@ -97,22 +97,18 @@ class LoopState:
 # =============================================================================
 
 
-def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> DirectToolProvider:
-    """Create tool provider with shared tools (no submit)."""
-    provider = DirectToolProvider()
+def create_tools(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> list:
+    """Build the critic-dev tools (MAF FunctionTools) bound to this run's state/http/db."""
 
-    @provider.tool
     async def exec(args: DirectExecArgs) -> BaseExecResult:
         """Execute a shell command. Use for file operations, running tests, etc."""
         return await run_direct_exec(args, default_cwd=WORKSPACE)
 
-    @provider.tool
     def report_success() -> None:
         """Report that the task completed successfully. Signals exit with success status."""
         state.status = LoopStatus.EXITED_SUCCESS
         logger.info("Reported success")
 
-    @provider.tool
     def report_failure(args: ReportFailureArgs) -> None:
         """Report that the task could not be completed.
 
@@ -122,7 +118,6 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         state.status = LoopStatus.EXITED_FAILURE
         logger.info("Reported failure: %s", args.message)
 
-    @provider.tool
     async def start_critic(args: RunCriticRequest) -> StartCriticResponse:
         """Start a critic agent on an example. Returns immediately with critic_run_id.
 
@@ -136,7 +131,6 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         logger.info(f"Critic started: {response.critic_run_id}")
         return response
 
-    @provider.tool
     async def wait_until_critic_completed(args: WaitUntilCriticCompletedArgs) -> CriticRunStatus:
         """Wait until a critic run has exited or timed out.
 
@@ -163,7 +157,6 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
 
         raise TimeoutError(f"Critic run {args.critic_run_id} did not complete within {args.timeout_seconds}s")
 
-    @provider.tool
     async def wait_until_graded_tool(args: WaitUntilGradedToolArgs) -> GradingStatusResponse:
         """Wait for a critic run to be fully graded.
 
@@ -177,7 +170,6 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         logger.info(f"Grading complete: total_credit={response.total_credit}, max_credit={response.max_credit}")
         return response
 
-    @provider.tool
     def fetch_snapshot(args: FetchSnapshotArgs) -> str:
         """Fetch a snapshot from the database and extract it to a local directory.
 
@@ -188,4 +180,12 @@ def create_tool_provider(state: LoopState, http_client: httpx.AsyncClient, db: D
         logger.info("Fetched snapshot %s to %s", args.snapshot_slug, dest)
         return f"Fetched snapshot {args.snapshot_slug} to {dest}"
 
-    return provider
+    return direct_tools(
+        exec,
+        report_success,
+        report_failure,
+        start_critic,
+        wait_until_critic_completed,
+        wait_until_graded_tool,
+        fetch_snapshot,
+    )
