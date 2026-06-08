@@ -1,0 +1,54 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+# Plaid full-refresh sync process (cron). Pulls from Plaid into the mirror DB.
+
+py_library(
+    name = "sync_cli_lib",
+    srcs = ["sync_cli.py"],
+    deps = [
+        "//finance/plaid/db:client",
+        "//finance/plaid/db:config",
+        "//finance/plaid/db:link_store",
+        "//finance/plaid/db:secret_store",
+        "//finance/plaid/db:sync",
+    ],
+)
+
+py_binary(
+    name = "sync_cli",
+    main_module = "finance.plaid.sync.sync_cli",
+    deps = [":sync_cli_lib"],
+)
+
+aspect_py_binary(
+    name = "sync_bin",
+    main = "sync_cli.py",
+    deps = [":sync_cli_lib"],
+)
+
+py_image_layer(
+    name = "sync_layers",
+    binary = ":sync_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "sync_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("sync_bin"),
+    env = py_image_env(binary_name = "sync_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":sync_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "sync_load",
+    image = ":sync_image",
+    repo_tags = ["plaid-mcp-sync:latest"],
+)

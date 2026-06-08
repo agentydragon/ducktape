@@ -15,8 +15,8 @@ from sqlalchemy import delete, exists, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from plaid_utils.link_profiles import LinkProfile
-from plaid_utils.schema import (
+from finance.plaid.db.link_profiles import LinkProfile
+from finance.plaid.db.schema import (
     AccountRow,
     BalanceSnapshotRow,
     HoldingSnapshotRow,

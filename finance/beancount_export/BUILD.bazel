@@ -21,7 +21,7 @@ py_library(
         ":export",
         "//finance/augur/budget:schema",
         "//finance/augur/budget:sql_read_model",
-        "//plaid_utils:schema",
+        "//finance/plaid/db:schema",
         "@pypi//beancount",
         "@pypi//pyyaml",
         "@pypi//structlog",

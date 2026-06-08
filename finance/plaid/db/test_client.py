@@ -7,7 +7,7 @@ import certifi
 import pytest_bazel
 from plaid import ApiClient
 
-from plaid_utils.client import PlaidClient, PlaidCreds
+from finance.plaid.db.client import PlaidClient, PlaidCreds
 
 
 def test_plaid_client_pins_certifi_ca_bundle() -> None:

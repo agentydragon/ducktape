@@ -23,7 +23,7 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
 from finance.augur.product.asset_key import SP500AssetKey
-from plaid_utils.read_model import CurrentCashBalance, CurrentHolding
+from finance.plaid.db.read_model import CurrentCashBalance, CurrentHolding
 
 
 def test_disabled_plaid_source_resolves_fixed_source(minimal_config: MinimalConfig) -> None:

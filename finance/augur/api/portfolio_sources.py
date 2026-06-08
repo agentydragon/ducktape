@@ -25,8 +25,13 @@ from finance.augur.api.portfolio_source_config import (
 )
 from finance.augur.product.asset_key import SP500AssetKey
 from finance.augur.sim.scenario import HarvestPolicy
-from plaid_utils.read_model import CurrentCashBalance, CurrentHolding, read_current_cash_balances, read_current_holdings
-from plaid_utils.schema import async_session_factory
+from finance.plaid.db.read_model import (
+    CurrentCashBalance,
+    CurrentHolding,
+    read_current_cash_balances,
+    read_current_holdings,
+)
+from finance.plaid.db.schema import async_session_factory
 
 logger = logging.getLogger(__name__)
 

@@ -38,13 +38,13 @@ from finance.augur.budget.schema import (
     TransferDirection,
 )
 from finance.augur.dates import DAYS_PER_MONTH
-from plaid_utils.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
+from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database
 
-_PLAID_MIGRATIONS_DIR = "_main/plaid_utils/migrations"
+_PLAID_MIGRATIONS_DIR = "_main/finance/plaid/db/migrations"
 
 
 def _run_alembic_migrations(conn: Any) -> None:

@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 
 import pytest_bazel
 
-from plaid_utils.sync import redact_payload
+from finance.plaid.db.sync import redact_payload
 
 
 def test_redact_payload_returns_json_serializable_dates() -> None:

@@ -5,8 +5,8 @@ and a page of transactions straight off the SDK client. Verifies the creds and t
 SDK call path run cleanly.
 
 Run:
-    set -a; source plaid_utils/.creds.env; set +a
-    bb run //plaid_utils:sandbox_smoke
+    set -a; source finance/plaid/db/.creds.env; set +a
+    bb run //finance/plaid/db:sandbox_smoke
 """
 
 import logging
@@ -18,8 +18,8 @@ from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from plaid_utils.client import PlaidClient
-from plaid_utils.dev_creds import load
+from finance.plaid.db.client import PlaidClient
+from finance.plaid.db.dev_creds import load
 
 logger = logging.getLogger(__name__)
 

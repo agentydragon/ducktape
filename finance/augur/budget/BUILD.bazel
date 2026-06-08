@@ -37,7 +37,7 @@ py_test(
     size = "medium",
     srcs = ["test_sql_read_model.py"],
     data = [
-        "//plaid_utils:migrations",
+        "//finance/plaid/db:migrations",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
     ],
@@ -47,7 +47,7 @@ py_test(
         ":sql_read_model",
         "//:conftest",
         "//finance/augur:dates",
-        "//plaid_utils:schema",
+        "//finance/plaid/db:schema",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/bazel:runfiles",

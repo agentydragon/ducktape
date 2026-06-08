@@ -8,71 +8,28 @@ import re
 import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path as ApiPath
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field
 
-from plaid_utils.client import LinkTokenResult, PlaidClient, PlaidClientError, PlaidCreds, PublicTokenExchange
-from plaid_utils.link_profiles import LinkProfile, Product, products_for_profile
-from plaid_utils.link_store import PlaidLinkStorage, StoredLink
-from plaid_utils.secret_store import K8sSecretStore, SecretStore
-from plaid_utils.sync import PlaidApiLike, SyncWindows, sync_all, sync_link
+from finance.plaid.db.client import LinkTokenResult, PlaidClient, PlaidClientError, PlaidCreds, PublicTokenExchange
+from finance.plaid.db.config import MAX_TRANSACTION_DAYS, PlaidWebSettings
+from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile
+from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
+from finance.plaid.db.secret_store import K8sSecretStore, SecretStore
+from finance.plaid.db.sync import PlaidApiLike, sync_link
 
 logger = logging.getLogger(__name__)
-
-_NS_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-_MAX_TRANSACTION_DAYS = 730
-
-
-class PlaidWebSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PLAID_MCP_")
-
-    plaid_env: str = Field(description="Plaid environment: sandbox or production.")
-    client_id: str
-    client_secret: str
-    database_url: str = Field(validation_alias="DATABASE_URL")
-    public_base_url: str = "https://plaid-mcp.allegedly.works"
-    target_namespace: str | None = None
-    managed_by: str = "plaid-mcp"
-    host: str = "0.0.0.0"
-    port: int = 8080
-    transaction_days: int = Field(default=730, ge=1, le=_MAX_TRANSACTION_DAYS)
-    investment_transaction_days: int = Field(default=730, ge=1, le=_MAX_TRANSACTION_DAYS)
-
-    @field_validator("public_base_url", mode="after")
-    @classmethod
-    def _strip_trailing_slash(cls, value: str) -> str:
-        return value.rstrip("/")
-
-    @property
-    def redirect_uri(self) -> str:
-        return f"{self.public_base_url}/link/callback"
-
-    @property
-    def namespace(self) -> str:
-        if self.target_namespace is not None:
-            return self.target_namespace
-        if _NS_PATH.exists():
-            return _NS_PATH.read_text().strip()
-        return "plaid-mcp"
-
-    @property
-    def sync_windows(self) -> SyncWindows:
-        return SyncWindows(
-            transaction_days=self.transaction_days, investment_transaction_days=self.investment_transaction_days
-        )
 
 
 class LinkTokenRequest(BaseModel):
     profile: LinkProfile
     advanced_products: list[str] | None = None
-    transaction_days_requested: int | None = Field(default=None, ge=1, le=_MAX_TRANSACTION_DAYS)
+    transaction_days_requested: int | None = Field(default=None, ge=1, le=MAX_TRANSACTION_DAYS)
 
 
 class LinkTokenResponse(BaseModel):
@@ -83,7 +40,7 @@ class LinkTokenResponse(BaseModel):
 
 class WebConfigResponse(BaseModel):
     transaction_days: int
-    max_transaction_days: int = _MAX_TRANSACTION_DAYS
+    max_transaction_days: int = MAX_TRANSACTION_DAYS
 
 
 class LinkUpdateTokenRequest(BaseModel):
@@ -112,7 +69,7 @@ class ExchangePublicTokenRequest(BaseModel):
     public_token: str
     profile: LinkProfile
     products: list[str]
-    transaction_days_requested: int | None = Field(default=None, ge=1, le=_MAX_TRANSACTION_DAYS)
+    transaction_days_requested: int | None = Field(default=None, ge=1, le=MAX_TRANSACTION_DAYS)
     label: str | None = None
     institution_id: str | None = None
     institution_name: str | None = None
@@ -395,22 +352,6 @@ async def _sync_one_link(
         if "sync already running" in str(exc):
             raise HTTPException(409, str(exc)) from exc
         raise
-
-
-async def run_sync(settings: PlaidWebSettings) -> list[str]:
-    storage = await PlaidLinkStorage.initialize(settings.database_url)
-    secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
-    try:
-        with PlaidClient(
-            PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
-        ) as client:
-            run_ids = await sync_all(
-                api=client, storage=storage, secrets=secrets, trigger="cron", windows=settings.sync_windows
-            )
-            return [str(run_id) for run_id in run_ids]
-    finally:
-        await secrets.close()
-        await storage.close()
 
 
 def main() -> None:

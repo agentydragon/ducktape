@@ -1,4 +1,4 @@
-"""Alembic migration environment for plaid_utils.
+"""Alembic migration environment for finance.plaid.db.
 
 Connection is injected programmatically via config.attributes["connection"].
 Call PlaidLinkStorage.initialize() to run migrations; do not invoke alembic CLI directly.

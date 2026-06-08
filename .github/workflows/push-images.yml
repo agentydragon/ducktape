@@ -110,15 +110,11 @@ jobs:
             }
           - { image: "//x/grocy_mcp:server_image", image_name: grocy-mcp, test_target: "//x/grocy_mcp/..." }
           - {
-              image: "//plaid_utils/mcp_server:server_image",
+              image: "//finance/plaid/link:server_image",
               image_name: plaid-mcp-server,
-              test_target: "//plaid_utils/...",
+              test_target: "//finance/plaid/...",
             }
-          - {
-              image: "//plaid_utils/mcp_server:sync_image",
-              image_name: plaid-mcp-sync,
-              test_target: "//plaid_utils/...",
-            }
+          - { image: "//finance/plaid/sync:sync_image", image_name: plaid-mcp-sync, test_target: "//finance/plaid/..." }
           - {
               image: "//finance/beancount_export:image",
               image_name: budget-exporter,

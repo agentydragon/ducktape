@@ -20,9 +20,9 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 
-from plaid_utils.link_profiles import Product, syncs_investment_transactions
-from plaid_utils.link_store import ApiEvent, PlaidLinkStorage, StoredLink
-from plaid_utils.secret_store import SecretStore
+from finance.plaid.db.link_profiles import Product, syncs_investment_transactions
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, StoredLink
+from finance.plaid.db.secret_store import SecretStore
 
 
 class PlaidRequestLike(Protocol):

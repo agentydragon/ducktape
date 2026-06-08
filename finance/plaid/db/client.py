@@ -26,7 +26,7 @@ from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCr
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from plaid_utils.link_profiles import LinkProfile, Product, products_for_profile
+from finance.plaid.db.link_profiles import LinkProfile, Product, products_for_profile
 
 # Plaid removed the `development` environment in 2024; only sandbox/production remain.
 PLAID_HOSTS = {"sandbox": plaid.Environment.Sandbox, "production": plaid.Environment.Production}

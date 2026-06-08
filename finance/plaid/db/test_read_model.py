@@ -12,10 +12,10 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from plaid_utils.link_profiles import LinkProfile
-from plaid_utils.link_store import PlaidLinkStorage
-from plaid_utils.read_model import read_current_cash_balances, read_current_holdings
-from plaid_utils.schema import async_session_factory
+from finance.plaid.db.link_profiles import LinkProfile
+from finance.plaid.db.link_store import PlaidLinkStorage
+from finance.plaid.db.read_model import read_current_cash_balances, read_current_holdings
+from finance.plaid.db.schema import async_session_factory
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database

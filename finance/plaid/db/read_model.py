@@ -8,7 +8,14 @@ from datetime import date, datetime
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from plaid_utils.schema import AccountRow, BalanceSnapshotRow, HoldingSnapshotRow, LinkRow, SecurityRow, TransactionRow
+from finance.plaid.db.schema import (
+    AccountRow,
+    BalanceSnapshotRow,
+    HoldingSnapshotRow,
+    LinkRow,
+    SecurityRow,
+    TransactionRow,
+)
 
 
 @dataclass(frozen=True)

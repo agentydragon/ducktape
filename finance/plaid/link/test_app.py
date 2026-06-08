@@ -14,10 +14,11 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
-from plaid_utils.client import PlaidClient, PlaidSdkApiLike
-from plaid_utils.link_profiles import LinkProfile
-from plaid_utils.link_store import PlaidLinkStorage, StoredLink
-from plaid_utils.mcp_server.app import PlaidWebClient, PlaidWebSettings, create_app
+from finance.plaid.db.client import PlaidClient, PlaidSdkApiLike
+from finance.plaid.db.config import PlaidWebSettings
+from finance.plaid.db.link_profiles import LinkProfile
+from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink
+from finance.plaid.link.app import PlaidWebClient, create_app
 
 
 class _FakeStorage:

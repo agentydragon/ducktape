@@ -11,8 +11,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from plaid_utils.link_profiles import LinkProfile
-from plaid_utils.link_store import ApiEvent, PlaidLinkStorage
+from finance.plaid.db.link_profiles import LinkProfile
+from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database

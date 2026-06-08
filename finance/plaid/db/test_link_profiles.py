@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from plaid_utils.link_profiles import LinkProfile, products_for_profile, syncs_investment_transactions
+from finance.plaid.db.link_profiles import LinkProfile, products_for_profile, syncs_investment_transactions
 
 
 def test_profiles_map_to_minimal_plaid_products() -> None:

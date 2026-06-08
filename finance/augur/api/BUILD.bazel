@@ -109,8 +109,8 @@ py_library(
         ":portfolio_source_config",
         "//finance/augur/product:asset_key",
         "//finance/augur/sim:scenario",
-        "//plaid_utils:read_model",
-        "//plaid_utils:schema",
+        "//finance/plaid/db:read_model",
+        "//finance/plaid/db:schema",
     ],
 )
 
@@ -147,7 +147,7 @@ py_test(
         ":portfolio_source_config",
         ":portfolio_sources",
         "//finance/augur/product:asset_key",
-        "//plaid_utils:read_model",
+        "//finance/plaid/db:read_model",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

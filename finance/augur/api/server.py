@@ -58,7 +58,7 @@ from finance.augur.product.wire import (
     TerminalDistributionRequest,
     TerminalDistributionResponse,
 )
-from plaid_utils.schema import async_session_factory
+from finance.plaid.db.schema import async_session_factory
 
 
 @dataclass(frozen=True)
