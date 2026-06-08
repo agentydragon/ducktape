@@ -25,7 +25,7 @@ from props.agents.af.loop import make_agent, run_until_done
 from props.agents.af.middleware import terminate_after_tools
 from props.agents.af.tools import direct_tools
 from props.agents.grader.drift_handler import Drift, get_drift as get_drift_fn
-from props.agents.grader.notification_handler import notification_chat_middleware
+from props.agents.grader.notification_middleware import notification_chat_middleware
 from props.agents.grader.tools import (
     AddToClusterArgs,
     ClusterDetails,
@@ -93,8 +93,8 @@ TEXT_OUTPUT_REMINDER = (
 _WORKSPACE = Path("/workspace")
 
 
-class GraderAbortError(BaseException):
-    """Raised by report_failure to terminate the grader with exit code 1."""
+class GraderAbortError(Exception):
+    """Raised after the run ends when the report_failure tool fired; grader exits with code 1."""
 
 
 class GraderState:
@@ -127,13 +127,6 @@ class GraderState:
         logger.debug(f"Notification for {self.snapshot_slug}: {notification.operation} {notification.item.table}")
         self.notification_queue.append(notification)
         self.wake_event.set()
-
-
-def _make_gt_ref(pending: GradingPending) -> TPRef | FPRef:
-    """Create a GTRef from a GradingPending row."""
-    if pending.tp_id:
-        return TPRef(tp_id=pending.tp_id, occurrence_id=pending.tp_occurrence_id)
-    return FPRef(fp_id=pending.fp_id, occurrence_id=pending.fp_occurrence_id)
 
 
 def _create_grader_tools(grader_run_id: UUID, snapshot_slug: SnapshotSlug, state: GraderState, db: Database) -> list:

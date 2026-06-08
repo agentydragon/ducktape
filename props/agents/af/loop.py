@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from typing import Any
 
-from agent_framework import Agent, MiddlewareTermination, MiddlewareTypes
+from agent_framework import Agent, FunctionTool, MiddlewareTermination, MiddlewareTypes
 
 from props.agents.af.client import build_chat_client_from_env
 from props.db.database import Database
@@ -26,7 +25,7 @@ def make_agent(
     db: Database,
     *,
     instructions: str,
-    tools: list[Any],
+    tools: list[FunctionTool],
     middleware: Sequence[MiddlewareTypes],
 ) -> Agent:
     """Build a props MAF agent for the current run (client selected by the model's api_shape).
@@ -51,11 +50,9 @@ async def run_until_done(
     reminder: str,
     kickoff: str = "Begin.",
     max_turns: int | None = None,
-    **run_options: Any,
 ) -> None:
     """Run `agent` until `done()` returns true (or `max_turns` bursts elapse).
 
-    `run_options` (e.g. `allow_multiple_tool_calls=False`) are forwarded to `agent.run()`.
     The session persists history across bursts via MAF's in-memory history provider.
     """
     session = agent.create_session()
@@ -67,7 +64,7 @@ async def run_until_done(
             return
         turn += 1
         try:
-            await agent.run(message, session=session, **run_options)
+            await agent.run(message, session=session)
         except MiddlewareTermination:
             return  # a terminal tool fired; done() reflects it
         message = reminder

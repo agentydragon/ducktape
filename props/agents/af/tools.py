@@ -1,11 +1,15 @@
 """Adapt props' single-Pydantic-arg tool functions into MAF `FunctionTool`s.
 
 props tools are `def name(args: ArgsModel) -> str | BaseModel` (sync or async) with the
-docstring as the description. MAF invokes the wrapped function with the schema fields as
-keyword arguments, so we rebuild the args model and delegate — keeping every tool body and
-its flat JSON schema unchanged. Tool exceptions are caught by MAF's function-invocation loop
-and returned to the model (enable `include_detailed_errors` on the client), matching props'
-prior error-as-tool-result behavior.
+docstring as the description — one Pydantic-model parameter, not the per-parameter functions
+MAF builds tools from natively. We bridge that with MAF's **schema-supplied `FunctionTool`**
+mode: pass the model's JSON schema as `input_model` and reconstruct the model in a thin
+`**fields` wrapper. This is deliberate over MAF's `input_model=<model>` mode, which validates
+and *coerces* JSON-native args (e.g. a UUID string → `uuid.UUID`) and then rejects them against
+the string schema ("expected string, got UUID"); the schema-supplied mode only checks the raw
+args, so non-JSON-native fields (UUID/datetime) work. Tool exceptions are caught by MAF's
+function loop and returned to the model (`include_detailed_errors` on the client), matching
+props' prior error-as-tool-result behavior.
 """
 
 from __future__ import annotations

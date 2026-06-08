@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest_bazel
 from agent_framework import ChatContext, Message
 
-from props.agents.grader.notification_handler import _format_notifications, notification_chat_middleware
+from props.agents.grader.notification_middleware import _format_notifications, notification_chat_middleware
 from props.core.ids import SnapshotSlug
 from props.db.notifications import GradingPendingNotification, Operation, ReportedIssuesItem, TruePositivesItem
 

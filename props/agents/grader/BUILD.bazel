@@ -53,7 +53,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":drift_handler",
-        ":notification_handler",
+        ":notification_middleware",
         ":tools",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
@@ -122,8 +122,8 @@ py_library(
 )
 
 py_library(
-    name = "notification_handler",
-    srcs = ["notification_handler.py"],
+    name = "notification_middleware",
+    srcs = ["notification_middleware.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/db:notifications",
@@ -136,10 +136,10 @@ py_library(
 # =============================================================================
 
 py_test(
-    name = "test_notification_handler",
-    srcs = ["test_notification_handler.py"],
+    name = "test_notification_middleware",
+    srcs = ["test_notification_middleware.py"],
     deps = [
-        ":notification_handler",
+        ":notification_middleware",
         "//props/core:ids",
         "//props/db:notifications",
         "@pypi//agent_framework_core",
