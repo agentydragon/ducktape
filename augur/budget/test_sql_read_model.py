@@ -19,13 +19,21 @@ from testcontainers.postgres import PostgresContainer
 
 from augur.budget import sql_read_model
 from augur.budget.schema import (
+    AccountCondition,
+    AllOfCondition,
+    AmountCondition,
+    AnyOfCondition,
     BucketDef,
     BucketKind,
     BudgetConfig,
     BudgetSourceConfig,
+    MatchRule,
+    MerchantSubstringCondition,
     MerchantSubstringRule,
+    NameRegexCondition,
     NameSubstringRule,
     Override,
+    Rule,
     TransferDirection,
 )
 from augur.dates import DAYS_PER_MONTH
@@ -127,6 +135,11 @@ def _budget_config(overrides: tuple[Override, ...] = ()) -> BudgetConfig:
         include_default_rules=True,
         lumpy_threshold_usd=500.0,
     )
+
+
+def _config_with_rules(rules: tuple[Rule, ...]) -> BudgetConfig:
+    """Same buckets as `_budget_config`, but exactly `rules` and no default rules (isolation)."""
+    return _budget_config().model_copy(update={"rules": rules, "include_default_rules": False})
 
 
 def _tx(
@@ -458,6 +471,97 @@ async def test_sql_budget_snapshot_reports_stale_overrides(session_factory: asyn
 
     # Global existence probe: the live row is fine; the removed row and the absent id are stale.
     assert response.stale_overrides == ("ghost_txn_id", "removed_excluded")
+
+
+async def _custom_bucket_txns(
+    session_factory: async_sessionmaker[AsyncSession], config: BudgetConfig, bucket_id: str = "custom"
+) -> list[str]:
+    response = await sql_read_model.read_budget_bucket_transactions(
+        session_factory=session_factory,
+        config=config,
+        bucket_id=bucket_id,
+        window_start=date(2026, 3, 15),
+        window_end=date(2026, 4, 30),
+        account_ids=("checking",),
+    )
+    return [row.transaction_id for row in response.transactions]
+
+
+async def test_match_rule_all_of_combines_merchant_and_amount(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _config_with_rules(
+        (
+            MatchRule(
+                bucket_id="custom",
+                condition=AllOfCondition(
+                    conditions=(
+                        MerchantSubstringCondition(pattern="Grocery"),
+                        AmountCondition(min=500.0),
+                    )
+                ),
+            ),
+        )
+    )
+    # grocery_lumpy (1000, merchant Grocery) satisfies both legs; nothing else does.
+    assert await _custom_bucket_txns(session_factory, config) == ["grocery_lumpy"]
+
+
+async def test_match_rule_use_abs_any_of_still_respects_direction_gate(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _config_with_rules(
+        (
+            MatchRule(
+                bucket_id="custom",
+                condition=AnyOfCondition(
+                    conditions=(
+                        AmountCondition(min=10000.0, use_abs=True),
+                        MerchantSubstringCondition(pattern="no-such-merchant-zzz"),
+                    )
+                ),
+            ),
+        )
+    )
+    # abs(amount) >= 10000 matches wealthfront_out (+30000) and wealthfront_in (-12000), but
+    # `custom` is outflow, so the inflow leg is gated out -- only the outflow leg lands.
+    assert await _custom_bucket_txns(session_factory, config) == ["wealthfront_out"]
+
+
+async def test_match_rule_regex_first_match_wins_over_later_flat_rule(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _config_with_rules(
+        (
+            MatchRule(bucket_id="custom", condition=NameRegexCondition(pattern="^grocery$")),
+            MerchantSubstringRule(pattern="Grocery", bucket_id="general_merchandise"),
+        )
+    )
+    # grocery_lumpy name "GROCERY" matches the regex; the earlier match rule wins over the
+    # later flat merchant rule.
+    assert await _custom_bucket_txns(session_factory, config) == ["grocery_lumpy"]
+    assert await _custom_bucket_txns(session_factory, config, bucket_id="general_merchandise") == []
+
+
+async def test_match_rule_account_condition(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    await _seed_budget_rows(session_factory)
+    config = _config_with_rules(
+        (
+            MatchRule(
+                bucket_id="custom",
+                condition=AllOfCondition(
+                    conditions=(
+                        AccountCondition(account_ids=("checking",)),
+                        MerchantSubstringCondition(pattern="Target"),
+                    )
+                ),
+            ),
+        )
+    )
+    assert await _custom_bucket_txns(session_factory, config) == ["target_preempt"]
 
 
 if __name__ == "__main__":

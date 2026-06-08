@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -11,7 +12,26 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from augur.budget.default_rules import DEFAULT_RULES
-from augur.budget.schema import BudgetConfig, MerchantSubstringRule, NameSubstringRule, PfcRule, Rule
+from augur.budget.schema import (
+    AccountCondition,
+    AllOfCondition,
+    AmountCondition,
+    AnyOfCondition,
+    BudgetConfig,
+    Condition,
+    MatchRule,
+    MerchantRegexCondition,
+    MerchantSubstringCondition,
+    MerchantSubstringRule,
+    NameRegexCondition,
+    NameSubstringCondition,
+    NameSubstringRule,
+    NotCondition,
+    PfcCondition,
+    PfcRule,
+    Rule,
+    TransferDirection,
+)
 from augur.budget.wire import (
     BucketMonthly,
     BucketView,
@@ -68,48 +88,88 @@ def _overrides_json(config: BudgetConfig) -> str:
     )
 
 
-def _rule_rows_json(config: BudgetConfig) -> str:
-    bucket_ids = {bucket.id for bucket in config.buckets}
-    rows: list[dict[str, Any]] = []
-    for rule_order, rule in enumerate(_effective_rules(config)):
-        if rule.bucket_id not in bucket_ids:
+# --- Rule -> SQL compiler (Stage A) ------------------------------------------------
+# Each rule compiles to one `WHEN (<condition>) AND (<direction gate>) THEN :bucket` arm
+# of a CASE; first matching arm wins (rule order). Condition values become bound params
+# (never inlined), so patterns / amounts / account ids stay injection-safe.
+
+
+def _rule_condition(rule: Rule) -> Condition:
+    """The flat rule kinds are shorthands for single-leaf conditions; MatchRule carries its own."""
+    if isinstance(rule, MerchantSubstringRule):
+        return MerchantSubstringCondition(pattern=rule.pattern)
+    if isinstance(rule, NameSubstringRule):
+        return NameSubstringCondition(pattern=rule.pattern)
+    if isinstance(rule, PfcRule):
+        return PfcCondition(primary=rule.primary, detailed=rule.detailed)
+    if isinstance(rule, MatchRule):
+        return rule.condition
+    raise TypeError(f"unknown rule type: {type(rule).__name__}")
+
+
+def _compile_condition(cond: Condition, bind: Callable[[object], str]) -> str:
+    """Compile a condition to a boolean SQL expression over `base_tx`, binding values via `bind`."""
+    if isinstance(cond, MerchantSubstringCondition):
+        return f"position(lower({bind(cond.pattern)}) in lower(coalesce(base_tx.merchant_name, ''))) > 0"
+    if isinstance(cond, NameSubstringCondition):
+        return f"position(lower({bind(cond.pattern)}) in lower(base_tx.name)) > 0"
+    if isinstance(cond, MerchantRegexCondition):
+        return f"coalesce(base_tx.merchant_name, '') ~* {bind(cond.pattern)}"
+    if isinstance(cond, NameRegexCondition):
+        return f"base_tx.name ~* {bind(cond.pattern)}"
+    if isinstance(cond, PfcCondition):
+        sql = f"base_tx.pfc_primary = {bind(cond.primary)}"
+        if cond.detailed is not None:
+            sql = f"({sql} AND base_tx.pfc_detailed = {bind(cond.detailed)})"
+        return sql
+    if isinstance(cond, AmountCondition):
+        col = "abs(base_tx.amount)" if cond.use_abs else "base_tx.amount"
+        bounds: list[str] = []
+        if cond.min is not None:
+            bounds.append(f"{col} >= {bind(cond.min)}")
+        if cond.max is not None:
+            bounds.append(f"{col} <= {bind(cond.max)}")
+        return "(" + " AND ".join(bounds) + ")"
+    if isinstance(cond, AccountCondition):
+        return f"base_tx.account_id = ANY(CAST({bind(list(cond.account_ids))} AS text[]))"
+    if isinstance(cond, AllOfCondition):
+        return "(" + " AND ".join(_compile_condition(c, bind) for c in cond.conditions) + ")"
+    if isinstance(cond, AnyOfCondition):
+        return "(" + " OR ".join(_compile_condition(c, bind) for c in cond.conditions) + ")"
+    if isinstance(cond, NotCondition):
+        return f"(NOT ({_compile_condition(cond.condition, bind)}))"
+    raise TypeError(f"unknown condition type: {type(cond).__name__}")
+
+
+def _direction_gate(direction: TransferDirection) -> str:
+    # Plaid signs outflows positive, inflows negative; a rule fires only on the leg whose sign
+    # matches its target bucket's direction (same gating as the flat rule kinds).
+    return "base_tx.amount >= 0" if direction == TransferDirection.OUTFLOW else "base_tx.amount < 0"
+
+
+def _compile_rules_case(config: BudgetConfig) -> tuple[str, dict[str, object]]:
+    """Build the first-match-wins CASE assigning a bucket from the rules, plus its bind params."""
+    buckets_by_id = {bucket.id: bucket for bucket in config.buckets}
+    params: dict[str, object] = {}
+    counter = 0
+
+    def bind(value: object) -> str:
+        nonlocal counter
+        key = f"rc{counter}"
+        counter += 1
+        params[key] = value
+        return f":{key}"
+
+    arms: list[str] = []
+    for rule in _effective_rules(config):
+        bucket = buckets_by_id.get(rule.bucket_id)
+        if bucket is None:
             continue
-        if isinstance(rule, MerchantSubstringRule):
-            rows.append(
-                {
-                    "rule_order": rule_order,
-                    "rule_kind": "merchant_substring",
-                    "bucket_id": rule.bucket_id,
-                    "pattern": rule.pattern,
-                    "primary_value": None,
-                    "detailed_value": None,
-                }
-            )
-        elif isinstance(rule, NameSubstringRule):
-            rows.append(
-                {
-                    "rule_order": rule_order,
-                    "rule_kind": "name_substring",
-                    "bucket_id": rule.bucket_id,
-                    "pattern": rule.pattern,
-                    "primary_value": None,
-                    "detailed_value": None,
-                }
-            )
-        elif isinstance(rule, PfcRule):
-            rows.append(
-                {
-                    "rule_order": rule_order,
-                    "rule_kind": "pfc",
-                    "bucket_id": rule.bucket_id,
-                    "pattern": None,
-                    "primary_value": rule.primary,
-                    "detailed_value": rule.detailed,
-                }
-            )
-        else:
-            raise TypeError(f"unknown rule type: {type(rule).__name__}")
-    return json.dumps(rows)
+        cond_sql = _compile_condition(_rule_condition(rule), bind)
+        arms.append(f"WHEN ({cond_sql}) AND ({_direction_gate(bucket.direction)}) THEN {bind(rule.bucket_id)}")
+    if not arms:
+        return "NULL", params
+    return "CASE " + " ".join(arms) + " END", params
 
 
 def _account_filter_sql(account_ids: tuple[str, ...]) -> str:
@@ -123,18 +183,6 @@ WITH bucket_defs AS (
     SELECT *
     FROM jsonb_to_recordset(CAST(:bucket_defs_json AS jsonb))
         AS b(bucket_id text, kind text, direction text)
-),
-rules AS (
-    SELECT *
-    FROM jsonb_to_recordset(CAST(:rules_json AS jsonb))
-        AS r(
-            rule_order integer,
-            rule_kind text,
-            bucket_id text,
-            pattern text,
-            primary_value text,
-            detailed_value text
-        )
 ),
 overrides AS (
     SELECT *
@@ -170,7 +218,9 @@ classified_tx AS (
             -- direction-gated: an explicit human/agent call routes the txn to its bucket
             -- regardless of sign (e.g. a +amount "Returned Payment" -> transfers_out).
             ovr.bucket_id,
-            matched.bucket_id,
+            -- Generated first-match-wins CASE over the configured rules (_compile_rules_case);
+            -- evaluates to NULL when no rule matches, falling through to the per-direction default.
+            {matched_case},
             CASE
                 WHEN base_tx.amount < 0 THEN :default_inflow_bucket_id
                 ELSE :default_outflow_bucket_id
@@ -178,39 +228,11 @@ classified_tx AS (
         ) AS bucket_id
     FROM base_tx
     LEFT JOIN overrides AS ovr ON ovr.transaction_id = base_tx.transaction_id
-    LEFT JOIN LATERAL (
-        SELECT rules.bucket_id
-        FROM rules
-        JOIN bucket_defs ON bucket_defs.bucket_id = rules.bucket_id
-        WHERE
-            (
-                (
-                    rules.rule_kind = 'merchant_substring'
-                    AND position(lower(rules.pattern) in lower(coalesce(base_tx.merchant_name, ''))) > 0
-                )
-                OR (
-                    rules.rule_kind = 'name_substring'
-                    AND position(lower(rules.pattern) in lower(base_tx.name)) > 0
-                )
-                OR (
-                    rules.rule_kind = 'pfc'
-                    AND base_tx.pfc_primary = rules.primary_value
-                    AND (rules.detailed_value IS NULL OR base_tx.pfc_detailed = rules.detailed_value)
-                )
-            )
-            AND (
-                (bucket_defs.direction = 'outflow' AND base_tx.amount >= 0)
-                OR (bucket_defs.direction = 'inflow' AND base_tx.amount < 0)
-            )
-        ORDER BY rules.rule_order
-        LIMIT 1
-    ) AS matched ON TRUE
 )
 """
 
-_MONTHLY_TOTALS_SQL_TEMPLATE = (
-    _CLASSIFIED_TX_CTE_TEMPLATE
-    + """
+# Query tails appended to the dynamically-built classified-tx CTE (see _budget_query).
+_MONTHLY_TOTALS_TAIL = """
 SELECT
     classified_tx.bucket_id,
     date_trunc('month', classified_tx.date)::date AS month,
@@ -220,11 +242,8 @@ FROM classified_tx
 GROUP BY classified_tx.bucket_id, month
 ORDER BY month, classified_tx.bucket_id
 """
-)
 
-_LUMPY_SQL_TEMPLATE = (
-    _CLASSIFIED_TX_CTE_TEMPLATE
-    + """
+_LUMPY_TAIL = """
 SELECT
     classified_tx.transaction_id,
     classified_tx.date,
@@ -238,11 +257,8 @@ WHERE classified_tx.amount >= :lumpy_threshold_usd
   AND bucket_defs.kind = 'expense'
 ORDER BY classified_tx.amount DESC, classified_tx.date, classified_tx.transaction_id
 """
-)
 
-_DRILLDOWN_SQL_TEMPLATE = (
-    _CLASSIFIED_TX_CTE_TEMPLATE
-    + """
+_DRILLDOWN_TAIL = """
 SELECT
     classified_tx.transaction_id,
     classified_tx.date,
@@ -260,7 +276,6 @@ JOIN links AS link ON link.item_id = classified_tx.item_id
 WHERE classified_tx.bucket_id = :bucket_id
 ORDER BY classified_tx.date, classified_tx.transaction_id
 """
-)
 
 # Stale-override probe (decision 7): a GLOBAL existence check by transaction_id, NOT
 # scoped to the request window/accounts, so an override for an out-of-window txn is not
@@ -280,23 +295,32 @@ async def _read_stale_overrides(session: AsyncSession, config: BudgetConfig) -> 
     return tuple(sorted({txn_id for txn_id in override_ids if txn_id not in live}))
 
 
-def _statement_params(
-    *, config: BudgetConfig, window_start: date, window_end: date, account_ids: tuple[str, ...]
-) -> dict[str, object]:
-    return {
+def _budget_query(
+    tail: str,
+    *,
+    config: BudgetConfig,
+    window_start: date,
+    window_end: date,
+    account_ids: tuple[str, ...],
+    extra_params: dict[str, object] | None = None,
+) -> tuple[Any, dict[str, object]]:
+    """Build an executable statement (classified-tx CTE + `tail`) and its bind params."""
+    matched_case, rule_params = _compile_rules_case(config)
+    cte = _CLASSIFIED_TX_CTE_TEMPLATE.format(
+        account_filter=_account_filter_sql(account_ids), matched_case=matched_case
+    )
+    params: dict[str, object] = {
         "bucket_defs_json": _bucket_defs_json(config),
-        "rules_json": _rule_rows_json(config),
         "overrides_json": _overrides_json(config),
         "window_start": window_start,
         "window_end": window_end,
         "default_inflow_bucket_id": config.default_inflow_bucket_id,
         "default_outflow_bucket_id": config.default_outflow_bucket_id,
         "account_ids": list(account_ids),
+        **rule_params,
+        **(extra_params or {}),
     }
-
-
-def _budget_statement(sql_template: str, account_ids: tuple[str, ...]) -> Any:
-    return text(sql_template.format(account_filter=_account_filter_sql(account_ids)))
+    return text(cte + tail), params
 
 
 @dataclass(frozen=True)
@@ -316,18 +340,21 @@ async def read_budget_snapshot(
     account_ids: tuple[str, ...] = (),
 ) -> BudgetSnapshotResponse:
     """Return the budget snapshot with filtering, classification, and grouping done in SQL."""
-    params = _statement_params(config=config, window_start=window_start, window_end=window_end, account_ids=account_ids)
+    monthly_stmt, monthly_params = _budget_query(
+        _MONTHLY_TOTALS_TAIL, config=config, window_start=window_start, window_end=window_end, account_ids=account_ids
+    )
+    lumpy_stmt, lumpy_params = _budget_query(
+        _LUMPY_TAIL,
+        config=config,
+        window_start=window_start,
+        window_end=window_end,
+        account_ids=account_ids,
+        extra_params={"lumpy_threshold_usd": config.lumpy_threshold_usd},
+    )
     async with session_factory() as session:
         stale_overrides = await _read_stale_overrides(session, config)
-        monthly_rows = (
-            await session.execute(_budget_statement(_MONTHLY_TOTALS_SQL_TEMPLATE, account_ids), params)
-        ).mappings()
-        lumpy_rows = (
-            await session.execute(
-                _budget_statement(_LUMPY_SQL_TEMPLATE, account_ids),
-                params | {"lumpy_threshold_usd": config.lumpy_threshold_usd},
-            )
-        ).mappings()
+        monthly_rows = (await session.execute(monthly_stmt, monthly_params)).mappings()
+        lumpy_rows = (await session.execute(lumpy_stmt, lumpy_params)).mappings()
         monthly = tuple(
             _MonthlyAgg(
                 bucket_id=row["bucket_id"],
@@ -397,11 +424,16 @@ async def read_budget_bucket_transactions(
     bucket_ids = {bucket.id for bucket in config.buckets}
     if bucket_id not in bucket_ids:
         raise ValueError(f"unknown bucket_id {bucket_id!r}; have {sorted(bucket_ids)}")
-    params = _statement_params(
-        config=config, window_start=window_start, window_end=window_end, account_ids=account_ids
-    ) | {"bucket_id": bucket_id}
+    stmt, params = _budget_query(
+        _DRILLDOWN_TAIL,
+        config=config,
+        window_start=window_start,
+        window_end=window_end,
+        account_ids=account_ids,
+        extra_params={"bucket_id": bucket_id},
+    )
     async with session_factory() as session:
-        rows = (await session.execute(_budget_statement(_DRILLDOWN_SQL_TEMPLATE, account_ids), params)).mappings()
+        rows = (await session.execute(stmt, params)).mappings()
         transactions = tuple(
             TransactionView(
                 transaction_id=row["transaction_id"],
