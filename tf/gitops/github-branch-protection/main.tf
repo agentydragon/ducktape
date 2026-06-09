@@ -54,14 +54,6 @@ locals {
   automation_app_id = 3590331
 }
 
-# CLEANUP(2026-06-09): resource renamed ducktape_main -> default_branch_protection
-# when devel was added to the ruleset. Drop this moved block once the apply
-# (state move) has landed in the tf-runner backend.
-moved {
-  from = github_repository_ruleset.ducktape_main
-  to   = github_repository_ruleset.default_branch_protection
-}
-
 resource "github_repository_ruleset" "default_branch_protection" {
   name        = "default-branch-protection"
   repository  = "ducktape"

@@ -156,10 +156,10 @@ No further migration is needed before enabling protection on `devel`.
 
 The originally-planned evaluate gate turned out to be Enterprise-only (see the
 plan-limitation note above), so the ruleset went straight to
-`enforcement = "active"` covering `devel` + `main`. The `moved` block renames
-`ducktape_main` → `default_branch_protection` as an in-place state move; drop
-it (per its `CLEANUP` marker) once the tf-runner has applied successfully and
-`lastAppliedRevision` advances past the rename.
+`enforcement = "active"` covering `devel` + `main` (applied 2026-06-09). The
+resource was renamed `ducktape_main` → `default_branch_protection` via a
+`moved` block; that state move has since landed and the `moved` block has been
+removed.
 
 Verification that substituted for the evaluate gate:
 
