@@ -6,6 +6,7 @@ import math
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,7 +14,6 @@ import numpy as np
 import pandas as pd
 
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
-from util.bazel.runfiles import get_required_path
 
 # Public exogenous source data files, as repo-root-relative paths. Each string
 # doubles as the stable provenance label recorded in
@@ -53,12 +53,17 @@ MINIMUM_ALIGNED_MONTHS = 36
 
 
 def _source_path(repo_relative: str) -> Path:
-    """Resolve a repo-root-relative source-data path to its absolute runfiles path.
+    """Resolve a vendored augur data file (``finance/augur/data/...``) to an absolute path.
 
-    augur is the Bazel main repo here, so its runfiles live under the `_main/`
-    workspace dir (matches the `get_required_path("_main/finance/augur/...")` convention
-    used across augur)."""
-    return get_required_path(f"_main/{repo_relative}")
+    Accessed as a package resource under the ``finance.augur`` package via
+    ``importlib.resources`` rather than a hardcoded ``_main/`` runfiles prefix, so it resolves
+    whether augur is the Bazel main repo (its own tests) or an external module consumed by a
+    downstream repo (e.g. gaffer via ``archive_override``)."""
+    sub = repo_relative.removeprefix("finance/augur/").split("/")
+    path = Path(str(resources.files("finance.augur").joinpath(*sub)))
+    if not path.exists():
+        raise RuntimeError(f"augur source-data resource not found: {repo_relative}")
+    return path
 
 
 MONTHS_PER_YEAR = 12

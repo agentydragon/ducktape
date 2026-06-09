@@ -13,7 +13,6 @@ py_library(
     data = [":evidence_source_files"],
     deps = [
         "//finance/augur/model:series",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
         "@pypi//pandas",
     ],
