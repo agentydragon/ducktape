@@ -242,10 +242,13 @@ scoring (log/Brier; pinball for stated quantiles), the asserted-cutoff model
 registry (`model_cutoffs.py` — `knowledge_cutoff` for default admissibility,
 `weights_released` as the hard bound under `--strict`; admissibility: bound ≤
 task `as_of`), six hand-curated seed tasks, **series-derived harvested tasks**
-(`series_tasks.py`: ~330 threshold/level questions minted from frozen monthly
-S&P 500 / BTC / CPI history in `data/`, spot-checks pinned in CI; the
-Oct-2025 BLS CPI hole is handled), and the **bare-prompt structured-answer
-baseline** (`//loom/gym:baseline_eval`). Sampling routes through the cluster
+(`series_tasks.py`: ~330 threshold/level questions minted from monthly
+S&P 500 / BTC / CPI history read from the **augur-evidence checkout** —
+`AUGUR_EVIDENCE_DIR`, or a shallow clone via the `augur-evidence-git-read`
+credentials reflected into claude-sandbox; the repo vendors no market data,
+known-history values are validated at load, and the Oct-2025 BLS CPI hole is
+handled), and the **bare-prompt structured-answer baseline**
+(`//loom/gym:baseline_eval`). Sampling routes through the cluster
 LiteLLM proxy speaking the **Anthropic messages API** with a forced
 `submit_answer` tool call (the shape known to give reliable structured
 objects from the GLM models), tagged `x-litellm-tags: loom-gym` so the

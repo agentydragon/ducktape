@@ -18,6 +18,8 @@ py_library(
     name = "compare_runs",
     srcs = ["compare_runs.py"],
     deps = [
+        ":evidence_checkout",
+        ":monthly_series",
         ":scoring",
         ":series_tasks",
     ],
@@ -37,24 +39,11 @@ py_library(
 py_library(
     name = "monthly_series",
     srcs = ["monthly_series.py"],
-    deps = ["@pypi//boto3"],
 )
 
 py_library(
-    name = "fetch_series",
-    srcs = ["fetch_series.py"],
-    deps = [
-        ":monthly_series",
-        ":results_store",
-        "@pypi//httpx",
-    ],
-)
-
-# keep
-py_binary(
-    name = "fetch_series_bin",
-    main_module = "loom.gym.fetch_series",
-    deps = [":fetch_series"],
+    name = "evidence_checkout",
+    srcs = ["evidence_checkout.py"],
 )
 
 py_library(
@@ -113,7 +102,9 @@ py_library(
     deps = [
         ":baseline_llm",
         ":dossier",
+        ":evidence_checkout",
         ":model_cutoffs",
+        ":monthly_series",
         ":results_store",
         ":scoring",
         ":series_tasks",
@@ -260,11 +251,21 @@ py_test(
 )
 
 py_test(
-    name = "test_fetch_series",
-    srcs = ["test_fetch_series.py"],
+    name = "test_monthly_series",
+    srcs = ["test_monthly_series.py"],
     deps = [
-        ":fetch_series",
         ":monthly_series",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_evidence_checkout",
+    srcs = ["test_evidence_checkout.py"],
+    deps = [
+        ":evidence_checkout",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

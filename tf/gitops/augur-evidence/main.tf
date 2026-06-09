@@ -98,9 +98,9 @@ resource "kubernetes_secret" "augur_evidence_git_read" {
     namespace = "budget"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "augur,claude-sandbox"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "augur,claude-sandbox"
     }
   }
 

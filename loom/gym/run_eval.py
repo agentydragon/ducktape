@@ -21,8 +21,9 @@ import httpx
 
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult, forecast, forecast_bundle
 from loom.gym.dossier import series_dossier
+from loom.gym.evidence_checkout import ensure_checkout
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
-from loom.gym.monthly_series import MonthlySeries, default_series
+from loom.gym.monthly_series import MonthlySeries, load_series
 from loom.gym.results_store import results_client, upload_run
 from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
 from loom.gym.series_tasks import all_tasks
@@ -184,7 +185,7 @@ def main() -> None:
         model_id=args.model_id,
         endpoint_model=args.endpoint_model or f"{args.model_id}-anthropic",
     )
-    series = list(default_series())
+    series = list(load_series(ensure_checkout()))
     tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
     print(
         f"{len(tasks)} admissible tasks for {args.model_id} "
