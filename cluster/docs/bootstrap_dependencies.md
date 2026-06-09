@@ -311,12 +311,9 @@ re-enter from the external service and SOPS-encrypt.
 
 ### Lost cluster age key
 
-1. Generate: `age-keygen -o /dev/stdout`
-2. SOPS-encrypt private key to `secrets/shared/cluster-secrets-age.yaml`
-3. Update `.sops.yaml` with new public key
-4. Re-encrypt all `k8s/**/*.sops.yaml`: `for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done`
-5. `tofu apply` to deploy new k8s secret
-6. Commit + push; Flux picks up re-encrypted secrets
+Regenerate and redeploy per <secrets.md> § "Rotating the Cluster Age Key". The
+key is also SOPS-backed in `secrets/shared/cluster-secrets-age.yaml`, so it
+survives tofu-state loss.
 
 ### Lost single app credential
 

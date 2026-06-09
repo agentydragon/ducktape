@@ -201,29 +201,10 @@ Vault is decommissioned. Kept for context only.
 
 ### SOPS Decryption Failure
 
-**Symptoms**: Kustomization shows `sops decryption error`; secrets not created.
-
-**Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
-match the key used to encrypt the `*.sops.yaml` files.
-
-**Fix**:
-
-```bash
-# Verify the key exists
-kubectl get secret sops-age-cluster-secrets -n flux-system
-
-# Re-encrypt all cluster SOPS files with current keys
-for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done
-
-# Redeploy the age key from tofu state
-cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets
-```
-
-**Validation** (runs as part of unified pre-commit):
-
-```bash
-pre-commit run --all-files
-```
+`sops decryption error` on a Kustomization means the cluster age key in
+`flux-system/sops-age-cluster-secrets` doesn't match the key that encrypted the
+`*.sops.yaml` files. See <secrets.md> § "SOPS Decryption Failure in Flux" for the
+verify / `sops updatekeys` / redeploy fix (validated by `pre-commit run --all-files`).
 
 ## PVC File Ownership After Restore
 
