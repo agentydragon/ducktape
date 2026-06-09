@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import tempfile
+from collections.abc import Iterator
+from pathlib import Path
+
 import pytest
 
 from finance.augur.api.config import Config, load_augur_config
+from finance.augur.fit.synthetic_evidence import write_synthetic_evidence
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.model.testing import (
     ConstantFrameModel,
@@ -15,6 +20,19 @@ from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from util.bazel.runfiles import get_required_path
 
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _augur_evidence_dir() -> Iterator[None]:
+    """Point AUGUR_EVIDENCE_DIR at a synthetic evidence set for the whole session.
+
+    The augur server reads exogenous evidence from AUGUR_EVIDENCE_DIR (the git-synced dir in
+    prod); any test that exercises the server — the calibration endpoint, the visual goldens —
+    needs it set, so mirror prod and always provide it here."""
+    with tempfile.TemporaryDirectory() as tmp, pytest.MonkeyPatch.context() as monkeypatch:
+        write_synthetic_evidence(Path(tmp))
+        monkeypatch.setenv("AUGUR_EVIDENCE_DIR", tmp)
+        yield
 
 
 @pytest.fixture(scope="module")

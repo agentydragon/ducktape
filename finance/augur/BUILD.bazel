@@ -11,6 +11,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//finance/augur/api:config",
+        "//finance/augur/fit:synthetic_evidence",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "//finance/augur/product:testing",
