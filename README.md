@@ -20,6 +20,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `tana/`            | Tana export toolkit                       |
 | `finance/`         | Portfolio tracking (Rust)                 |
 | `augur/`           | Probabilistic financial-futures simulator |
+| `loom/`            | Prediction markets → rollout interpolator |
 | `idea/`            | Lightweight future project ideas          |
 | `trilium/`         | Trilium Notes extensions                  |
 | `inventree_utils/` | InventTree plugins                        |

@@ -3,6 +3,10 @@
 Status: **position / framing doc** (2026-06-04). States what augur's exogenous `model` _is_
 conceptually; the fitting mechanics live in the companion `augur/plans/unified_model_fit.md`.
 
+Execution home (2026-06-09): this position is being built out as the standalone `loom/`
+program — see `loom/plans/program_plan.md`. augur consumes its WorldSet artifacts through a
+bridge on augur's side.
+
 Companion reading:
 
 - `augur/plans/unified_model_fit.md` — how to actually fit it (estimator, split, surfacing).
