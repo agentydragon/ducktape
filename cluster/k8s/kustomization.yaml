@@ -331,6 +331,7 @@ resources:
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml
   - seaweedfs/langfuse-bucket/flux-kustomization.yaml
+  - seaweedfs/loom-gym-bucket/flux-kustomization.yaml
   - seaweedfs/public-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml

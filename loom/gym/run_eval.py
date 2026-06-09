@@ -14,6 +14,7 @@ import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -21,6 +22,7 @@ import httpx
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult, forecast, forecast_bundle
 from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
+from loom.gym.results_store import results_client, upload_run
 from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
 from loom.gym.series_tasks import all_tasks
 from loom.gym.task import Task
@@ -123,11 +125,11 @@ def _print_group_mean(label: str, rows: list[EvalRow]) -> None:
     print(f"mean[{label}] over {len(rows)} tasks: " + " ".join(parts))
 
 
-def report(rows: list[EvalRow], model_id: str, output: Path | None) -> None:
+def report(rows: list[EvalRow]) -> None:
     for row in rows:
         metrics = " ".join(f"{name}={value:.4f}" for name, value in row.task_score.metrics.items())
         print(f"{row.task.task_id:36} {row.task.question.kind:7} {metrics}")
-    for kind in ("binary", "scalar"):
+    for kind in ("binary", "scalar", "categorical"):
         if kind_rows := [row for row in rows if row.task.question.kind == kind]:
             _print_group_mean(kind, kind_rows)
     # Raw pinball is not comparable across series (S&P points vs CPI index), so
@@ -136,16 +138,22 @@ def report(rows: list[EvalRow], model_id: str, output: Path | None) -> None:
     for prefix in sorted({row.task.task_id.split("-")[0] for row in rows}):
         _print_group_mean(prefix, [row for row in rows if row.task.task_id.split("-")[0] == prefix])
 
-    if output is not None:
-        payload = {
-            "model_id": model_id,
-            "results": [
-                {"task_id": row.task.task_id, "answer": row.answer.model_dump(), "metrics": row.task_score.metrics}
-                for row in rows
-            ],
-        }
-        output.write_text(json.dumps(payload, indent=2))
-        print(f"wrote {output}")
+
+def run_payload(rows: list[EvalRow], model_id: str, mode: str, totals: TokenTotals) -> dict[str, object]:
+    return {
+        "model_id": model_id,
+        "mode": mode,
+        "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "totals": {
+            "requests": totals.requests,
+            "input_tokens": totals.input_tokens,
+            "output_tokens": totals.output_tokens,
+        },
+        "results": [
+            {"task_id": row.task.task_id, "answer": row.answer.model_dump(), "metrics": row.task_score.metrics}
+            for row in rows
+        ],
+    }
 
 
 def main() -> None:
@@ -166,6 +174,7 @@ def main() -> None:
         "--strict", action="store_true", help="Bound admissibility by weights-release date, not knowledge cutoff."
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional path for JSON results.")
+    parser.add_argument("--upload", action="store_true", help="Upload results to s3://loom-gym/runs/ on cluster S3.")
     args = parser.parse_args()
     api_key = os.environ.get(args.api_key_env) or Path("/tmp/litellm_key").read_text().strip()
     endpoint = ChatEndpoint(
@@ -184,7 +193,15 @@ def main() -> None:
         f"requests={totals.requests} input_tokens={totals.input_tokens} output_tokens={totals.output_tokens} "
         f"tasks_per_request={len(rows) / totals.requests:.2f}"
     )
-    report(rows=rows, model_id=endpoint.model_id, output=args.output)
+    report(rows)
+    mode = ("data" if args.with_data else "bare") + ("-bundled" if args.bundled else "")
+    payload = run_payload(rows=rows, model_id=endpoint.model_id, mode=mode, totals=totals)
+    if args.output is not None:
+        args.output.write_text(json.dumps(payload, indent=2))
+        print(f"wrote {args.output}")
+    if args.upload:
+        key = upload_run(results_client(), payload, now=datetime.now(UTC))
+        print(f"uploaded s3://loom-gym/{key}")
 
 
 if __name__ == "__main__":

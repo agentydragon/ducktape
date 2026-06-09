@@ -71,6 +71,12 @@ py_library(
     deps = [":monthly_series"],
 )
 
+py_library(
+    name = "results_store",
+    srcs = ["results_store.py"],
+    deps = ["@pypi//boto3"],
+)
+
 filegroup(
     name = "sandbox_compose",
     srcs = ["sandbox/compose.yaml"],
@@ -96,6 +102,7 @@ py_library(
         ":baseline_llm",
         ":dossier",
         ":model_cutoffs",
+        ":results_store",
         ":scoring",
         ":series_tasks",
         ":task",
@@ -224,6 +231,17 @@ py_test(
         ":compare_runs",
         "//:conftest",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_results_store",
+    srcs = ["test_results_store.py"],
+    deps = [
+        ":results_store",
+        "//:conftest",
+        "@pypi//boto3",
         "@pypi//pytest_bazel",
     ],
 )

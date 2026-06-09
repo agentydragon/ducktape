@@ -48,5 +48,12 @@ export AWS_ENDPOINT_URL="https://s3.allegedly.works"
 export AWS_DEFAULT_REGION="us-east-1"
 unset _s3_reader
 
+# loom-gym S3 writer (forecasting-gym eval-run results). Scoped to the
+# loom-gym bucket only; consumed by //loom/gym:baseline_eval --upload.
+_s3_loom="$REPO_ROOT/cluster/k8s/seaweedfs/public-s3/loom-gym-credentials.sops.yaml"
+try_export LOOM_GYM_S3_ACCESS_KEY_ID "$_s3_loom" '["stringData"]["loomGymWriterAccessKey"]' "SeaweedFS loom-gym writer access key"
+try_export LOOM_GYM_S3_SECRET_ACCESS_KEY "$_s3_loom" '["stringData"]["loomGymWriterSecretKey"]' "SeaweedFS loom-gym writer secret key"
+unset _s3_loom
+
 # Restore the caller's shell options (do not leak our `set -euo pipefail`; see _common.sh).
 _secrets_restore_shell_opts
