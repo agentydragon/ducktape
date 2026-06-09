@@ -18,11 +18,12 @@ Families per (series, anchor), horizon 12 months:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from itertools import pairwise
 
-from loom.gym.monthly_series import MonthlySeries, add_months, default_series, month_end
+from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.task import BinaryOutcome, BinaryQuestion, CategoricalOutcome, CategoricalQuestion, Task
 
 HORIZON_MONTHS = 12
@@ -37,12 +38,12 @@ class BundleSpec:
     band_fractions: tuple[float, ...]
 
 
-def default_bundle_specs() -> tuple[BundleSpec, ...]:
-    sp500, btcusd, cpi = default_series()
+def default_bundle_specs(series: Sequence[MonthlySeries]) -> tuple[BundleSpec, ...]:
+    by_id = {one_series.series_id: one_series for one_series in series}
     return (
-        BundleSpec(series=sp500, level_multipliers=(0.95, 1.05, 1.15), band_fractions=(0.05, 0.1, 0.2)),
-        BundleSpec(series=btcusd, level_multipliers=(0.8, 1.2, 1.8), band_fractions=(0.2, 0.4, 0.8)),
-        BundleSpec(series=cpi, level_multipliers=(1.0, 1.02, 1.04), band_fractions=(0.01, 0.02, 0.04)),
+        BundleSpec(series=by_id["sp500"], level_multipliers=(0.95, 1.05, 1.15), band_fractions=(0.05, 0.1, 0.2)),
+        BundleSpec(series=by_id["btcusd"], level_multipliers=(0.8, 1.2, 1.8), band_fractions=(0.2, 0.4, 0.8)),
+        BundleSpec(series=by_id["cpi"], level_multipliers=(1.0, 1.02, 1.04), band_fractions=(0.01, 0.02, 0.04)),
     )
 
 
@@ -76,7 +77,7 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
 
     bundle_id = f"{series.series_id}-bundle-{anchor:%Y-%m}"
     header = f"As of {anchor:%Y-%m} the {series.description} is {anchor_level:,.2f}."
-    source = f"computed from loom/gym/data ({series.provenance})"
+    source = f"computed from {series.provenance}"
     resolution = month_end(target)
     level_edges = tuple(round(anchor_level * multiplier, 2) for multiplier in spec.level_multipliers)
     level_labels = bucket_labels(level_edges)
@@ -162,11 +163,20 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
     return tasks
 
 
-def bundle_tasks(anchor_start: date = date(2016, 3, 1), anchor_step_months: int = 3) -> tuple[Task, ...]:
+def tasks_for_bundle_spec(spec: BundleSpec, anchor_start: date, anchor_step_months: int) -> list[Task]:
     tasks: list[Task] = []
-    for spec in default_bundle_specs():
-        anchor = anchor_start
-        while anchor <= spec.series.last_month():
-            tasks.extend(tasks_for_bundle(spec, anchor))
-            anchor = add_months(anchor, anchor_step_months)
-    return tuple(tasks)
+    anchor = anchor_start
+    while anchor <= spec.series.last_month():
+        tasks.extend(tasks_for_bundle(spec, anchor))
+        anchor = add_months(anchor, anchor_step_months)
+    return tasks
+
+
+def bundle_tasks(
+    series: Sequence[MonthlySeries], anchor_start: date = date(2016, 3, 1), anchor_step_months: int = 3
+) -> tuple[Task, ...]:
+    return tuple(
+        task
+        for spec in default_bundle_specs(series)
+        for task in tasks_for_bundle_spec(spec, anchor_start, anchor_step_months)
+    )

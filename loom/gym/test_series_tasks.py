@@ -5,7 +5,7 @@ from datetime import date
 import pytest_bazel
 
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
-from loom.gym.series_tasks import SeriesTaskSpec, series_tasks, tasks_for_spec
+from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, ScalarOutcome
 
 # Linear ramp 100, 102, ... over 2020-01..2020-12 with a hole at 2020-05
@@ -49,22 +49,6 @@ def test_windows_beyond_data_are_not_emitted() -> None:
     tasks = tasks_for_spec(spec, anchor_start=date(2020, 1, 1), anchor_step_months=3)
     # Last month is 2020-12; anchors 2020-07/2020-10 have no +6m data, so only 2020-01/2020-04 yield tasks.
     assert {task.as_of for task in tasks} == {date(2020, 2, 1), date(2020, 5, 1)}
-
-
-def test_default_series_tasks_generate_at_scale() -> None:
-    tasks = series_tasks()
-    assert len(tasks) > 100
-    assert len({task.task_id for task in tasks}) == len(tasks)
-    # The glm-4.5 probed-cutoff window (as_of ≥ 2024-07-01) must be non-empty.
-    assert sum(task.as_of >= date(2024, 7, 1) for task in tasks) >= 20
-
-
-def test_known_history_spot_checks() -> None:
-    # The S&P closed 2024 at 5881.63 after an anchor (2024-06) close of 5460.48:
-    # the 1.05× six-month threshold (5733.50) was crossed (Nov 6032.38).
-    tasks = {task.task_id: task for task in series_tasks()}
-    assert tasks["sp500-ge-1.05x-2024-06-h6"].outcome == BinaryOutcome(value=True)
-    assert tasks["sp500-level-2024-06-h6"].outcome == ScalarOutcome(value=5881.63)
 
 
 if __name__ == "__main__":

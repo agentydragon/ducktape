@@ -26,6 +26,7 @@ from inspect_ai.tool import bash, python
 from loom.gym import scoring
 from loom.gym.baseline_llm import answer_instruction, parse_answer
 from loom.gym.dossier import series_dossier
+from loom.gym.monthly_series import MonthlySeries
 from loom.gym.task import Task
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ AGENT_PROMPT = (
 )
 
 
-def sample_for_task(task: Task) -> Sample:
+def sample_for_task(task: Task, dossier: dict[str, str]) -> Sample:
     instructions = (
         f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then; "
         f"use only them and knowledge of events on or before {task.as_of}.\n"
@@ -51,7 +52,7 @@ def sample_for_task(task: Task) -> Sample:
         id=task.task_id,
         input=instructions,
         target=json.dumps(task.outcome.model_dump(mode="json")),
-        files={f"/data/{name}": content for name, content in series_dossier(task.as_of).items()},
+        files={f"/data/{name}": content for name, content in dossier.items()},
         metadata={"gym_task": task.model_dump(mode="json")},
     )
 
@@ -77,9 +78,10 @@ def gym_proper_loss():
     return score_fn
 
 
-def agent_eval_task(tasks: Sequence[Task]) -> InspectTask:
+def agent_eval_task(tasks: Sequence[Task], series: Sequence[MonthlySeries]) -> InspectTask:
+    dossiers = {as_of: series_dossier(series, as_of) for as_of in {task.as_of for task in tasks}}
     return InspectTask(
-        dataset=MemoryDataset([sample_for_task(task) for task in tasks]),
+        dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of]) for task in tasks]),
         solver=react(
             prompt=AGENT_PROMPT, tools=[bash(timeout=120), python(timeout=120)], submit=AgentSubmit(answer_only=True)
         ),

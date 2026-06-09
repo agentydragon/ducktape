@@ -34,15 +34,27 @@ py_library(
     ],
 )
 
-filegroup(
-    name = "data",
-    srcs = glob(["data/*.csv"]),
-)
-
 py_library(
     name = "monthly_series",
     srcs = ["monthly_series.py"],
-    data = [":data"],  # keep
+    deps = ["@pypi//boto3"],
+)
+
+py_library(
+    name = "fetch_series",
+    srcs = ["fetch_series.py"],
+    deps = [
+        ":monthly_series",
+        ":results_store",
+        "@pypi//httpx",
+    ],
+)
+
+# keep
+py_binary(
+    name = "fetch_series_bin",
+    main_module = "loom.gym.fetch_series",
+    deps = [":fetch_series"],
 )
 
 py_library(
@@ -206,6 +218,7 @@ py_test(
     srcs = ["test_dossier.py"],
     deps = [
         ":dossier",
+        ":monthly_series",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
@@ -247,13 +260,28 @@ py_test(
 )
 
 py_test(
+    name = "test_fetch_series",
+    srcs = ["test_fetch_series.py"],
+    deps = [
+        ":fetch_series",
+        ":monthly_series",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_inspect_harness",
     size = "large",
     srcs = ["test_inspect_harness.py"],
     requires_docker = True,
     deps = [
+        ":dossier",
         ":inspect_harness",
+        ":monthly_series",
         ":series_tasks",
+        ":task",
         "//:conftest",
         "@pypi//inspect_ai",
         "@pypi//more_itertools",

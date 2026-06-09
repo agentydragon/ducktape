@@ -22,6 +22,7 @@ import httpx
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult, forecast, forecast_bundle
 from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
+from loom.gym.monthly_series import MonthlySeries, default_series
 from loom.gym.results_store import results_client, upload_run
 from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
 from loom.gym.series_tasks import all_tasks
@@ -46,13 +47,13 @@ class TokenTotals:
     output_tokens: int
 
 
-def admissible_tasks(model_id: str, task_filter: str | None, strict: bool) -> list[Task]:
+def admissible_tasks(series: list[MonthlySeries], model_id: str, task_filter: str | None, strict: bool) -> list[Task]:
     if model_id not in KNOWN_MODEL_CUTOFFS:
         raise ValueError(f"unknown model — add it to KNOWN_MODEL_CUTOFFS with provenance: {model_id=}")
     model_cutoff = KNOWN_MODEL_CUTOFFS[model_id]
     bound = model_cutoff.weights_released if strict else model_cutoff.knowledge_cutoff
     tasks = []
-    for task in all_tasks():
+    for task in all_tasks(series):
         if task_filter is not None and task_filter not in task.task_id:
             continue
         if bound > task.as_of:
@@ -63,10 +64,10 @@ def admissible_tasks(model_id: str, task_filter: str | None, strict: bool) -> li
 
 
 async def run_forecasts(
-    endpoint: ChatEndpoint, tasks: list[Task], with_data: bool, bundled: bool
+    endpoint: ChatEndpoint, series: list[MonthlySeries], tasks: list[Task], with_data: bool, bundled: bool
 ) -> tuple[list[EvalRow], TokenTotals]:
     semaphore = asyncio.Semaphore(_CONCURRENCY)
-    dossiers = {as_of: series_dossier(as_of) for as_of in {task.as_of for task in tasks}} if with_data else {}
+    dossiers = {as_of: series_dossier(series, as_of) for as_of in {task.as_of for task in tasks}} if with_data else {}
 
     groups: list[list[Task]] = []
     if bundled:
@@ -183,12 +184,13 @@ def main() -> None:
         model_id=args.model_id,
         endpoint_model=args.endpoint_model or f"{args.model_id}-anthropic",
     )
-    tasks = admissible_tasks(model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
+    series = list(default_series())
+    tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
     print(
         f"{len(tasks)} admissible tasks for {args.model_id} "
         f"(strict={args.strict}, with_data={args.with_data}, bundled={args.bundled})"
     )
-    rows, totals = asyncio.run(run_forecasts(endpoint, tasks, with_data=args.with_data, bundled=args.bundled))
+    rows, totals = asyncio.run(run_forecasts(endpoint, series, tasks, with_data=args.with_data, bundled=args.bundled))
     print(
         f"requests={totals.requests} input_tokens={totals.input_tokens} output_tokens={totals.output_tokens} "
         f"tasks_per_request={len(rows) / totals.requests:.2f}"

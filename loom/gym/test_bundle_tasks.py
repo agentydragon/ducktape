@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import date
 
 import pytest_bazel
-from more_itertools import one
 
-from loom.gym.bundle_tasks import BundleSpec, bundle_tasks, tasks_for_bundle
+from loom.gym.bundle_tasks import BundleSpec, tasks_for_bundle, tasks_for_bundle_spec
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.task import BinaryOutcome, CategoricalOutcome, CategoricalQuestion
 
@@ -43,14 +42,12 @@ def test_bundle_beyond_data_not_emitted() -> None:
     assert tasks_for_bundle(SPEC, anchor=date(2020, 7, 1)) == []
 
 
-def test_default_bundles_generate_at_scale() -> None:
-    tasks = bundle_tasks()
-    assert len(tasks) > 100
+def test_bundle_tasks_iterates_anchor_grid() -> None:
+    # The ramp runs through 2021-06, so only the 2020-01 and 2020-04 anchors
+    # have a full 12-month window; later grid anchors are not emitted.
+    tasks = tasks_for_bundle_spec(SPEC, anchor_start=date(2020, 1, 1), anchor_step_months=3)
+    assert {task.bundle_id for task in tasks} == {"ramp-bundle-2020-01", "ramp-bundle-2020-04"}
     assert len({task.task_id for task in tasks}) == len(tasks)
-    glm_window = [task for task in tasks if task.as_of >= date(2024, 7, 1)]
-    assert len(glm_window) >= 12
-    bundle = [task for task in tasks if task.bundle_id == one({t.bundle_id for t in glm_window[:1]})]
-    assert {task.as_of for task in bundle} == {one({task.as_of for task in bundle})}
 
 
 if __name__ == "__main__":

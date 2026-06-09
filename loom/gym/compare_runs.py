@@ -19,6 +19,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
+from loom.gym.monthly_series import default_series
 from loom.gym.scoring import cluster_bootstrap_ci
 from loom.gym.series_tasks import all_tasks
 
@@ -48,7 +49,7 @@ def main() -> None:
     label_a, label_b = args.labels.split(",")
     metrics_a = _load_metrics(args.run_a)
     metrics_b = _load_metrics(args.run_b)
-    cluster_by_id = {task.task_id: task.as_of for task in all_tasks()}
+    cluster_by_id = {task.task_id: task.as_of for task in all_tasks(default_series())}
 
     print(f"paired delta = {label_b} - {label_a} (negative = {label_b} better), 95% cluster-bootstrap CI")
     for name, clusters in sorted(metric_deltas_by_cluster(metrics_a, metrics_b, cluster_by_id).items()):

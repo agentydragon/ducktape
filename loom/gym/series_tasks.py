@@ -1,4 +1,4 @@
-"""Mint resolved tasks mechanically from the frozen monthly series.
+"""Mint resolved tasks mechanically from the monthly series.
 
 Anchors step through history; per (series, anchor) we mint a scalar
 level-at-horizon question and binary threshold questions at series-specific
@@ -13,11 +13,12 @@ anchored at month M has `as_of` = first day of M+1.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from loom.gym.bundle_tasks import bundle_tasks
-from loom.gym.monthly_series import MonthlySeries, add_months, default_series, month_end
+from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.seed_tasks import seed_tasks
 from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
 
@@ -30,12 +31,12 @@ class SeriesTaskSpec:
     scalar_horizons: tuple[int, ...] = (6,)
 
 
-def default_specs() -> tuple[SeriesTaskSpec, ...]:
-    sp500, btcusd, cpi = default_series()
+def default_specs(series: Sequence[MonthlySeries]) -> tuple[SeriesTaskSpec, ...]:
+    by_id = {one_series.series_id: one_series for one_series in series}
     return (
-        SeriesTaskSpec(series=sp500, binary_thresholds=((6, 1.05), (12, 1.10))),
-        SeriesTaskSpec(series=btcusd, binary_thresholds=((6, 1.25), (12, 1.50))),
-        SeriesTaskSpec(series=cpi, binary_thresholds=((6, 1.02), (12, 1.035))),
+        SeriesTaskSpec(series=by_id["sp500"], binary_thresholds=((6, 1.05), (12, 1.10))),
+        SeriesTaskSpec(series=by_id["btcusd"], binary_thresholds=((6, 1.25), (12, 1.50))),
+        SeriesTaskSpec(series=by_id["cpi"], binary_thresholds=((6, 1.02), (12, 1.035))),
     )
 
 
@@ -63,7 +64,7 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                     resolution_date=month_end(target),
                     question=ScalarQuestion(text=f"{header} What will it be for {target:%Y-%m}?", unit=series.unit),
                     outcome=ScalarOutcome(value=target_value),
-                    outcome_source=f"computed from loom/gym/data ({series.provenance})",
+                    outcome_source=f"computed from {series.provenance}",
                 )
             )
 
@@ -86,7 +87,7 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                         )
                     ),
                     outcome=BinaryOutcome(value=observed_max >= threshold),
-                    outcome_source=f"computed from loom/gym/data ({series.provenance})",
+                    outcome_source=f"computed from {series.provenance}",
                 )
             )
         anchor = add_months(anchor, anchor_step_months)
@@ -95,9 +96,13 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
 
 # Anchors on Mar/Jun/Sep/Dec: 2024-06 lands on the grid, which is exactly
 # glm-4.5's probed cutoff month (its first admissible as_of is 2024-07-01).
-def series_tasks(anchor_start: date = date(2016, 3, 1), anchor_step_months: int = 3) -> tuple[Task, ...]:
-    return tuple(task for spec in default_specs() for task in tasks_for_spec(spec, anchor_start, anchor_step_months))
+def series_tasks(
+    series: Sequence[MonthlySeries], anchor_start: date = date(2016, 3, 1), anchor_step_months: int = 3
+) -> tuple[Task, ...]:
+    return tuple(
+        task for spec in default_specs(series) for task in tasks_for_spec(spec, anchor_start, anchor_step_months)
+    )
 
 
-def all_tasks() -> tuple[Task, ...]:
-    return seed_tasks() + series_tasks() + bundle_tasks()
+def all_tasks(series: Sequence[MonthlySeries]) -> tuple[Task, ...]:
+    return seed_tasks() + series_tasks(series) + bundle_tasks(series)
