@@ -9,7 +9,6 @@ py_library(
         "//finance/augur/ingest:evidence_sources",
         "//finance/augur/model:series",
         "@pypi//numpy",
-        "@pypi//pandas",
         "@pypi//polars",
     ],
 )
@@ -88,9 +87,7 @@ py_library(
         "//finance/augur/ingest:evidence_sources",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
-        "//util/bazel:runfiles",
         "@pypi//numpy",
-        "@pypi//pandas",
     ],
 )
 

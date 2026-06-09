@@ -15,12 +15,14 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-import pandas as pd
 
 from finance.augur.fit.evidence_data import (
     ZILLOW_HOME_VALUE_REGIONS,
     ExogenousEvidence,
     PeriodReturns,
+    _align_inner,
+    _monthly_last,
+    _monthly_latest,
     _read_fred_series,
     calibrate_series_path_priors,
     load_exogenous_evidence,
@@ -58,12 +60,6 @@ def load_historical(*, fred_only: bool = False) -> HistoricalSeries:
 # ---------------------------------------------------------------------------
 
 
-def _monthly_last(series: pd.Series) -> pd.Series:
-    assert isinstance(series.index, pd.DatetimeIndex), f"expected DatetimeIndex, got {type(series.index).__name__}"
-    out = series.groupby(series.index.to_period("M")).last().dropna()
-    return out[out > 0]
-
-
 def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
     return _historical_from_log_returns(
         evidence.factor_names, evidence.monthly_log_returns, evidence.monthly_return_months
@@ -85,16 +81,15 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     cpi = _monthly_last(_read_fred_series(FRED_CPI))
     mortgage = _read_fred_series(FRED_MORTGAGE30)
 
-    aligned = pd.concat(
+    aligned = _align_inner(
         {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent:san_francisco_ca": rent, "inflation": cpi},
-        axis=1,
-        join="inner",
-    ).dropna()
-    if len(aligned) < 36:
-        raise ValueError(f"only {len(aligned)} aligned months across the FRED-only synthesized series")
+        value_column="value",
+    )
+    if aligned.height < 36:
+        raise ValueError(f"only {aligned.height} aligned months across the FRED-only synthesized series")
 
-    monthly_log_returns = np.diff(np.log(aligned.loc[:, list(factor_names)].to_numpy(dtype="float64")), axis=0)
-    return_months = tuple(str(period) for period in aligned.index[1:])
+    monthly_log_returns = np.diff(np.log(aligned.select(list(factor_names)).to_numpy().astype("float64")), axis=0)
+    return_months = tuple(aligned["month"].dt.strftime("%Y-%m").to_list()[1:])
     historical = _historical_from_log_returns(factor_names, monthly_log_returns, return_months)
 
     durations = np.ones_like(monthly_log_returns[:, 0])
@@ -104,33 +99,16 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
     latest_observations: dict[str, Any] = {
-        "sp500_price_latest": {
-            "date": str(sp500.index[-1]),
-            "value": float(sp500.iloc[-1]),
-            "source": FRED_SP500.provenance_label,
-        },
-        "case_shiller_sf_latest": {
-            "date": str(home.index[-1]),
-            "value": float(home.iloc[-1]),
-            "source": FRED_SFXRSA.provenance_label,
-        },
+        "sp500_price_latest": _monthly_latest(sp500, FRED_SP500),
+        "case_shiller_sf_latest": _monthly_latest(home, FRED_SFXRSA),
         "case_shiller_home_value_latest_by_factor": {
-            factor_name: {
-                "date": str(home.index[-1]),
-                "value": float(home.iloc[-1]),
-                "source": FRED_SFXRSA.provenance_label,
-            }
-            for factor_name in home_factor_names
+            factor_name: _monthly_latest(home, FRED_SFXRSA) for factor_name in home_factor_names
         },
-        "sf_rent_cpi_latest": {
-            "date": str(rent.index[-1]),
-            "value": float(rent.iloc[-1]),
-            "source": FRED_SF_RENT_CPI.provenance_label,
-        },
-        "cpi_latest": {"date": str(cpi.index[-1]), "value": float(cpi.iloc[-1]), "source": FRED_CPI.provenance_label},
+        "sf_rent_cpi_latest": _monthly_latest(rent, FRED_SF_RENT_CPI),
+        "cpi_latest": _monthly_latest(cpi, FRED_CPI),
         "mortgage30_latest": {
-            "date": mortgage.index[-1].date().isoformat(),
-            "value": float(mortgage.iloc[-1]),
+            "date": mortgage["date"][-1].isoformat(),
+            "value": float(mortgage["value"][-1]),
             "source": FRED_MORTGAGE30.provenance_label,
         },
         "evidence_mode": {
@@ -146,7 +124,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         marginal_returns=marginal,
         series_path_calibration=series_path_calibration,
         calibrated_series_path_priors=calibrated_series_path_priors,
-        current_mortgage30_rate_pct=float(mortgage.iloc[-1]),
+        current_mortgage30_rate_pct=float(mortgage["value"][-1]),
         latest_observations=latest_observations,
     )
     return historical, evidence
@@ -158,8 +136,11 @@ def _historical_from_log_returns(
     n_factors = monthly_log_returns.shape[1]
     cum = np.concatenate([np.zeros((1, n_factors)), np.cumsum(monthly_log_returns, axis=0)], axis=0)
     levels = np.exp(cum)
-    first_period = pd.Period(return_months[0], freq="M") - 1
-    months = (str(first_period), *tuple(return_months))
+    # The history's month-0 label is the month before the first return month (return_months are
+    # "YYYY-MM", oldest first).
+    year, month = map(int, return_months[0].split("-"))
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    months = (f"{prev_year:04d}-{prev_month:02d}", *return_months)
     # The evidence layer carries wire-id factor names; this is the typed boundary where they
     # decode to LevelSeriesKeys for the model-facing HistoricalSeries.
     level_keys = tuple(parse_level_series_key(name) for name in factor_names)
