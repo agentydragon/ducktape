@@ -14,6 +14,28 @@ py_library(
         ":scoring",
         ":task",
         "@pypi//httpx",
+        "@pypi//more_itertools",
+    ],
+)
+
+filegroup(
+    name = "data",
+    srcs = glob(["data/*.csv"]),
+)
+
+py_library(
+    name = "monthly_series",
+    srcs = ["monthly_series.py"],
+    data = [":data"],  # keep
+)
+
+py_library(
+    name = "series_tasks",
+    srcs = ["series_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":seed_tasks",
+        ":task",
     ],
 )
 
@@ -24,7 +46,7 @@ py_library(
         ":baseline_llm",
         ":model_cutoffs",
         ":scoring",
-        ":seed_tasks",
+        ":series_tasks",
         ":task",
         "@pypi//httpx",
     ],
@@ -107,4 +129,16 @@ py_test(
 py_library(
     name = "model_cutoffs",
     srcs = ["model_cutoffs.py"],
+)
+
+py_test(
+    name = "test_series_tasks",
+    srcs = ["test_series_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":series_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )

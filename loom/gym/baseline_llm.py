@@ -1,26 +1,34 @@
 """The step-2 baseline contestant: one bare prompt to an LLM, structured answer, no skill material.
 
-Anything fancier (skills, tools, mechanistic models) must beat this on gym loss
-to justify its existence. Talks to any OpenAI-compatible chat-completions
-endpoint (z.ai for the asserted-cutoff models).
+Sampling goes through the cluster LiteLLM proxy speaking the **Anthropic
+messages API** — the path known to produce reliable structured objects from
+the z.ai GLM models — with a forced `submit_answer` tool call carrying the
+answer schema. Every request carries the `loom-gym` tag via `x-litellm-tags`,
+which the proxy's Langfuse callback records per trace.
+
+Anything fancier (skills, tools, mechanistic models) must beat this baseline
+on gym loss to justify its existence.
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 from dataclasses import dataclass
 
 import httpx
+from more_itertools import one
 
 from loom.gym.scoring import QUANTILE_LEVELS, Answer, BinaryAnswer, QuantileAnswer
 from loom.gym.task import BinaryQuestion, ScalarQuestion, Task
 
 logger = logging.getLogger(__name__)
 
-# Paid coding-plan tier: dedicated rate limits. The free general tier
-# (`/api/paas/v4`) throttles aggressively (429s); see pm_reifier's z.ai notes.
-ZAI_BASE_URL = "https://api.z.ai/api/coding/paas/v4"
+LITELLM_BASE_URL = "https://litellm.allegedly.works"
+LANGFUSE_TAG = "loom-gym"
+
+_TRANSIENT_STATUS = {429, 500, 502, 503, 504}
+_ATTEMPTS = 4
 
 
 @dataclass(frozen=True)
@@ -28,6 +36,7 @@ class ChatEndpoint:
     base_url: str
     api_key: str
     model_id: str
+    endpoint_model: str
 
 
 def build_prompt(task: Task) -> str:
@@ -39,37 +48,77 @@ def build_prompt(task: Task) -> str:
     )
     match task.question:
         case BinaryQuestion():
-            return header + 'Respond with JSON only: {"p": <probability the question resolves YES, between 0 and 1>}'
+            return header + "Call submit_answer with p = your probability that the question resolves YES."
         case ScalarQuestion(unit=unit):
             levels = ", ".join(f'"{level}"' for level in QUANTILE_LEVELS)
             return (
                 header
-                + f'Respond with JSON only: {{"quantiles": {{<level>: <value in {unit}>}}}} '
-                + f"with exactly these quantile levels: {levels}. Values must be non-decreasing in level."
+                + f"Call submit_answer with your {levels} quantiles for the value in {unit}. "
+                + "Values must be non-decreasing in level."
             )
 
 
-def parse_answer(task: Task, content: str) -> Answer:
-    data = json.loads(content)
+def answer_tool_schema(task: Task) -> dict[str, object]:
     match task.question:
         case BinaryQuestion():
-            return BinaryAnswer.model_validate(data)
+            return {
+                "type": "object",
+                "properties": {"p": {"type": "number", "minimum": 0, "maximum": 1}},
+                "required": ["p"],
+                "additionalProperties": False,
+            }
         case ScalarQuestion():
-            return QuantileAnswer.model_validate(data)
+            return {
+                "type": "object",
+                "properties": {
+                    "quantiles": {
+                        "type": "object",
+                        "properties": {str(level): {"type": "number"} for level in QUANTILE_LEVELS},
+                        "required": [str(level) for level in QUANTILE_LEVELS],
+                        "additionalProperties": False,
+                    }
+                },
+                "required": ["quantiles"],
+                "additionalProperties": False,
+            }
+
+
+def parse_answer(task: Task, tool_input: dict[str, object]) -> Answer:
+    match task.question:
+        case BinaryQuestion():
+            return BinaryAnswer.model_validate(tool_input)
+        case ScalarQuestion():
+            return QuantileAnswer.model_validate(tool_input)
 
 
 async def forecast(client: httpx.AsyncClient, endpoint: ChatEndpoint, task: Task) -> Answer:
-    response = await client.post(
-        f"{endpoint.base_url}/chat/completions",
-        headers={"Authorization": f"Bearer {endpoint.api_key}"},
-        json={
-            "model": endpoint.model_id,
-            "messages": [{"role": "user", "content": build_prompt(task)}],
-            "response_format": {"type": "json_object"},
-        },
-        timeout=120.0,
-    )
-    response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
-    logger.info("forecast %s: %s", task.task_id, content)
-    return parse_answer(task, content)
+    payload = {
+        "model": endpoint.endpoint_model,
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": build_prompt(task)}],
+        "tools": [
+            {"name": "submit_answer", "description": "Submit your forecast.", "input_schema": answer_tool_schema(task)}
+        ],
+        "tool_choice": {"type": "tool", "name": "submit_answer"},
+    }
+    headers = {"x-api-key": endpoint.api_key, "anthropic-version": "2023-06-01", "x-litellm-tags": LANGFUSE_TAG}
+    for attempt in range(_ATTEMPTS):
+        try:
+            response = await client.post(
+                f"{endpoint.base_url}/v1/messages", headers=headers, json=payload, timeout=180.0
+            )
+        except httpx.TransportError as error:
+            if attempt == _ATTEMPTS - 1:
+                raise
+            logger.warning("transient transport error on %s (attempt %d): %s", task.task_id, attempt, error)
+            await asyncio.sleep(2.0**attempt)
+            continue
+        if response.status_code in _TRANSIENT_STATUS and attempt < _ATTEMPTS - 1:
+            logger.warning("transient HTTP %d on %s (attempt %d)", response.status_code, task.task_id, attempt)
+            await asyncio.sleep(2.0**attempt)
+            continue
+        response.raise_for_status()
+        break
+    tool_use = one(block for block in response.json()["content"] if block["type"] == "tool_use")
+    logger.info("forecast %s: %s", task.task_id, tool_use["input"])
+    return parse_answer(task, tool_use["input"])

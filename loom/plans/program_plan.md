@@ -239,15 +239,24 @@ bare baseline → skill techniques:
 **G0 — gym core. ✅ landed (`loom/gym/`).** Task schema (binary + scalar
 questions, info-cutoff `as_of`, realized outcome with provenance), proper-loss
 scoring (log/Brier; pinball for stated quantiles), the asserted-cutoff model
-registry (`model_cutoffs.py` — admissibility: model cutoff ≤ task `as_of`),
-six hand-curated seed tasks, and the **bare-prompt structured-answer
-baseline** (`//loom/gym:baseline_eval`, OpenAI-compatible endpoint; z.ai
-coding tier — the free general tier 429s). First live glm-4.5 run over the
-seed set: binary mean `log_loss` 0.50 / Brier 0.17; it under-predicted the
-2024 bull run (p=0.40 on S&P ≥ 6000, p=0.65 on BTC ≥ 100k), consistent with
-the spike's conservatism finding. Next: harvested task families
-(series-derived from the evidence checkout, then market-resolved) to replace
-hand-curation.
+registry (`model_cutoffs.py` — `knowledge_cutoff` for default admissibility,
+`weights_released` as the hard bound under `--strict`; admissibility: bound ≤
+task `as_of`), six hand-curated seed tasks, **series-derived harvested tasks**
+(`series_tasks.py`: ~330 threshold/level questions minted from frozen monthly
+S&P 500 / BTC / CPI history in `data/`, spot-checks pinned in CI; the
+Oct-2025 BLS CPI hole is handled), and the **bare-prompt structured-answer
+baseline** (`//loom/gym:baseline_eval`). Sampling routes through the cluster
+LiteLLM proxy speaking the **Anthropic messages API** with a forced
+`submit_answer` tool call (the shape known to give reliable structured
+objects from the GLM models), tagged `x-litellm-tags: loom-gym` so the
+proxy's `langfuse_otel` callback records every trace.
+
+First full glm-4.5 run (53 admissible tasks): binary mean `log_loss` 0.78 /
+Brier 0.29 — **below the constant-p=0.5 floor** (0.693 / 0.25); scalar mean
+pinball ≈ 2105 (dominated by BTC level questions). The bare model
+systematically under-predicted the trending 2024–26 era, consistent with the
+spike's conservatism finding. The bar contestants must clear is concrete and
+currently low. Next: market-resolved task family (G1).
 
 **G1 — market task harvesting.** Forward: the M2 snapshot/resolution store.
 Backward: historical backfills (Manifold export, Kalshi/Polymarket history) so
