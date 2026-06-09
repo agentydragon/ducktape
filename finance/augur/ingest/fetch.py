@@ -93,7 +93,9 @@ def run_scrape(
     )
     with tempfile.TemporaryDirectory() as tmp:
         repo_path = Path(tmp) / "repo"
-        repo = pygit2.clone_repository(git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks)
+        # Shallow: the scraper only needs the tip to write the refresh and commit on top of it;
+        # the full history stays server-side in Forgejo.
+        repo = pygit2.clone_repository(git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=1)
         failures = write_sources(repo_path, sources, http_get=http_get)
         commit_and_push(repo, branch, now=now, callbacks=callbacks)
     return 1 if failures else 0
