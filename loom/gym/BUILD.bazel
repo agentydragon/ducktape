@@ -33,6 +33,7 @@ py_library(
         ":task",
         "@pypi//httpx",
         "@pypi//more_itertools",
+        "@pypi//tenacity",
     ],
 )
 

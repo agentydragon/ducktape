@@ -41,24 +41,12 @@ creation_rules:
           - *iguana-agentydragon
           - *ci
 
-  # Claude reader S3 credentials for the consolidated public-s3 gateway. Flux
+  # Claude S3 credentials for the consolidated public-s3 gateway. Flux
   # applies the Secret and ESO assembles it into the gateway config
   # (cluster-secrets); Claude Code web sessions decrypt it directly (claude-web)
-  # to read buckets via s3.allegedly.works. Read-only identity.
+  # to use s3.allegedly.works: read across the allowed buckets, write only to
+  # loom-gym (eval-run results).
   - path_regex: cluster/k8s/seaweedfs/public-s3/claude-reader-credentials\.sops\.yaml$
-    encrypted_regex: ^(data|stringData)$
-    key_groups:
-      - age:
-          - *admin
-          - *cluster-secrets
-          - *claude-web
-
-  # loom-gym S3 writer credentials — Flux applies the Secret and ESO assembles
-  # it into the gateway config (cluster-secrets); Claude Code web sessions
-  # decrypt it directly (claude-web) to upload eval-run results to the
-  # loom-gym bucket via s3.allegedly.works. Write access is scoped to that
-  # one bucket by the gateway identity config.
-  - path_regex: cluster/k8s/seaweedfs/public-s3/loom-gym-credentials\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:

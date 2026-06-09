@@ -1,10 +1,9 @@
 """Persist eval-run results to the `loom-gym` bucket on cluster S3.
 
 Runs land at `s3://loom-gym/runs/<utc-timestamp>-<model>-<mode>.json` via the
-public gateway (`s3.allegedly.works`). Writer credentials come from the
-session environment (`LOOM_GYM_S3_*`, exported by `devinfra/secrets/web_env.sh`
-from the claude-web-decryptable sops secret); the identity is scoped to this
-one bucket by the gateway config.
+public gateway (`s3.allegedly.works`). The session's default `AWS_*`
+credentials (the claude S3 identity, exported by
+`devinfra/secrets/web_env.sh`) carry write access to this one bucket.
 """
 
 from __future__ import annotations
@@ -24,13 +23,8 @@ DEFAULT_ENDPOINT = "https://s3.allegedly.works"
 
 
 def results_client() -> Any:
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ.get("AWS_ENDPOINT_URL", DEFAULT_ENDPOINT),
-        aws_access_key_id=os.environ["LOOM_GYM_S3_ACCESS_KEY_ID"],
-        aws_secret_access_key=os.environ["LOOM_GYM_S3_SECRET_ACCESS_KEY"],
-        region_name="us-east-1",
-    )
+    # Credentials come from boto3's default chain (the session AWS_* env).
+    return boto3.client("s3", endpoint_url=os.environ.get("AWS_ENDPOINT_URL", DEFAULT_ENDPOINT))
 
 
 def run_key(model_id: str, mode: str, now: datetime) -> str:

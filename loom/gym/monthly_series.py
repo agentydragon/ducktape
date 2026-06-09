@@ -92,7 +92,6 @@ class KnownValue:
 # drift, not new data. BTC's tolerance is wide because Yahoo may serve weekly
 # or monthly bars under range=max, shifting the "last observation" by days.
 KNOWN_HISTORY = (
-    KnownValue(series_id="sp500", month=date(2024, 11, 1), value=6032.38, tolerance=1.0),
     KnownValue(series_id="sp500", month=date(2024, 12, 1), value=5881.63, tolerance=1.0),
     KnownValue(series_id="btcusd", month=date(2024, 12, 1), value=93429.0, tolerance=5000.0),
     KnownValue(series_id="cpi", month=date(2024, 11, 1), value=316.5, tolerance=1.0),

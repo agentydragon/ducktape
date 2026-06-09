@@ -11,19 +11,23 @@ group of tasks in one request (one `submit_answers` call keyed by task id) —
 the bundle-vs-solo comparison runs on identical tasks, with token usage
 captured on every result.
 
+This direct HTTP path is deliberately separate from `inspect_harness.py`:
+that one is the tool-using *agent* contestant in the sandbox; this one is the
+no-tools baseline it must beat. Both stay.
+
 Anything fancier (skills, tools, mechanistic models) must beat this baseline
 on gym loss to justify its existence.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import httpx
 from more_itertools import one
+from tenacity import before_sleep_log, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from loom.gym.scoring import QUANTILE_LEVELS, Answer, BinaryAnswer, CategoricalAnswer, QuantileAnswer
 from loom.gym.task import BinaryQuestion, CategoricalQuestion, Question, ScalarQuestion, Task
@@ -34,7 +38,12 @@ LITELLM_BASE_URL = "https://litellm.allegedly.works"
 LANGFUSE_TAG = "loom-gym"
 
 _TRANSIENT_STATUS = {429, 500, 502, 503, 504}
-_ATTEMPTS = 4
+
+
+def _is_transient(error: BaseException) -> bool:
+    if isinstance(error, httpx.TransportError):
+        return True
+    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code in _TRANSIENT_STATUS
 
 
 @dataclass(frozen=True)
@@ -142,28 +151,20 @@ def build_bundle_prompt(tasks: Sequence[Task], dossier: dict[str, str] | None = 
     return "\n".join(lines)
 
 
+@retry(
+    retry=retry_if_exception(_is_transient),
+    stop=stop_after_attempt(4),
+    wait=wait_exponential(multiplier=1, max=8),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
 async def _post_with_retry(
-    client: httpx.AsyncClient, endpoint: ChatEndpoint, payload: dict[str, object], label: str
+    client: httpx.AsyncClient, endpoint: ChatEndpoint, payload: dict[str, object]
 ) -> httpx.Response:
     headers = {"x-api-key": endpoint.api_key, "anthropic-version": "2023-06-01", "x-litellm-tags": LANGFUSE_TAG}
-    for attempt in range(_ATTEMPTS):
-        try:
-            response = await client.post(
-                f"{endpoint.base_url}/v1/messages", headers=headers, json=payload, timeout=300.0
-            )
-        except httpx.TransportError as error:
-            if attempt == _ATTEMPTS - 1:
-                raise
-            logger.warning("transient transport error on %s (attempt %d): %s", label, attempt, error)
-            await asyncio.sleep(2.0**attempt)
-            continue
-        if response.status_code in _TRANSIENT_STATUS and attempt < _ATTEMPTS - 1:
-            logger.warning("transient HTTP %d on %s (attempt %d)", response.status_code, label, attempt)
-            await asyncio.sleep(2.0**attempt)
-            continue
-        response.raise_for_status()
-        return response
-    raise AssertionError("unreachable: retry loop either returns or raises")
+    response = await client.post(f"{endpoint.base_url}/v1/messages", headers=headers, json=payload, timeout=300.0)
+    response.raise_for_status()
+    return response
 
 
 def _tool_use_input(response: httpx.Response) -> tuple[dict[str, object], int, int]:
@@ -189,9 +190,7 @@ async def forecast(
         ],
         "tool_choice": {"type": "tool", "name": "submit_answer"},
     }
-    tool_input, input_tokens, output_tokens = _tool_use_input(
-        await _post_with_retry(client, endpoint, payload, task.task_id)
-    )
+    tool_input, input_tokens, output_tokens = _tool_use_input(await _post_with_retry(client, endpoint, payload))
     logger.info("forecast %s: %s", task.task_id, tool_input)
     return ForecastResult(
         answers={task.task_id: parse_answer(task, tool_input)}, input_tokens=input_tokens, output_tokens=output_tokens
@@ -229,7 +228,7 @@ async def forecast_bundle(
         "tool_choice": {"type": "tool", "name": "submit_answers"},
     }
     label = f"bundle:{tasks[0].bundle_id or tasks[0].task_id}"
-    tool_input, input_tokens, output_tokens = _tool_use_input(await _post_with_retry(client, endpoint, payload, label))
+    tool_input, input_tokens, output_tokens = _tool_use_input(await _post_with_retry(client, endpoint, payload))
     logger.info("forecast %s: %s", label, tool_input)
     submitted = tool_input["answers"]
     if not isinstance(submitted, dict):

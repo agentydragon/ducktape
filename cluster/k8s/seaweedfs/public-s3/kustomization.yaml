@@ -7,12 +7,10 @@ resources:
   #   drivefs-artifacts: admin, cluster-secrets, all user keys, ci
   #   vm-images:         admin, cluster-secrets
   #   claude-reader:     admin, cluster-secrets, claude-web
-  #   loom-gym:          admin, cluster-secrets, claude-web
   - drivefs-artifacts-credentials.sops.yaml
   - vm-images-credentials.sops.yaml
   - claude-reader-credentials.sops.yaml
-  - loom-gym-credentials.sops.yaml
-  # ESO assembles the four into one gateway config; Reloader rolls the
+  # ESO assembles these into one gateway config; Reloader rolls the
   # deployment when it changes (cluster-wide autoReloadAll).
   - s3-config-externalsecret.yaml
   - deployment.yaml

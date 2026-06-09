@@ -19,7 +19,7 @@ from datetime import date
 
 from loom.gym.bundle_tasks import bundle_tasks
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
-from loom.gym.seed_tasks import seed_tasks
+from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
 
 
@@ -105,4 +105,4 @@ def series_tasks(
 
 
 def all_tasks(series: Sequence[MonthlySeries]) -> tuple[Task, ...]:
-    return seed_tasks() + series_tasks(series) + bundle_tasks(series)
+    return SEED_TASKS + series_tasks(series) + bundle_tasks(series)
