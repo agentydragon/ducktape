@@ -81,11 +81,17 @@ def run_scrape(
     password: str,
     http_get: HttpGet,
     now: datetime,
+    depth: int = 1,
 ) -> int:
     """Clone, refresh every source, commit-if-changed + push.
 
     Returns a process exit code: nonzero if any source failed to fetch, so the
     CronJob surfaces a partial outage. Sources that did fetch are still committed.
+
+    `depth` defaults to a shallow (depth=1) clone — the scraper only needs the tip to write
+    the refresh and commit on top of it, and the full history stays server-side in Forgejo.
+    Tests against a local filesystem remote must pass `depth=0` (libgit2's local transport
+    does not support shallow fetch).
     """
     # Empty creds (tests against a local filesystem remote) clone without a credential callback.
     callbacks = (
@@ -93,9 +99,9 @@ def run_scrape(
     )
     with tempfile.TemporaryDirectory() as tmp:
         repo_path = Path(tmp) / "repo"
-        # Shallow: the scraper only needs the tip to write the refresh and commit on top of it;
-        # the full history stays server-side in Forgejo.
-        repo = pygit2.clone_repository(git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=1)
+        repo = pygit2.clone_repository(
+            git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=depth
+        )
         failures = write_sources(repo_path, sources, http_get=http_get)
         commit_and_push(repo, branch, now=now, callbacks=callbacks)
     return 1 if failures else 0

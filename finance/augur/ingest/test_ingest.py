@@ -103,7 +103,10 @@ def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     _seed_remote(remote)
 
-    code = run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=_constant_get(b"body"), now=NOW)
+    # depth=0 (full clone): libgit2's local file transport doesn't support shallow fetch.
+    code = run_scrape(
+        str(remote), "main", [SOURCE], username="", password="", http_get=_constant_get(b"body"), now=NOW, depth=0
+    )
     assert code == 0
     # The fetched file is now committed on the remote's main.
     assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
@@ -116,7 +119,7 @@ def test_run_scrape_returns_nonzero_when_a_source_fails(tmp_path: Path) -> None:
     def boom(url: str, user_agent: str) -> bytes:
         raise urllib.error.URLError("upstream down")
 
-    assert run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW) == 1
+    assert run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW, depth=0) == 1
 
 
 if __name__ == "__main__":

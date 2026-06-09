@@ -272,14 +272,16 @@ def _returns(frame: pl.DataFrame) -> PeriodReturns:
 
 
 def _return_frame_summary(frame: pl.DataFrame, *, source: str, used_as_marginal_evidence: bool) -> dict[str, object]:
+    months = frame["month"].to_list()
+    durations = frame["duration_months"].to_list()
     return {
         "source": source,
         "used_as_marginal_evidence": used_as_marginal_evidence,
         "return_count": frame.height,
-        "first_return_month": frame["month"].min().strftime("%Y-%m"),
-        "last_return_month": frame["month"].max().strftime("%Y-%m"),
-        "min_duration_months": float(frame["duration_months"].min()),
-        "max_duration_months": float(frame["duration_months"].max()),
+        "first_return_month": min(months).strftime("%Y-%m"),
+        "last_return_month": max(months).strftime("%Y-%m"),
+        "min_duration_months": float(min(durations)),
+        "max_duration_months": float(max(durations)),
     }
 
 
@@ -291,8 +293,8 @@ def _align_inner(frames: dict[str, pl.DataFrame], value_column: str) -> pl.DataF
 
 def _monthly_latest(monthly: pl.DataFrame, source: evidence_sources.EvidenceSource) -> dict[str, object]:
     return {
-        "date": monthly["month"][-1].strftime("%Y-%m"),
-        "value": float(monthly["value"][-1]),
+        "date": monthly["month"].to_list()[-1].strftime("%Y-%m"),
+        "value": float(monthly["value"].to_list()[-1]),
         "source": source.provenance_label,
     }
 
@@ -379,8 +381,8 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "case_shiller_sf_latest": _monthly_latest(case_shiller, evidence_sources.FRED_SFXRSA),
         "cpi_latest": _monthly_latest(cpi, evidence_sources.FRED_CPI),
         "mortgage30_latest": {
-            "date": mortgage30["date"][-1].isoformat(),
-            "value": float(mortgage30["value"][-1]),
+            "date": mortgage30["date"].to_list()[-1].isoformat(),
+            "value": float(mortgage30["value"].to_list()[-1]),
             "source": evidence_sources.FRED_MORTGAGE30.provenance_label,
         },
         "spy_adjusted_close_monthly_return_count": len(marginal["sp500"].log_returns),
@@ -435,7 +437,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         marginal_returns=marginal,
         series_path_calibration=series_path_calibration,
         calibrated_series_path_priors=calibrated_series_path_priors,
-        current_mortgage30_rate_pct=float(mortgage30["value"][-1]),
+        current_mortgage30_rate_pct=float(mortgage30["value"].to_list()[-1]),
         latest_observations=latest_observations,
     )
 

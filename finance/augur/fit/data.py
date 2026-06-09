@@ -107,8 +107,8 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         "sf_rent_cpi_latest": _monthly_latest(rent, FRED_SF_RENT_CPI),
         "cpi_latest": _monthly_latest(cpi, FRED_CPI),
         "mortgage30_latest": {
-            "date": mortgage["date"][-1].isoformat(),
-            "value": float(mortgage["value"][-1]),
+            "date": mortgage["date"].to_list()[-1].isoformat(),
+            "value": float(mortgage["value"].to_list()[-1]),
             "source": FRED_MORTGAGE30.provenance_label,
         },
         "evidence_mode": {
@@ -124,7 +124,7 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
         marginal_returns=marginal,
         series_path_calibration=series_path_calibration,
         calibrated_series_path_priors=calibrated_series_path_priors,
-        current_mortgage30_rate_pct=float(mortgage["value"][-1]),
+        current_mortgage30_rate_pct=float(mortgage["value"].to_list()[-1]),
         latest_observations=latest_observations,
     )
     return historical, evidence
