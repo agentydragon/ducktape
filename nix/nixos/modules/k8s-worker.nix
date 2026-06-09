@@ -54,7 +54,7 @@ let
     nftables
     tcpdump
     iproute2
-    openiscsi # Longhorn requires iscsiadm on the host
+    openiscsi # Longhorn requires iscsiadm on the host. TODO(2026-06-09): Longhorn-only — remove once the Longhorn disks are gone (see cluster/terraform/main/proxmox-vms.tf + wyrm2 /var/mnt/longhorn).
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (

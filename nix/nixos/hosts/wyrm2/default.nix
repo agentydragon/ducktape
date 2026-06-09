@@ -46,6 +46,8 @@ in
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";
       "csi.proxmox.sinextra.dev/max-volume-attachments" = "29";
+      # TODO(2026-06-09): remove — Longhorn decommissioned (see the Longhorn disk TODO in
+      # cluster/terraform/main/proxmox-vms.tf).
       "node.longhorn.io/create-default-disk" = "true";
     };
     # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
@@ -151,6 +153,9 @@ in
     autoFormat = true;
     autoResize = true;
   };
+  # TODO(2026-06-09): remove this mount — Longhorn decommissioned; /dev/vdb (the 100GB
+  # Longhorn disk in cluster/terraform/main/proxmox-vms.tf) is unused. Drop together with
+  # that disk and the node.longhorn.io label above.
   fileSystems."/var/mnt/longhorn" = {
     device = "/dev/vdb";
     fsType = "ext4";

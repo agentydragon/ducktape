@@ -125,6 +125,11 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     size         = 500
     file_format  = "raw"
   } # local-path provisioner (/var/local-path-provisioner)
+  # TODO(2026-06-09): remove this disk — Longhorn was decommissioned and its k8s wiring
+  # deleted, so /dev/vdb is unused. Removing it DESTROYS the disk on `tofu apply`, so do
+  # it when wyrm2 is back online. Drop together with the `/var/mnt/longhorn` mount +
+  # `node.longhorn.io/create-default-disk` label in nix/nixos/hosts/wyrm2/default.nix and
+  # `openiscsi` in nix/nixos/modules/k8s-worker.nix.
   disk {
     datastore_id = var.storage
     interface    = "virtio1"
@@ -132,7 +137,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     discard      = "on"
     size         = 100
     file_format  = "raw"
-  } # Longhorn (/var/mnt/longhorn)
+  } # Longhorn (/var/mnt/longhorn) — redundant, see TODO above
   disk {
     datastore_id = var.storage
     interface    = "virtio2"
