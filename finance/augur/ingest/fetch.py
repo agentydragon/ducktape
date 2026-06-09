@@ -24,8 +24,8 @@ from pathlib import Path
 
 import pygit2
 
-from finance.augur.ingest.evidence_sources import EVIDENCE_SOURCES, EvidenceSource
 from finance.augur.ingest.http_fetch import FETCH_ERRORS, HttpGet, http_get as _real_http_get
+from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceSource
 
 logger = logging.getLogger(__name__)
 

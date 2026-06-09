@@ -8,7 +8,7 @@ import pytest_bazel
 
 from finance.augur.fit import evidence_data
 from finance.augur.fit.data import load_evidence, load_fred_only_evidence
-from finance.augur.ingest import evidence_sources
+from finance.evidence import sources
 
 
 def test_configured_evidence_source_errors_raise_by_default(
@@ -18,8 +18,8 @@ def test_configured_evidence_source_errors_raise_by_default(
 
     # Redirect only the SPY adjusted-close source to malformed bytes (other sources
     # resolve normally); the loader must surface the JSON parse error, not swallow it.
-    def fake_source_bytes(source: evidence_sources.EvidenceSource) -> bytes:
-        if source is evidence_sources.YAHOO_SPY:
+    def fake_source_bytes(source: sources.EvidenceSource) -> bytes:
+        if source is sources.YAHOO_SPY:
             return b"{not json"
         return real_source_bytes(source)
 

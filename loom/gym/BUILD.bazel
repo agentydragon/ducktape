@@ -18,10 +18,10 @@ py_library(
     name = "compare_runs",
     srcs = ["compare_runs.py"],
     deps = [
-        ":evidence_checkout",
         ":monthly_series",
         ":scoring",
         ":series_tasks",
+        "//finance/evidence:checkout",
     ],
 )
 
@@ -39,11 +39,10 @@ py_library(
 py_library(
     name = "monthly_series",
     srcs = ["monthly_series.py"],
-)
-
-py_library(
-    name = "evidence_checkout",
-    srcs = ["evidence_checkout.py"],
+    deps = [
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
+    ],
 )
 
 py_library(
@@ -102,13 +101,13 @@ py_library(
     deps = [
         ":baseline_llm",
         ":dossier",
-        ":evidence_checkout",
         ":model_cutoffs",
         ":monthly_series",
         ":results_store",
         ":scoring",
         ":series_tasks",
         ":task",
+        "//finance/evidence:checkout",
         "@pypi//httpx",
     ],
 )
@@ -255,17 +254,6 @@ py_test(
     srcs = ["test_monthly_series.py"],
     deps = [
         ":monthly_series",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_evidence_checkout",
-    srcs = ["test_evidence_checkout.py"],
-    deps = [
-        ":evidence_checkout",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from finance.augur.ingest.evidence_sources import EVIDENCE_SOURCES
+from finance.evidence.sources import EVIDENCE_SOURCES
 
 
 def test_output_filenames_unique() -> None:

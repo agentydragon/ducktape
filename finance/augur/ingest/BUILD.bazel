@@ -6,11 +6,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "evidence_sources",
-    srcs = ["evidence_sources.py"],
-)
-
-py_library(
     name = "http_fetch",
     srcs = ["http_fetch.py"],
     deps = [
@@ -23,8 +18,8 @@ py_library(
     name = "fetch",
     srcs = ["fetch.py"],
     deps = [
-        ":evidence_sources",
         ":http_fetch",
+        "//finance/evidence:sources",
         "@pypi//pygit2",
     ],
 )
@@ -36,21 +31,12 @@ py_binary(
 )
 
 py_test(
-    name = "test_evidence_sources",
-    srcs = ["test_evidence_sources.py"],
-    deps = [
-        ":evidence_sources",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_ingest",
     srcs = ["test_ingest.py"],
     deps = [
-        ":evidence_sources",
         ":fetch",
         ":http_fetch",
+        "//finance/evidence:sources",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

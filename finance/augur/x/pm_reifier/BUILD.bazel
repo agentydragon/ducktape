@@ -7,8 +7,8 @@ py_library(
     name = "evidence_series",
     srcs = ["evidence_series.py"],
     deps = [
-        "//finance/augur/fit:evidence_data",
-        "//finance/augur/ingest:evidence_sources",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
     ],
 )
 

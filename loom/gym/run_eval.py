@@ -19,9 +19,9 @@ from pathlib import Path
 
 import httpx
 
+from finance.evidence.checkout import ensure_checkout
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult, forecast, forecast_bundle
 from loom.gym.dossier import series_dossier
-from loom.gym.evidence_checkout import ensure_checkout
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.monthly_series import MonthlySeries, load_series
 from loom.gym.results_store import results_client, upload_run

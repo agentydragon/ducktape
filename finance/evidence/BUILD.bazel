@@ -1,0 +1,56 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "sources",
+    srcs = ["sources.py"],
+)
+
+py_library(
+    name = "loading",
+    srcs = ["loading.py"],
+    deps = [
+        ":sources",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "checkout",
+    srcs = ["checkout.py"],
+)
+
+py_test(
+    name = "test_sources",
+    srcs = ["test_sources.py"],
+    deps = [
+        ":sources",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_loading",
+    srcs = ["test_loading.py"],
+    deps = [
+        ":loading",
+        ":sources",
+        "//:conftest",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_checkout",
+    srcs = ["test_checkout.py"],
+    deps = [
+        ":checkout",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

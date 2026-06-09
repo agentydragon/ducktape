@@ -84,13 +84,14 @@ sanity, and accumulated skill on resolved markets).
 
 ## Coupling contract with augur
 
-| rule                    | concretely                                                                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| dependency direction    | `//loom/...` never depends on `//finance/augur/...`                                                                                                       |
-| integration surface     | the **WorldSet artifact** — a data contract, not code                                                                                                     |
-| bridge lives augur-side | a target under `finance/augur/` imports both and maps WorldSet → `SampledExogenousBundle` / PE bundle channels                                            |
-| migrations are atomic   | generic pieces that move out of augur (market platform clients, hazard machinery, eval scorecards) move in single atomic PRs flipping augur's imports too |
-| public/private boundary | loom is generic and public (ducktape); curated private catalogs, holdings-adjacent config, and deployments stay in gaffer-private (augur's existing rule) |
+| rule                    | concretely                                                                                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| dependency direction    | `//loom/...` never depends on `//finance/augur/...`                                                                                                                                             |
+| integration surface     | the **WorldSet artifact** — a data contract, not code                                                                                                                                           |
+| bridge lives augur-side | a target under `finance/augur/` imports both and maps WorldSet → `SampledExogenousBundle` / PE bundle channels                                                                                  |
+| migrations are atomic   | generic pieces that move out of augur (market platform clients, hazard machinery, eval scorecards) move in single atomic PRs flipping augur's imports too                                       |
+| shared code floor       | generic, augur-independent code both sides need lives in shared packages (first: `finance/evidence` — sources catalog, typed frame loaders, checkout); dependency shape `augur → shared ← loom` |
+| public/private boundary | loom is generic and public (ducktape); curated private catalogs, holdings-adjacent config, and deployments stay in gaffer-private (augur's existing rule)                                       |
 
 ## Core contracts (M0)
 

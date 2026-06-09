@@ -7,9 +7,9 @@ from pathlib import Path
 import pygit2
 import pytest_bazel
 
-from finance.augur.ingest.evidence_sources import EvidenceKind, EvidenceSource
 from finance.augur.ingest.fetch import commit_and_push, run_scrape, write_sources
 from finance.augur.ingest.http_fetch import HttpGet
+from finance.evidence.sources import EvidenceKind, EvidenceSource
 
 SOURCE = EvidenceSource(
     kind=EvidenceKind.FRED,

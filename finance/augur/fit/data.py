@@ -21,15 +21,14 @@ from finance.augur.fit.evidence_data import (
     ExogenousEvidence,
     PeriodReturns,
     _align_inner,
-    _monthly_last,
     _monthly_latest,
-    _read_fred_series,
     calibrate_series_path_priors,
     load_exogenous_evidence,
 )
-from finance.augur.ingest.evidence_sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 from finance.augur.model.path_models.scenarios import HistoricalSeries
 from finance.augur.model.series import HomeValueKey, parse_level_series_key
+from finance.evidence.loading import evidence_dir_from_env, monthly_last, read_fred_series
+from finance.evidence.sources import FRED_CPI, FRED_MORTGAGE30, FRED_SF_RENT_CPI, FRED_SFXRSA, FRED_SP500
 
 
 def load_evidence(*, fred_only: bool = False) -> tuple[HistoricalSeries, ExogenousEvidence]:
@@ -75,11 +74,11 @@ def _evidence_fred_only() -> tuple[HistoricalSeries, ExogenousEvidence]:
     # HomeValueKey wire id); the FRED-only path replicates one Case-Shiller SF series across them.
     home_factor_names = tuple(HomeValueKey(location_id=loc).wire_id for loc in ZILLOW_HOME_VALUE_REGIONS)
     factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
-    sp500 = _monthly_last(_read_fred_series(FRED_SP500))
-    home = _monthly_last(_read_fred_series(FRED_SFXRSA))
-    rent = _monthly_last(_read_fred_series(FRED_SF_RENT_CPI))
-    cpi = _monthly_last(_read_fred_series(FRED_CPI))
-    mortgage = _read_fred_series(FRED_MORTGAGE30)
+    sp500 = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SP500))
+    home = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SFXRSA))
+    rent = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_SF_RENT_CPI))
+    cpi = monthly_last(read_fred_series(evidence_dir_from_env(), FRED_CPI))
+    mortgage = read_fred_series(evidence_dir_from_env(), FRED_MORTGAGE30)
 
     aligned = _align_inner(
         {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent:san_francisco_ca": rent, "inflation": cpi},

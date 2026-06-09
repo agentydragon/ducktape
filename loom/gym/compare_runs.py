@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from loom.gym.evidence_checkout import ensure_checkout
+from finance.evidence.checkout import ensure_checkout
 from loom.gym.monthly_series import load_series
 from loom.gym.scoring import cluster_bootstrap_ci
 from loom.gym.series_tasks import all_tasks

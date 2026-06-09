@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from finance.augur.ingest import evidence_sources as es
+from finance.evidence import sources as es
 
 # Monthly grid long enough that every inner-joined factor clears MINIMUM_ALIGNED_MONTHS (36)
 # and the macro-anchor tests find observations on/before their 2026-05 anchor.

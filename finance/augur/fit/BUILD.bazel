@@ -6,8 +6,9 @@ py_library(
     name = "evidence_data",
     srcs = ["evidence_data.py"],
     deps = [
-        "//finance/augur/ingest:evidence_sources",
         "//finance/augur/model:series",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -18,7 +19,7 @@ py_library(
     testonly = True,
     srcs = ["synthetic_evidence.py"],
     deps = [
-        "//finance/augur/ingest:evidence_sources",
+        "//finance/evidence:sources",
         "@pypi//pytest",
     ],
 )
@@ -84,9 +85,10 @@ py_library(
     srcs = ["data.py"],
     deps = [
         ":evidence_data",
-        "//finance/augur/ingest:evidence_sources",
         "//finance/augur/model:series",
         "//finance/augur/model/path_models:scenarios",
+        "//finance/evidence:loading",
+        "//finance/evidence:sources",
         "@pypi//numpy",
     ],
 )
@@ -164,7 +166,7 @@ py_test(
         ":conftest",
         ":data",
         ":evidence_data",
-        "//finance/augur/ingest:evidence_sources",
+        "//finance/evidence:sources",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

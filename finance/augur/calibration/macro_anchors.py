@@ -19,7 +19,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from finance.augur.calibration.catalog import MarketCatalog
-from finance.augur.fit.evidence_data import MonthlyLevel, load_absolute_monthly_levels
+from finance.augur.fit.evidence_data import load_absolute_monthly_levels
+from finance.evidence.loading import MonthlyLevel
 
 DEFAULT_INFLATION_HISTORY_MONTHS = 12
 

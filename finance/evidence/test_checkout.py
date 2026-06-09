@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from loom.gym.evidence_checkout import ensure_checkout
+from finance.evidence.checkout import ensure_checkout
 
 
 def test_env_dir_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
