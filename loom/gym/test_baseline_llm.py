@@ -35,6 +35,13 @@ ENDPOINT = ChatEndpoint(
 )
 
 
+def test_build_prompt_includes_dossier_files() -> None:
+    prompt = build_prompt(BINARY_TASK, dossier={"a.csv": "month,value\n2024-06,1.0\n"})
+    assert "--- a.csv ---" in prompt
+    assert "2024-06,1.0" in prompt
+    assert "--- " not in build_prompt(BINARY_TASK)
+
+
 def test_build_prompt_states_cutoff_and_answer_shape() -> None:
     binary_prompt = build_prompt(BINARY_TASK)
     assert "as of 2024-07-01" in binary_prompt

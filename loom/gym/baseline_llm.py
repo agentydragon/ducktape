@@ -39,9 +39,14 @@ class ChatEndpoint:
     endpoint_model: str
 
 
-def build_prompt(task: Task) -> str:
+def build_prompt(task: Task, dossier: dict[str, str] | None = None) -> str:
+    data_section = ""
+    if dossier is not None:
+        blocks = "\n".join(f"--- {name} ---\n{content}" for name, content in sorted(dossier.items()))
+        data_section = f"You are given these data files:\n{blocks}\n"
     header = (
-        f"You are forecasting as of {task.as_of}. Use only knowledge of events on or before {task.as_of}; "
+        data_section
+        + f"You are forecasting as of {task.as_of}. Use only knowledge of events on or before {task.as_of}; "
         "if you happen to know anything about later events, you must ignore it.\n"
         f"Question: {task.question.text}\n"
         f"Resolution date: {task.resolution_date}\n"
@@ -91,11 +96,13 @@ def parse_answer(task: Task, tool_input: dict[str, object]) -> Answer:
             return QuantileAnswer.model_validate(tool_input)
 
 
-async def forecast(client: httpx.AsyncClient, endpoint: ChatEndpoint, task: Task) -> Answer:
+async def forecast(
+    client: httpx.AsyncClient, endpoint: ChatEndpoint, task: Task, dossier: dict[str, str] | None = None
+) -> Answer:
     payload = {
         "model": endpoint.endpoint_model,
         "max_tokens": 2048,
-        "messages": [{"role": "user", "content": build_prompt(task)}],
+        "messages": [{"role": "user", "content": build_prompt(task, dossier)}],
         "tools": [
             {"name": "submit_answer", "description": "Submit your forecast.", "input_schema": answer_tool_schema(task)}
         ],

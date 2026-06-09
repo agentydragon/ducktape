@@ -19,6 +19,7 @@ from pathlib import Path
 import httpx
 
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, forecast
+from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.scoring import Answer, TaskScore, score
 from loom.gym.series_tasks import all_tasks
@@ -52,12 +53,13 @@ def admissible_tasks(model_id: str, task_filter: str | None, strict: bool) -> li
     return tasks
 
 
-async def run_forecasts(endpoint: ChatEndpoint, tasks: list[Task]) -> list[EvalRow]:
+async def run_forecasts(endpoint: ChatEndpoint, tasks: list[Task], with_data: bool) -> list[EvalRow]:
     semaphore = asyncio.Semaphore(_CONCURRENCY)
+    dossiers = {as_of: series_dossier(as_of) for as_of in {task.as_of for task in tasks}} if with_data else {}
 
     async def forecast_one(client: httpx.AsyncClient, task: Task) -> EvalRow:
         async with semaphore:
-            answer = await forecast(client, endpoint, task)
+            answer = await forecast(client, endpoint, task, dossier=dossiers.get(task.as_of))
         return EvalRow(task=task, answer=answer, task_score=score(task, answer))
 
     async with httpx.AsyncClient() as client:
@@ -113,6 +115,9 @@ def main() -> None:
     parser.add_argument("--api-key-env", default="LITELLM_API_KEY", help="Env var holding the API key.")
     parser.add_argument("--task-filter", default=None, help="Only run tasks whose id contains this substring.")
     parser.add_argument(
+        "--with-data", action="store_true", help="Include the as-of-truncated series dossier in the prompt."
+    )
+    parser.add_argument(
         "--strict", action="store_true", help="Bound admissibility by weights-release date, not knowledge cutoff."
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional path for JSON results.")
@@ -125,8 +130,8 @@ def main() -> None:
         endpoint_model=args.endpoint_model or f"{args.model_id}-anthropic",
     )
     tasks = admissible_tasks(model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
-    print(f"{len(tasks)} admissible tasks for {args.model_id} (strict={args.strict})")
-    rows = asyncio.run(run_forecasts(endpoint, tasks))
+    print(f"{len(tasks)} admissible tasks for {args.model_id} (strict={args.strict}, with_data={args.with_data})")
+    rows = asyncio.run(run_forecasts(endpoint, tasks, with_data=args.with_data))
     report(rows=rows, model_id=endpoint.model_id, output=args.output)
 
 

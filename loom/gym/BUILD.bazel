@@ -40,10 +40,17 @@ py_library(
 )
 
 py_library(
+    name = "dossier",
+    srcs = ["dossier.py"],
+    deps = [":monthly_series"],
+)
+
+py_library(
     name = "run_eval",
     srcs = ["run_eval.py"],
     deps = [
         ":baseline_llm",
+        ":dossier",
         ":model_cutoffs",
         ":scoring",
         ":series_tasks",
@@ -138,6 +145,16 @@ py_test(
         ":monthly_series",
         ":series_tasks",
         ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dossier",
+    srcs = ["test_dossier.py"],
+    deps = [
+        ":dossier",
         "//:conftest",
         "@pypi//pytest_bazel",
     ],
