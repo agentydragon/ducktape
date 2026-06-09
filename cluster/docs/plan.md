@@ -14,28 +14,48 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Suspended Kustomizations
 
-- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
+### Intentionally parked
+
+Independent of the Proxmox outage — these stay suspended until explicitly revived,
+and would **not** come back just because `atlas`/`wyrm2` returns.
+
+- **ActivityWatch**: `activitywatch` — parked 2026-04-06.
+- **ARC**: `arc-namespace`, `arc` — decommissioned 2026-04-11; GitHub runner
+  pod/statefulset removed, resources deleted (`arc-secrets` still deployed).
+- **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0; re-enable when needed.
+- **Docker CI**: `docker-ci` — parked.
+- **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
+- **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
+- **Harbor**: `harbor-*` — parked. It was mostly a registry for props, which now use the
+  Forgejo registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
+  `region=hil` should it ever be revived.)
+- **HomeAssistant Proxy**: `homeassistant-proxy` — parked 2026-06-01; unsuspend once back
+  somewhere that uses Home Assistant.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
-  `authentik-blueprint-inventree-secret` — capacity pressure.
-- **Firecrawl**: `firecrawl-{namespace,db}`
-- **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
-- **ARC**: `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
-  (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
-- **Scanner**: `scanner` — suspended.
-- **kagent**: `kagent-{crds,db,secrets}` — suspended 2026-05-08. No tool-call output
-  truncation; sessions die on large MCP outputs (z.ai error 1261). Namespace and
-  resources deleted. See <../k8s/agents/kagent/TODO.md>.
-- **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
-  hardware is set up again after relocation to new place.
-- **Google Workspace MCP**: `google-workspace-mcp` — suspended 2026-05-13.
-  Resources and PVC deleted. Unsuspend once capacity pressure resolves.
-- **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-06-01.
-  Resources deleted. Unsuspend once back in a place that uses Home Assistant.
-- **Harbor DB**: `harbor-db` — suspended 2026-06-03. Proxmox is down, so
-  Harbor itself isn't usable. CNPG cluster + last `harbor-db-1` PVC deleted.
-  Spec already updated to `local-path-ovh` + `region=hil` so the DB will
-  come back on OVH on un-suspend, but the rest of Harbor (app, storage)
-  still needs work before un-suspending is meaningful.
+  `authentik-blueprint-inventree-secret` — nice-to-have, parked under capacity pressure.
+- **kagent**: `kagent-{crds,db,secrets}` — parked 2026-05-08; too fragile (sessions die on
+  large MCP outputs, z.ai error 1261). Resources deleted. See <../k8s/agents/kagent/TODO.md>.
+- **Matrix**: `matrix`, `matrix-{db,secrets,namespace}` — parked.
+- **OpenClaw**: `openclaw-{gateway,operator,sandbox}` (+ their `-namespace`/`-secrets`) —
+  experimental, parked.
+- **OpenHands**: `openhands`, `openhands-{namespace,secrets,sandboxes}` — experimental, not
+  currently used.
+- **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
+- **claude-sandbox-firecracker** — parked to free resources.
+- **listing-monitor-smoke**, **thrive-scraper** — parked.
+- **longhorn** — uninstalled/decommissioned.
+
+### Down while Proxmox (`atlas`/`wyrm2`) is offline
+
+Suspended only because the home Proxmox host is offline; should auto-recover when it
+returns (not independently parked):
+
+- **proxmox-proxy** — the Proxmox API proxy; needs `atlas`.
+- **sdr**, **scanner** — waiting on `atlas` (sdr also needs the radio re-set-up post-relocation).
+- **cpap-sync** (CronJob `suspend`) — waiting on `wyrm2`. TODO: generalize it to also cover
+  roaming devices so it doesn't depend on `wyrm2`.
+- Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
+  **nvidia-device-plugin**.
 
 ## Next Actions
 
