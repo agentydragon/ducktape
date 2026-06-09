@@ -1,24 +1,30 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: drivefs-artifacts-s3
+  name: public-s3
   namespace: seaweedfs
   labels:
-    app.kubernetes.io/name: drivefs-artifacts-s3
+    app.kubernetes.io/name: public-s3
     app.kubernetes.io/component: s3
     app.kubernetes.io/part-of: seaweedfs
   annotations:
     reloader.stakater.com/auto: "true"
+    description: >-
+      Single public-facing SeaweedFS S3 gateway (s3.allegedly.works). Mounts a
+      curated multi-identity config (drivefs-artifacts writer/reader, vm-images
+      ci-writer/cdi-reader, read-only claude-reader) — deliberately NOT the
+      operator-managed all-tenant seaweedfs-s3 config, which contains admin and
+      every write key and must never be reachable from outside the cluster.
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app.kubernetes.io/name: drivefs-artifacts-s3
+      app.kubernetes.io/name: public-s3
       app.kubernetes.io/component: s3
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: drivefs-artifacts-s3
+        app.kubernetes.io/name: public-s3
         app.kubernetes.io/component: s3
         app.kubernetes.io/part-of: seaweedfs
     spec:
@@ -83,4 +89,4 @@ spec:
       volumes:
         - name: s3-config
           secret:
-            secretName: drivefs-artifacts-s3-config
+            secretName: public-s3-config

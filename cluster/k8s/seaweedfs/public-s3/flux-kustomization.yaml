@@ -1,17 +1,25 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: seaweedfs-vm-images-s3
+  name: seaweedfs-public-s3
   namespace: flux-system
 spec:
   interval: 10m
   retryInterval: 1m
-  path: ./cluster/k8s/seaweedfs/vm-images-s3
+  path: ./cluster/k8s/seaweedfs/public-s3
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
+  # The two write-capable identities target the drivefs-artifacts and vm-images
+  # buckets, so gate on those Bucket CRs. claude-reader also reads attic,
+  # augur-assets, and listing-monitor-captures, which already exist (and for
+  # gaffer-side buckets are reconciled from a different repo) — SeaweedFS
+  # tolerates bucket-scoped read actions for buckets it doesn't manage, so they
+  # are not gated here.
   dependsOn:
+    - name: seaweedfs-drivefs-artifacts-bucket
+      namespace: flux-system
     - name: seaweedfs-vm-images-bucket
       namespace: flux-system
     - name: seaweedfs-secrets
@@ -29,5 +37,5 @@ spec:
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: vm-images-s3
+      name: public-s3
       namespace: seaweedfs

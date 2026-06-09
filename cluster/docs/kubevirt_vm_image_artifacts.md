@@ -5,17 +5,18 @@ into persistent VM root PVCs with CDI `DataVolume` resources.
 
 ## Public Endpoint
 
-Use the dedicated endpoint:
+Use the consolidated public S3 endpoint:
 
 ```bash
-https://vm-images-s3.allegedly.works
+https://s3.allegedly.works
 ```
 
-This route must point only at the `seaweedfs/vm-images-s3` Service. Do not route
-it to the operator-managed `seaweedfs-s3` Service, which mounts the all-tenant S3
-config.
+This route is backed by the `seaweedfs/public-s3` Service. Do not route it to
+the operator-managed `seaweedfs-s3` Service, which mounts the all-tenant S3
+config (admin + every write key).
 
-The dedicated gateway mounts a separate S3 config with only:
+The `public-s3` gateway mounts a curated multi-identity config; its vm-images
+identities are:
 
 - `vm-images-ci-writer`: read/write/list/tagging on bucket `vm-images`
 - `vm-images-cdi-reader`: read/list on bucket `vm-images`
@@ -25,7 +26,7 @@ The dedicated gateway mounts a separate S3 config with only:
 Secrets come from SOPS and are applied by Flux:
 
 ```text
-cluster/k8s/seaweedfs/vm-images-s3/credentials.sops.yaml
+cluster/k8s/seaweedfs/public-s3/vm-images-credentials.sops.yaml
 ```
 
 Do not manually create `vm-images-s3-credentials` during normal operation. Local
@@ -75,7 +76,7 @@ metadata:
 spec:
   source:
     s3:
-      url: "https://vm-images-s3.allegedly.works/vm-images/bootstrap/<commit>.qcow2"
+      url: "https://s3.allegedly.works/vm-images/bootstrap/<commit>.qcow2"
       secretRef: gecko-vm-images-s3-reader
   pvc:
     accessModes:
@@ -97,17 +98,17 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
 - The `vm-images` Bucket must exist before the public gateway starts. SeaweedFS
   can auto-create bucket directories from identity actions, which bypasses the
   Bucket CR adoption path. The Flux wiring applies `seaweedfs-vm-images-bucket`
-  first and gates `seaweedfs-vm-images-s3` on it.
+  first and gates `seaweedfs-public-s3` on it.
 - New SeaweedFS collections need free logical volume slots on enough volume
   servers to satisfy `defaultReplication: "001"`. The bootstrap publish path
   exposed this when the old 30GB `volumeSizeLimitMB` left two volume servers at
   their computed 61/61 slot limit before `vm-images` had any writable volumes.
   Keep the lower 16GB limit unless the volume-server capacity model changes.
-- The public `vm-images-s3.allegedly.works` HTTPRoute is for **reads only**
-  (CDI imports). Writes from GitHub-hosted runners over this path sustained
-  ~250 KiB/s and could not complete multi-GiB uploads inside Envoy's stream
-  timeout window — the publisher therefore runs in-cluster against
-  `http://vm-images-s3.seaweedfs.svc:8333`.
+- The public `s3.allegedly.works` HTTPRoute is for **reads only** for the
+  vm-images bucket (CDI imports). Writes from GitHub-hosted runners over this
+  path sustained ~250 KiB/s and could not complete multi-GiB uploads inside
+  Envoy's stream timeout window — the publisher therefore runs in-cluster
+  against `http://public-s3.seaweedfs.svc:8333`.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.

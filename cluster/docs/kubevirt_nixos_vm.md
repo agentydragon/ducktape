@@ -31,8 +31,8 @@ Crib from <k8s/gecko/>:
 - `app/vm-images-s3-reader.yaml` — `ExternalSecret` pulling `cdiReader*` keys
   from `seaweedfs/vm-images-s3-credentials` via cross-namespace `SecretStore`.
 - `app/datavolume.yaml` — points at the published qcow2 via the public
-  `vm-images-s3.allegedly.works` endpoint (reads work over that path; only
-  writes were ever slow).
+  `s3.allegedly.works` endpoint (reads work over that path; only writes were
+  ever slow).
 - `app/virtualmachine.yaml` — `VirtualMachine` with UEFI (`secureBoot: false`),
   virtio rootdisk + NIC, `runStrategy: Always`.
 - `app/service.yaml` — ClusterIP exposing SSH at :22.

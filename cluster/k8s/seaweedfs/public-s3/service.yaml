@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: drivefs-artifacts-s3
+  name: public-s3
   namespace: seaweedfs
   labels:
-    app.kubernetes.io/name: drivefs-artifacts-s3
+    app.kubernetes.io/name: public-s3
     app.kubernetes.io/component: s3
     app.kubernetes.io/part-of: seaweedfs
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: drivefs-artifacts-s3
+    app.kubernetes.io/name: public-s3
     app.kubernetes.io/component: s3
   ports:
     - name: s3-http

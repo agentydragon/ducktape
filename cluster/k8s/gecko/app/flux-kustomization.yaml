@@ -17,7 +17,7 @@ spec:
     - name: kubevirt
     - name: cdi
     - name: external-secrets-operator
-    - name: seaweedfs-vm-images-s3
+    - name: seaweedfs-public-s3
     - name: local-path-provisioner
   wait: true
   healthChecks:

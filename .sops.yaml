@@ -24,11 +24,12 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
-  # DriveFS artifacts S3 gateway credentials — Flux applies the Secret for the
-  # dedicated S3 gateway (cluster-secrets), user machines need to read
-  # writer credentials for uploading new binaries (user keys), and gaffer-private
-  # CI needs reader credentials to fetch binaries during builds (CI key).
-  - path_regex: cluster/k8s/seaweedfs/drivefs-artifacts-s3/credentials\.sops\.yaml$
+  # DriveFS artifacts S3 gateway credentials, now hosted on the consolidated
+  # public-s3 gateway. Flux applies the Secret (cluster-secrets), user machines
+  # read writer credentials to upload new binaries (user keys), and
+  # gaffer-private CI reads reader credentials to fetch binaries during builds
+  # (CI key).
+  - path_regex: cluster/k8s/seaweedfs/public-s3/drivefs-artifacts-credentials\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age:
@@ -39,6 +40,19 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
           - *ci
+
+  # Claude reader S3 credentials for the consolidated public-s3 gateway. Flux
+  # applies the Secret and ESO assembles it into the gateway config
+  # (cluster-secrets); Claude Code web sessions decrypt it directly (claude-web)
+  # to read buckets via s3.allegedly.works. Read-only identity — the only
+  # externally decryptable credential on the gateway.
+  - path_regex: cluster/k8s/seaweedfs/public-s3/claude-reader-credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *claude-web
 
   # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
   # in-cluster (cluster-secrets), AND tofu running on user machines needs to read

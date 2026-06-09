@@ -5,10 +5,10 @@ provision KubeVirt VMs (gecko etc.).
 
 Why this exists: a GitHub Actions workflow previously did the publish from
 runner side and uploaded through the public S3 gateway at
-`vm-images-s3.allegedly.works`. Sustained throughput from GitHub-hosted runners
+`s3.allegedly.works`. Sustained throughput from GitHub-hosted runners
 over that path was ~250 KiB/s — too slow for a multi-GiB qcow2 to complete
 inside Envoy's stream-timeout window. This in-cluster Job uses the internal
-SeaweedFS S3 endpoint (`http://vm-images-s3.seaweedfs.svc.cluster.local:8333`)
+SeaweedFS S3 endpoint (`http://public-s3.seaweedfs.svc.cluster.local:8333`)
 instead, which has no such constraint. The legacy workflow has been removed.
 
 ## Manifests
@@ -52,10 +52,10 @@ The script resolves `REF` to a commit SHA via `git ls-remote`, then uploads
 
 ```bash
 # From inside the cluster (or via port-forward):
-kubectl -n seaweedfs exec deploy/vm-images-s3 -- \
+kubectl -n seaweedfs exec deploy/public-s3 -- \
   wget -qO- "http://seaweedfs-filer:8888/buckets/vm-images/bootstrap/" | \
   grep '\.qcow2"'
 ```
 
-CDI `DataVolume` resources reference the public `vm-images-s3.allegedly.works`
+CDI `DataVolume` resources reference the public `s3.allegedly.works`
 endpoint (reads work fine on that path; only writes were the problem).

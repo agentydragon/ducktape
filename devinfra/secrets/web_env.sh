@@ -6,6 +6,7 @@
 #   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
 #   claude-web-k8s-jwt.yaml:          admin, all user keys, claude-web
 #   alloy-otlp-bearer-token.yaml:     admin, all user keys, claude-web
+#   public-s3/claude-reader-credentials.sops.yaml: admin, cluster-secrets, claude-web
 #
 # Consumed by:
 #   - web_setup.sh: eval'd to populate shell env, then written to
@@ -32,6 +33,20 @@ try_export DUCKTAPE_OTEL_BEARER_TOKEN "$REPO_ROOT/secrets/alloy-otlp-bearer-toke
 
 # CI read-only fine-grained PAT (personal, agentydragon — read GHA runs/artifacts)
 try_export DUCKTAPE_CI_READ_GITHUB_TOKEN "$REPO_ROOT/secrets/github-ci-read-pat.yaml" '["github_token"]' "CI read PAT (agentydragon) — read GHA runs and artifacts"
+
+# Read-only SeaweedFS S3 access via the public gateway (s3.allegedly.works). The
+# claude-reader identity has Read+List on attic, drivefs-artifacts, vm-images,
+# augur-assets, listing-monitor-captures. Exported as standard AWS_* so `aws s3`
+# and boto3 work with no flags (e.g. `aws s3 ls s3://attic/`). NOTE: this makes
+# every AWS SDK call in the session default to these read-only creds — override
+# AWS_* if you ever need real AWS access. SeaweedFS ignores the region but SigV4
+# requires one to be set.
+_s3_reader="$REPO_ROOT/cluster/k8s/seaweedfs/public-s3/claude-reader-credentials.sops.yaml"
+try_export AWS_ACCESS_KEY_ID "$_s3_reader" '["stringData"]["claudeReaderAccessKey"]' "SeaweedFS claude-reader access key (read-only)"
+try_export AWS_SECRET_ACCESS_KEY "$_s3_reader" '["stringData"]["claudeReaderSecretKey"]' "SeaweedFS claude-reader secret key (read-only)"
+export AWS_ENDPOINT_URL="https://s3.allegedly.works"
+export AWS_DEFAULT_REGION="us-east-1"
+unset _s3_reader
 
 # Restore the caller's shell options (do not leak our `set -euo pipefail`; see _common.sh).
 _secrets_restore_shell_opts

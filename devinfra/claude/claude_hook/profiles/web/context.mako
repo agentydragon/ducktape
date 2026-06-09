@@ -28,4 +28,7 @@ Secrets could not be fetched. This means:
 LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
   - `https://litellm.allegedly.works/v1` — OpenAI-compatible proxy (LiteLLM). Model: `gpt-oss-20b-128k`. API key: k8s secret `litellm-master-key` (key `api-key`) in `claude-sandbox`. LiteLLM routes to Ollama and can support additional providers.
   - `https://ollama.allegedly.works` — Ollama native API (direct). Bearer token: k8s secret `ollama-bearer-token` (key `token`) in `claude-sandbox`. Use for Ollama-specific features (model management, embeddings).
+% if os.environ.get("AWS_ENDPOINT_URL") == "https://s3.allegedly.works":
+S3 read access (SeaweedFS via `s3.allegedly.works`): `AWS_*` are set to a read-only `claude-reader` identity with Read+List on `attic`, `drivefs-artifacts`, `vm-images`, `augur-assets`, `listing-monitor-captures`. `aws s3 ls s3://attic/` and boto3 work with no flags. This overrides AWS creds session-wide — unset/override `AWS_*` if you need real AWS.
+% endif
 Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.

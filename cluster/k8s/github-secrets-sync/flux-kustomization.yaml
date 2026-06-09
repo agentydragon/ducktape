@@ -22,4 +22,4 @@ spec:
     - name: tofu-controller
     - name: tofu-state-db
     - name: github-secrets-sync-secrets
-    - name: seaweedfs-vm-images-s3
+    - name: seaweedfs-public-s3

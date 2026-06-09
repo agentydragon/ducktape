@@ -13,7 +13,7 @@ unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 : "${IMAGE_OUTPUT:=bootstrap-image}"
 : "${OBJECT_PREFIX:=bootstrap}"
 : "${S3_BUCKET:=vm-images}"
-: "${S3_ENDPOINT:=http://vm-images-s3.seaweedfs.svc.cluster.local:8333}"
+: "${S3_ENDPOINT:=http://public-s3.seaweedfs.svc.cluster.local:8333}"
 
 GIT_SHA="$(git ls-remote "$REPO" "refs/heads/${REF}" | awk '{print $1}')"
 if [ -z "${GIT_SHA}" ]; then

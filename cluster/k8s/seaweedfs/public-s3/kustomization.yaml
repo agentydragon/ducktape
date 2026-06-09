@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Credential Secrets (name/Secret names kept stable so cross-namespace ESO
+  # consumers in gecko and vm-images-publisher keep resolving them). Each file
+  # has its own .sops.yaml recipient set:
+  #   drivefs-artifacts: admin, cluster-secrets, all user keys, ci
+  #   vm-images:         admin, cluster-secrets
+  #   claude-reader:     admin, cluster-secrets, claude-web
+  - drivefs-artifacts-credentials.sops.yaml
+  - vm-images-credentials.sops.yaml
+  - claude-reader-credentials.sops.yaml
+  # ESO assembles the three into one gateway config; Reloader rolls the
+  # deployment when it changes (cluster-wide autoReloadAll).
+  - s3-config-externalsecret.yaml
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml
