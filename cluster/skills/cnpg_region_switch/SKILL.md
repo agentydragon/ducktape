@@ -1,6 +1,6 @@
 ---
 name: cnpg_region_switch
-description: Migrate a CNPG PostgreSQL cluster between Proxmox and Hetzner regions via streaming replication with sub-second downtime
+description: Migrate a single-instance CNPG PostgreSQL cluster between regions or region-pinned storage classes via streaming replication with sub-second downtime
 ---
 
 # CNPG Cross-Region Migration
@@ -9,7 +9,7 @@ Migrate a single-instance CNPG PostgreSQL cluster between regions using the Stan
 
 ## When to use
 
-- Migrating a database from Proxmox to Hetzner (or vice versa)
+- Migrating a database from one region to another (either direction)
 - Moving a database to region-appropriate storage
 - No HA replicas exist — single-instance cluster only
 
@@ -32,3 +32,4 @@ Key steps:
 - Both clusters must use the same PostgreSQL image version
 - Promotion is irreversible (standalone replica pattern)
 - Namespace must have quota for ≥6 services during migration (3 per cluster)
+- Region and storage-class names are deployment-specific — see <../../docs/cnpg_conventions.md> for the current CNPG profiles and region-pinning rules

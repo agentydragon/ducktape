@@ -1,22 +1,24 @@
 # CNPG Cross-Region Migration via Streaming Replication
 
-Migrate a single-instance CNPG PostgreSQL cluster between regions (Proxmox home ↔ Hetzner VPS) with sub-second downtime.
+Migrate a single-instance CNPG PostgreSQL cluster between regions (or region-pinned storage classes) with sub-second downtime.
 
 Uses CNPG's **Standalone Replica Cluster** pattern: target bootstrapped via `pg_basebackup`, runs as streaming replica, then promoted to independent primary. Irreversible — no demotion back to replica.
 
 ## Prerequisites
 
 - CNPG operator installed in cluster
-- Source and target storage classes exist and are region-pinned
+- Source and target storage classes exist and are region-pinned (see <../../docs/cnpg_conventions.md> for the current profiles and region names)
 - Both regions' nodes can reach each other over pod network (Nebula mesh)
 - `kubectl` access to the namespace
 - Same PostgreSQL image version on both clusters (required for physical replication)
 
-## Migration: Proxmox → Hetzner
+## Migration procedure
+
+Set `<SOURCE_STORAGECLASS>` / `<TARGET_STORAGECLASS>` to the region-pinned storage classes for the source and target regions. The procedure is identical in either direction — just swap which region is source vs. target.
 
 ### Step 1: Create source cluster (if not existing)
 
-Source cluster runs on Proxmox with `local-path-proxmox` storage.
+Source cluster runs in the source region with `<SOURCE_STORAGECLASS>` storage.
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -32,7 +34,7 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    storageClass: local-path-proxmox
+    storageClass: <SOURCE_STORAGECLASS>
     size: <SIZE>
   monitoring:
     enablePodMonitor: false
@@ -50,7 +52,7 @@ kubectl wait cluster/<SOURCE_NAME> -n <NAMESPACE> --for=condition=Ready --timeou
 
 ### Step 2: Create target cluster as streaming replica
 
-Target cluster on Hetzner with `local-path-hetzner` storage, bootstrapped from source via `pg_basebackup`.
+Target cluster in the target region with `<TARGET_STORAGECLASS>` storage, bootstrapped from source via `pg_basebackup`.
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -68,7 +70,7 @@ spec:
       isolationCheck:
         enabled: false
   storage:
-    storageClass: local-path-hetzner
+    storageClass: <TARGET_STORAGECLASS>
     size: <SIZE>
   monitoring:
     enablePodMonitor: false
@@ -170,13 +172,6 @@ kubectl delete cluster <SOURCE_NAME> -n <NAMESPACE>
 ```
 
 CNPG finalizers clean up PVCs automatically.
-
-## Migration: Hetzner → Proxmox
-
-Same procedure with storage classes reversed:
-
-- Source: `local-path-hetzner`
-- Target: `local-path-proxmox`
 
 ## Gotchas
 
