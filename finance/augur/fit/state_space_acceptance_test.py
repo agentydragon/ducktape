@@ -18,7 +18,7 @@ from finance.augur.model.state_space import StateSpaceProviderConfig
 _ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
-def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path) -> None:
+def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path, synthetic_evidence_dir: Path) -> None:
     provider = _train_state_space(tmp_path)
     model = provider.realize_model()
     rollout_count = 500
@@ -36,7 +36,9 @@ def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path) 
     assert float(np.quantile(six_month_ratio, 0.99)) < 1.08
 
 
-def test_state_space_private_equity_artifact_models_price_and_sale_event(tmp_path: Path) -> None:
+def test_state_space_private_equity_artifact_models_price_and_sale_event(
+    tmp_path: Path, synthetic_evidence_dir: Path
+) -> None:
     private_config = _write_private_equity_fixture(tmp_path)
     provider = _train_state_space(tmp_path, private_equity_config=private_config)
     model = provider.realize_model()

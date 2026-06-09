@@ -26,7 +26,7 @@ _ADAPTER: TypeAdapter[ProviderConfig] = TypeAdapter(ProviderConfig)
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])
-def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
+def test_train_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_evidence_dir: Path) -> None:
     out_manifest = tmp_path / "exogenous_provider.yaml"
     out_blob = tmp_path / (f"trained_{model_label}.npz" if model_label == "vecm" else f"trained_{model_label}.json")
     train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
@@ -69,7 +69,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("model_label", ["state_space"])
-def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
+def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path, synthetic_evidence_dir: Path) -> None:
     out_manifest = tmp_path / "exogenous_provider.yaml"
     out_blob = tmp_path / f"trained_{model_label}.json"
     train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])

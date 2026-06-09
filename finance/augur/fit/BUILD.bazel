@@ -219,6 +219,7 @@ py_test(
     size = "large",
     srcs = ["train_round_trip_test.py"],
     deps = [
+        ":conftest",
         ":train_lib",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:independent",
@@ -237,6 +238,7 @@ py_test(
     size = "large",
     srcs = ["state_space_acceptance_test.py"],
     deps = [
+        ":conftest",
         ":train_lib",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:provider_config",
