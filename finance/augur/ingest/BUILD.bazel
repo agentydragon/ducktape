@@ -10,6 +10,7 @@ py_library(
     srcs = ["http_fetch.py"],
     deps = [
         "@pypi//certifi",
+        "@pypi//httpx",
         "@pypi//tenacity",
     ],
 )
@@ -36,17 +37,23 @@ py_test(
     deps = [
         ":fetch",
         ":http_fetch",
+        "//:conftest",
         "//finance/evidence:sources",
+        "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
-# No apt layer: pygit2's manylinux wheel bundles libgit2 + its TLS backend, the
-# push targets in-cluster Forgejo over plain HTTP, and the upstream HTTPS GETs
-# pin certifi's CA bundle (see http_fetch). So the slim base needs nothing extra.
+# ca-certificates apt layer (@trixie_evidence): pygit2's Settings() eagerly loads
+# libgit2's OpenSSL cert locations from the system trust store at *import* time, so
+# `import pygit2` raises GitError on the bare slim base (no CA bundle) before the
+# scraper does anything. The certs are needed only to satisfy that init — libgit2
+# push targets in-cluster Forgejo over plain HTTP, and the upstream HTTPS GETs use
+# certifi via httpx (see http_fetch).
 aspect_py_binary(
     name = "evidence_image_bin",
     main = "fetch.py",
@@ -69,7 +76,10 @@ oci_image(
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "augur-evidence",
     },
-    tars = [":layers"],
+    tars = [
+        ":layers",
+        "@trixie_evidence//:flat",
+    ],
     user = "1000:1000",
 )
 

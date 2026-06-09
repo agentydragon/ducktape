@@ -14,6 +14,7 @@ UserPass credential callback, so no credentials are embedded in the remote URL.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 import sys
@@ -32,19 +33,25 @@ logger = logging.getLogger(__name__)
 _AUTHOR = pygit2.Signature("augur evidence scraper", "augur@allegedly.works")
 
 
-def write_sources(workdir: Path, sources: Iterable[EvidenceSource], *, http_get: HttpGet) -> int:
-    """GET each source and write it into `workdir/<output_filename>`.
+async def write_sources(workdir: Path, sources: Iterable[EvidenceSource], *, http_get: HttpGet) -> int:
+    """GET every source concurrently and write each into `workdir/<output_filename>`.
 
-    Per-source upstream failures are logged + counted, not raised (tenacity
-    already rode out transient blips), so one dead upstream doesn't block
-    refreshing the rest. Returns the failure count.
+    Fetches run concurrently (`asyncio.gather`) so the whole set completes in roughly
+    the slowest single source's time rather than the sum — the CronJob's 600s
+    `activeDeadlineSeconds` can't be blown by serializing a dozen large downloads.
+    Per-source upstream failures are logged + counted, not raised (tenacity already
+    rode out transient blips, and a bounded per-source retry budget keeps any one
+    stalled upstream from eating the whole deadline), so one dead upstream doesn't
+    block committing the rest. Returns the failure count.
     """
+    sources = list(sources)
+    bodies = await asyncio.gather(*(http_get(s.upstream_url, s.user_agent) for s in sources), return_exceptions=True)
     failures = 0
-    for source in sources:
-        try:
-            body = http_get(source.upstream_url, source.user_agent)
-        except FETCH_ERRORS:
-            logger.warning("failed to fetch %s", source.provenance_label, exc_info=True)
+    for source, body in zip(sources, bodies, strict=True):
+        if isinstance(body, BaseException):
+            if not isinstance(body, FETCH_ERRORS):
+                raise body  # an unexpected error is a bug, not a recoverable upstream outage
+            logger.warning("failed to fetch %s", source.provenance_label, exc_info=body)
             failures += 1
             continue
         (workdir / source.output_filename).write_bytes(body)
@@ -72,7 +79,7 @@ def commit_and_push(
     return True
 
 
-def run_scrape(
+async def run_scrape(
     git_url: str,
     branch: str,
     sources: Iterable[EvidenceSource],
@@ -102,21 +109,20 @@ def run_scrape(
         repo = pygit2.clone_repository(
             git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=depth
         )
-        failures = write_sources(repo_path, sources, http_get=http_get)
+        failures = await write_sources(repo_path, sources, http_get=http_get)
         commit_and_push(repo, branch, now=now, callbacks=callbacks)
     return 1 if failures else 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    parser = argparse.ArgumentParser(prog="augur-evidence", description=__doc__.splitlines()[0])
+async def async_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="augur-evidence", description=(__doc__ or "").splitlines()[0])
     parser.add_argument(
         "--git-url", required=True, help="Evidence repo http(s) URL (creds via GIT_USERNAME/GIT_PASSWORD)."
     )
     parser.add_argument("--branch", default="main", help="Branch to clone + push (default: main).")
     args = parser.parse_args(argv)
 
-    return run_scrape(
+    return await run_scrape(
         args.git_url,
         args.branch,
         EVIDENCE_SOURCES,
@@ -125,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
         http_get=_real_http_get,
         now=datetime.now(UTC),
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    return asyncio.run(async_main(argv))
 
 
 if __name__ == "__main__":

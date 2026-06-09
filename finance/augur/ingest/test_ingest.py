@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import urllib.error
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pygit2
 import pytest_bazel
 
@@ -22,7 +23,7 @@ _SIG = pygit2.Signature("t", "t@t.test")
 
 
 def _constant_get(body: bytes) -> HttpGet:
-    def get(url: str, user_agent: str) -> bytes:
+    async def get(url: str, user_agent: str) -> bytes:
         return body
 
     return get
@@ -56,27 +57,51 @@ def _remote_last_message(remote: Path) -> str:
     return pygit2.Repository(str(remote)).revparse_single("main").peel(pygit2.Commit).message
 
 
-def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
-    failures = write_sources(tmp_path, [SOURCE], http_get=_constant_get(b"payload"))
+async def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
+    failures = await write_sources(tmp_path, [SOURCE], http_get=_constant_get(b"payload"))
     assert failures == 0
     assert (tmp_path / "fred_cpi_us.csv").read_bytes() == b"payload"
 
 
-def test_write_sources_counts_upstream_failures_and_keeps_going(tmp_path: Path) -> None:
+async def test_write_sources_counts_upstream_failures_and_keeps_going(tmp_path: Path) -> None:
     other = EvidenceSource(
         kind=EvidenceKind.YAHOO, series_id="SPY", upstream_url="https://example.test/spy", output_filename="spy.json"
     )
 
-    def get(url: str, user_agent: str) -> bytes:
+    async def get(url: str, user_agent: str) -> bytes:
         if url == SOURCE.upstream_url:
-            raise urllib.error.URLError("upstream down")
+            raise httpx.ConnectError("upstream down")
         return b"ok"
 
-    failures = write_sources(tmp_path, [SOURCE, other], http_get=get)
+    failures = await write_sources(tmp_path, [SOURCE, other], http_get=get)
     assert failures == 1
     # The failed source wrote no file; the healthy one still did.
     assert not (tmp_path / "fred_cpi_us.csv").exists()
     assert (tmp_path / "spy.json").read_bytes() == b"ok"
+
+
+async def test_write_sources_fetches_concurrently(tmp_path: Path) -> None:
+    # All sources must be in flight at once for the barrier to release; a serial fetch
+    # would block on the first party forever, so the timeout below would trip the test.
+    sources = [
+        EvidenceSource(
+            kind=EvidenceKind.FRED,
+            series_id=f"S{i}",
+            upstream_url=f"https://example.test/{i}",
+            output_filename=f"{i}.csv",
+        )
+        for i in range(4)
+    ]
+    barrier = asyncio.Barrier(len(sources))
+
+    async def get(url: str, user_agent: str) -> bytes:
+        async with asyncio.timeout(10):
+            await barrier.wait()
+        return b"ok"
+
+    failures = await write_sources(tmp_path, sources, http_get=get)
+    assert failures == 0
+    assert all((tmp_path / s.output_filename).read_bytes() == b"ok" for s in sources)
 
 
 def test_commit_and_push_skips_when_nothing_changed(tmp_path: Path) -> None:
@@ -99,12 +124,12 @@ def test_commit_and_push_commits_changed_files(tmp_path: Path) -> None:
     assert "evidence: refresh 2026-06-09" in _remote_last_message(remote)
 
 
-def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
+async def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     _seed_remote(remote)
 
     # depth=0 (full clone): libgit2's local file transport doesn't support shallow fetch.
-    code = run_scrape(
+    code = await run_scrape(
         str(remote), "main", [SOURCE], username="", password="", http_get=_constant_get(b"body"), now=NOW, depth=0
     )
     assert code == 0
@@ -112,14 +137,16 @@ def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
     assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
 
 
-def test_run_scrape_returns_nonzero_when_a_source_fails(tmp_path: Path) -> None:
+async def test_run_scrape_returns_nonzero_when_a_source_fails(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
     _seed_remote(remote)
 
-    def boom(url: str, user_agent: str) -> bytes:
-        raise urllib.error.URLError("upstream down")
+    async def boom(url: str, user_agent: str) -> bytes:
+        raise httpx.ConnectError("upstream down")
 
-    assert run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW, depth=0) == 1
+    assert (
+        await run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW, depth=0) == 1
+    )
 
 
 if __name__ == "__main__":
