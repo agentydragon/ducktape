@@ -21,7 +21,7 @@ import httpx
 from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, forecast
 from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
-from loom.gym.scoring import Answer, TaskScore, score
+from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
 from loom.gym.series_tasks import all_tasks
 from loom.gym.task import Task
 
@@ -75,8 +75,15 @@ def _metric_means(rows: list[EvalRow]) -> dict[str, float]:
 
 
 def _print_group_mean(label: str, rows: list[EvalRow]) -> None:
-    means = " ".join(f"{name}={value:.4f}" for name, value in _metric_means(rows).items())
-    print(f"mean[{label}] over {len(rows)} tasks: {means}")
+    parts = []
+    for name, mean_value in sorted(_metric_means(rows).items()):
+        clusters: dict[object, list[float]] = defaultdict(list)
+        for row in rows:
+            if name in row.task_score.metrics:
+                clusters[row.task.as_of].append(row.task_score.metrics[name])
+        ci = cluster_bootstrap_ci(tuple(clusters.values()))
+        parts.append(f"{name}={mean_value:.4f}" + (f" [{ci[0]:.4f},{ci[1]:.4f}]" if ci is not None else ""))
+    print(f"mean[{label}] over {len(rows)} tasks: " + " ".join(parts))
 
 
 def report(rows: list[EvalRow], model_id: str, output: Path | None) -> None:

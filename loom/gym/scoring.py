@@ -8,6 +8,8 @@ Brier; scalar answers are stated as quantiles and scored with mean pinball loss
 from __future__ import annotations
 
 import math
+import random
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
@@ -63,6 +65,28 @@ class TaskScore:
 def pinball_loss(level: float, stated: float, realized: float) -> float:
     """Pinball (quantile) loss for one stated quantile; proper for that level."""
     return max(level * (realized - stated), (level - 1.0) * (realized - stated))
+
+
+def cluster_bootstrap_ci(
+    values_by_cluster: Sequence[Sequence[float]], n_resamples: int = 2000, seed: int = 0
+) -> tuple[float, float] | None:
+    """95% percentile-bootstrap CI of the pooled mean, resampling whole clusters.
+
+    Tasks sharing an anchor (`as_of`) saw the same era and are correlated, so
+    independence is plausible only across clusters — naive per-task bootstrap
+    would be anti-conservative. Returns None with fewer than two clusters.
+    """
+    clusters = [list(cluster) for cluster in values_by_cluster if cluster]
+    if len(clusters) < 2:
+        return None
+    rng = random.Random(seed)
+    means = []
+    for _ in range(n_resamples):
+        chosen = rng.choices(clusters, k=len(clusters))
+        values = [value for cluster in chosen for value in cluster]
+        means.append(sum(values) / len(values))
+    means.sort()
+    return means[round(0.025 * (n_resamples - 1))], means[round(0.975 * (n_resamples - 1))]
 
 
 def score(task: Task, answer: BinaryAnswer | QuantileAnswer) -> TaskScore:

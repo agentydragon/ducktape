@@ -355,12 +355,32 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   question kind aggregating per-variable proper losses); (4)
   strategy-conditional personal outcomes — answered as `sim` over WorldSets,
   scored only via the dress-rehearsal rebuilds.
-- **Contestant isolation**: agent contestants run in a **network-less
-  container**; task data is mounted as files (the "dossier"), a Python
-  stack is preinstalled, and the only output is the answer artifact. No
-  network = the as-of discipline is enforced physically, not by prompt.
-  The harness can run on RBE Docker workers via the existing
-  `requires_docker` py_test machinery.
+- **Contestant isolation — ✅ landed via Inspect AI** (UK AISI's eval
+  framework, `inspect_harness.py`): each gym task becomes an inspect
+  `Sample` with the dossier in `Sample.files` (mounted at `/data`), a
+  Docker sandbox with `network_mode: none` (the as-of discipline is
+  physical, not prompt-level), a react agent with bash/python tools, and a
+  forced-`submit` answer scored by the gym's own proper losses. A
+  scripted-model (mockllm) end-to-end test runs in CI on the RBE Docker
+  workers — no quota spent. Python stack inside the sandbox is
+  `python:3.13-slim` for now; a custom image with pandas/numpy is a
+  follow-up.
+- **Bundle tasks (next)**: one dossier, one submission, **many named
+  sub-questions** — more metrics per sampled token, and joint structure
+  becomes scoreable. Schema: a bundle is an ordered map of named
+  sub-questions (binary | scalar quantiles | **categorical partition**,
+  e.g. 12m level buckets "<5000 / 5000–5500 / 5500–6000 / >6000" and 12m
+  top-bottom band-width buckets "<200 / 201–300 / 301–400 / …"); the
+  outcome and the submitted JSON are same-keyed maps. **Scoring stays
+  per-sub-question** (log/Brier, pinball, and ranked probability score for
+  ordered partitions), so a question scores identically solo or bundled —
+  bundling is an elicitation/efficiency choice we can measure (loss delta
+  vs token savings). Joint cells (level bucket × band bucket) test whether
+  the stated joint is coherent, not just the marginals.
+- **Reporting norm**: every aggregate metric is presented with a **95%
+  cluster-bootstrap CI**, clustered by `as_of` — tasks sharing an anchor
+  saw the same era and are not independent, so per-task bootstrap would be
+  anti-conservative.
 - **Quota discipline**: GLM sampling burns the shared z.ai weekly token
   quota (monitor endpoint: `api.z.ai/api/monitor/usage/quota/limit`; the
   5h and 7d windows + reset times). Log usage per run; schedule big

@@ -45,6 +45,24 @@ py_library(
     deps = [":monthly_series"],
 )
 
+filegroup(
+    name = "sandbox_compose",
+    srcs = ["sandbox/compose.yaml"],
+)
+
+py_library(
+    name = "inspect_harness",
+    srcs = ["inspect_harness.py"],
+    data = [":sandbox_compose"],  # keep
+    deps = [
+        ":baseline_llm",
+        ":dossier",
+        ":scoring",
+        ":task",
+        "@pypi//inspect_ai",
+    ],
+)
+
 py_library(
     name = "run_eval",
     srcs = ["run_eval.py"],
@@ -157,5 +175,23 @@ py_test(
         ":dossier",
         "//:conftest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inspect_harness",
+    size = "large",
+    srcs = ["test_inspect_harness.py"],
+    requires_docker = True,
+    deps = [
+        ":inspect_harness",
+        ":series_tasks",
+        "//:conftest",
+        "@pypi//inspect_ai",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )

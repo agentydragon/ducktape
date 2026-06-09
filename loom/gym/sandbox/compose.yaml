@@ -1,0 +1,9 @@
+services:
+  default:
+    image: python:3.13-slim
+    init: true
+    command: tail -f /dev/null
+    # No network: the as-of information discipline is enforced physically.
+    network_mode: none
+    cpus: 1.0
+    mem_limit: 1gb

@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from loom.gym.scoring import BinaryAnswer, QuantileAnswer, pinball_loss, score
+from loom.gym.scoring import BinaryAnswer, QuantileAnswer, cluster_bootstrap_ci, pinball_loss, score
 from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
 
 
@@ -86,6 +86,18 @@ def test_quantile_answer_validation() -> None:
     # Quantile values that cross (decrease as the level increases) are incoherent.
     with pytest.raises(ValidationError, match="non-decreasing"):
         QuantileAnswer(quantiles={0.1: 5.0, 0.9: 1.0})
+
+
+def test_cluster_bootstrap_ci() -> None:
+    # Identical clusters: every resample has the same mean, so the CI collapses.
+    assert cluster_bootstrap_ci([[1.0], [1.0], [1.0]]) == (1.0, 1.0)
+    ci = cluster_bootstrap_ci([[0.0], [1.0], [2.0], [3.0]], seed=7)
+    assert ci is not None
+    low, high = ci
+    assert low <= 1.5 <= high
+    assert low < high
+    # A single cluster has no resampling distribution.
+    assert cluster_bootstrap_ci([[1.0, 2.0]]) is None
 
 
 def test_answer_outcome_kind_mismatch_raises() -> None:
