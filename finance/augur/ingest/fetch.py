@@ -60,7 +60,7 @@ def commit_and_push(
     repo.index.write()
     tree = repo.index.write_tree()
     head = repo.head
-    head_commit = repo[head.target]
+    head_commit = repo[head.target].peel(pygit2.Commit)
     if tree == head_commit.tree_id:
         logger.info("evidence unchanged; nothing to commit")
         return False
