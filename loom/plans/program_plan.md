@@ -19,6 +19,40 @@ whose implied marginals match the market prices**:
 augur is the first consumer, not the owner: loom emits a serialized
 **WorldSet** artifact; augur reads it through a thin bridge on augur's side.
 
+## North star (reframe, 2026-06-09)
+
+The terminal product is not trajectories — it is **answers**: "if I execute
+strategy X, what is the distribution of outcome Y for me?" Those questions
+cannot be prediction markets themselves (private information, no liquidity,
+audience of one). So the system is judged as: **input** = dated past data +
+market quotes of varying trustworthiness; **output** = a distribution for a
+question; **metric** = proper loss against realized outcomes, with
+training/eval tasks harvested from history.
+
+Two consequences, joined by one decomposition:
+
+- **"If I do X" is causal, and a loss metric cannot score counterfactuals**
+  directly — the road not taken never resolves. The save is augur's existing
+  boundary: for these questions the world is exogenous to the strategy (the
+  S&P does not react to my rebalancing), so
+  `P(Y | do X) = deterministic mechanics(X) ∘ P(exogenous world)`. The
+  forecastable, scoreable object is the exogenous world; the personal
+  conditional is a deterministic, unit-testable transform of it (`sim`).
+  loom forecasts worlds; augur turns them into "my outcomes under X".
+- **Trajectories are instrumental, not terminal.** They stay for three
+  reasons: they are the substrate `sim` needs (the personal questions
+  literally require them); a mechanistic decomposition is inspectable and
+  enforces sanity (the EventGrammar class of checks); and in data-poor
+  regimes — where the loss metric has no statistical power — inspectability
+  is the only warrant available. Preference rule: **at equal loss, the more
+  mechanistic answer wins**; the gym's verdicts on data-rich task families
+  are what license trusting the same machinery on data-poor ones.
+
+Personal-but-exogenous quantities (health events, job loss) are the same
+epistemic object as the OpenAI module: a sparse private entity riding a dense
+public world — reference-class shape, private covariates for location,
+calibration measurable on the class, never on the individual.
+
 ## Inherited thinking (decided; do not re-derive)
 
 This program executes a position already worked out in augur. Read these before
@@ -196,10 +230,28 @@ error.
 structured baselines) into `loom/eval`; every WorldSet ships with a validation
 report (reproduction / sanity / skill-so-far). Later: reference-class fitting
 for event programs (censoring-aware — time-rescaling, valuation PIT,
-IPCW-Brier — per the architecture note).
+IPCW-Brier — per the architecture note). Under the reframe these scorecards
+live inside the gym; the per-artifact report remains.
 
-Sequencing: M2 runs parallel to M1; M3 needs M1's dense paths; M4 can land
-dense-only after M1 and pick up events after M3.
+The gym track (see "Productized: the forecasting gym"):
+
+**G0 — gym core (parallel to M0).** Task + score schemas, the as-of data
+harness over the dated stores, baselines, runner. Seeded entirely with
+series-derived tasks — no scraping needed to start measuring.
+
+**G1 — market task harvesting.** Forward: the M2 snapshot/resolution store.
+Backward: historical backfills (Manifold export, Kalshi/Polymarket history) so
+the resolved-market task set isn't waiting on calendar time.
+
+**G2 — contestants.** (1) the classical pipeline once M1 lands; (2) the
+agent-with-forecast-skill contestant on asserted-cutoff models — default
+z.ai `glm-4.5` (leakage-probed June-2024 cutoff; API key already provisioned
+in-cluster, operational notes in the spike's `docs/z_ai_api.md`); (3) the
+authoring hybrid once M3 lands.
+
+Sequencing: G0 lands alongside M0 — the metric exists before methods optimize
+against it. M2 runs parallel to M1 and feeds G1; M3 needs M1's dense paths; M4
+can land dense-only after M1 and pick up events after M3.
 
 ## How we know it's working
 
@@ -244,6 +296,42 @@ untilted `Q`; Kaplan–Meier / constant hazard for events) on proper scores
 while staying calibrated. Known-unvalidatable by design: the n=1
 macro-coupling knob — surfaced and preset, because no data exists to fit it.
 
+### Productized: the forecasting gym
+
+Instruments 3–4 generalize into a standing eval harness — under the reframe,
+the program's north-star deliverable:
+
+- **Task** = `(as_of date t, question + resolution criterion, resolution
+date, realized outcome)`; a contestant may use any data dated ≤ t.
+- **Task families**: (a) **series-derived** — threshold/bucket/path-statistic
+  questions manufactured from the evidence history; unlimited n, no scraping,
+  the spike's PIT backtests recast as tasks; (b) **market-resolved** — from
+  the M2 store going forward and historical dumps backward (Manifold full
+  export; Kalshi/Polymarket historical APIs), with the market's price-as-of-t
+  available both as a feature and as the crowd baseline; (c) **entity
+  events** — reference-class companies viewed as-of past dates,
+  censoring-aware scoring; (d) **end-to-end personal** — as-of WorldSet
+  rebuild + `sim` vs our own realized history; tiny n, smoke test only.
+- **Leakage discipline**: all data access through dated stores — the
+  git-scraped evidence checkout is already an as-of index (`git checkout` at
+  date t), M2 snapshots are dated rows; LLM-involved contestants run on
+  **asserted-cutoff models** (weights released before t — the spike's
+  leakage-probe methodology and candidate list); no undated sources inside
+  eval runs.
+- **Scoring**: log/Brier for binaries, CRPS/quantile loss for continuous,
+  censoring-aware variants for events; always relative — vs price-as-of-t
+  where a market exists (beating it = skill), vs climatology/random-walk
+  where not; calibration reported separately from sharpness.
+- **Contestants**: (1) the loom classical pipeline; (2) an agent running a
+  forecast skill (superforecaster methodology + dated data tools), free-form;
+  (3) the hybrid from the architecture note — the agent **authors** a
+  mechanistic program, classical machinery fits and gates it. Which wins
+  where becomes an empirical question, which is the point of the reframe.
+- **Knobs become learnable**: market-quality weights `ω_m` as a function of
+  volume/liquidity/platform/horizon, isotonic-repair on/off, dedup strategy —
+  currently hand-set priors — get tuned against held-out gym loss instead of
+  argued about.
+
 ## What loom is not
 
 - **Not trading or market-making.** "Coherence" means "a joint with these
@@ -263,6 +351,10 @@ macro-coupling knob — surfaced and preset, because no data exists to fit it.
    matches augur's frame stack); no archive container.
 4. **Snapshot store backend**: extend the augur-evidence scraper vs a new
    store. Default: extend.
+5. **Forecast-skill packaging**: extend `skills/superforecaster/` vs a sibling
+   skill that wraps loom's dated data tools + authoring/fit API and defers to
+   superforecaster for elicitation methodology. Default: sibling skill,
+   cross-referenced.
 
 ## Risks
 
