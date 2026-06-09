@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 import kernel
 from run_spike import CODING, RESULTS, quota
 
-from finance.augur.data.fetch_real_history import FRED, NORMALIZE, YAHOO, fred_monthly, yahoo_monthly
+from finance.augur.x.pm_reifier.evidence_series import monthly_levels_by_wire
 
 MODEL = "glm-4.5"  # self-reported cutoff ~2024-06 (leakage-probed clean for 2024-2026)
 ENDPOINT = CODING
@@ -40,15 +40,13 @@ def m_label(idx: int) -> str:
     return f"{idx // 12:04d}-{idx % 12 + 1:02d}"
 
 
+NORMALIZE = {"inflation", "home_value:sf_ca", "rent:sf_ca"}  # rebased to 100 at T0; sp500/BTC kept as levels
+
+
 def build_series() -> dict[str, dict[str, float]]:
     """wire -> {YYYY-MM: value}; index series rebased to 100 at T0, sp500/BTC kept as levels."""
-    raw: dict[str, dict[str, float]] = {}
-    for wire, sym in YAHOO.items():
-        raw[wire] = dict(yahoo_monthly(sym))
-    for wire, sid in FRED.items():
-        raw[wire] = dict(fred_monthly(sid))
     out: dict[str, dict[str, float]] = {}
-    for wire, series in raw.items():
+    for wire, series in monthly_levels_by_wire().items():
         if wire in NORMALIZE:
             base = series[T0]  # must exist; raises otherwise (T0 predates all our series)
             out[wire] = {m: v / base * 100.0 for m, v in series.items()}

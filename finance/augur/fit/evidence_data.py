@@ -434,6 +434,35 @@ class MonthlyLevel:
     value: float
 
 
+def read_monthly_levels(source: evidence_sources.EvidenceSource) -> list[MonthlyLevel]:
+    """Last observation per calendar month (oldest first) for a single FRED/Yahoo level series."""
+    match source.kind:
+        case evidence_sources.EvidenceKind.FRED:
+            raw = _read_fred_series(source)
+        case evidence_sources.EvidenceKind.YAHOO:
+            raw = _read_yahoo_adjusted_close(source)
+        case evidence_sources.EvidenceKind.ZILLOW:
+            raise ValueError(f"{source.provenance_label}: Zillow is a wide city table, not a single level series")
+    monthly = _monthly_last(raw)
+    # `monthly` is period-indexed (grouped to "M"); pandas-stubs widens the index to Hashable,
+    # so name the Period explicitly to reach `.to_timestamp()`.
+    return [
+        MonthlyLevel(month=cast(pd.Period, period).to_timestamp().date(), value=float(value))
+        for period, value in monthly.items()
+    ]
+
+
+# Macro level wire id -> the absolute series anchored against it. Home-value series are absent:
+# they are not anchored against today.
+_ABSOLUTE_LEVEL_SOURCES: dict[str, evidence_sources.EvidenceSource] = {
+    "sp500": evidence_sources.FRED_SP500,
+    "inflation": evidence_sources.FRED_CPI,
+    "crypto:btc": evidence_sources.YAHOO_BTC,
+    "crypto:eth": evidence_sources.YAHOO_ETH,
+    "rent:san_francisco_ca": evidence_sources.FRED_SF_RENT_CPI,
+}
+
+
 def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[MonthlyLevel]]:
     """Absolute monthly level series (last observation per calendar month, oldest first) for
     each requested macro level wire id, on its real published scale.
@@ -444,24 +473,7 @@ def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[Mo
     (e.g. home-value series, which are not anchored against today)."""
     out: dict[str, list[MonthlyLevel]] = {}
     for wire in wire_ids:
-        match wire:
-            case "sp500":
-                raw = _read_fred_series(evidence_sources.FRED_SP500)
-            case "inflation":
-                raw = _read_fred_series(evidence_sources.FRED_CPI)
-            case "crypto:btc":
-                raw = _read_yahoo_adjusted_close(evidence_sources.YAHOO_BTC)
-            case "crypto:eth":
-                raw = _read_yahoo_adjusted_close(evidence_sources.YAHOO_ETH)
-            case "rent:san_francisco_ca":
-                raw = _read_fred_series(evidence_sources.FRED_SF_RENT_CPI)
-            case _:
-                raise KeyError(f"no vendored absolute level series for level wire id {wire!r}")
-        monthly = _monthly_last(raw)
-        # `monthly` is period-indexed (grouped to "M"); pandas-stubs widens the index to Hashable,
-        # so name the Period explicitly to reach `.to_timestamp()`.
-        out[wire] = [
-            MonthlyLevel(month=cast(pd.Period, period).to_timestamp().date(), value=float(value))
-            for period, value in monthly.items()
-        ]
+        if wire not in _ABSOLUTE_LEVEL_SOURCES:
+            raise KeyError(f"no absolute level series for level wire id {wire!r}")
+        out[wire] = read_monthly_levels(_ABSOLUTE_LEVEL_SOURCES[wire])
     return out

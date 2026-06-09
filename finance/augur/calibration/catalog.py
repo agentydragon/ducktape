@@ -110,8 +110,8 @@ class CatalogMetadata(BaseModel):
     # `model_anchor_date`, keyed by wire id ("sp500", "inflation"). Macro markets are scored
     # against the sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
     # meaningless unless month 0 of the path is today's real index level. When a referenced
-    # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the vendored
-    # evidence (`augur/data/`), the single source of truth shared with the model fit.
+    # series is absent here, `macro_anchors.resolve_anchors` derives the spot from the scraped
+    # exogenous evidence (read at `AUGUR_EVIDENCE_DIR`), the single source of truth shared with the model fit.
     anchors: dict[str, float] = Field(default_factory=dict)
     # OPTIONAL override of the real CPI-U index for the months immediately BEFORE
     # `model_anchor_date`, oldest first (last entry = the month before the anchor observation;

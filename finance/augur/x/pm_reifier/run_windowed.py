@@ -6,9 +6,9 @@ world is its own conversation (independent draw from Q); BATCH_SIZE>1 rolls dist
 as a coverage knob. Conversations run in parallel with 429/timeout backoff.
 
 Two grounding changes over the dense one-shot run:
-  - Macro series are seeded with a REAL recent-history tail (run //finance/augur/data:fetch_real_history -> real_history.json):
-    sp500, crypto:BTC (Yahoo), inflation/home_value/rent (FRED), so worlds start from real levels and
-    carry real momentum forward.
+  - Macro series are seeded with a REAL recent-history tail (real_history.json, built from the
+    augur-evidence checkout at AUGUR_EVIDENCE_DIR — see x/pm_reifier/evidence_series.py): sp500,
+    crypto:BTC, inflation/home_value/rent, so worlds start from real levels and carry real momentum.
   - OpenAI is modelled as augur's PE issuer is: discrete EVENTS (primary_round / secondary_tender / ipo
     / collapse with a post-money valuation), not a smooth monthly mark. The model is fed OpenAI's PUBLIC
     funding history (openai_history.json) and emits future events per window. Markets evaluate on the

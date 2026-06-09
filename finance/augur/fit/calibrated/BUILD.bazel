@@ -3,7 +3,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 package(default_visibility = ["//visibility:public"])
 
 # Calibrated VECM trained-state blob — produced by `bb run //finance/augur/fit:train`
-# against the public source data in //finance/augur/data (paths are constants in
+# against the scraped exogenous evidence read from `AUGUR_EVIDENCE_DIR` (see
 # augur/fit/evidence_data.py). Checked in so the deployment image bakes a
 # known-good model rather than requiring a training run on every image build.
 filegroup(

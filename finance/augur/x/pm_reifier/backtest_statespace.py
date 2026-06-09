@@ -25,7 +25,7 @@ import pathlib
 import statistics
 from typing import TypedDict
 
-from finance.augur.data.fetch_real_history import FRED, YAHOO, fred_monthly, yahoo_monthly
+from finance.augur.x.pm_reifier.evidence_series import monthly_levels_by_wire
 
 SERIES = ["inflation", "sp500", "crypto:BTC", "home_value:sf_ca", "rent:sf_ca"]
 T0 = "2024-06"  # same anchor as backtest.py (glm-4.5's leakage-probed cutoff)
@@ -55,16 +55,6 @@ def _phi(z: float) -> float:
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
-def build_series() -> dict[str, dict[str, float]]:
-    """wire -> {YYYY-MM: raw level}. Log-returns are scale-free, so no rebasing is needed here."""
-    out: dict[str, dict[str, float]] = {}
-    for wire, sym in YAHOO.items():
-        out[wire] = dict(yahoo_monthly(sym))
-    for wire, sid in FRED.items():
-        out[wire] = dict(fred_monthly(sid))
-    return out
-
-
 def gaussian_pit(history_levels: list[float], realized: float) -> float | None:
     """One-step log-return Gaussian PIT: fit N(mu, sigma) on the window's log-returns, score the realized step."""
     rets = [math.log(b / a) for a, b in itertools.pairwise(history_levels) if a > 0 and b > 0]
@@ -79,7 +69,7 @@ def gaussian_pit(history_levels: list[float], realized: float) -> float | None:
 
 def main() -> None:
     RESULTS.mkdir(exist_ok=True)
-    vals = build_series()
+    vals = monthly_levels_by_wire()
     common = sorted(set.intersection(*(set(v) for v in vals.values())), key=m_index)  # months with all 5 series
     steps: list[StepPitSummary] = []
     for tgt in common:
