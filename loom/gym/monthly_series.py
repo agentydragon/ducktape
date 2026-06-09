@@ -18,7 +18,16 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from finance.evidence.loading import read_monthly_levels
-from finance.evidence.sources import FRED_CPI, FRED_SP500, YAHOO_BTC, EvidenceSource
+from finance.evidence.sources import (
+    FRED_CPI,
+    FRED_MORTGAGE30,
+    FRED_SFXRSA,
+    FRED_SP500,
+    YAHOO_BTC,
+    YAHOO_ETH,
+    YAHOO_SPY,
+    EvidenceSource,
+)
 
 _HISTORY_START = date(2013, 1, 1)
 
@@ -45,6 +54,11 @@ class MonthlySeries:
         """Max value over observed months in (after, through]; None if no month is observed."""
         window = [value for month, value in self.values.items() if after < month <= through]
         return max(window) if window else None
+
+    def min_observed_between(self, after: date, through: date) -> float | None:
+        """Min value over observed months in (after, through]; None if no month is observed."""
+        window = [value for month, value in self.values.items() if after < month <= through]
+        return min(window) if window else None
 
     def last_month(self) -> date:
         return max(self.values)
@@ -77,6 +91,30 @@ SERIES_SPECS = (
         unit="index points",
         source=FRED_CPI,
     ),
+    SeriesSpec(
+        series_id="spy",
+        description="SPDR S&P 500 ETF dividend-adjusted price (last observation of the month)",
+        unit="USD",
+        source=YAHOO_SPY,
+    ),
+    SeriesSpec(
+        series_id="eth",
+        description="Ethereum price in US dollars (last observation of the month)",
+        unit="USD",
+        source=YAHOO_ETH,
+    ),
+    SeriesSpec(
+        series_id="mortgage30",
+        description="US 30-year fixed mortgage rate (FRED MORTGAGE30US)",
+        unit="percent",
+        source=FRED_MORTGAGE30,
+    ),
+    SeriesSpec(
+        series_id="sfxrsa",
+        description="S&P/Case-Shiller San Francisco home price index, seasonally adjusted",
+        unit="index points",
+        source=FRED_SFXRSA,
+    ),
 )
 
 
@@ -91,10 +129,14 @@ class KnownValue:
 # Famous month-end values; a load failing these is a bad scrape or format
 # drift, not new data. BTC's tolerance is wide because Yahoo may serve weekly
 # or monthly bars under range=max, shifting the "last observation" by days.
+# Gates exist per parser path and per series where we hold a confident
+# reference value; remaining series are covered by the parser-path gates.
 KNOWN_HISTORY = (
     KnownValue(series_id="sp500", month=date(2024, 12, 1), value=5881.63, tolerance=1.0),
     KnownValue(series_id="btcusd", month=date(2024, 12, 1), value=93429.0, tolerance=5000.0),
     KnownValue(series_id="cpi", month=date(2024, 11, 1), value=316.5, tolerance=1.0),
+    KnownValue(series_id="mortgage30", month=date(2024, 12, 1), value=6.85, tolerance=0.5),
+    KnownValue(series_id="eth", month=date(2024, 12, 1), value=3350.0, tolerance=500.0),
 )
 
 

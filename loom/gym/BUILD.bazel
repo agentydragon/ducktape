@@ -56,11 +56,33 @@ py_library(
 )
 
 py_library(
+    name = "comparison_tasks",
+    srcs = ["comparison_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":task",
+    ],
+)
+
+py_library(
+    name = "path_tasks",
+    srcs = ["path_tasks.py"],
+    deps = [
+        ":bundle_tasks",
+        ":monthly_series",
+        ":task",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
     name = "series_tasks",
     srcs = ["series_tasks.py"],
     deps = [
         ":bundle_tasks",
+        ":comparison_tasks",
         ":monthly_series",
+        ":path_tasks",
         ":seed_tasks",
         ":task",
     ],
@@ -224,6 +246,30 @@ py_test(
         ":task",
         "//:conftest",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_comparison_tasks",
+    srcs = ["test_comparison_tasks.py"],
+    deps = [
+        ":comparison_tasks",
+        ":monthly_series",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_path_tasks",
+    srcs = ["test_path_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":path_tasks",
+        ":task",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )

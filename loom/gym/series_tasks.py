@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from datetime import date
 
 from loom.gym.bundle_tasks import bundle_tasks
+from loom.gym.comparison_tasks import comparison_tasks
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
+from loom.gym.path_tasks import path_tasks
 from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
 
@@ -26,17 +28,45 @@ from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQu
 @dataclass(frozen=True)
 class SeriesTaskSpec:
     series: MonthlySeries
-    # (horizon_months, multiplier-of-anchor-level) per binary threshold question.
+    # (horizon_months, multiplier-of-anchor-level) per binary ceiling-threshold question.
     binary_thresholds: tuple[tuple[int, float], ...]
+    # (horizon_months, multiplier-of-anchor-level below 1) per binary floor-threshold question.
+    binary_floor_thresholds: tuple[tuple[int, float], ...] = ()
     scalar_horizons: tuple[int, ...] = (6,)
 
 
 def default_specs(series: Sequence[MonthlySeries]) -> tuple[SeriesTaskSpec, ...]:
     by_id = {one_series.series_id: one_series for one_series in series}
     return (
-        SeriesTaskSpec(series=by_id["sp500"], binary_thresholds=((6, 1.05), (12, 1.10))),
-        SeriesTaskSpec(series=by_id["btcusd"], binary_thresholds=((6, 1.25), (12, 1.50))),
-        SeriesTaskSpec(series=by_id["cpi"], binary_thresholds=((6, 1.02), (12, 1.035))),
+        SeriesTaskSpec(
+            series=by_id["sp500"],
+            binary_thresholds=((3, 1.03), (6, 1.05), (12, 1.10), (24, 1.20)),
+            binary_floor_thresholds=((12, 0.90),),
+            scalar_horizons=(3, 6, 24),
+        ),
+        SeriesTaskSpec(
+            series=by_id["spy"], binary_thresholds=((6, 1.05), (12, 1.10)), binary_floor_thresholds=((12, 0.90),)
+        ),
+        SeriesTaskSpec(
+            series=by_id["btcusd"],
+            binary_thresholds=((3, 1.15), (6, 1.25), (12, 1.50), (24, 2.0)),
+            binary_floor_thresholds=((12, 0.70),),
+            scalar_horizons=(3, 6, 24),
+        ),
+        SeriesTaskSpec(
+            series=by_id["eth"], binary_thresholds=((6, 1.25), (12, 1.50)), binary_floor_thresholds=((12, 0.70),)
+        ),
+        SeriesTaskSpec(
+            series=by_id["cpi"],
+            binary_thresholds=((3, 1.01), (6, 1.02), (12, 1.035), (24, 1.07)),
+            scalar_horizons=(3, 6, 24),
+        ),
+        SeriesTaskSpec(
+            series=by_id["mortgage30"],
+            binary_thresholds=((6, 1.10), (12, 1.20)),
+            binary_floor_thresholds=((6, 0.90), (12, 0.85)),
+        ),
+        SeriesTaskSpec(series=by_id["sfxrsa"], binary_thresholds=((12, 1.05),), binary_floor_thresholds=((12, 0.95),)),
     )
 
 
@@ -90,6 +120,29 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                     outcome_source=f"computed from {series.provenance}",
                 )
             )
+
+        for horizon, multiplier in spec.binary_floor_thresholds:
+            through = add_months(anchor, horizon)
+            if through > last_month:
+                continue
+            threshold = round(anchor_level * multiplier, 2)
+            if (observed_min := series.min_observed_between(after=anchor, through=through)) is None:
+                continue
+            tasks.append(
+                Task(
+                    task_id=f"{series.series_id}-le-{multiplier}x-{anchor:%Y-%m}-h{horizon}",
+                    as_of=as_of,
+                    resolution_date=month_end(through),
+                    question=BinaryQuestion(
+                        text=(
+                            f"{header} Will it be at or below {threshold:,.2f} for any month after "
+                            f"{anchor:%Y-%m}, up to and including {through:%Y-%m}?"
+                        )
+                    ),
+                    outcome=BinaryOutcome(value=observed_min <= threshold),
+                    outcome_source=f"computed from {series.provenance}",
+                )
+            )
         anchor = add_months(anchor, anchor_step_months)
     return tasks
 
@@ -105,4 +158,4 @@ def series_tasks(
 
 
 def all_tasks(series: Sequence[MonthlySeries]) -> tuple[Task, ...]:
-    return SEED_TASKS + series_tasks(series) + bundle_tasks(series)
+    return SEED_TASKS + series_tasks(series) + bundle_tasks(series) + path_tasks(series) + comparison_tasks(series)

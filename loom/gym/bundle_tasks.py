@@ -38,11 +38,15 @@ class BundleSpec:
     band_fractions: tuple[float, ...]
 
 
+# mortgage30/sfxrsa stay out of bundles: their floor/ceiling questions in the
+# series family already cover the interesting moves at their low volatility.
 def default_bundle_specs(series: Sequence[MonthlySeries]) -> tuple[BundleSpec, ...]:
     by_id = {one_series.series_id: one_series for one_series in series}
     return (
         BundleSpec(series=by_id["sp500"], level_multipliers=(0.95, 1.05, 1.15), band_fractions=(0.05, 0.1, 0.2)),
+        BundleSpec(series=by_id["spy"], level_multipliers=(0.95, 1.05, 1.15), band_fractions=(0.05, 0.1, 0.2)),
         BundleSpec(series=by_id["btcusd"], level_multipliers=(0.8, 1.2, 1.8), band_fractions=(0.2, 0.4, 0.8)),
+        BundleSpec(series=by_id["eth"], level_multipliers=(0.8, 1.2, 1.8), band_fractions=(0.2, 0.4, 0.8)),
         BundleSpec(series=by_id["cpi"], level_multipliers=(1.0, 1.02, 1.04), band_fractions=(0.01, 0.02, 0.04)),
     )
 
