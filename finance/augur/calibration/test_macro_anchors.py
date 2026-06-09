@@ -1,8 +1,9 @@
-"""Tests for deriving calibration anchors from vendored evidence (with catalog overrides)."""
+"""Tests for deriving calibration anchors from the evidence loader (with catalog overrides)."""
 
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest_bazel
 
@@ -46,10 +47,10 @@ def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list
     )
 
 
-def test_derives_anchor_and_history_from_vendored_evidence() -> None:
+def test_derives_anchor_and_history_from_evidence(synthetic_evidence_dir: Path) -> None:
     resolved = resolve_anchors(_catalog(), history_months=12)
 
-    # Cross-check the selection logic against the loader directly: the anchor is the last vendored
+    # Cross-check the selection logic against the loader directly: the anchor is the last
     # observation on or before the anchor month, and the history is the 12 months immediately
     # preceding that same observation (oldest first) — not hardcoded index values.
     anchor_month = ANCHOR_DATE.replace(day=1)
@@ -62,7 +63,7 @@ def test_derives_anchor_and_history_from_vendored_evidence() -> None:
     assert len(resolved.inflation_history) == 12
 
 
-def test_explicit_anchor_overrides_derived_value() -> None:
+def test_explicit_anchor_overrides_derived_value(synthetic_evidence_dir: Path) -> None:
     # An explicit per-series anchor wins; the unspecified series still derives from evidence.
     resolved = resolve_anchors(_catalog(anchors={"sp500": 1234.5}))
     assert resolved.anchors["sp500"] == 1234.5
@@ -71,7 +72,7 @@ def test_explicit_anchor_overrides_derived_value() -> None:
     assert resolved.anchors["inflation"] == cpi[-1].value
 
 
-def test_explicit_history_overrides_derived_history() -> None:
+def test_explicit_history_overrides_derived_history(synthetic_evidence_dir: Path) -> None:
     pinned = [100.0, 101.0, 102.0]
     resolved = resolve_anchors(_catalog(inflation_history=pinned))
     assert resolved.inflation_history == pinned

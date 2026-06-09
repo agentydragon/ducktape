@@ -1,7 +1,8 @@
 """Fetch recent monthly macro history from public sources (Yahoo Finance + FRED).
 
-Live-refresh companion to the checked-in snapshots in this directory (see SOURCES.md). All sources
-are public and keyless:
+Seeds the `x/pm_reifier` backtests with a real recent-history tail (writes `real_history.json`);
+distinct from the exogenous evidence the model fits against, which the augur-evidence CronJob
+scrapes into git and the app reads at `AUGUR_EVIDENCE_DIR`. All sources are public and keyless:
 
   sp500            <- Yahoo Finance ^GSPC monthly close
   crypto:BTC       <- Yahoo Finance BTC-USD monthly close

@@ -25,6 +25,7 @@ py_library(
     deps = [
         ":evidence_sources",
         ":http_fetch",
+        "@pypi//pygit2",
     ],
 )
 
@@ -37,10 +38,8 @@ py_binary(
 py_test(
     name = "test_evidence_sources",
     srcs = ["test_evidence_sources.py"],
-    data = ["//finance/augur/data:evidence_source_files"],
     deps = [
         ":evidence_sources",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
@@ -58,9 +57,9 @@ py_test(
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
-# git + ca-certificates (apt layer) so the fetcher can clone/commit/push the
-# evidence repo over HTTPS to Forgejo. certifi (in the wheel) covers the
-# upstream HTTPS GETs; the apt layer's CA bundle covers git's own TLS.
+# No apt layer: pygit2's manylinux wheel bundles libgit2 + its TLS backend, the
+# push targets in-cluster Forgejo over plain HTTP, and the upstream HTTPS GETs
+# pin certifi's CA bundle (see http_fetch). So the slim base needs nothing extra.
 aspect_py_binary(
     name = "evidence_image_bin",
     main = "fetch.py",
@@ -83,10 +82,7 @@ oci_image(
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "augur-evidence",
     },
-    tars = [
-        ":layers",
-        "@trixie_augur_evidence//:flat",
-    ],
+    tars = [":layers"],
     user = "1000:1000",
 )
 

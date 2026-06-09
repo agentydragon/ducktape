@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -10,7 +11,9 @@ from finance.augur.fit.data import load_evidence, load_fred_only_evidence
 from finance.augur.ingest import evidence_sources
 
 
-def test_configured_evidence_source_errors_raise_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configured_evidence_source_errors_raise_by_default(
+    monkeypatch: pytest.MonkeyPatch, synthetic_evidence_dir: Path
+) -> None:
     real_source_bytes = evidence_data._source_bytes
 
     # Redirect only the SPY adjusted-close source to malformed bytes (other sources
@@ -26,7 +29,7 @@ def test_configured_evidence_source_errors_raise_by_default(monkeypatch: pytest.
         load_evidence()
 
 
-def test_explicit_fred_only_evidence_is_synthesized_and_labeled() -> None:
+def test_explicit_fred_only_evidence_is_synthesized_and_labeled(synthetic_evidence_dir: Path) -> None:
     historical, evidence = load_fred_only_evidence()
 
     # `historical` carries typed LevelSeriesKeys; the evidence layer keeps the wire-id strings.

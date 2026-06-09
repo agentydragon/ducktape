@@ -1,7 +1,7 @@
 """HTTPS GET for the public upstreams, with certifi trust + transient retry.
 
 debian-slim ships no CA bundle, so the SSL context is pinned to certifi's
-(botocore bundles its own certs for S3, so only the upstream fetch needs this).
+bundled certs rather than the (absent) system trust store.
 """
 
 from __future__ import annotations

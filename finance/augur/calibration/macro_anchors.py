@@ -1,11 +1,11 @@
-"""Resolve a catalog's macro anchors (and pre-anchor CPI history) from vendored evidence.
+"""Resolve a catalog's macro anchors (and pre-anchor CPI history) from the evidence loader.
 
 A catalog's `metadata.anchors` / `metadata.inflation_history` are OPTIONAL overrides. When
 absent, the live spot each macro level series is anchored to — and the pre-anchor CPI history
-that lets near-term `inflation_yoy` markets score — is derived from the same vendored source
-data augur fits against (`augur/data/`, via `load_absolute_monthly_levels`). That keeps a
-single source of truth: refreshing the vendored series moves both the model fit and the
-calibration anchors together, instead of someone hand-editing index levels into catalog YAML.
+that lets near-term `inflation_yoy` markets score — is derived from the same source data augur
+fits against (via `load_absolute_monthly_levels`). That keeps a single source of truth:
+refreshing the evidence moves both the model fit and the calibration anchors together, instead
+of someone hand-editing index levels into catalog YAML.
 
 The anchor for a series is its last observation on or before `model_anchor_date`. Because CPI
 publishes with a lag, that observation may be a month or two before the anchor date; the CPI

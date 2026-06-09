@@ -3,12 +3,12 @@
 Clones the evidence repo, GETs each public source (FRED / Yahoo / Zillow) with
 its per-source User-Agent, writes each into the working tree under its
 `output_filename`, then commits-if-changed + pushes. Git provides history,
-change-detection (`git add -A` stages nothing when bytes are unchanged, so
-Zillow's monthly republish doesn't accrue an empty daily commit), and an atomic
-"latest" (HEAD) — no object store, no pointer protocol.
+change-detection (an unchanged upstream produces the same tree, so Zillow's
+monthly republish doesn't accrue an empty daily commit), and an atomic "latest"
+(HEAD) — no object store, no pointer protocol.
 
-Auth: GIT_USERNAME/GIT_PASSWORD injected into the http(s) remote URL (mirrors
-the budget exporter). HOME=/tmp so git finds a writable config dir.
+Clone/commit/push go through pygit2 (libgit2); GIT_USERNAME/GIT_PASSWORD drive a
+UserPass credential callback, so no credentials are embedded in the remote URL.
 """
 
 from __future__ import annotations
@@ -16,35 +16,20 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import subprocess
 import sys
 import tempfile
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import quote, urlsplit, urlunsplit
+
+import pygit2
 
 from finance.augur.ingest.evidence_sources import EVIDENCE_SOURCES, EvidenceSource
 from finance.augur.ingest.http_fetch import FETCH_ERRORS, HttpGet, http_get as _real_http_get
 
 logger = logging.getLogger(__name__)
 
-_AUTHOR_NAME = "augur evidence scraper"
-_AUTHOR_EMAIL = "augur@allegedly.works"
-
-
-def _authenticated_url(url: str, *, username: str, password: str) -> str:
-    """Inject git credentials into an http(s) remote URL."""
-    parts = urlsplit(url)
-    netloc = f"{quote(username, safe='')}:{quote(password, safe='')}@{parts.hostname}"
-    if parts.port:
-        netloc += f":{parts.port}"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
-
-
-def _git(repo: Path, *args: str) -> str:
-    result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
-    return result.stdout
+_AUTHOR = pygit2.Signature("augur evidence scraper", "augur@allegedly.works")
 
 
 def write_sources(workdir: Path, sources: Iterable[EvidenceSource], *, http_get: HttpGet) -> int:
@@ -67,23 +52,22 @@ def write_sources(workdir: Path, sources: Iterable[EvidenceSource], *, http_get:
     return failures
 
 
-def commit_and_push(repo: Path, branch: str, *, now: datetime) -> bool:
-    """Stage everything; commit + push only if the working tree changed. Returns True if pushed."""
-    _git(repo, "add", "-A")
-    if not _git(repo, "status", "--porcelain").strip():
+def commit_and_push(
+    repo: pygit2.Repository, branch: str, *, now: datetime, callbacks: pygit2.RemoteCallbacks | None = None
+) -> bool:
+    """Stage everything; commit + push only if the tree changed. Returns True if pushed."""
+    repo.index.add_all()
+    repo.index.write()
+    tree = repo.index.write_tree()
+    head = repo.head
+    head_commit = repo[head.target]
+    if tree == head_commit.tree_id:
         logger.info("evidence unchanged; nothing to commit")
         return False
-    _git(
-        repo,
-        "-c",
-        f"user.name={_AUTHOR_NAME}",
-        "-c",
-        f"user.email={_AUTHOR_EMAIL}",
-        "commit",
-        "-m",
-        f"evidence: refresh {now.date().isoformat()}",
+    repo.create_commit(
+        head.name, _AUTHOR, _AUTHOR, f"evidence: refresh {now.date().isoformat()}", tree, [head_commit.id]
     )
-    _git(repo, "push", "origin", branch)
+    repo.remotes["origin"].push([f"refs/heads/{branch}"], callbacks=callbacks)
     logger.info("pushed refreshed evidence to %s", branch)
     return True
 
@@ -103,13 +87,15 @@ def run_scrape(
     Returns a process exit code: nonzero if any source failed to fetch, so the
     CronJob surfaces a partial outage. Sources that did fetch are still committed.
     """
-    # Empty creds (tests against a local filesystem remote) clone the URL as-is.
-    url = _authenticated_url(git_url, username=username, password=password) if username and password else git_url
+    # Empty creds (tests against a local filesystem remote) clone without a credential callback.
+    callbacks = (
+        pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, password)) if username and password else None
+    )
     with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp) / "repo"
-        _git(Path(tmp), "clone", "--depth", "1", "--branch", branch, url, str(repo))
-        failures = write_sources(repo, sources, http_get=http_get)
-        commit_and_push(repo, branch, now=now)
+        repo_path = Path(tmp) / "repo"
+        repo = pygit2.clone_repository(git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks)
+        failures = write_sources(repo_path, sources, http_get=http_get)
+        commit_and_push(repo, branch, now=now, callbacks=callbacks)
     return 1 if failures else 0
 
 

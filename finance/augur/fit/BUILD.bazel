@@ -2,15 +2,9 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-filegroup(
-    name = "evidence_source_files",
-    srcs = ["//finance/augur/data:evidence_source_files"],
-)
-
 py_library(
     name = "evidence_data",
     srcs = ["evidence_data.py"],
-    data = [":evidence_source_files"],
     deps = [
         "//finance/augur/ingest:evidence_sources",
         "//finance/augur/model:series",
@@ -18,6 +12,23 @@ py_library(
         "@pypi//pandas",
         "@pypi//polars",
     ],
+)
+
+py_library(
+    name = "synthetic_evidence",
+    testonly = True,
+    srcs = ["synthetic_evidence.py"],
+    deps = [
+        "//finance/augur/ingest:evidence_sources",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [":synthetic_evidence"],
 )
 
 py_library(
@@ -153,6 +164,7 @@ py_test(
     name = "data_test",
     srcs = ["data_test.py"],
     deps = [
+        ":conftest",
         ":data",
         ":evidence_data",
         "//finance/augur/ingest:evidence_sources",

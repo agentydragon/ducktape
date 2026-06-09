@@ -1,10 +1,10 @@
 # Plan: git-scraping evidence ingestion
 
 Augur's public exogenous evidence (FRED / Yahoo / Zillow) is scraped daily into a Forgejo
-repo and read by the app from a git-sync sidecar's checkout, replacing the vendored
-`finance/augur/data/` blobs at runtime. **Implemented on branch
-`claude/vigilant-keller-cy0633`**; what remains is the one-time cutover and the follow-up
-blob deletion below.
+repo and read by the app from a git-sync sidecar's checkout, replacing the formerly-vendored
+`finance/augur/data/` blobs. **Implemented on branch `claude/vigilant-keller-cy0633`**: the
+blobs are deleted and the loader reads only from `AUGUR_EVIDENCE_DIR`, so what remains is the
+one-time in-cluster cutover below.
 
 ## Storage model: git is the store
 
@@ -29,12 +29,14 @@ No object store, no per-series pointer protocol, no boto3.
 - **gaffer** `k8s/augur/`: the daily scrape CronJob (`evidence-ingest-cronjob.yaml`) and a
   `git-sync` sidecar on the augur Deployment, plus the `augur-evidence` image automation in
   `k8s/flux-image-automation/`.
-- **App reads from the synced dir** (`fit/evidence_data`): when `AUGUR_EVIDENCE_DIR` is set,
-  every evidence read is `Path(AUGUR_EVIDENCE_DIR) / output_filename`. The git-sync sidecar
-  keeps that directory pointed at the repo's current worktree (`GITSYNC_LINK=evidence`), so
-  the loader sees freshly-pulled data without a pod restart. Otherwise it reads the vendored
-  runfiles. A series' identity is its `EvidenceSource` (`kind/series_id`) — used by the
-  scraper, the loaders, and provenance labels alike — never a file path.
+- **App reads from the synced dir** (`fit/evidence_data`): every evidence read is
+  `Path(AUGUR_EVIDENCE_DIR) / output_filename` (the env var is required — a read with it unset,
+  or a missing file under it, raises). The git-sync sidecar keeps that directory pointed at the
+  repo's current worktree (`GITSYNC_LINK=evidence`), so the loader sees freshly-pulled data
+  without a pod restart. Tests (and offline `fit:train` / `fit:metrics_report` runs) point the
+  same env var at a generated synthetic set (`fit/synthetic_evidence.py`) or a repo checkout.
+  A series' identity is its `EvidenceSource` (`kind/series_id`) — used by the scraper, the
+  loaders, and provenance labels alike — never a file path.
 
 ## Creds delivery
 
@@ -61,14 +63,15 @@ an un-synced dir raises). After merge + the image push + Flux image automation:
 2. Confirm the repo's `main` carries every `output_filename`.
 3. Roll the augur Deployment (it now carries the git-sync sidecar + `AUGUR_EVIDENCE_DIR`).
 
-## Remaining: delete the vendored blobs + the runfiles-loading path
+## Deferred: per-source fetch cadence
 
-Once the deployment is proven reading from the synced dir: delete the
-`finance/augur/data/*.{csv,json}` blobs and `SOURCES.md` from git, and drop the runfiles
-fallback in `evidence_data._source_bytes` (plus the `data = [":evidence_source_files"]` dep).
-This first needs the offline **training** entrypoint and the **tests** to get evidence another
-way — small committed synthetic fixtures, or running against a checkout — since they read the
-vendored copies via runfiles today.
+The CronJob refetches every source daily, but most are monthly-or-slower publications: FRED
+CPI / Case-Shiller / FHFA / rent-CPI and Zillow ZHVI / ZORI move monthly (FHFA quarterly), and
+`MORTGAGE30US` weekly; only the Yahoo SPY / BTC / ETH daily closes and FRED `SP500` genuinely
+change every day. Git already no-ops an unchanged refetch (no commit), so this is purely about
+not hammering the upstreams — consider splitting the schedule (a daily job for the price
+series, a weekly/monthly job for the slow ones) or gating each source on its expected cadence
+in the scraper.
 
 ## Deferred: Stage 2 — in-cluster re-fit
 

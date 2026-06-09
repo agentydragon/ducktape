@@ -67,7 +67,6 @@ Touches many files across model/, sim/, product/, calibration/. High-value but l
 - `augur/sim/DESIGN.md` — many references
 - `augur/sim/README.md`, `REQUIREMENTS.md`, `TODO.md` — many references
 - `augur/fit/evidence_data.py` comments
-- `augur/data/SOURCES.md`
 - `augur/docs/prior_art_audit.md` — many design-level references
 - `augur/plans/roadmap.md`, `typed_series_config.md`
 - `augur/calibration/example_openai_catalog.yaml`

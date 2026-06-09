@@ -302,11 +302,19 @@ py_test(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//finance/augur/fit:synthetic_evidence"],
+)
+
 py_test(
     name = "test_macro_anchors",
     srcs = ["test_macro_anchors.py"],
     deps = [
         ":catalog",
+        ":conftest",
         ":macro_anchors",
         ":platform",
         "//:conftest",

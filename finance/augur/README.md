@@ -50,14 +50,14 @@ eligibility terms, or other holder-specific account details.
 
 ## Layout
 
-| Directory   | Purpose                                                                                                                                 |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
-| `fit/`      | Offline exogenous-model fitting entry points and config templates.                                                                      |
-| `data/`     | Public exogenous evidence blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `SOURCES.md`.              |
-| `api/`      | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/settings/calibration assembly, OpenAPI schema export.    |
-| `sim/`      | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
-| `frontend/` | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
+| Directory   | Purpose                                                                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.                                                                                                                              |
+| `fit/`      | Offline exogenous-model fitting entry points and config templates.                                                                                                                                                                                       |
+| `data/`     | `fetch_real_history.py`: keyless live-refresh of recent monthly macro history (FRED/Yahoo) for the `x/pm_reifier` backtests. (The exogenous evidence the model fits against is scraped into the `augur-evidence` repo and read at `AUGUR_EVIDENCE_DIR`.) |
+| `api/`      | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/settings/calibration assembly, OpenAPI schema export.                                                                                                                     |
+| `sim/`      | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                                                                                                                                            |
+| `frontend/` | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client).                                                                                                                  |
 
 ## Deployment integration
 

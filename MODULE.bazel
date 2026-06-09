@@ -331,15 +331,7 @@ apt.install(
     lock = "//finance/beancount_export:trixie_budget_exporter.lock.json",
     manifest = "//finance/beancount_export:trixie_budget_exporter.yaml",
 )
-
-# augur-evidence image: git + ca-certificates on debian:trixie-slim so the
-# evidence scraper CronJob can clone/commit/push the augur-evidence repo.
-apt.install(
-    name = "trixie_augur_evidence",
-    lock = "//finance/augur/ingest:trixie_augur_evidence.lock.json",
-    manifest = "//finance/augur/ingest:trixie_augur_evidence.yaml",
-)
-use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_augur_evidence", "trixie_budget_exporter", "trixie_e2e", "trixie_jwt_rotation")
+use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_jwt_rotation")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

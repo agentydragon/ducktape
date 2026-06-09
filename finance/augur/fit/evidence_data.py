@@ -7,7 +7,6 @@ import os
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,10 +16,6 @@ import polars as pl
 
 from finance.augur.ingest import evidence_sources
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
-
-# CLEANUP(2026-06-09): the vendored-data fallback in _source_bytes (and the checked-in blobs) goes
-#   once the deployment is proven reading from the git-synced evidence dir — see
-#   augur/plans/evidence_git_ingestion.md.
 
 # Home-value location -> (Zillow RegionName, State) for the ZHVI city rows to read.
 ZILLOW_HOME_VALUE_REGIONS: dict[LocationId, tuple[str, str]] = {
@@ -41,21 +36,18 @@ MINIMUM_ALIGNED_MONTHS = 36
 
 
 def _source_bytes(source: evidence_sources.EvidenceSource) -> bytes:
-    """Raw bytes for an evidence series.
+    """Raw bytes for an evidence series, read from the git-synced evidence directory.
 
-    The in-cluster deployment (`AUGUR_EVIDENCE_DIR` set) reads the file the git-sync sidecar
-    keeps current under that directory, so the loader sees freshly-pulled evidence; a missing
-    file raises (un-synced dir rather than stale data). Otherwise read the vendored copy as a
-    `finance.augur` package resource, so it resolves whether augur is the Bazel main repo (its own
-    tests) or an external module consumed downstream (e.g. gaffer via `archive_override`)."""
-    if (evidence_dir := os.environ.get("AUGUR_EVIDENCE_DIR")) is not None:
-        path = Path(evidence_dir) / source.output_filename
-        if not path.exists():
-            raise RuntimeError(f"augur evidence not found in AUGUR_EVIDENCE_DIR: {path}")
-        return path.read_bytes()
-    path = Path(str(resources.files("finance.augur").joinpath("data", source.output_filename)))
+    The git-sync sidecar keeps `AUGUR_EVIDENCE_DIR` pointed at the augur-evidence repo's current
+    worktree, so each read reflects freshly-pulled data; a missing file raises (surfacing an
+    un-synced directory rather than serving absent data). Tests point the env var at a generated
+    synthetic set (see `finance/augur/fit/synthetic_evidence.py`)."""
+    evidence_dir = os.environ.get("AUGUR_EVIDENCE_DIR")
+    if evidence_dir is None:
+        raise RuntimeError("AUGUR_EVIDENCE_DIR is unset; augur evidence is read from the git-synced directory")
+    path = Path(evidence_dir) / source.output_filename
     if not path.exists():
-        raise RuntimeError(f"augur vendored evidence not found: data/{source.output_filename}")
+        raise RuntimeError(f"augur evidence not found in AUGUR_EVIDENCE_DIR: {path}")
     return path.read_bytes()
 
 
@@ -443,13 +435,13 @@ class MonthlyLevel:
 
 
 def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[MonthlyLevel]]:
-    """Vendored absolute monthly level series (last observation per calendar month, oldest
-    first) for each requested macro level wire id, on its real published scale.
+    """Absolute monthly level series (last observation per calendar month, oldest first) for
+    each requested macro level wire id, on its real published scale.
 
     These read the same source files the exogenous evidence fits against, but at their
     absolute level rather than as log-returns, so calibration can anchor a sampled path's
-    month 0 to the real spot. Raises `KeyError` for a wire id with no vendored absolute
-    source (e.g. home-value series, which are not anchored against today)."""
+    month 0 to the real spot. Raises `KeyError` for a wire id with no absolute source
+    (e.g. home-value series, which are not anchored against today)."""
     out: dict[str, list[MonthlyLevel]] = {}
     for wire in wire_ids:
         match wire:
