@@ -1,11 +1,11 @@
 # KubeVirt NixOS VM Runbook
 
-KubeVirt and CDI are installed from <k8s/kubevirt/>. The paved end-to-end flow
+KubeVirt and CDI are installed from <../k8s/kubevirt/>. The paved end-to-end flow
 for a new NixOS VM is:
 
 1. Publish the bootstrap qcow2 to SeaweedFS — `cluster/k8s/vm-images-publisher/`.
 2. Define the VM under `cluster/k8s/<name>/` with a CDI `DataVolume` sourcing
-   that qcow2 — see <k8s/gecko/> as the canonical example.
+   that qcow2 — see <../k8s/gecko/> as the canonical example.
 3. Boot, SSH in with a key in `nix/nixos/hosts/bootstrap/default.nix`, then
    `nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<name>`
    to take on a real host config.
@@ -19,13 +19,13 @@ kubectl create job --from=cronjob/vm-images-publisher \
   "publish-$(date +%s)" -n vm-images-publisher
 ```
 
-See <k8s/vm-images-publisher/README.md> for environment overrides (publish a
+See <../k8s/vm-images-publisher/README.md> for environment overrides (publish a
 non-default ref, alternate flake output, etc.). The resulting object key is
 `bootstrap/<commit-sha>.qcow2`.
 
 ## Wiring A VM
 
-Crib from <k8s/gecko/>:
+Crib from <../k8s/gecko/>:
 
 - `namespace/` — dedicated namespace.
 - `app/vm-images-s3-reader.yaml` — `ExternalSecret` pulling `cdiReader*` keys
@@ -62,7 +62,7 @@ Cilium 1.19's Gateway API controller does not implement `TCPRoute`, so a
 `protocol: TCP` listener on `cluster-gateway` never gets a corresponding
 Envoy listener. The workaround is a hand-written `CiliumEnvoyConfig` that
 declares the listener directly on the `cilium-envoy` DaemonSet. See
-<k8s/gecko/app/ciliumenvoyconfig.yaml>: it binds `0.0.0.0:22` on every hil
+<../k8s/gecko/app/ciliumenvoyconfig.yaml>: it binds `0.0.0.0:22` on every hil
 node (hostNetwork) with a `tcp_proxy` filter pointing at the gecko-ssh
 Service. Wildcard `*.allegedly.works` already resolves to those node IPs,
 so `ssh agentydragon@gecko.allegedly.works` works for any key in

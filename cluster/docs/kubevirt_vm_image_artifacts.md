@@ -44,7 +44,7 @@ kubectl create job --from=cronjob/vm-images-publisher \
   "publish-$(date +%s)" -n vm-images-publisher
 ```
 
-See <k8s/vm-images-publisher/README.md> for the runbook. Object keys are
+See <../k8s/vm-images-publisher/README.md> for the runbook. Object keys are
 commit-addressed (`bootstrap/<sha>.qcow2`); existing VMs do not auto-replace
 their root PVC when a new image is published.
 

@@ -7,7 +7,7 @@ single MCP call (`kubectl get events`, full pod listings) dumps enough text
 into the event history that the next request exceeds z.ai's per-prompt cap
 (error 1261), killing the session. This makes the platform too fragile for
 cluster-ops use. See the "Tool-output robustness" section in
-<../../../docs/self_hosted_coding_agent_platforms.md>.
+<../../../../docs/self_hosted_coding_agent_platforms.md>.
 
 Originally revived on 2026-05-08. Reachable at <https://kagent.allegedly.works>
 behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
@@ -60,7 +60,7 @@ behind Authentik OIDC via the chart's bundled `oauth2-proxy` subchart.
 
 - <namespace/namespace.yaml> — PSS dropped to `baseline` (TODO to retighten
   to `restricted` once upstream agent Deployments set proper securityContext).
-- <../../../docs/z_ai_api.md> — z.ai endpoint shapes, including the coding
+- <../../../../docs/z_ai_api.md> — z.ai endpoint shapes, including the coding
   plan vs general distinction.
-- <../../../docs/self_hosted_coding_agent_platforms.md> — broader survey of
+- <../../../../docs/self_hosted_coding_agent_platforms.md> — broader survey of
   options if kagent's rough edges become disqualifying.

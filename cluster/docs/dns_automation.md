@@ -37,7 +37,7 @@ or removing gateway nodes.
 ### IAM User: `cluster-dns-manager`
 
 Dedicated user with Route 53 policy. Credentials in SOPS-encrypted secrets
-(see table above). IAM policy documented in <docs/iam-policy-route53.json>.
+(see table above). IAM policy documented in <iam-policy-route53.json>.
 
 ## Verification
 

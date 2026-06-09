@@ -91,7 +91,7 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       and a source going empty only adds a new snapshot, not destroys
       old ones. Overlaps with the off-cluster object-storage decision in
       the items above. See
-      <debug/2026-06-03-ns103711-seaweedfs-data-volume-mount-missing.md>
+      <../debug/2026-06-03-ns103711-seaweedfs-data-volume-mount-missing.md>
       for the close call.
 - [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
       Mimir, and Tempo all lost data in the rename. If those backends are
@@ -691,7 +691,7 @@ Options, from cheapest to cleanest:
   (`tana-mcp` nginx whitelisting `/mcp` + `/health`, `activitywatch-readonly`
   whitelisting `GET/POST /api/0/query`). Natural allowlist: the
   `namespace-diagnostics-reader` and `logs-configmaps-reader` binding sets in
-  <k8s/agents/claude-rbac/permissions.md>.
+  <../k8s/agents/claude-rbac/permissions.md>.
 - **C. Loki multi-tenancy.** Set `auth_enabled: true`, route per-namespace logs to
   per-namespace tenants via Alloy/Promtail, grant tenant IDs. Touches every log
   producer; almost certainly overkill.
@@ -832,4 +832,4 @@ kimsufi) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
 - <troubleshooting.md>
 - <lessons_learned/2025_11_28_eso_password_generator_desync.md>
 
-**Monthly Cost**: ~EUR64 (4x CPX31, grandfathered at HIL).
+**Monthly Cost**: OVH Kimsufi bare metal (3× KS-5 + 2× KS-GAME, HIL); refresh figure (was ~EUR64/mo on the retired Hetzner CPX31 fleet).
