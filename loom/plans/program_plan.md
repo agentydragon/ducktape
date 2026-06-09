@@ -233,21 +233,32 @@ for event programs (censoring-aware — time-rescaling, valuation PIT,
 IPCW-Brier — per the architecture note). Under the reframe these scorecards
 live inside the gym; the per-artifact report remains.
 
-The gym track (see "Productized: the forecasting gym"):
+The gym track (see "Productized: the forecasting gym"), ordered eval-first →
+bare baseline → skill techniques:
 
-**G0 — gym core (parallel to M0).** Task + score schemas, the as-of data
-harness over the dated stores, baselines, runner. Seeded entirely with
-series-derived tasks — no scraping needed to start measuring.
+**G0 — gym core. ✅ landed (`loom/gym/`).** Task schema (binary + scalar
+questions, info-cutoff `as_of`, realized outcome with provenance), proper-loss
+scoring (log/Brier; pinball for stated quantiles), the asserted-cutoff model
+registry (`model_cutoffs.py` — admissibility: model cutoff ≤ task `as_of`),
+six hand-curated seed tasks, and the **bare-prompt structured-answer
+baseline** (`//loom/gym:baseline_eval`, OpenAI-compatible endpoint; z.ai
+coding tier — the free general tier 429s). First live glm-4.5 run over the
+seed set: binary mean `log_loss` 0.50 / Brier 0.17; it under-predicted the
+2024 bull run (p=0.40 on S&P ≥ 6000, p=0.65 on BTC ≥ 100k), consistent with
+the spike's conservatism finding. Next: harvested task families
+(series-derived from the evidence checkout, then market-resolved) to replace
+hand-curation.
 
 **G1 — market task harvesting.** Forward: the M2 snapshot/resolution store.
 Backward: historical backfills (Manifold export, Kalshi/Polymarket history) so
 the resolved-market task set isn't waiting on calendar time.
 
-**G2 — contestants.** (1) the classical pipeline once M1 lands; (2) the
-agent-with-forecast-skill contestant on asserted-cutoff models — default
-z.ai `glm-4.5` (leakage-probed June-2024 cutoff; API key already provisioned
-in-cluster, operational notes in the spike's `docs/z_ai_api.md`); (3) the
-authoring hybrid once M3 lands.
+**G2 — contestants above the baseline.** (1) the classical pipeline once M1
+lands; (2) the agent-with-forecast-skill contestant on asserted-cutoff models
+— default z.ai `glm-4.5` (leakage-probed June-2024 cutoff; key provisioned
+in-cluster as the claude-sandbox `zai-api-key` secret); (3) the authoring
+hybrid once M3 lands. Each must beat G0's bare baseline on gym loss to
+justify its machinery.
 
 Sequencing: G0 lands alongside M0 — the metric exists before methods optimize
 against it. M2 runs parallel to M1 and feeds G1; M3 needs M1's dense paths; M4

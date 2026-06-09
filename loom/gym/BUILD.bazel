@@ -1,0 +1,110 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# keep
+py_binary(
+    name = "baseline_eval",
+    main_module = "loom.gym.run_eval",
+    deps = [":run_eval"],
+)
+
+py_library(
+    name = "baseline_llm",
+    srcs = ["baseline_llm.py"],
+    deps = [
+        ":scoring",
+        ":task",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "run_eval",
+    srcs = ["run_eval.py"],
+    deps = [
+        ":baseline_llm",
+        ":model_cutoffs",
+        ":scoring",
+        ":seed_tasks",
+        ":task",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "scoring",
+    srcs = ["scoring.py"],
+    deps = [
+        ":task",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "seed_tasks",
+    srcs = ["seed_tasks.py"],
+    deps = [":task"],
+)
+
+py_library(
+    name = "task",
+    srcs = ["task.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_baseline_llm",
+    srcs = ["test_baseline_llm.py"],
+    deps = [
+        ":baseline_llm",
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_model_cutoffs",
+    srcs = ["test_model_cutoffs.py"],
+    deps = [
+        ":model_cutoffs",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_scoring",
+    srcs = ["test_scoring.py"],
+    deps = [
+        ":scoring",
+        ":task",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_task",
+    srcs = ["test_task.py"],
+    deps = [
+        ":seed_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "model_cutoffs",
+    srcs = ["model_cutoffs.py"],
+)

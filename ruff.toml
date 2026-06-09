@@ -151,6 +151,7 @@ known-first-party = [
     "inventree_utils",
     "laser",
     "llm",
+    "loom",
     "mcp_infra",
     "mcp_utils",
     "openai_utils",
