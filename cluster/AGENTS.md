@@ -124,22 +124,12 @@ See <docs/container-images.md> for build/push/tag guide and Flux image automatio
 
 ## Agent RBAC Architecture
 
-Agent RBAC is split into three independent layers so that missing/suspended service
-namespaces don't block unrelated RBAC from applying.
-
-**`claude-rbac`** (lightweight base): Sandbox namespace + ClusterRoles only. Depends on
-`kyverno-policies`. Must never depend on service or database kustomizations.
-
-**`shared-rbac`**: Cluster-scoped ClusterRoleBindings + `flux-system` RoleBinding only.
-Depends on `claude-rbac`.
-
-**`<service>/agent-rbac/`**: Per-service namespace-scoped RoleBindings. Each is its own
-Flux kustomization depending on `[service namespace kustomization]` + `claude-rbac`.
-Service namespaces have zero coupling to agent infrastructure.
-
 When adding agent read access to a new service namespace, create a new `agent-rbac/`
-directory — don't add RoleBindings to `claude-rbac` or `shared-rbac`. See
-<k8s/agents/claude-rbac/README.md> for the full convention.
+directory — never add RoleBindings to `claude-rbac` or `shared-rbac`. The full
+three-layer split, permission scopes, and the sandbox quota live once in the claude-rbac
+README, transcluded here:
+
+@k8s/agents/claude-rbac/README.md
 
 ## Flux Kustomization Layering
 

@@ -44,7 +44,8 @@ The MCP server uses a client certificate (CN=`claude-code-web`, group
 
 - **claude-sandbox namespace**: full CRUD on pods, pods/log, pods/exec, pods/attach,
   services, configmaps, secrets, PVCs, events, deployments, statefulsets, daemonsets,
-  replicasets, jobs, cronjobs (<role-sandbox.yaml>). Quota: 8 CPU, 16Gi memory, 20 pods.
+  replicasets, jobs, cronjobs (<role-sandbox.yaml>); resource-quota-limited (see
+  <cluster/k8s/agents/claude-rbac/README.md>).
 - **Cluster-wide read** (`cluster-diagnostics-reader` ClusterRole): nodes, pods,
   deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
   cert-manager, CNPG clusters, metrics, Longhorn, Gateway API, Kyverno, and more.

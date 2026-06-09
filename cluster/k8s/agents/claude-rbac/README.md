@@ -7,8 +7,9 @@ within `claude-sandbox`). It must **never** depend on service or database kustom
 Namespace-scoped RoleBindings targeting other namespaces live in per-service `agent-rbac/`
 directories (see Architecture below).
 
-**Cross-references**: RBAC is referenced from `cluster/AGENTS.md` (Kubernetes MCP Server
-section) and the root `AGENTS.md`. Keep in sync when changing permissions.
+**Cross-references**: this README is `@`-transcluded into `cluster/AGENTS.md`; the root
+`AGENTS.md` (Kubernetes MCP Server section) keeps a brief MCP-usage summary that points
+here. Update this file as the single source when changing permissions or the quota.
 
 ## Architecture
 
