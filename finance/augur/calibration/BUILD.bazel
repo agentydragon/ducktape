@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -144,6 +147,19 @@ py_library(
 )
 
 py_library(
+    name = "warm_cache",
+    srcs = ["warm_cache.py"],
+    deps = [
+        ":catalog",
+        ":default_clients",
+        ":platform",
+        ":redis_cache",
+        "@pypi//httpx",
+        "@pypi//polymarket_client",
+    ],
+)
+
+py_library(
     name = "macro_anchors",
     srcs = ["macro_anchors.py"],
     deps = [
@@ -186,6 +202,46 @@ py_binary(
         "//finance/augur/model:series",
         "@pypi//tabulate",
     ],
+)
+
+py_binary(
+    name = "warm_market_cache",
+    main_module = "finance.augur.calibration.warm_cache",
+    deps = [":warm_cache"],
+)
+
+# Lean warmer image for the eager-prefetch CronJob: only the catalog + price clients (httpx /
+# valkey / polymarket SDK), none of the serving image's JAX / simulator / FastAPI stack.
+aspect_py_binary(
+    name = "warm_market_cache_image_bin",
+    main = "warm_cache.py",
+    deps = [":warm_cache"],
+)
+
+py_image_layer(
+    name = "warm_market_cache_layers",
+    binary = ":warm_market_cache_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "warm_market_cache_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("warm_market_cache_image_bin"),
+    env = py_image_env(binary_name = "warm_market_cache_image_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "augur-market-warmer",
+    },
+    tars = [":warm_market_cache_layers"],
+    user = "1000:1000",
+)
+
+oci_load(
+    name = "warm_market_cache_image_load",
+    image = ":warm_market_cache_image",
+    repo_tags = ["augur-market-warmer:dev"],
 )
 
 py_test(
@@ -312,6 +368,22 @@ py_test(
         ":testing",
         "//:conftest",
         "//finance/augur/model:private_equity_risk",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_warm_cache",
+    srcs = ["test_warm_cache.py"],
+    deps = [
+        ":catalog",
+        ":platform",
+        ":quote",
+        ":warm_cache",
+        "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

@@ -952,23 +952,7 @@ async def run_calibration(
 
     # Every (platform, market_id) the catalog references, deduped (one market can back several rows),
     # fetched concurrently once; the row builders below read from this resolved map.
-    needed: set[tuple[Platform, str]] = set()
-    needed.update((market.platform, market.market_id) for market in catalog.exact_markets())
-    needed.update((market.platform, market.market_id) for market in catalog.surfaced_markets())
-    needed.update(
-        (family.platform, bucket.market_id) for family in catalog.bucket_families for bucket in family.buckets
-    )
-    needed.update(
-        (family.platform, threshold.market_id)
-        for family in catalog.threshold_ladder_families
-        for threshold in family.thresholds
-    )
-    needed.update(
-        (family.platform, date_member.market_id)
-        for family in catalog.date_ladder_families
-        for date_member in family.dates
-    )
-    keys = list(needed)
+    keys = list(catalog.referenced_markets())
     fetched = await asyncio.gather(*(_live(market_id, platform) for platform, market_id in keys))
     live_markets: dict[tuple[Platform, str], Market | None] = dict(zip(keys, fetched, strict=True))
 

@@ -417,6 +417,26 @@ class MarketCatalog(BaseModel):
         """Markets shown with their price + reason but never scored (correlate / unmappable)."""
         return [market for market in self.markets if not isinstance(market, ExactMarket)]
 
+    def referenced_markets(self) -> set[tuple[Platform, str]]:
+        """Every `(platform, market_id)` the catalog references, deduped.
+
+        One platform market can back several catalog rows (an exact market and a correlate of it,
+        a bucket and a ladder rung), so this is the deduped set every consumer fetches exactly
+        once: `run_calibration` to score the live price, the cache warmer to pre-populate the
+        shared snapshot cache out of band.
+        """
+        refs: set[tuple[Platform, str]] = {(market.platform, market.market_id) for market in self.markets}
+        refs.update((family.platform, bucket.market_id) for family in self.bucket_families for bucket in family.buckets)
+        refs.update(
+            (family.platform, threshold.market_id)
+            for family in self.threshold_ladder_families
+            for threshold in family.thresholds
+        )
+        refs.update(
+            (family.platform, member.market_id) for family in self.date_ladder_families for member in family.dates
+        )
+        return refs
+
     def referenced_level_series(self) -> set[str]:
         """Wire ids of every level series any macro market / bucket family scores against."""
         series = {str(family.series) for family in self.bucket_families}

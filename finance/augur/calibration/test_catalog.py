@@ -53,6 +53,58 @@ def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
     assert exact.mapping == IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1))
 
 
+def test_referenced_markets_unions_and_dedupes() -> None:
+    """`referenced_markets` collects every (platform, market_id) across markets + all family rungs,
+    deduping an id that backs more than one row (here "AAA" is both an exact and a correlate)."""
+    catalog = MarketCatalog.model_validate(
+        {
+            "metadata": {"as_of": "2026-05-29"},
+            "markets": [
+                {
+                    "manifold_id": "AAA",
+                    "mappability": "exact",
+                    "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
+                },
+                {"manifold_id": "AAA", "mappability": "correlate", "correlate_of": "ipo_by_date"},
+                {"platform": "polymarket", "polymarket_id": "0xpoly", "mappability": "unmappable", "reason": "n/a"},
+            ],
+            "bucket_families": [
+                {
+                    "family_id": "spx",
+                    "question": "S&P bucket",
+                    "platform": "kalshi",
+                    "series": "sp500",
+                    "at_date": "2027-01-01",
+                    "buckets": [
+                        {"market_id": "K-LO", "label": "lo", "high": 6000},
+                        {"market_id": "K-HI", "label": "hi", "low": 6000},
+                    ],
+                }
+            ],
+            "date_ladder_families": [
+                {
+                    "family_id": "ipo",
+                    "question": "OpenAI IPO timing",
+                    "platform": "manifold",
+                    "issuer": "openai",
+                    "dates": [
+                        {"market_id": "D1", "by_date": "2027-01-01"},
+                        {"market_id": "D2", "by_date": "2027-06-01"},
+                    ],
+                }
+            ],
+        }
+    )
+    assert catalog.referenced_markets() == {
+        (Platform.MANIFOLD, "AAA"),
+        (Platform.POLYMARKET, "0xpoly"),
+        (Platform.KALSHI, "K-LO"),
+        (Platform.KALSHI, "K-HI"),
+        (Platform.MANIFOLD, "D1"),
+        (Platform.MANIFOLD, "D2"),
+    }
+
+
 def test_exact_requires_mapping_fields() -> None:
     """The EXACT variant cannot be constructed without a typed `mapping`."""
     with pytest.raises(ValidationError):
