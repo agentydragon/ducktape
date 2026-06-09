@@ -1,0 +1,27 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: augur-evidence
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./cluster/k8s/forgejo/augur-evidence
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Wait for the Terraform apply (creates the Forgejo repo + service users + the
+  # augur-evidence-git-{write,read} Secrets) so the scraper/git-sync can depend on it.
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: augur-evidence
+      namespace: flux-system
+  dependsOn:
+    - name: forgejo # Forgejo API must be up (provider target)
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: budget-namespace # the git-creds Secrets land in the budget namespace

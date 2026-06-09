@@ -79,6 +79,11 @@ jobs:
               test_target: "//finance/augur/calibration/...",
             }
           - {
+              image: "//finance/augur/ingest:image",
+              image_name: augur-evidence,
+              test_target: "//finance/augur/ingest/...",
+            }
+          - {
               image: "//homeassistant/proxy:image",
               image_name: homeassistant-proxy,
               test_target: "//homeassistant/proxy/...",

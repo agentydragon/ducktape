@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import csv
+import io
 import json
 import math
+import os
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -12,27 +13,14 @@ from typing import Any, cast
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
+from finance.augur.ingest import evidence_sources
 from finance.augur.model.series import HomeValueKey, LocationId, RentKey
 
-# Public exogenous source data files, as repo-root-relative paths. Each string
-# doubles as the stable provenance label recorded in
-# `ExogenousEvidence.latest_observations[*]["source"]`; `_source_path` resolves
-# it to an absolute runfiles path for reading. Refresh recipes live in
-# augur/data/SOURCES.md (don't rename the files).
-FRED_SP500_CSV = "finance/augur/data/fred_sp500.csv"
-YAHOO_SPY_ADJUSTED_JSON = "finance/augur/data/yahoo_spy_chart_adjusted.json"
-YAHOO_BTC_ADJUSTED_JSON = "finance/augur/data/yahoo_btc_chart_adjusted.json"
-YAHOO_ETH_ADJUSTED_JSON = "finance/augur/data/yahoo_eth_chart_adjusted.json"
-FRED_CPI_US_CSV = "finance/augur/data/fred_cpi_us.csv"
-# SF rent CPI: used only by the FRED-only degraded evidence path (`data.py::_evidence_fred_only`).
-# The production loader sources rent from Zillow ZORI (ZILLOW_CITY_ZORI_CSV) for SF and Vallejo.
-FRED_SF_RENT_CPI_CSV = "finance/augur/data/fred_sf_rent_cpi.csv"
-FRED_SFXRSA_CSV = "finance/augur/data/fred_sfxrsa.csv"
-FRED_FHFA_SF_OAKLAND_BERKELEY_CSV = "finance/augur/data/fred_fhfa_sf_oakland_berkeley.csv"
-FRED_MORTGAGE30_CSV = "finance/augur/data/fred_mortgage30.csv"
-ZILLOW_CITY_ZHVI_CSV = "finance/augur/data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv"
-ZILLOW_CITY_ZORI_CSV = "finance/augur/data/zillow_city_zori_uc_sfrcondomfr_sm_sa_month.csv"
+# CLEANUP(2026-06-09): the vendored-data fallback in _source_bytes (and the checked-in blobs) goes
+#   once the deployment is proven reading from the git-synced evidence dir — see
+#   augur/plans/evidence_git_ingestion.md.
 
 # Home-value location -> (Zillow RegionName, State) for the ZHVI city rows to read.
 ZILLOW_HOME_VALUE_REGIONS: dict[LocationId, tuple[str, str]] = {
@@ -52,18 +40,23 @@ ZILLOW_RENT_REGIONS: dict[LocationId, tuple[str, str]] = {
 MINIMUM_ALIGNED_MONTHS = 36
 
 
-def _source_path(repo_relative: str) -> Path:
-    """Resolve a vendored augur data file (``finance/augur/data/...``) to an absolute path.
+def _source_bytes(source: evidence_sources.EvidenceSource) -> bytes:
+    """Raw bytes for an evidence series.
 
-    Accessed as a package resource under the ``finance.augur`` package via
-    ``importlib.resources`` rather than a hardcoded ``_main/`` runfiles prefix, so it resolves
-    whether augur is the Bazel main repo (its own tests) or an external module consumed by a
-    downstream repo (e.g. gaffer via ``archive_override``)."""
-    sub = repo_relative.removeprefix("finance/augur/").split("/")
-    path = Path(str(resources.files("finance.augur").joinpath(*sub)))
+    The in-cluster deployment (`AUGUR_EVIDENCE_DIR` set) reads the file the git-sync sidecar
+    keeps current under that directory, so the loader sees freshly-pulled evidence; a missing
+    file raises (un-synced dir rather than stale data). Otherwise read the vendored copy as a
+    `finance.augur` package resource, so it resolves whether augur is the Bazel main repo (its own
+    tests) or an external module consumed downstream (e.g. gaffer via `archive_override`)."""
+    if (evidence_dir := os.environ.get("AUGUR_EVIDENCE_DIR")) is not None:
+        path = Path(evidence_dir) / source.output_filename
+        if not path.exists():
+            raise RuntimeError(f"augur evidence not found in AUGUR_EVIDENCE_DIR: {path}")
+        return path.read_bytes()
+    path = Path(str(resources.files("finance.augur").joinpath("data", source.output_filename)))
     if not path.exists():
-        raise RuntimeError(f"augur source-data resource not found: {repo_relative}")
-    return path
+        raise RuntimeError(f"augur vendored evidence not found: data/{source.output_filename}")
+    return path.read_bytes()
 
 
 MONTHS_PER_YEAR = 12
@@ -143,16 +136,17 @@ def calibrate_series_path_priors(
     return calibration, priors
 
 
-def _read_fred_series(path: Path, column: str) -> pd.Series:
-    frame = pd.read_csv(path)
+def _read_fred_series(source: evidence_sources.EvidenceSource) -> pd.Series:
+    column = source.series_id  # a FRED CSV is headed by its series id
+    frame = pd.read_csv(io.BytesIO(_source_bytes(source)))
     if "observation_date" not in frame.columns or column not in frame.columns:
-        raise ValueError(f"{path} must contain observation_date and {column}")
+        raise ValueError(f"{source.provenance_label} must contain observation_date and {column}")
     dates = pd.to_datetime(frame["observation_date"], errors="raise")
     values = pd.to_numeric(frame[column], errors="coerce")
     series = pd.Series(values.to_numpy(dtype="float64"), index=dates).dropna()
     series = series[series > 0]
     if series.empty:
-        raise ValueError(f"{path} contains no positive observations for {column}")
+        raise ValueError(f"{source.provenance_label} contains no positive observations for {column}")
     return series.sort_index()
 
 
@@ -190,29 +184,32 @@ def _monthly_unit_returns(series: pd.Series) -> pd.Series:
     return frame.loc[frame["duration_months"] == 1, "log_return"]
 
 
-def _zillow_city_series(path: Path, *, region_name: str, state: str) -> pd.Series:
-    with path.open("r", encoding="utf-8", newline="") as f:
-        for row in csv.DictReader(f):
-            if row.get("RegionType") == "city" and row.get("RegionName") == region_name and row.get("State") == state:
-                values: dict[pd.Period, float] = {}
-                for key, raw in row.items():
-                    if not key or len(key) != 10 or key[4] != "-" or key[7] != "-":
-                        continue
-                    if raw is None or not raw.strip():
-                        continue
-                    try:
-                        value = float(raw)
-                    except ValueError:
-                        continue
-                    if value > 0:
-                        values[pd.Period(pd.Timestamp(key), freq="M")] = value
-                if not values:
-                    raise ValueError(f"{path} row for {region_name}, {state} contains no monthly values")
-                return pd.Series(values).sort_index()
-    raise ValueError(f"{path} does not contain a city row for {region_name}, {state}")
+def _zillow_city_series(source: evidence_sources.EvidenceSource, *, region_name: str, state: str) -> pd.Series:
+    # The Zillow city CSV is wide (a row per region, a column per month); polars reads + filters the
+    # ~80 MB national file far faster than a Python row scan. Take the one city row, then unpivot its
+    # date columns (named YYYY-MM-DD) into (month, value), keeping positive values.
+    frame = pl.read_csv(_source_bytes(source), infer_schema=False)
+    date_columns = [c for c in frame.columns if len(c) == 10 and c[4] == "-" and c[7] == "-"]
+    row = frame.filter(
+        (pl.col("RegionType") == "city") & (pl.col("RegionName") == region_name) & (pl.col("State") == state)
+    )
+    if row.is_empty():
+        raise ValueError(f"{source.provenance_label} does not contain a city row for {region_name}, {state}")
+    monthly = (
+        row.head(1)
+        .select(date_columns)
+        .unpivot(variable_name="month", value_name="value")
+        .with_columns(pl.col("value").cast(pl.Float64, strict=False))
+        .drop_nulls("value")
+        .filter(pl.col("value") > 0)
+    )
+    if monthly.is_empty():
+        raise ValueError(f"{source.provenance_label} row for {region_name}, {state} contains no monthly values")
+    months = [pd.Period(month, freq="M") for month in monthly["month"].to_list()]
+    return pd.Series(monthly["value"].to_list(), index=months).sort_index()
 
 
-def _read_yahoo_adjusted_close(path: Path, *, minimum_samples: int = 36) -> pd.Series:
+def _read_yahoo_adjusted_close(source: evidence_sources.EvidenceSource, *, minimum_samples: int = 36) -> pd.Series:
     """Read a Yahoo-Finance v8 chart JSON down to `(timestamp -> adjusted_close)`.
 
     SPY's daily history has ~8k rows. Crypto histories may be monthly or weekly
@@ -221,14 +218,14 @@ def _read_yahoo_adjusted_close(path: Path, *, minimum_samples: int = 36) -> pd.S
     three years of data to fit on.
     """
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(_source_bytes(source))
     result = ((payload.get("chart") or {}).get("result") or [None])[0]
     if not isinstance(result, dict):
-        raise ValueError(f"{path} does not contain a Yahoo chart result")
+        raise ValueError(f"{source.provenance_label} does not contain a Yahoo chart result")
     timestamps = result.get("timestamp") or []
     adjusted = (((result.get("indicators") or {}).get("adjclose") or [{}])[0]).get("adjclose") or []
     if len(timestamps) != len(adjusted):
-        raise ValueError(f"{path} timestamp and adjusted-close arrays have different lengths")
+        raise ValueError(f"{source.provenance_label} timestamp and adjusted-close arrays have different lengths")
     rows: dict[pd.Timestamp, float] = {}
     for timestamp, value in zip(timestamps, adjusted, strict=False):
         if value is None:
@@ -239,14 +236,9 @@ def _read_yahoo_adjusted_close(path: Path, *, minimum_samples: int = 36) -> pd.S
             rows[pd.Timestamp(dt.date())] = number
     if len(rows) < minimum_samples:
         raise ValueError(
-            f"{path} did not yield a credible adjusted-close history ({len(rows)} samples < minimum {minimum_samples})"
+            f"{source.provenance_label} did not yield a credible adjusted-close history ({len(rows)} samples < minimum {minimum_samples})"
         )
     return pd.Series(rows).sort_index()
-
-
-def _read_yahoo_spy_adjusted_close(path: Path) -> pd.Series:
-    # SPY is daily; require thousands of rows to catch a truncated file.
-    return _read_yahoo_adjusted_close(path, minimum_samples=1000)
 
 
 def _returns(values: list[pd.DataFrame]) -> PeriodReturns:
@@ -273,25 +265,24 @@ def _return_frame_summary(frame: pd.DataFrame, *, source: str, used_as_marginal_
 
 
 def load_exogenous_evidence() -> ExogenousEvidence:
-    sp500_price = _monthly_last(_read_fred_series(_source_path(FRED_SP500_CSV), "SP500"))
-    sp500_total_return = _monthly_last(_read_yahoo_spy_adjusted_close(_source_path(YAHOO_SPY_ADJUSTED_JSON)))
-    btc_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON)))
-    eth_price = _monthly_last(_read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON)))
-    cpi = _monthly_last(_read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL"))
-    case_shiller = _monthly_last(_read_fred_series(_source_path(FRED_SFXRSA_CSV), "SFXRSA"))
-    fhfa = _monthly_last(_read_fred_series(_source_path(FRED_FHFA_SF_OAKLAND_BERKELEY_CSV), "ATNHPIUS41884Q"))
-    mortgage30 = _read_fred_series(_source_path(FRED_MORTGAGE30_CSV), "MORTGAGE30US")
-    zillow_zhvi_path = _source_path(ZILLOW_CITY_ZHVI_CSV)
-    zillow_zori_path = _source_path(ZILLOW_CITY_ZORI_CSV)
+    sp500_price = _monthly_last(_read_fred_series(evidence_sources.FRED_SP500))
+    # SPY is daily; require thousands of rows to catch a truncated file.
+    sp500_total_return = _monthly_last(_read_yahoo_adjusted_close(evidence_sources.YAHOO_SPY, minimum_samples=1000))
+    btc_price = _monthly_last(_read_yahoo_adjusted_close(evidence_sources.YAHOO_BTC))
+    eth_price = _monthly_last(_read_yahoo_adjusted_close(evidence_sources.YAHOO_ETH))
+    cpi = _monthly_last(_read_fred_series(evidence_sources.FRED_CPI))
+    case_shiller = _monthly_last(_read_fred_series(evidence_sources.FRED_SFXRSA))
+    fhfa = _monthly_last(_read_fred_series(evidence_sources.FRED_FHFA_SF))
+    mortgage30 = _read_fred_series(evidence_sources.FRED_MORTGAGE30)
     # Home-value and rent evidence stay keyed by LocationId (their magisterium-natural key); the
     # flat factor wire ids (HomeValueKey/RentKey .wire_id) are derived only at the matrix/JSON
     # boundaries below.
     home_values = {
-        location_id: _zillow_city_series(zillow_zhvi_path, region_name=region_name, state=state)
+        location_id: _zillow_city_series(evidence_sources.ZILLOW_ZHVI, region_name=region_name, state=state)
         for location_id, (region_name, state) in ZILLOW_HOME_VALUE_REGIONS.items()
     }
     rents = {
-        location_id: _zillow_city_series(zillow_zori_path, region_name=region_name, state=state)
+        location_id: _zillow_city_series(evidence_sources.ZILLOW_ZORI, region_name=region_name, state=state)
         for location_id, (region_name, state) in ZILLOW_RENT_REGIONS.items()
     }
     home_factor_wire_id = {location_id: HomeValueKey(location_id=location_id).wire_id for location_id in home_values}
@@ -336,28 +327,28 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "sp500_price_latest": {
             "date": str(sp500_price.index[-1]),
             "value": float(sp500_price.iloc[-1]),
-            "source": FRED_SP500_CSV,
+            "source": evidence_sources.FRED_SP500.provenance_label,
         },
         "spy_adjusted_close_latest": {
             "date": str(sp500_total_return.index[-1]),
             "value": float(sp500_total_return.iloc[-1]),
-            "source": YAHOO_SPY_ADJUSTED_JSON,
+            "source": evidence_sources.YAHOO_SPY.provenance_label,
         },
         "btc_close_latest": {
             "date": str(btc_price.index[-1]),
             "value": float(btc_price.iloc[-1]),
-            "source": YAHOO_BTC_ADJUSTED_JSON,
+            "source": evidence_sources.YAHOO_BTC.provenance_label,
         },
         "eth_close_latest": {
             "date": str(eth_price.index[-1]),
             "value": float(eth_price.iloc[-1]),
-            "source": YAHOO_ETH_ADJUSTED_JSON,
+            "source": evidence_sources.YAHOO_ETH.provenance_label,
         },
         "zillow_home_value_latest_by_factor": {
             home_factor_wire_id[loc]: {
                 "date": str(series.index[-1]),
                 "value": float(series.iloc[-1]),
-                "source": ZILLOW_CITY_ZHVI_CSV,
+                "source": evidence_sources.ZILLOW_ZHVI.provenance_label,
                 "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
                 "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
             }
@@ -367,7 +358,7 @@ def load_exogenous_evidence() -> ExogenousEvidence:
             rent_factor_wire_id[loc]: {
                 "date": str(series.index[-1]),
                 "value": float(series.iloc[-1]),
-                "source": ZILLOW_CITY_ZORI_CSV,
+                "source": evidence_sources.ZILLOW_ZORI.provenance_label,
                 "region_name": ZILLOW_RENT_REGIONS[loc][0],
                 "state": ZILLOW_RENT_REGIONS[loc][1],
             }
@@ -376,35 +367,45 @@ def load_exogenous_evidence() -> ExogenousEvidence:
         "case_shiller_sf_latest": {
             "date": str(case_shiller.index[-1]),
             "value": float(case_shiller.iloc[-1]),
-            "source": FRED_SFXRSA_CSV,
+            "source": evidence_sources.FRED_SFXRSA.provenance_label,
         },
-        "cpi_latest": {"date": str(cpi.index[-1]), "value": float(cpi.iloc[-1]), "source": FRED_CPI_US_CSV},
+        "cpi_latest": {
+            "date": str(cpi.index[-1]),
+            "value": float(cpi.iloc[-1]),
+            "source": evidence_sources.FRED_CPI.provenance_label,
+        },
         "mortgage30_latest": {
             "date": mortgage30.index[-1].date().isoformat(),
             "value": float(mortgage30.iloc[-1]),
-            "source": FRED_MORTGAGE30_CSV,
+            "source": evidence_sources.FRED_MORTGAGE30.provenance_label,
         },
         "spy_adjusted_close_monthly_return_count": len(marginal["sp500"].log_returns),
         "housing_return_sources": {
             "zillow_city_zhvi_by_factor": {
                 home_factor_wire_id[loc]: {
-                    **_return_frame_summary(returns, source=ZILLOW_CITY_ZHVI_CSV, used_as_marginal_evidence=True),
+                    **_return_frame_summary(
+                        returns, source=evidence_sources.ZILLOW_ZHVI.provenance_label, used_as_marginal_evidence=True
+                    ),
                     "region_name": ZILLOW_HOME_VALUE_REGIONS[loc][0],
                     "state": ZILLOW_HOME_VALUE_REGIONS[loc][1],
                 }
                 for loc, returns in home_value_returns.items()
             },
             "case_shiller_sf_metro": _return_frame_summary(
-                case_shiller_returns, source=FRED_SFXRSA_CSV, used_as_marginal_evidence=False
+                case_shiller_returns,
+                source=evidence_sources.FRED_SFXRSA.provenance_label,
+                used_as_marginal_evidence=False,
             ),
             "fhfa_sf_oakland_berkeley": _return_frame_summary(
-                fhfa_returns, source=FRED_FHFA_SF_OAKLAND_BERKELEY_CSV, used_as_marginal_evidence=False
+                fhfa_returns, source=evidence_sources.FRED_FHFA_SF.provenance_label, used_as_marginal_evidence=False
             ),
         },
         "rent_return_sources": {
             "zillow_city_zori_by_factor": {
                 rent_factor_wire_id[loc]: {
-                    **_return_frame_summary(returns, source=ZILLOW_CITY_ZORI_CSV, used_as_marginal_evidence=True),
+                    **_return_frame_summary(
+                        returns, source=evidence_sources.ZILLOW_ZORI.provenance_label, used_as_marginal_evidence=True
+                    ),
                     "region_name": ZILLOW_RENT_REGIONS[loc][0],
                     "state": ZILLOW_RENT_REGIONS[loc][1],
                 }
@@ -453,15 +454,15 @@ def load_absolute_monthly_levels(wire_ids: Collection[str]) -> dict[str, list[Mo
     for wire in wire_ids:
         match wire:
             case "sp500":
-                raw = _read_fred_series(_source_path(FRED_SP500_CSV), "SP500")
+                raw = _read_fred_series(evidence_sources.FRED_SP500)
             case "inflation":
-                raw = _read_fred_series(_source_path(FRED_CPI_US_CSV), "CPIAUCSL")
+                raw = _read_fred_series(evidence_sources.FRED_CPI)
             case "crypto:btc":
-                raw = _read_yahoo_adjusted_close(_source_path(YAHOO_BTC_ADJUSTED_JSON))
+                raw = _read_yahoo_adjusted_close(evidence_sources.YAHOO_BTC)
             case "crypto:eth":
-                raw = _read_yahoo_adjusted_close(_source_path(YAHOO_ETH_ADJUSTED_JSON))
+                raw = _read_yahoo_adjusted_close(evidence_sources.YAHOO_ETH)
             case "rent:san_francisco_ca":
-                raw = _read_fred_series(_source_path(FRED_SF_RENT_CPI_CSV), "CUURA422SEHA")
+                raw = _read_fred_series(evidence_sources.FRED_SF_RENT_CPI)
             case _:
                 raise KeyError(f"no vendored absolute level series for level wire id {wire!r}")
         monthly = _monthly_last(raw)

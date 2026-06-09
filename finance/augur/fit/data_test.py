@@ -1,29 +1,26 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 import pytest_bazel
 
 from finance.augur.fit import evidence_data
 from finance.augur.fit.data import load_evidence, load_fred_only_evidence
+from finance.augur.ingest import evidence_sources
 
 
-def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    malformed_yahoo = tmp_path / "malformed_yahoo_spy_chart_adjusted.json"
-    malformed_yahoo.write_text("{not json", encoding="utf-8")
-    real_resolver = evidence_data._source_path
+def test_configured_evidence_source_errors_raise_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_source_bytes = evidence_data._source_bytes
 
-    # Redirect only the SPY adjusted-close source to the malformed file (other
-    # sources resolve normally); the loader must surface the JSON parse error
-    # rather than swallow it.
-    def fake_resolver(repo_relative: str) -> Path:
-        return (
-            malformed_yahoo if repo_relative == evidence_data.YAHOO_SPY_ADJUSTED_JSON else real_resolver(repo_relative)
-        )
+    # Redirect only the SPY adjusted-close source to malformed bytes (other sources
+    # resolve normally); the loader must surface the JSON parse error, not swallow it.
+    def fake_source_bytes(source: evidence_sources.EvidenceSource) -> bytes:
+        if source is evidence_sources.YAHOO_SPY:
+            return b"{not json"
+        return real_source_bytes(source)
 
-    monkeypatch.setattr(evidence_data, "_source_path", fake_resolver, raising=True)
+    monkeypatch.setattr(evidence_data, "_source_bytes", fake_source_bytes, raising=True)
 
     with pytest.raises(json.JSONDecodeError):
         load_evidence()
