@@ -37,7 +37,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "Publication",
         "Subscription",
     },
-    "longhorn": set(),  # Longhorn CRDs (Volume, Engine, etc.) are internal to the operator
     "vpa": {"VerticalPodAutoscaler", "VerticalPodAutoscalerCheckpoint"},
     "node-feature-discovery": {"NodeFeatureRule", "NodeFeature", "NodeFeatureGroup"},
     "kubevirt-operator": {"KubeVirt"},

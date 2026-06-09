@@ -28,8 +28,6 @@ resources:
   - volsync/flux-kustomization.yaml
   - openebs-lvm/flux-kustomization.yaml
   - openebs-lvm/agent-rbac/flux-kustomization.yaml
-  - longhorn/flux-kustomization.yaml
-  - longhorn/agent-rbac/flux-kustomization.yaml
   - metrics-server/flux-kustomization.yaml
   - vpa/flux-kustomization.yaml
   - goldilocks/flux-kustomization.yaml

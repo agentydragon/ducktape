@@ -10,7 +10,7 @@ single structured report with an actionable fix plan.
 
 Use the `kubectl-local` MCP server tools for all read queries — the SA has a
 `cluster-diagnostics-reader` ClusterRole with cluster-wide read access to nodes, pods,
-deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics, Longhorn,
+deployments, Flux kustomizations, HelmReleases, cert-manager, CNPG, metrics,
 Gateway API, Kyverno, and more (see
 <cluster/k8s/agents/claude-rbac/clusterrole-cluster-diagnostics-reader.yaml>).
 It can also patch Flux Kustomizations (for manual reconciliation triggers).
@@ -52,7 +52,6 @@ suffix to determine recency.
 - **If any node is under pressure or >80% memory/disk usage**: break down the top
   pod consumers on that node to identify what's causing the pressure
 - Active taints on all nodes (cordoned, NoSchedule, NoExecute, etc.)
-- Longhorn node and volume health (degraded/faulted volumes, map PVCs to namespaces)
 
 ### Databases & Certificates
 
@@ -123,7 +122,7 @@ clusters, expired certificates — each with: what, impact, evidence, fix>
 
 ## Warnings
 
-<high restart counts, degraded Longhorn volumes, unexpected suspensions,
+<high restart counts, unexpected suspensions,
 resource pressure approaching limits>
 
 ## Expected / Known

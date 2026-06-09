@@ -13,7 +13,6 @@ configMapGenerator:
     files:
       - blueprints/users.yaml
       - blueprints/hubble-sso.yaml
-      - blueprints/longhorn-sso.yaml
       - blueprints/openclaw-sso.yaml
       - blueprints/kagent-sso.yaml
       - blueprints/tandoor-sso.yaml

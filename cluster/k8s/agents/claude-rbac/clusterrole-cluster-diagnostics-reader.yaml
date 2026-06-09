@@ -127,15 +127,6 @@ rules:
       - podmonitors
       - prometheusrules
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["longhorn.io"]
-    resources:
-      - volumes
-      - replicas
-      - engines
-      - nodes
-      - instancemanagers
-      - settings
-    verbs: ["get", "list", "watch"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
       - gateways
@@ -189,5 +180,5 @@ rules:
       - externalsecrets
     verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
-# longhorn-system, flux-system, grocy-sf, grocy-vallejo, airlock, authentik
+# flux-system, grocy-sf, grocy-vallejo, airlock, authentik
 # (see role-logs-configmaps-reader.yaml).

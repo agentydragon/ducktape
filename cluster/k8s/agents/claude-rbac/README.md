@@ -63,7 +63,7 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 - Core: nodes, pods, services, endpoints, PVs, PVCs, events, namespaces, resourcequotas
 - Workloads: deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, HPAs, VPAs
 - Networking: ingresses, networkpolicies, Gateway API routes, Cilium policies
-- Storage: storageclasses, volumeattachments, Longhorn volumes/replicas/nodes
+- Storage: storageclasses, volumeattachments
 - GitOps: Flux kustomizations (+ patch for reconcile), HelmReleases, git/helm/OCI repos,
   image policies, Terraform resources
 - Certs & secrets: cert-manager certificates/issuers, trust-manager bundles, ExternalSecrets

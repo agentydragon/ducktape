@@ -59,7 +59,7 @@ region-local, with:
   nodes.
 - `proxmox-csi-retain`: Proxmox API-backed block storage, currently being
   migrated away from for some workloads.
-- `longhorn`: legacy, orphaned PVCs only, no active workloads.
+- `longhorn`: removed (uninstalled 2026-05-13; storage classes deleted).
 - SeaweedFS is present for object/S3 workloads and experimental CSI/FUSE use,
   but repo notes already say not to use it for core infra until recovery,
   upgrades, and node restarts are boring.

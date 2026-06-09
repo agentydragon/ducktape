@@ -7,7 +7,6 @@ resources:
   - cert-manager.yaml
   - authentik.yaml
   - cloudnative-pg.yaml
-  - longhorn.yaml
   - cilium-agent.yaml
   - etcd.yaml
   - seaweedfs.yaml

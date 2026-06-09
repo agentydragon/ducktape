@@ -43,7 +43,6 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
 - **claude-sandbox-firecracker** — parked to free resources.
 - **listing-monitor-smoke**, **thrive-scraper** — parked.
-- **longhorn** — uninstalled/decommissioned.
 
 ### Down while Proxmox (`atlas`/`wyrm2`) is offline
 
@@ -297,7 +296,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
          config for every Kimsufi node. Existing CCM then populates `ExternalIP` +
          `providerID`. The DNS TF (and `kubectl get nodes -o wide`, and anything
          else that asks the cluster for node addresses) just works. Needs a
-         per-node config patch + reboot; check kube-vip / Cilium / longhorn
+         per-node config patch + reboot; check kube-vip / Cilium
          tolerate the temporary uninitialized taint at startup.
       2. **Wire DNS TF to cluster TF state**: add a
          `terraform_remote_state` data source for the cluster TF root and pull
@@ -353,11 +352,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       evaluate S3/object usage separately from FUSE/PVC usage. Do not use it for
       CNPG or core infra unless the trial proves recovery, upgrades, and node
       restarts are boring.
-- [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
-      annotation, but only fires at Node admission time — nodes created before Kyverno is
-      deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
-      patch in `bootstrap.py` after Longhorn is up, or use a Longhorn `NodeLabel` feature
-      if one is added upstream. Affects legacy Longhorn storage classes.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
