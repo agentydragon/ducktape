@@ -49,11 +49,11 @@ def _seed_remote(remote: Path) -> None:
 
 
 def _remote_blob(remote: Path, path: str) -> bytes:
-    return pygit2.Repository(str(remote)).revparse_single(f"main:{path}").data
+    return pygit2.Repository(str(remote)).revparse_single(f"main:{path}").peel(pygit2.Blob).data
 
 
 def _remote_last_message(remote: Path) -> str:
-    return pygit2.Repository(str(remote)).revparse_single("main").message
+    return pygit2.Repository(str(remote)).revparse_single("main").peel(pygit2.Commit).message
 
 
 def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:

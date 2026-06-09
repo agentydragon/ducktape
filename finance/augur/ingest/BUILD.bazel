@@ -51,6 +51,7 @@ py_test(
         ":evidence_sources",
         ":fetch",
         ":http_fetch",
+        "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
