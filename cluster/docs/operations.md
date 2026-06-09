@@ -34,14 +34,11 @@ tofu apply
 ### Restart Single Node
 
 ```bash
-# Gracefully restart a node (example: controlplane0)
-talosctl \
-  --endpoints 10.2.1.1 \
-  --nodes 10.2.1.1 \
-  reboot
+# Gracefully restart a node via Talos (use the node's Nebula IP or hostname)
+talosctl --endpoints <node> --nodes <node> reboot
 
-# Or force restart via Proxmox
-ssh root@atlas 'qm reboot 10000'
+# Force restart out-of-band: OVH nodes via the OVH manager/IPMI; Proxmox-hosted
+# Talos VMs via `ssh root@atlas 'qm reboot <vmid>'`
 ```
 
 ### Remove Node
@@ -60,9 +57,9 @@ See `~/.claude/skills/proxmox_vm/vm-screenshot.sh`
 ### Direct VM Console Access
 
 ```bash
-# Interactive console access (from Proxmox host)
+# Interactive console for a Proxmox-hosted VM (from the Proxmox host)
 ssh root@atlas
-qm terminal 10000  # talos-pve-cp-0
+qm terminal <vmid>
 ```
 
 ## Switching Let's Encrypt Environment (Staging ↔ Production)

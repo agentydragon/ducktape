@@ -70,9 +70,9 @@ kubectl get storageclass               # local-path-ovh, local-path-proxmox, sea
 
 ## Dependency Chain
 
-```text
-Talos OS → Nebula mesh → K8s API → Cilium CNI → Flux (SOPS) → CSI Drivers → Apps
-```
+See <bootstrap_dependencies.md> for the full L0–L7 bootstrap dependency graph
+(external creds → SOPS → persistent auth → infrastructure → networking → Flux →
+services → NixOS workers) plus per-layer recovery procedures.
 
 ## Let's Encrypt Issuer Toggle
 

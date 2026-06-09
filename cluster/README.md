@@ -81,18 +81,18 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 All storage is region-local — no cross-site synchronous replication.
 
-| StorageClass         | Provisioner            | Region    | Notes                                                                    |
-| -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
-| `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus                                             |
-| `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
-| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
-| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
-| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Docker CI, Grocy                          |
-| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)            |
-| `longhorn`           | Longhorn               | `hil`     | Legacy — orphaned PVCs only, no active workloads                         |
+| StorageClass         | Provisioner            | Region    | Notes                                                                              |
+| -------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------- |
+| `local-path-proxmox` | local-path-provisioner | `proxmox` | Proxmox-single CNPG DBs; Matrix, ActivityWatch, Scanner, OpenClaw, Tana MCP        |
+| `local-path-ovh`     | local-path-provisioner | `hil-ovh` | OVH-HA CNPG DBs (authentik, gatus, forgejo, langfuse, …); SeaweedFS volume servers |
+| `seaweedfs-ovh`      | SeaweedFS CSI          | `hil-ovh` | POSIX/S3-backed volumes for apps needing a real filesystem (Forgejo git repos)     |
+| `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                                |
+| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Docker CI, Grocy                                    |
+| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)                      |
 
 Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
+CNPG database placement (OVH-HA vs Proxmox-single) follows <docs/cnpg_conventions.md>.
 
 ## GPU (NVIDIA)
 
@@ -125,14 +125,10 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 
 ### OVH-Only Resilience Invariants
 
-The following services **MUST** work/recover with OVH only (without Proxmox):
-
-- **DNS** (AWS Route 53) — all external name resolution depends on this
-- **Website** (`allegedly.works`) — public-facing
-
-These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes.
-Authentik uses CloudNativePG on `local-path`.
-See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
+DNS (AWS Route 53) and the public website must keep working/recovering with OVH
+only (no Proxmox) — so they must not depend on `proxmox-csi-retain` storage or
+Proxmox-pinned nodes. Full invariant set, compliance tracking, and fix plan:
+<docs/plan.md> § "OVH-Only Resilience Invariants".
 
 ## SSO (Authentik)
 
