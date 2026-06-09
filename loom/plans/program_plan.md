@@ -338,10 +338,34 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   **asserted-cutoff models** (weights released before t — the spike's
   leakage-probe methodology and candidate list); no undated sources inside
   eval runs.
-- **Scoring**: log/Brier for binaries, CRPS/quantile loss for continuous,
-  censoring-aware variants for events; always relative — vs price-as-of-t
-  where a market exists (beating it = skill), vs climatology/random-walk
-  where not; calibration reported separately from sharpness.
+- **Scoring**: log/Brier for binaries; pinball on stated quantiles for
+  continuous, plus **log-space pinball** as the cross-series-comparable
+  variant (raw pinball is unit-bound — S&P points vs CPI index don't pool;
+  quantiles transform exactly under monotone maps, so log-space is still a
+  proper score). Censoring-aware variants for events. Always relative — vs
+  price-as-of-t where a market exists (beating it = skill), vs
+  climatology/random-walk where not; calibration reported separately from
+  sharpness.
+- **Task ladder** (each rung a harder shape of the same contract): (1)
+  series file → value/threshold at future T — _current rung_; (2)
+  point-in-time dossier → future event/distribution (e.g.
+  "P(city X is under control of Y at time Z)" — exactly the shape harvested
+  from resolved markets in G1); (3) **bundle tasks** — many named variables
+  forecast in one task (more signal per sampled token; needs a bundle
+  question kind aggregating per-variable proper losses); (4)
+  strategy-conditional personal outcomes — answered as `sim` over WorldSets,
+  scored only via the dress-rehearsal rebuilds.
+- **Contestant isolation**: agent contestants run in a **network-less
+  container**; task data is mounted as files (the "dossier"), a Python
+  stack is preinstalled, and the only output is the answer artifact. No
+  network = the as-of discipline is enforced physically, not by prompt.
+  The harness can run on RBE Docker workers via the existing
+  `requires_docker` py_test machinery.
+- **Quota discipline**: GLM sampling burns the shared z.ai weekly token
+  quota (monitor endpoint: `api.z.ai/api/monitor/usage/quota/limit`; the
+  5h and 7d windows + reset times). Log usage per run; schedule big
+  batches to land just before/after the 7d window reset rather than
+  exhausting the window early.
 - **Contestants**: (1) the loom classical pipeline; (2) an agent running a
   forecast skill (superforecaster methodology + dated data tools), free-form;
   (3) the hybrid from the architecture note — the agent **authors** a

@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,19 +64,31 @@ async def run_forecasts(endpoint: ChatEndpoint, tasks: list[Task]) -> list[EvalR
         return list(await asyncio.gather(*(forecast_one(client, task) for task in tasks)))
 
 
+def _metric_means(rows: list[EvalRow]) -> dict[str, float]:
+    values_by_metric: dict[str, list[float]] = defaultdict(list)
+    for row in rows:
+        for name, value in row.task_score.metrics.items():
+            values_by_metric[name].append(value)
+    return {name: sum(values) / len(values) for name, values in values_by_metric.items()}
+
+
+def _print_group_mean(label: str, rows: list[EvalRow]) -> None:
+    means = " ".join(f"{name}={value:.4f}" for name, value in _metric_means(rows).items())
+    print(f"mean[{label}] over {len(rows)} tasks: {means}")
+
+
 def report(rows: list[EvalRow], model_id: str, output: Path | None) -> None:
     for row in rows:
         metrics = " ".join(f"{name}={value:.4f}" for name, value in row.task_score.metrics.items())
         print(f"{row.task.task_id:36} {row.task.question.kind:7} {metrics}")
     for kind in ("binary", "scalar"):
-        kind_rows = [row for row in rows if row.task.question.kind == kind]
-        if not kind_rows:
-            continue
-        means = {
-            name: sum(row.task_score.metrics[name] for row in kind_rows) / len(kind_rows)
-            for name in kind_rows[0].task_score.metrics
-        }
-        print(f"mean[{kind}] over {len(kind_rows)} tasks: " + " ".join(f"{k}={v:.4f}" for k, v in means.items()))
+        if kind_rows := [row for row in rows if row.task.question.kind == kind]:
+            _print_group_mean(kind, kind_rows)
+    # Raw pinball is not comparable across series (S&P points vs CPI index), so
+    # also break means out per series prefix; mean_pinball_log is the
+    # cross-series-comparable scalar metric.
+    for prefix in sorted({row.task.task_id.split("-")[0] for row in rows}):
+        _print_group_mean(prefix, [row for row in rows if row.task.task_id.split("-")[0] == prefix])
 
     if output is not None:
         payload = {

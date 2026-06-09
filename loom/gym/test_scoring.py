@@ -51,6 +51,33 @@ def test_quantile_answer_scoring() -> None:
     assert score(task, answer).metrics["mean_pinball"] == pytest.approx(0.2 / 3)
 
 
+def test_log_pinball_is_scale_free() -> None:
+    # The log-space pinball of an answer is invariant under rescaling the
+    # quantity's units — the property that makes CPI and S&P tasks aggregatable.
+    answer = QuantileAnswer(quantiles={0.5: 110.0})
+    scaled_answer = QuantileAnswer(quantiles={0.5: 110_000.0})
+    small = score(_task(ScalarQuestion(text="?", unit="u"), ScalarOutcome(value=100.0)), answer)
+    large = score(_task(ScalarQuestion(text="?", unit="u"), ScalarOutcome(value=100_000.0)), scaled_answer)
+    assert small.metrics["mean_pinball_log"] == pytest.approx(large.metrics["mean_pinball_log"])
+    assert small.metrics["mean_pinball"] != pytest.approx(large.metrics["mean_pinball"])
+    # Exact at the stated quantile.
+    exact = score(_task(ScalarQuestion(text="?", unit="u"), ScalarOutcome(value=110.0)), answer)
+    assert exact.metrics["mean_pinball_log"] == pytest.approx(0.0)
+
+
+def test_log_pinball_clamps_nonpositive_stated_values() -> None:
+    task = _task(ScalarQuestion(text="?", unit="u"), ScalarOutcome(value=100.0))
+    metrics = score(task, QuantileAnswer(quantiles={0.5: -5.0, 0.9: 1.0})).metrics
+    assert math.isfinite(metrics["mean_pinball_log"])
+
+
+def test_log_pinball_omitted_for_nonpositive_realized() -> None:
+    # A realized value ≤ 0 (e.g. a negative rate) has no log; only the natural-units
+    # pinball is reported then.
+    task = _task(ScalarQuestion(text="?", unit="percent"), ScalarOutcome(value=-0.5))
+    assert "mean_pinball_log" not in score(task, QuantileAnswer(quantiles={0.5: 1.0})).metrics
+
+
 def test_quantile_answer_validation() -> None:
     with pytest.raises(ValidationError, match="non-empty"):
         QuantileAnswer(quantiles={})

@@ -19,6 +19,10 @@ from loom.gym.task import BinaryOutcome, ScalarOutcome, Task
 # scores a large finite log loss instead of infinity.
 _LOG_LOSS_EPSILON = 1e-6
 
+# A nonpositive stated quantile for a positive-valued quantity is clamped here
+# before the log transform — maximally wrong but finite, like the log-loss clamp.
+_POSITIVE_EPSILON = 1e-9
+
 QUANTILE_LEVELS = (0.1, 0.25, 0.5, 0.75, 0.9)
 
 
@@ -68,9 +72,20 @@ def score(task: Task, answer: BinaryAnswer | QuantileAnswer) -> TaskScore:
             log_loss = -math.log(max(p_realized, _LOG_LOSS_EPSILON))
             return TaskScore(task_id=task.task_id, metrics={"log_loss": log_loss, "brier": (p - float(value)) ** 2})
         case QuantileAnswer(quantiles=quantiles), ScalarOutcome(value=realized):
-            mean_pinball = sum(pinball_loss(level, stated, realized) for level, stated in quantiles.items()) / len(
-                quantiles
-            )
-            return TaskScore(task_id=task.task_id, metrics={"mean_pinball": mean_pinball})
+            metrics = {
+                "mean_pinball": sum(pinball_loss(level, stated, realized) for level, stated in quantiles.items())
+                / len(quantiles)
+            }
+            # Scale-free variant: pinball in log space. Quantiles transform exactly
+            # under monotone maps, so this is the proper score for stated quantiles
+            # of log(value) — and it makes CPI-index and S&P-point tasks aggregate
+            # comparably. Only defined for positive realized values (rates can
+            # legitimately be ≤ 0).
+            if realized > 0:
+                metrics["mean_pinball_log"] = sum(
+                    pinball_loss(level, math.log(max(stated, _POSITIVE_EPSILON)), math.log(realized))
+                    for level, stated in quantiles.items()
+                ) / len(quantiles)
+            return TaskScore(task_id=task.task_id, metrics=metrics)
         case _:
             raise ValueError(f"answer kind does not match outcome kind: {answer.kind=} {task.outcome.kind=}")
