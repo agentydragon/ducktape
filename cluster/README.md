@@ -62,7 +62,7 @@ HTTPRoutes):
 | Service        | URL                                | Purpose                       |
 | -------------- | ---------------------------------- | ----------------------------- |
 | Authentik      | <https://auth.allegedly.works>     | SSO provider                  |
-| Forgejo        | <https://git.allegedly.works>      | Git hosting (suspended)       |
+| Forgejo        | <https://git.allegedly.works>      | Git hosting                   |
 | Harbor         | <https://registry.allegedly.works> | Container registry            |
 | Matrix/Element | <https://chat.allegedly.works>     | Chat                          |
 | Grafana        | <https://grafana.allegedly.works>  | Monitoring                    |

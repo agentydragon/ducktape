@@ -1,5 +1,5 @@
 # ============================================================================
-# Forgejo — OIDC login for the git server (suspended)
+# Forgejo — OIDC login for the git server
 # ============================================================================
 
 resource "authentik_provider_oauth2" "forgejo" {
