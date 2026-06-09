@@ -79,14 +79,12 @@ to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
 Then regenerate all node certs (L2) and update all NixOS worker nebula
 files (L7).
 
-**If `secrets/shared/cluster-secrets-age.yaml` is lost**: Generate new age key with
-`age-keygen`, SOPS-encrypt, commit. Update `.sops.yaml` with new public key.
-Re-encrypt all `k8s/**/*.sops.yaml` files with `sops updatekeys`. Redeploy
-the k8s secret via `tofu apply`.
+**If `secrets/shared/cluster-secrets-age.yaml` is lost**: regenerate and redeploy per
+<secrets.md> § "Rotating the Cluster Age Key".
 
 **If `secrets/shared/flux-deploy-key.yaml` is lost**: Generate new ED25519 key with
 `ssh-keygen -t ed25519`, SOPS-encrypt, commit. Register public key in
-GitHub → repo settings �� deploy keys. Redeploy via `tofu apply`.
+GitHub → repo settings → deploy keys. Redeploy via `tofu apply`.
 
 **If `secrets/shared/cluster-tokens.yaml` is lost**: Re-enter the Proxmox token
 (Proxmox UI -> API Tokens), SOPS-encrypt to `secrets/shared/cluster-tokens.yaml`,
@@ -97,7 +95,7 @@ re-entered separately if account archaeology needs it.
 `https://api.us.ovhcloud.com/createToken/` (GET/PUT/POST/DELETE on `/dedicated/server/*`),
 SOPS-encrypt to `secrets/ovh-credentials.sops.yaml`, commit.
 
-**If a `k8s/**/\*.sops.yaml` app credential is lost\*\*: Re-enter the credential
+**If a `k8s/**/\*.sops.yaml` app credential is lost\*\*: re-enter the credential
 from the external service (see [App Credentials](#app-credentials) below),
 SOPS-encrypt, commit, push. Flux picks it up automatically.
 
