@@ -65,7 +65,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 kubectl get nodes -o wide              # All nodes Ready
 flux get all                           # Flux status
 kubectl get pods -A | grep -v Running  # Non-running pods
-kubectl get storageclass               # longhorn (default), proxmox-csi-retain, etc.
+kubectl get storageclass               # local-path-ovh, local-path-proxmox, seaweedfs-ovh, proxmox-csi-retain (no default class)
 ```
 
 ## Dependency Chain
@@ -80,7 +80,7 @@ Two always-present ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`).
 A single ConfigMap controls which is active:
 
 ```yaml
-# k8s/cert-manager-issuer-config/configmap.yaml
+# k8s/cert-manager/issuer-config/configmap.yaml
 data:
   LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
 ```

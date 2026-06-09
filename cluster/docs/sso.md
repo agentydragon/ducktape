@@ -4,7 +4,7 @@
 
 ### TF-managed providers (preferred for new providers)
 
-`terraform/gitops/sso-providers/` creates `authentik_provider_oauth2` resources directly.
+`tf/gitops/sso-providers/` creates `authentik_provider_oauth2` resources directly.
 TF owns the client_secret lifecycle — no Vault, no ESO, no `!Env` drift.
 
 **Secret flow**: TF creates provider → reads `client_secret` → writes `kubernetes_secret`

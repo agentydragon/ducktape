@@ -30,7 +30,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 ## Fix
 
 Added `overridePath = true` to each mirror entry in
-`terraform/main/main.tf`. This makes Talos set
+`terraform/main/infrastructure.tf`. This makes Talos set
 `override_path = true` in the generated `hosts.toml`, so the endpoint path
 replaces `/v2/` instead of being prepended.
 

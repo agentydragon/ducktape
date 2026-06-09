@@ -92,7 +92,7 @@ In `terraform/main/`:
 | `proxmox-nodes.tf`         | Proxmox VM definitions                         |
 | `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
 | `cilium.tf`                | CNI configuration                              |
-| `main.tf`                  | Providers, firewall, Talos bootstrap           |
+| `infrastructure.tf`        | Firewall, Talos bootstrap, registry mirrors    |
 | `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
 | `nebula.tf`                | Per-node Nebula config + endpoint drift check  |
 

@@ -68,7 +68,7 @@ match the key used to encrypt the file.
 
 **Prevention**:
 
-- PG backend with backup CronJob (`pg_dump` every 6 hours)
+- PG backend in the `tofu-state-db` CNPG cluster (automated offsite backup is a pending TODO — see <plan.md>)
 - Age keypair also stored in `secrets/shared/cluster-secrets-age.yaml` (SOPS-encrypted
   with admin key) — survives tofu state loss
 

@@ -29,7 +29,7 @@ or removing gateway nodes.
 
 | File                                                     | Purpose                              |
 | -------------------------------------------------------- | ------------------------------------ |
-| `terraform/gitops/dns-records/main.tf`                   | Route 53 records + domain delegation |
+| `tf/gitops/dns-records/main.tf`                          | Route 53 records + domain delegation |
 | `k8s/dns-automation/dns-records-tf.yaml`                 | tofu-controller Terraform resource   |
 | `k8s/dns-automation/aws-credentials.sops.yaml`           | AWS IAM credentials (SOPS)           |
 | `k8s/cert-manager/config/base/aws-credentials.sops.yaml` | AWS creds for cert-manager (SOPS)    |
@@ -56,5 +56,5 @@ kubectl get certificate -A
 ## Updating Gateway Node IPs
 
 When adding or removing gateway nodes, update the IP locals in
-`terraform/gitops/dns-records/main.tf`. Commit and push; tofu-controller applies
+`tf/gitops/dns-records/main.tf`. Commit and push; tofu-controller applies
 automatically.

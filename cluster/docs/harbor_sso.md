@@ -16,7 +16,7 @@
 Uses the [goharbor/harbor Terraform provider](https://registry.terraform.io/providers/goharbor/harbor/latest/docs)
 via tofu-controller.
 
-**Location**: `terraform/gitops/sso/harbor/`
+**Location**: `tf/gitops/sso/harbor-config/`
 
 The `harbor_config_auth` resource configures OIDC with Authentik (auto-onboard, group mapping).
 Follows the same pattern as the other SSO providers in `tf/gitops/sso-providers/`.

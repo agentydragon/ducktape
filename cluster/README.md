@@ -36,14 +36,14 @@ See <docs/bootstrap.md> for full setup.
 
 ### Node Types
 
-| Node                                               | Type             | Region    | Availability     | Hardware            |
-| -------------------------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
-| `talos-kimsufi-cp-0`                               | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `talos-kimsufi-worker-0`, `talos-kimsufi-worker-1` | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
-| `talos-ks-game-worker-0`, `talos-ks-game-worker-1` | Talos worker     | `hil`     | Always on        | OVH KS-GAME         |
-| `wyrm2`                                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
-| `iguana`                                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
-| `rugged`                                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+| Node                           | Type             | Region    | Availability     | Hardware            |
+| ------------------------------ | ---------------- | --------- | ---------------- | ------------------- |
+| `ovh-ns102453`                 | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `ovh-ns103656`, `ovh-ns103711` | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `ovh-ns104952`, `ovh-ns104963` | Talos worker     | `hil`     | Always on        | OVH KS-GAME         |
+| `wyrm2`                        | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
+| `iguana`                       | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
+| `rugged`                       | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
 
 Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
 join/leave the cluster frequently. `rugged` has taint
@@ -87,7 +87,7 @@ All storage is region-local — no cross-site synchronous replication.
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
 | `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
-| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI, Grocy                |
+| `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Docker CI, Grocy                          |
 | `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)            |
 | `longhorn`           | Longhorn               | `hil`     | Legacy — orphaned PVCs only, no active workloads                         |
 
@@ -147,7 +147,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 
 - **Server**: `aw-server-rust` on Proxmox, SQLite on `local-path-proxmox` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
-- **Image**: `ghcr.io/agentydragon/aw-server`, pushed via BuildBuddy Workflows (`buildbuddy.yaml`)
+- **Image**: `ghcr.io/agentydragon/aw-server`, built with Bazel (`//third_party/activitywatch:image`) and pushed by the `push-images.yml` GHA matrix
 - **Certs**: SOPS secret (`k8s/activitywatch/nebula-certs.sops.yaml`)
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
