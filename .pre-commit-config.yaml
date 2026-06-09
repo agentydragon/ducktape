@@ -31,9 +31,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
-      # Safety guard: block pushes to protected branches.
-      # 'main' and 'master' are protected by default.
+      # Safety guard: block direct commits on protected branches. Listing
+      # --branch replaces the default (main, master), so name each one;
+      # devel is the default branch and is server-side protected by the
+      # github-branch-protection ruleset.
       - id: no-commit-to-branch
+        args: [--branch, devel, --branch, main]
 
       - id: trailing-whitespace
         # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
