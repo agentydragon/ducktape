@@ -70,6 +70,13 @@ spec:
           autoDiscoverUrl: "https://auth.allegedly.works/application/o/forgejo/.well-known/openid-configuration"
           iconUrl: "https://auth.allegedly.works/static/dist/assets/icons/icon.png"
           scopes: "email profile"
+          # Map the Authentik `groups` claim (emitted by the default `profile`
+          # scope mapping) to Forgejo site-admin: members of the `forgejo-admins`
+          # Authentik group (tf/gitops/sso-providers/main.tf) are promoted to admin
+          # on OIDC login, non-members demoted. The built-in local admin account is
+          # unaffected (not an OAuth2 user). Takes effect on the user's next login.
+          groupClaimName: "groups"
+          adminGroup: "forgejo-admins"
 
       config:
         APP_NAME: "Forgejo: Beyond coding. We forge."

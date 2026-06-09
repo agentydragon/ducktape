@@ -100,6 +100,15 @@ resource "authentik_group" "grafana_admins" {
   users = [tonumber(authentik_user.agentydragon.id)]
 }
 
+# Forgejo site admins. The Forgejo OIDC source
+# (cluster/k8s/forgejo/app/helmrelease.yaml) maps this group's name -- carried in
+# the `groups` claim emitted by the default `profile` scope mapping -- to Forgejo
+# site-admin on login. Keep the name in sync with `adminGroup` there.
+resource "authentik_group" "forgejo_admins" {
+  name  = "forgejo-admins"
+  users = [tonumber(authentik_user.agentydragon.id)]
+}
+
 resource "authentik_group" "study_casino" {
   name = "study-casino"
   users = [
