@@ -86,6 +86,65 @@ sanity, and accumulated skill on resolved markets).
 - **Diagnostics** — residual table, ESS, which-constraints-bound; written into
   the manifest and rendered as a human-readable report.
 
+## Modeling design
+
+### Dense layer (liquid macro: S&P, BTC, CPI, home value / rent)
+
+- **Base measure `Q`**: a joint monthly log-return model fit on the scraped
+  evidence series — Student-t innovations (fat tails are the one property a
+  reweight cannot add later), shrunk cross-series correlation, levels anchored
+  at today's spots at month 0. Deliberately boring: the spike showed classical
+  fitting ties or beats an LLM here, and what `Q` must supply is **coverage**
+  (dispersion) and **coupling** (how series co-move); the markets supply the
+  location of the marginals.
+- **Constraint compilation**: each catalog market compiles to an indicator
+  column over the sampled cloud. Pre-fit normalization: isotonic repair of
+  threshold/time ladders; clustering of near-duplicate markets on one latent so
+  a family of S&P thresholds counts as one source, not five.
+- **The fit is a max-ent reweight (exponential tilt)**: find per-constraint
+  duals `λ` so reweighted indicator means hit the prices —
+  `w_i ∝ exp(Σ_m λ_m f_m(W_i))`; the dual is convex (Newton/L-BFGS). The soft
+  form replaces equalities with per-market penalties weighted by quality `ω_m`
+  (liquidity, horizon, platform), so mutually incoherent inputs land on a
+  least-divergence compromise instead of failing.
+- **When ESS collapses, move `Q`, not the weights**: an all-zeros indicator
+  column means `Q` never proposed that region and no reweight can lift it. The
+  escape hatch is moment-matching `Q`'s own drift/vol parameters toward the
+  offending markets, then reweighting residually. Reweight-only stays the
+  default because it preserves the historically fitted coupling exactly.
+
+### Event layer (sparse discrete processes, e.g. OpenAI)
+
+- **Model class**: a marked point process over the EventGrammar state machine
+  with competing risks — per-transition hazards
+  `λ_e(t | state, macro path, history)`, valuation marks as a log-space
+  jump-diffusion partly driven by macro features. Each event process is
+  generated **conditioned on an already-sampled dense trajectory**, so the
+  macro/event joint comes from conditioning (risk-on lifts valuations and IPO
+  hazard; a crash raises down-round/collapse hazard) — no copula.
+- **Three kinds of parameter, three sources of truth**:
+  - **Market-pinned**: event-timing term structure (the `P(IPO by d)` ladder →
+    CDF anchors → piecewise hazard + tail) and valuation thresholds. Fit by
+    simulation moment matching: roll out, score the indicator marginals,
+    optimize θ black-box (CMA-ES or similar; θ is low-dimensional). _Fit,
+    don't reweight_ — fitting moves real probability mass, so tail coverage is
+    guaranteed.
+  - **Reference-class-shaped**: everything no market prices (inter-round time
+    shapes, valuation-step and down-round distributions, collapse rates) comes
+    from fitting on many comparable past companies — empirical Bayes: the
+    class fixes the shape, the entity's own history + markets fix location.
+  - **Authored**: the macro-coupling strength is unidentifiable at n=1 (no
+    observable constrains one company's joint with the S&P). It stays an
+    explicit, surfaced knob with presets — a documented assumption, never a
+    fitted number.
+
+### Composition
+
+One world = one dense draw → event programs run conditioned on it → rows in the
+WorldSet. Weights come from the dense tilt; grammar validity holds by
+construction; the validator re-checks every artifact, including
+foreign-authored ones.
+
 ## Milestones
 
 **M0 — contracts + toy end-to-end (first code PR).** Package skeleton, the
@@ -141,6 +200,49 @@ IPCW-Brier — per the architecture note).
 
 Sequencing: M2 runs parallel to M1; M3 needs M1's dense paths; M4 can land
 dense-only after M1 and pick up events after M3.
+
+## How we know it's working
+
+Four instruments, ordered weakest → strongest. Every WorldSet carries all four
+in its manifest/report, so "are we doing a reasonable job" has a standing,
+versioned answer per artifact instead of a vibe.
+
+1. **Reproduction — necessary, never sufficient.** Per-market residual table
+   (model-implied probability vs price, the compromise explicit where inputs
+   were incoherent), ESS, and the infeasible-constraint list. Hard gates: ESS
+   floor; no active all-zeros constraint. Catches broken fits; cannot catch
+   agreeing with a wrong crowd or ugly paths.
+2. **Trajectory sanity.** Grammar validity over `events.parquet`; monotone
+   threshold/time ladders in the model's own implied marginals;
+   non-negativity / no degenerate blowups; rendered fan charts plus a handful
+   of fully-rendered sample worlds for eyeballing cross-series co-movement.
+3. **Calibration of the invented dynamics — the main statistical test.**
+   Markets pin a few coarse points; `Q` and the event programs invent
+   everything between, and that part is testable on held-out history where
+   outcomes are known. Dense: rolling-origin PIT/rank histograms with
+   serial-dependence-robust verdicts (moving-block bootstrap — monthly PITs
+   are autocorrelated, naive p-values lie), tail-escape rate for dispersion,
+   CRPS vs a random-walk baseline for skill (baseline-relative scoring cancels
+   era difficulty). Events: the same mindset ported to point processes —
+   time-rescaling (rescaled inter-event gaps ~ Exp(1)), valuation-PIT at
+   rounds, censoring-aware survival calibration (D-calibration, IPCW-Brier) —
+   scored on held-out reference-class companies, because the target entity
+   itself is n=1 and unresolved. The pm_reifier spike already proved this
+   scorecard has teeth as a decision instrument: it rejected the LLM kernel
+   (thin-tailed + biased) and passed the state-space tails on the same window.
+4. **Skill vs the crowd — slow, and the only honest one.** From the M2
+   snapshot store: when a market resolves, proper-score (log/Brier) our frozen
+   probability-as-of-date against the outcome, side by side with the market's
+   price as of the same date. On markets we fit to, a tie is expected by
+   construction — the informative comparisons are quantities and dates the
+   catalog did not pin. The end-to-end variant: rebuild a WorldSet as-of a
+   past date purely from stored snapshots + evidence-as-of, then score
+   realized history against it — the full-pipeline dress rehearsal.
+
+The floor for "reasonable": beat the trivial baselines (random walk; the
+untilted `Q`; Kaplan–Meier / constant hazard for events) on proper scores
+while staying calibrated. Known-unvalidatable by design: the n=1
+macro-coupling knob — surfaced and preset, because no data exists to fit it.
 
 ## What loom is not
 
