@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from loom.gym.bundle_tasks import bundle_tasks
 from loom.gym.monthly_series import MonthlySeries, add_months, default_series, month_end
 from loom.gym.seed_tasks import seed_tasks
 from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
@@ -99,4 +100,4 @@ def series_tasks(anchor_start: date = date(2016, 3, 1), anchor_step_months: int 
 
 
 def all_tasks() -> tuple[Task, ...]:
-    return seed_tasks() + series_tasks()
+    return seed_tasks() + series_tasks() + bundle_tasks()

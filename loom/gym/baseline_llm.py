@@ -2,9 +2,14 @@
 
 Sampling goes through the cluster LiteLLM proxy speaking the **Anthropic
 messages API** — the path known to produce reliable structured objects from
-the z.ai GLM models — with a forced `submit_answer` tool call carrying the
-answer schema. Every request carries the `loom-gym` tag via `x-litellm-tags`,
-which the proxy's Langfuse callback records per trace.
+the z.ai GLM models — with a forced submit tool call carrying the answer
+schema. Every request carries the `loom-gym` tag via `x-litellm-tags`, which
+the proxy's Langfuse callback records per trace.
+
+`forecast` asks one task per request; `forecast_bundle` asks a same-`as_of`
+group of tasks in one request (one `submit_answers` call keyed by task id) —
+the bundle-vs-solo comparison runs on identical tasks, with token usage
+captured on every result.
 
 Anything fancier (skills, tools, mechanistic models) must beat this baseline
 on gym loss to justify its existence.
@@ -14,13 +19,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import httpx
 from more_itertools import one
 
-from loom.gym.scoring import QUANTILE_LEVELS, Answer, BinaryAnswer, QuantileAnswer
-from loom.gym.task import BinaryQuestion, ScalarQuestion, Task
+from loom.gym.scoring import QUANTILE_LEVELS, Answer, BinaryAnswer, CategoricalAnswer, QuantileAnswer
+from loom.gym.task import BinaryQuestion, CategoricalQuestion, Question, ScalarQuestion, Task
 
 logger = logging.getLogger(__name__)
 
@@ -39,32 +45,15 @@ class ChatEndpoint:
     endpoint_model: str
 
 
-def build_prompt(task: Task, dossier: dict[str, str] | None = None) -> str:
-    data_section = ""
-    if dossier is not None:
-        blocks = "\n".join(f"--- {name} ---\n{content}" for name, content in sorted(dossier.items()))
-        data_section = f"You are given these data files:\n{blocks}\n"
-    header = (
-        data_section
-        + f"You are forecasting as of {task.as_of}. Use only knowledge of events on or before {task.as_of}; "
-        "if you happen to know anything about later events, you must ignore it.\n"
-        f"Question: {task.question.text}\n"
-        f"Resolution date: {task.resolution_date}\n"
-    )
-    match task.question:
-        case BinaryQuestion():
-            return header + "Call submit_answer with p = your probability that the question resolves YES."
-        case ScalarQuestion(unit=unit):
-            levels = ", ".join(f'"{level}"' for level in QUANTILE_LEVELS)
-            return (
-                header
-                + f"Call submit_answer with your {levels} quantiles for the value in {unit}. "
-                + "Values must be non-decreasing in level."
-            )
+@dataclass(frozen=True)
+class ForecastResult:
+    answers: dict[str, Answer]
+    input_tokens: int
+    output_tokens: int
 
 
-def answer_tool_schema(task: Task) -> dict[str, object]:
-    match task.question:
+def question_schema(question: Question) -> dict[str, object]:
+    match question:
         case BinaryQuestion():
             return {
                 "type": "object",
@@ -86,6 +75,31 @@ def answer_tool_schema(task: Task) -> dict[str, object]:
                 "required": ["quantiles"],
                 "additionalProperties": False,
             }
+        case CategoricalQuestion(categories=categories):
+            return {
+                "type": "object",
+                "properties": {
+                    "probabilities": {
+                        "type": "object",
+                        "properties": {category: {"type": "number", "minimum": 0} for category in categories},
+                        "required": list(categories),
+                        "additionalProperties": False,
+                    }
+                },
+                "required": ["probabilities"],
+                "additionalProperties": False,
+            }
+
+
+def answer_instruction(question: Question) -> str:
+    match question:
+        case BinaryQuestion():
+            return "answer with p = your probability that the question resolves YES"
+        case ScalarQuestion(unit=unit):
+            levels = ", ".join(f'"{level}"' for level in QUANTILE_LEVELS)
+            return f"answer with your {levels} quantiles for the value in {unit}, non-decreasing in level"
+        case CategoricalQuestion():
+            return "answer with your probability for each listed category; probabilities must sum to 1"
 
 
 def parse_answer(task: Task, tool_input: dict[str, object]) -> Answer:
@@ -94,38 +108,134 @@ def parse_answer(task: Task, tool_input: dict[str, object]) -> Answer:
             return BinaryAnswer.model_validate(tool_input)
         case ScalarQuestion():
             return QuantileAnswer.model_validate(tool_input)
+        case CategoricalQuestion():
+            return CategoricalAnswer.model_validate(tool_input)
 
 
-async def forecast(
-    client: httpx.AsyncClient, endpoint: ChatEndpoint, task: Task, dossier: dict[str, str] | None = None
-) -> Answer:
-    payload = {
-        "model": endpoint.endpoint_model,
-        "max_tokens": 2048,
-        "messages": [{"role": "user", "content": build_prompt(task, dossier)}],
-        "tools": [
-            {"name": "submit_answer", "description": "Submit your forecast.", "input_schema": answer_tool_schema(task)}
-        ],
-        "tool_choice": {"type": "tool", "name": "submit_answer"},
-    }
+def _as_of_header(task: Task, dossier: dict[str, str] | None) -> str:
+    data_section = ""
+    if dossier is not None:
+        blocks = "\n".join(f"--- {name} ---\n{content}" for name, content in sorted(dossier.items()))
+        data_section = f"You are given these data files:\n{blocks}\n"
+    return (
+        data_section
+        + f"You are forecasting as of {task.as_of}. Use only knowledge of events on or before {task.as_of}; "
+        "if you happen to know anything about later events, you must ignore it.\n"
+    )
+
+
+def build_prompt(task: Task, dossier: dict[str, str] | None = None) -> str:
+    return (
+        _as_of_header(task, dossier)
+        + f"Question: {task.question.text}\n"
+        + f"Resolution date: {task.resolution_date}\n"
+        + f"Call submit_answer: {answer_instruction(task.question)}."
+    )
+
+
+def build_bundle_prompt(tasks: Sequence[Task], dossier: dict[str, str] | None = None) -> str:
+    lines = [_as_of_header(tasks[0], dossier), "Sub-questions:"]
+    for task in tasks:
+        lines.append(f"[{task.task_id}] {task.question.text} (resolves {task.resolution_date})")
+        lines.append(f"  → {answer_instruction(task.question)}")
+    lines.append("Call submit_answers once, with an answer for every sub-question id.")
+    return "\n".join(lines)
+
+
+async def _post_with_retry(
+    client: httpx.AsyncClient, endpoint: ChatEndpoint, payload: dict[str, object], label: str
+) -> httpx.Response:
     headers = {"x-api-key": endpoint.api_key, "anthropic-version": "2023-06-01", "x-litellm-tags": LANGFUSE_TAG}
     for attempt in range(_ATTEMPTS):
         try:
             response = await client.post(
-                f"{endpoint.base_url}/v1/messages", headers=headers, json=payload, timeout=180.0
+                f"{endpoint.base_url}/v1/messages", headers=headers, json=payload, timeout=300.0
             )
         except httpx.TransportError as error:
             if attempt == _ATTEMPTS - 1:
                 raise
-            logger.warning("transient transport error on %s (attempt %d): %s", task.task_id, attempt, error)
+            logger.warning("transient transport error on %s (attempt %d): %s", label, attempt, error)
             await asyncio.sleep(2.0**attempt)
             continue
         if response.status_code in _TRANSIENT_STATUS and attempt < _ATTEMPTS - 1:
-            logger.warning("transient HTTP %d on %s (attempt %d)", response.status_code, task.task_id, attempt)
+            logger.warning("transient HTTP %d on %s (attempt %d)", response.status_code, label, attempt)
             await asyncio.sleep(2.0**attempt)
             continue
         response.raise_for_status()
-        break
-    tool_use = one(block for block in response.json()["content"] if block["type"] == "tool_use")
-    logger.info("forecast %s: %s", task.task_id, tool_use["input"])
-    return parse_answer(task, tool_use["input"])
+        return response
+    raise AssertionError("unreachable: retry loop either returns or raises")
+
+
+def _tool_use_input(response: httpx.Response) -> tuple[dict[str, object], int, int]:
+    body = response.json()
+    tool_use = one(block for block in body["content"] if block["type"] == "tool_use")
+    usage = body.get("usage", {})
+    return tool_use["input"], usage.get("input_tokens", 0), usage.get("output_tokens", 0)
+
+
+async def forecast(
+    client: httpx.AsyncClient, endpoint: ChatEndpoint, task: Task, dossier: dict[str, str] | None = None
+) -> ForecastResult:
+    payload = {
+        "model": endpoint.endpoint_model,
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": build_prompt(task, dossier)}],
+        "tools": [
+            {
+                "name": "submit_answer",
+                "description": "Submit your forecast.",
+                "input_schema": question_schema(task.question),
+            }
+        ],
+        "tool_choice": {"type": "tool", "name": "submit_answer"},
+    }
+    tool_input, input_tokens, output_tokens = _tool_use_input(
+        await _post_with_retry(client, endpoint, payload, task.task_id)
+    )
+    logger.info("forecast %s: %s", task.task_id, tool_input)
+    return ForecastResult(
+        answers={task.task_id: parse_answer(task, tool_input)}, input_tokens=input_tokens, output_tokens=output_tokens
+    )
+
+
+async def forecast_bundle(
+    client: httpx.AsyncClient, endpoint: ChatEndpoint, tasks: Sequence[Task], dossier: dict[str, str] | None = None
+) -> ForecastResult:
+    if len({task.as_of for task in tasks}) != 1:
+        raise ValueError(f"bundle tasks must share as_of: {sorted({task.as_of for task in tasks})=}")
+    payload = {
+        "model": endpoint.endpoint_model,
+        "max_tokens": 8192,
+        "messages": [{"role": "user", "content": build_bundle_prompt(tasks, dossier)}],
+        "tools": [
+            {
+                "name": "submit_answers",
+                "description": "Submit your forecast for every sub-question.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "answers": {
+                            "type": "object",
+                            "properties": {task.task_id: question_schema(task.question) for task in tasks},
+                            "required": [task.task_id for task in tasks],
+                            "additionalProperties": False,
+                        }
+                    },
+                    "required": ["answers"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+        "tool_choice": {"type": "tool", "name": "submit_answers"},
+    }
+    label = f"bundle:{tasks[0].bundle_id or tasks[0].task_id}"
+    tool_input, input_tokens, output_tokens = _tool_use_input(await _post_with_retry(client, endpoint, payload, label))
+    logger.info("forecast %s: %s", label, tool_input)
+    submitted = tool_input["answers"]
+    if not isinstance(submitted, dict):
+        raise ValueError(f"submit_answers payload is not an object: {type(submitted)=}")
+    return ForecastResult(
+        answers={task.task_id: parse_answer(task, submitted[task.task_id]) for task in tasks},
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )

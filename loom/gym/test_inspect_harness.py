@@ -27,7 +27,7 @@ def test_sample_carries_dossier_and_task() -> None:
     assert sample.metadata is not None
     assert sample.metadata["gym_task"]["task_id"] == GYM_TASK.task_id
     assert json.loads(str(sample.target))["value"] is True
-    assert "Submit ONLY this JSON shape" in str(sample.input)
+    assert "Submit ONLY a JSON object" in str(sample.input)
 
 
 def test_sandbox_compose_disables_network() -> None:

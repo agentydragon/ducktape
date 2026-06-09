@@ -7,11 +7,22 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from loom.gym.scoring import BinaryAnswer, QuantileAnswer, cluster_bootstrap_ci, pinball_loss, score
-from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
+from loom.gym.scoring import BinaryAnswer, CategoricalAnswer, QuantileAnswer, cluster_bootstrap_ci, pinball_loss, score
+from loom.gym.task import (
+    BinaryOutcome,
+    BinaryQuestion,
+    CategoricalOutcome,
+    CategoricalQuestion,
+    ScalarOutcome,
+    ScalarQuestion,
+    Task,
+)
 
 
-def _task(question: BinaryQuestion | ScalarQuestion, outcome: BinaryOutcome | ScalarOutcome) -> Task:
+def _task(
+    question: BinaryQuestion | ScalarQuestion | CategoricalQuestion,
+    outcome: BinaryOutcome | ScalarOutcome | CategoricalOutcome,
+) -> Task:
     return Task(
         task_id="t",
         as_of=date(2024, 7, 1),
@@ -86,6 +97,42 @@ def test_quantile_answer_validation() -> None:
     # Quantile values that cross (decrease as the level increases) are incoherent.
     with pytest.raises(ValidationError, match="non-decreasing"):
         QuantileAnswer(quantiles={0.1: 5.0, 0.9: 1.0})
+
+
+CATEGORICAL_TASK = _task(
+    CategoricalQuestion(text="?", categories=("a", "b", "c"), ordered=True), CategoricalOutcome(category="b")
+)
+
+
+def test_categorical_scores() -> None:
+    metrics = score(CATEGORICAL_TASK, CategoricalAnswer(probabilities={"a": 0.2, "b": 0.5, "c": 0.3})).metrics
+    assert metrics["log_loss"] == pytest.approx(math.log(2))
+    assert metrics["brier"] == pytest.approx(0.38)
+    # RPS over cumulative buckets: ((0.2-0)^2 + (0.7-1)^2) / 2.
+    assert metrics["rps"] == pytest.approx(0.065)
+
+
+def test_unordered_categorical_has_no_rps() -> None:
+    # RPS assumes ordinal categories; joint cells are unordered, so it is omitted.
+    task = _task(CategoricalQuestion(text="?", categories=("a", "b"), ordered=False), CategoricalOutcome(category="a"))
+    assert "rps" not in score(task, CategoricalAnswer(probabilities={"a": 0.5, "b": 0.5})).metrics
+
+
+def test_categorical_slightly_off_total_is_renormalized() -> None:
+    metrics = score(CATEGORICAL_TASK, CategoricalAnswer(probabilities={"a": 0.198, "b": 0.495, "c": 0.297})).metrics
+    assert metrics["log_loss"] == pytest.approx(math.log(2))
+
+
+def test_categorical_wrong_category_set_raises() -> None:
+    with pytest.raises(ValueError, match="do not match"):
+        score(CATEGORICAL_TASK, CategoricalAnswer(probabilities={"a": 0.5, "b": 0.5}))
+
+
+def test_categorical_answer_validation() -> None:
+    with pytest.raises(ValidationError, match="sum"):
+        CategoricalAnswer(probabilities={"a": 0.5, "b": 0.4})
+    with pytest.raises(ValidationError, match="non-negative"):
+        CategoricalAnswer(probabilities={"a": 1.1, "b": -0.1})
 
 
 def test_cluster_bootstrap_ci() -> None:

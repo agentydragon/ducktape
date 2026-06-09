@@ -30,9 +30,19 @@ py_library(
 )
 
 py_library(
+    name = "bundle_tasks",
+    srcs = ["bundle_tasks.py"],
+    deps = [
+        ":monthly_series",
+        ":task",
+    ],
+)
+
+py_library(
     name = "series_tasks",
     srcs = ["series_tasks.py"],
     deps = [
+        ":bundle_tasks",
         ":monthly_series",
         ":seed_tasks",
         ":task",
@@ -174,6 +184,19 @@ py_test(
     deps = [
         ":dossier",
         "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bundle_tasks",
+    srcs = ["test_bundle_tasks.py"],
+    deps = [
+        ":bundle_tasks",
+        ":monthly_series",
+        ":task",
+        "//:conftest",
+        "@pypi//more_itertools",
         "@pypi//pytest_bazel",
     ],
 )

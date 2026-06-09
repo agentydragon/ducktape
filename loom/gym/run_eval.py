@@ -18,7 +18,7 @@ from pathlib import Path
 
 import httpx
 
-from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, forecast
+from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult, forecast, forecast_bundle
 from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
@@ -37,6 +37,13 @@ class EvalRow:
     task_score: TaskScore
 
 
+@dataclass(frozen=True)
+class TokenTotals:
+    requests: int
+    input_tokens: int
+    output_tokens: int
+
+
 def admissible_tasks(model_id: str, task_filter: str | None, strict: bool) -> list[Task]:
     if model_id not in KNOWN_MODEL_CUTOFFS:
         raise ValueError(f"unknown model — add it to KNOWN_MODEL_CUTOFFS with provenance: {model_id=}")
@@ -53,17 +60,47 @@ def admissible_tasks(model_id: str, task_filter: str | None, strict: bool) -> li
     return tasks
 
 
-async def run_forecasts(endpoint: ChatEndpoint, tasks: list[Task], with_data: bool) -> list[EvalRow]:
+async def run_forecasts(
+    endpoint: ChatEndpoint, tasks: list[Task], with_data: bool, bundled: bool
+) -> tuple[list[EvalRow], TokenTotals]:
     semaphore = asyncio.Semaphore(_CONCURRENCY)
     dossiers = {as_of: series_dossier(as_of) for as_of in {task.as_of for task in tasks}} if with_data else {}
 
-    async def forecast_one(client: httpx.AsyncClient, task: Task) -> EvalRow:
+    groups: list[list[Task]] = []
+    if bundled:
+        by_bundle: dict[str, list[Task]] = defaultdict(list)
+        for task in tasks:
+            if task.bundle_id is None:
+                groups.append([task])
+            else:
+                by_bundle[task.bundle_id].append(task)
+        groups.extend(by_bundle.values())
+    else:
+        groups = [[task] for task in tasks]
+
+    async def forecast_group(client: httpx.AsyncClient, group: list[Task]) -> tuple[list[EvalRow], ForecastResult]:
+        dossier = dossiers.get(group[0].as_of)
         async with semaphore:
-            answer = await forecast(client, endpoint, task, dossier=dossiers.get(task.as_of))
-        return EvalRow(task=task, answer=answer, task_score=score(task, answer))
+            if len(group) == 1:
+                result = await forecast(client, endpoint, group[0], dossier=dossier)
+            else:
+                result = await forecast_bundle(client, endpoint, group, dossier=dossier)
+        tasks_by_id = {task.task_id: task for task in group}
+        rows = [
+            EvalRow(task=tasks_by_id[task_id], answer=answer, task_score=score(tasks_by_id[task_id], answer))
+            for task_id, answer in result.answers.items()
+        ]
+        return rows, result
 
     async with httpx.AsyncClient() as client:
-        return list(await asyncio.gather(*(forecast_one(client, task) for task in tasks)))
+        outcomes = await asyncio.gather(*(forecast_group(client, group) for group in groups))
+    rows = [row for group_rows, _ in outcomes for row in group_rows]
+    totals = TokenTotals(
+        requests=len(outcomes),
+        input_tokens=sum(result.input_tokens for _, result in outcomes),
+        output_tokens=sum(result.output_tokens for _, result in outcomes),
+    )
+    return rows, totals
 
 
 def _metric_means(rows: list[EvalRow]) -> dict[str, float]:
@@ -124,6 +161,7 @@ def main() -> None:
     parser.add_argument(
         "--with-data", action="store_true", help="Include the as-of-truncated series dossier in the prompt."
     )
+    parser.add_argument("--bundled", action="store_true", help="Elicit tasks sharing a bundle_id in one request each.")
     parser.add_argument(
         "--strict", action="store_true", help="Bound admissibility by weights-release date, not knowledge cutoff."
     )
@@ -137,8 +175,15 @@ def main() -> None:
         endpoint_model=args.endpoint_model or f"{args.model_id}-anthropic",
     )
     tasks = admissible_tasks(model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
-    print(f"{len(tasks)} admissible tasks for {args.model_id} (strict={args.strict}, with_data={args.with_data})")
-    rows = asyncio.run(run_forecasts(endpoint, tasks, with_data=args.with_data))
+    print(
+        f"{len(tasks)} admissible tasks for {args.model_id} "
+        f"(strict={args.strict}, with_data={args.with_data}, bundled={args.bundled})"
+    )
+    rows, totals = asyncio.run(run_forecasts(endpoint, tasks, with_data=args.with_data, bundled=args.bundled))
+    print(
+        f"requests={totals.requests} input_tokens={totals.input_tokens} output_tokens={totals.output_tokens} "
+        f"tasks_per_request={len(rows) / totals.requests:.2f}"
+    )
     report(rows=rows, model_id=endpoint.model_id, output=args.output)
 
 

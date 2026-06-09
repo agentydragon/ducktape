@@ -24,10 +24,9 @@ from inspect_ai.solver import TaskState
 from inspect_ai.tool import bash, python
 
 from loom.gym import scoring
-from loom.gym.baseline_llm import parse_answer
+from loom.gym.baseline_llm import answer_instruction, parse_answer
 from loom.gym.dossier import series_dossier
-from loom.gym.scoring import QUANTILE_LEVELS
-from loom.gym.task import BinaryQuestion, ScalarQuestion, Task
+from loom.gym.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +39,13 @@ AGENT_PROMPT = (
 )
 
 
-def _answer_shape(task: Task) -> str:
-    match task.question:
-        case BinaryQuestion():
-            return '{"p": <probability the question resolves YES, between 0 and 1>}'
-        case ScalarQuestion(unit=unit):
-            levels = ", ".join(f'"{level}"' for level in QUANTILE_LEVELS)
-            return f'{{"quantiles": {{<level>: <value in {unit}>}}}} with exactly these levels: {levels}'
-
-
 def sample_for_task(task: Task) -> Sample:
     instructions = (
         f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then; "
         f"use only them and knowledge of events on or before {task.as_of}.\n"
         f"Question: {task.question.text}\n"
         f"Resolution date: {task.resolution_date}\n"
-        f"Submit ONLY this JSON shape: {_answer_shape(task)}"
+        f"Submit ONLY a JSON object: {answer_instruction(task.question)}."
     )
     return Sample(
         id=task.task_id,

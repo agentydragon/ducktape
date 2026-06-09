@@ -15,7 +15,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from loom.gym.task import BinaryOutcome, ScalarOutcome, Task
+from loom.gym.task import BinaryOutcome, CategoricalOutcome, CategoricalQuestion, ScalarOutcome, Task
 
 # Probabilities are clamped away from {0, 1} so a hard-wrong binary answer
 # scores a large finite log loss instead of infinity.
@@ -53,7 +53,26 @@ class QuantileAnswer(BaseModel):
         return self
 
 
-Answer = Annotated[BinaryAnswer | QuantileAnswer, Field(discriminator="kind")]
+class CategoricalAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["categorical"] = "categorical"
+    probabilities: dict[str, float] = Field(description="Category label → stated probability.")
+
+    @model_validator(mode="after")
+    def _check_probabilities(self) -> CategoricalAnswer:
+        if not self.probabilities:
+            raise ValueError("probabilities must be non-empty")
+        if any(probability < 0.0 for probability in self.probabilities.values()):
+            raise ValueError(f"probabilities must be non-negative: {self.probabilities=}")
+        # Models are sloppy about exact normalization; scoring renormalizes, but a
+        # wildly-off total signals a malformed answer rather than rounding.
+        if abs(sum(self.probabilities.values()) - 1.0) > 0.02:
+            raise ValueError(f"probabilities must sum to ~1: {sum(self.probabilities.values())=}")
+        return self
+
+
+Answer = Annotated[BinaryAnswer | QuantileAnswer | CategoricalAnswer, Field(discriminator="kind")]
 
 
 @dataclass(frozen=True)
@@ -89,8 +108,39 @@ def cluster_bootstrap_ci(
     return means[round(0.025 * (n_resamples - 1))], means[round(0.975 * (n_resamples - 1))]
 
 
-def score(task: Task, answer: BinaryAnswer | QuantileAnswer) -> TaskScore:
+def _score_categorical(task: Task, answer: CategoricalAnswer, realized_category: str) -> TaskScore:
+    question = task.question
+    if not isinstance(question, CategoricalQuestion):
+        raise ValueError(f"categorical answer for non-categorical question: {question.kind=}")
+    if set(answer.probabilities) != set(question.categories):
+        raise ValueError(f"answer categories do not match question: {sorted(answer.probabilities)=}")
+    total = sum(answer.probabilities.values())
+    probabilities = {category: p / total for category, p in answer.probabilities.items()}
+    realized_one_hot = [float(category == realized_category) for category in question.categories]
+    stated = [probabilities[category] for category in question.categories]
+    metrics = {
+        "log_loss": -math.log(max(probabilities[realized_category], _LOG_LOSS_EPSILON)),
+        "brier": sum((p - e) ** 2 for p, e in zip(stated, realized_one_hot, strict=True)),
+    }
+    if question.ordered:
+        # Ranked probability score: squared CDF differences, normalized by K-1.
+        # Proper for ordinal partitions (level/band buckets); meaningless for
+        # unordered ones (joint cells), hence the gate.
+        cdf_error = 0.0
+        cumulative_stated = 0.0
+        cumulative_realized = 0.0
+        for p, e in zip(stated[:-1], realized_one_hot[:-1], strict=True):
+            cumulative_stated += p
+            cumulative_realized += e
+            cdf_error += (cumulative_stated - cumulative_realized) ** 2
+        metrics["rps"] = cdf_error / (len(stated) - 1)
+    return TaskScore(task_id=task.task_id, metrics=metrics)
+
+
+def score(task: Task, answer: BinaryAnswer | QuantileAnswer | CategoricalAnswer) -> TaskScore:
     match answer, task.outcome:
+        case CategoricalAnswer() as categorical_answer, CategoricalOutcome(category=realized_category):
+            return _score_categorical(task, categorical_answer, realized_category)
         case BinaryAnswer(p=p), BinaryOutcome(value=value):
             p_realized = p if value else 1.0 - p
             log_loss = -math.log(max(p_realized, _LOG_LOSS_EPSILON))

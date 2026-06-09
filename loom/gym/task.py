@@ -28,7 +28,20 @@ class ScalarQuestion(BaseModel):
     unit: str = Field(description='Unit of the answer, e.g. "USD" or "percent".')
 
 
-Question = Annotated[BinaryQuestion | ScalarQuestion, Field(discriminator="kind")]
+class CategoricalQuestion(BaseModel):
+    """A partition question: exactly one category resolves true."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["categorical"] = "categorical"
+    text: str = Field(description="Full question including the resolution criterion.")
+    categories: tuple[str, ...] = Field(min_length=2, description="Mutually exclusive, exhaustive labels.")
+    ordered: bool = Field(
+        description="Whether the categories are ordinal (level/band buckets) — gates ranked probability scoring."
+    )
+
+
+Question = Annotated[BinaryQuestion | ScalarQuestion | CategoricalQuestion, Field(discriminator="kind")]
 
 
 class BinaryOutcome(BaseModel):
@@ -45,7 +58,14 @@ class ScalarOutcome(BaseModel):
     value: float
 
 
-Outcome = Annotated[BinaryOutcome | ScalarOutcome, Field(discriminator="kind")]
+class CategoricalOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["categorical"] = "categorical"
+    category: str
+
+
+Outcome = Annotated[BinaryOutcome | ScalarOutcome | CategoricalOutcome, Field(discriminator="kind")]
 
 
 class Task(BaseModel):
@@ -59,6 +79,10 @@ class Task(BaseModel):
     question: Question
     outcome: Outcome
     outcome_source: str = Field(description="Where the realized outcome comes from, for re-verification.")
+    bundle_id: str | None = Field(
+        default=None,
+        description="Tasks sharing a bundle_id (and as_of) may be elicited in one request; scoring stays per-task.",
+    )
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Task:
@@ -66,4 +90,10 @@ class Task(BaseModel):
             raise ValueError(f"question/outcome kind mismatch: {self.question.kind=} {self.outcome.kind=}")
         if self.resolution_date <= self.as_of:
             raise ValueError(f"resolution must be after the cutoff: {self.as_of=} {self.resolution_date=}")
+        if (
+            isinstance(self.question, CategoricalQuestion)
+            and isinstance(self.outcome, CategoricalOutcome)
+            and self.outcome.category not in self.question.categories
+        ):
+            raise ValueError(f"outcome category not in question categories: {self.outcome.category=}")
         return self

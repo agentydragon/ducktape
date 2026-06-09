@@ -7,7 +7,15 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from loom.gym.seed_tasks import seed_tasks
-from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
+from loom.gym.task import (
+    BinaryOutcome,
+    BinaryQuestion,
+    CategoricalOutcome,
+    CategoricalQuestion,
+    ScalarOutcome,
+    ScalarQuestion,
+    Task,
+)
 
 
 def _binary_task(**overrides: object) -> Task:
@@ -28,6 +36,14 @@ def test_question_outcome_kind_mismatch_rejected() -> None:
         _binary_task(outcome=ScalarOutcome(value=1.0))
     with pytest.raises(ValidationError, match="kind mismatch"):
         _binary_task(question=ScalarQuestion(text="How much?", unit="USD"))
+
+
+def test_categorical_outcome_must_be_a_category() -> None:
+    with pytest.raises(ValidationError, match="outcome category"):
+        _binary_task(
+            question=CategoricalQuestion(text="Which?", categories=("a", "b"), ordered=True),
+            outcome=CategoricalOutcome(category="z"),
+        )
 
 
 def test_resolution_before_cutoff_rejected() -> None:
