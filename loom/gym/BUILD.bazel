@@ -7,6 +7,22 @@ py_binary(
     deps = [":run_eval"],
 )
 
+# keep
+py_binary(
+    name = "compare_eval_runs",
+    main_module = "loom.gym.compare_runs",
+    deps = [":compare_runs"],
+)
+
+py_library(
+    name = "compare_runs",
+    srcs = ["compare_runs.py"],
+    deps = [
+        ":scoring",
+        ":series_tasks",
+    ],
+)
+
 py_library(
     name = "baseline_llm",
     srcs = ["baseline_llm.py"],
@@ -197,6 +213,17 @@ py_test(
         ":task",
         "//:conftest",
         "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compare_runs",
+    srcs = ["test_compare_runs.py"],
+    deps = [
+        ":compare_runs",
+        "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

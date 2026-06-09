@@ -384,6 +384,19 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   cluster-bootstrap CI**, clustered by `as_of` — tasks sharing an anchor
   saw the same era and are not independent, so per-task bootstrap would be
   anti-conservative.
+- **Statistical power, honestly**: ~800 tasks ≠ ~800 data points. The
+  glm-4.5-admissible slice is ~100 tasks on ~8 quarterly anchors in one
+  23-month era over 3 correlated series with overlapping windows —
+  effective n is order-10. Consequences: (a) contestant comparisons use
+  **paired per-task deltas** (`compare_runs.py`) — era difficulty cancels,
+  so the same clusters separate far smaller effects than absolute-loss
+  CIs; (b) the classical contestant has no contamination constraint and is
+  scored on the **full** 2016→now grid (~37 clusters); LLM contestants are
+  cutoff-truncated, and cross-class comparisons restrict to the shared
+  admissible subset; (c) window growth comes from older models (llama-2:
+  ~12 clusters; llama-3.1: ~10; cluster-ollama `gpt-oss` via LiteLLM =
+  free same-window replication), series breadth (more tickers + FRED
+  series), and G1's market harvest for non-financial diversity.
 - **Quota discipline**: GLM sampling burns the shared z.ai weekly token
   quota (monitor endpoint: `api.z.ai/api/monitor/usage/quota/limit`; the
   5h and 7d windows + reset times). Log usage per run; schedule big
