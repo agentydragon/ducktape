@@ -70,6 +70,7 @@ resources:
   - agents/google-workspace-mcp/flux-kustomization.yaml
   - agents/tana-mcp/flux-kustomization.yaml
   - agents/tana-mcp-facade/flux-kustomization.yaml
+  - agents/tana-mcp-facade/monitoring/flux-kustomization.yaml
   - agents/kagent/namespace/flux-kustomization.yaml
   - agents/kagent/secrets/flux-kustomization.yaml
   - agents/kagent/db/flux-kustomization.yaml

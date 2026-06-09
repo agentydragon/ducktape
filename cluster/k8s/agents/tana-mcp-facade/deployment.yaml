@@ -30,11 +30,15 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260601212244-287c475 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260609182829-b23cf2b # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8765
+              protocol: TCP
+            # Prometheus metrics, cluster-internal only (not on the HTTPRoute).
+            - name: metrics
+              containerPort: 9090
               protocol: TCP
           envFrom:
             - configMapRef:
@@ -68,11 +72,18 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 60
+          # Readiness reflects upstream tool availability, not just process
+          # liveness: /readyz is 200 only when the background probe recently
+          # listed >0 tools from the upstream. When Tana rejects the PAT (the
+          # recurring failure) the facade goes NotReady instead of silently
+          # serving an empty tool list. failureThreshold rides over a single
+          # probe blip; the /readyz staleness window debounces flapping.
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: 8765
-            periodSeconds: 10
+            periodSeconds: 15
+            failureThreshold: 4
           livenessProbe:
             httpGet:
               path: /healthz

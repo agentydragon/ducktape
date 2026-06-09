@@ -21,6 +21,7 @@ See cluster/docs/plans/tana_mcp_sane_signin.md for the wider design.
 
 import asyncio
 import base64
+import contextlib
 import logging
 import time
 from dataclasses import dataclass
@@ -47,7 +48,15 @@ class ResignerConfig:
 
     # In-pod URLs.
     tana_health_url: str = "http://127.0.0.1:8262/health"
+    tana_mcp_url: str = "http://127.0.0.1:8262/mcp"
     reseed_url: str = "http://127.0.0.1:9090/reseed"
+
+    # Server-held Tana personal access token. When set, readiness also requires
+    # that Tana's MCP server currently accepts it (see _pat_accepted): /health
+    # alone reports the renderer is loaded but not that it will authenticate the
+    # PAT, the failure that leaves the facade serving zero tools. None disables
+    # the PAT check (falls back to /health only).
+    pat: str | None = None
 
     # K8s secret holding the long-lived refresh token. Sidecar mounts this
     # so it can read on startup; writes go via the K8s API so rotations
@@ -124,6 +133,57 @@ async def _is_tana_healthy(http: httpx.AsyncClient, cfg: ResignerConfig) -> bool
     return resp.status_code == 200
 
 
+async def _pat_accepted(http: httpx.AsyncClient, cfg: ResignerConfig) -> bool:
+    """Whether Tana's MCP server currently authenticates the server-held PAT.
+
+    Exercises the exact auth gate the public facade hits: a POST /mcp
+    `initialize` with the PAT. HTTP 200 means the renderer's `validateToken`
+    accepts the token; 401 means it is refusing it (typically because the
+    renderer drifted off the matching account after a session blip), which a
+    re-sign can recover. A successful probe opens an MCP session, so terminate
+    it best-effort to avoid leaking one per poll.
+    """
+    assert cfg.pat is not None
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "firebase-resigner-probe", "version": "1"},
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {cfg.pat}",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = await http.post(cfg.tana_mcp_url, json=body, headers=headers)
+    except httpx.HTTPError:
+        return False
+    if resp.status_code != 200:
+        return False
+    session_id = resp.headers.get("mcp-session-id")
+    if session_id:
+        with contextlib.suppress(httpx.HTTPError):
+            await http.delete(cfg.tana_mcp_url, headers={"mcp-session-id": session_id})
+    return True
+
+
+async def _is_tana_ready(http: httpx.AsyncClient, cfg: ResignerConfig) -> bool:
+    """Tana is ready when /health is up and (if configured) the PAT is accepted."""
+    if not await _is_tana_healthy(http, cfg):
+        return False
+    if cfg.pat is None:
+        return True
+    if not await _pat_accepted(http, cfg):
+        logger.info("Tana /health OK but MCP rejects the PAT; treating as unhealthy to drive a re-sign")
+        return False
+    return True
+
+
 async def _read_refresh_token(api: client.CoreV1Api, cfg: ResignerConfig) -> str:
     secret = await api.read_namespaced_secret(cfg.secret_name, cfg.namespace)
     if secret.data is None or cfg.secret_key not in secret.data:
@@ -160,7 +220,7 @@ async def run_resigner(cfg: ResignerConfig) -> None:
     last_reseed_at: float = 0.0
     async with httpx.AsyncClient(timeout=cfg.request_timeout_seconds) as http:
         while True:
-            healthy = await _is_tana_healthy(http, cfg)
+            healthy = await _is_tana_ready(http, cfg)
             if healthy:
                 if unhealthy_streak:
                     logger.info("Tana healthy again")

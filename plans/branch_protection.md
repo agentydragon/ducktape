@@ -14,21 +14,28 @@ commits.
 ## Current state
 
 - `tf/gitops/github-branch-protection/` — manages a single
-  `github_repository_ruleset.ducktape_main` on `refs/heads/main`,
-  authenticated via `github-secrets-sync-pat` from `flux-system`.
-- ducktape main: `enforcement = "active"`. No-op today because main is not
-  the default branch (`devel` still is) and nothing pushes to main. Will
-  start gating direct pushes once the default branch flips to main.
+  `github_repository_ruleset.default_branch_protection` on `refs/heads/devel`
+  and `refs/heads/main`, authenticated via `github-secrets-sync-pat` from
+  `flux-system`. **Staged at `enforcement = "evaluate"`** (2026-06-09): rules
+  are logged in the ruleset insights but not blocked. Flip to `"active"` after
+  one PR confirms the required check contexts match and the automation pushes
+  bypass cleanly. Required status checks (verified against a real PR head):
+  `bazel-ci / Test & Build` and `Pre-commit checks`.
   Bypass actors:
   - `RepositoryRole=admin` (id 5) — covers in-cluster automations pushing as
-    the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs).
+    the owner via PAT (`claude-token-rotation`, `attic-jwt-rotation` CronJobs)
+    and the owner's own direct pushes.
   - `Integration=ducktape-automation` (App ID 3590331) — covers GHA workflows
     that mint an installation token via `actions/create-github-app-token`,
     **and** Flux's source-controller / image-automation-controller pushes on
     the `flux-system` GitRepository (after commit 745532e6b). The three
     direct-push workflows on ducktape (`sync-pins.yml`, `nix-flake-update.yml`,
-    `container-images.yml`'s `pin-digests` job) still carry TODO markers
-    about migrating when ducktape's default flips.
+    `container-images.yml`'s `pin-digests` job) already push as the App, so
+    they are covered by this bypass on `devel`.
+- The earlier untracked `tf/gitops/github-repo-rulesets/` module (a separate
+  devel+main attempt with the wrong bypass actor — built-in github-actions
+  id 15368 — and wrong, double-nested check contexts) has been **deleted**.
+  It was never wired and was debris from the 2026-05-13 Flux wedge revert.
 - gaffer-private main: **no protection**. See the next section.
 
 The `ducktape-automation` GitHub App is registered on the
@@ -124,12 +131,13 @@ GitRepositories switched from `ssh://git@github.com/…` to
      `flux_bootstrap_git` tofu resource and needs the bootstrap config
      updated to stop creating it.
 
-## Workflow migration (also pending, ducktape-side, lower urgency)
+## Workflow migration — done
 
-When ducktape's default branch flips from `devel` to `main`, the three GHA
-workflows that direct-push to the default branch need to migrate from
-`GITHUB_TOKEN` to App-minted installation tokens. In-place TODOs already
-mark each:
+The three GHA workflows that direct-push to `devel` already mint an
+installation token via `actions/create-github-app-token` and push as the
+`ducktape-automation` App (`git push https://x-access-token:${APP_TOKEN}@…`),
+so they are covered by the `Integration` bypass actor on the devel ruleset.
+No further migration is needed before enabling protection on `devel`.
 
 | Workflow                                   | Cadence       | What it pushes                   |
 | ------------------------------------------ | ------------- | -------------------------------- |
@@ -137,26 +145,17 @@ mark each:
 | `nix-flake-update.yml`                     | manual        | `flake.lock` updates             |
 | `container-images.yml` (`pin-digests` job) | on image push | `cluster/**` image digest bumps  |
 
-The migration pattern per workflow:
+## Rollout: evaluate → active
 
-```yaml
-- uses: actions/create-github-app-token@v1
-  id: app-token
-  with:
-    app-id: ${{ vars.AUTOMATION_APP_ID }} # or hardcode 3590331
-    private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
-- uses: actions/checkout@v6
-  with:
-    token: ${{ steps.app-token.outputs.token }}
-# … push step uses GITHUB_TOKEN → swap to ${{ steps.app-token.outputs.token }}
-```
-
-The PEM is in `secrets/` and decryptable in CI (the SOPS file is encrypted
-to the `&ci` recipient = the GHA SOPS_AGE_KEY), so the workflow can simply
-`sops -d` it inline rather than going through a fresh
-`github-secrets-sync` round-trip into GHA Actions Secrets. `sync-pins.yml`
-additionally has a hardcoded `devel` ref + push target that has to flip to
-`main` at the same time.
+1. Land this change (ruleset now covers `devel` + `main` at
+   `enforcement = "evaluate"`). The `moved` block renames
+   `ducktape_main` → `default_branch_protection` as an in-place state move.
+2. Open a throwaway PR against `devel`. In the repo's **ruleset insights**,
+   confirm both required contexts (`bazel-ci / Test & Build`,
+   `Pre-commit checks`) resolve against the PR's check runs and that the
+   automation pushes show as bypassed, not violations.
+3. Flip `enforcement` to `"active"` and drop the `moved` block (its
+   `CLEANUP` marker notes this).
 
 ## Historical context
 

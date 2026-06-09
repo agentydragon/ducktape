@@ -2,7 +2,7 @@
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
@@ -12,6 +12,18 @@ py_library(
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_resigner",
+    srcs = ["test_resigner.py"],
+    deps = [
+        ":resigner",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
     ],
 )
 

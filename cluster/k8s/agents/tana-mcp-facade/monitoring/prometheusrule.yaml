@@ -1,0 +1,47 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: tana-mcp-facade
+  namespace: tana-mcp
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: tana-mcp-facade
+      rules:
+        # The facade can be "up" (process healthy) while serving zero tools
+        # because the upstream Tana MCP rejects the server-held PAT. These
+        # alerts fire on that condition — the recurring failure that silently
+        # leaves claude.ai with no Tana tools.
+        - alert: TanaMcpFacadeUpstreamDown
+          expr: mcp_facade_upstream_up == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP facade {{ $labels.facade }} cannot reach its upstream"
+            description: >
+              The upstream tools/list probe for facade {{ $labels.facade }} has
+              been failing for >5m. Clients see no tools. For Tana this usually
+              means the desktop renderer is rejecting the PAT (validateToken);
+              check the firebase-resigner logs and the tana-mcp pod sign-in.
+        - alert: TanaMcpFacadeNoTools
+          expr: mcp_facade_upstream_up == 1 and mcp_facade_upstream_tools == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP facade {{ $labels.facade }} reachable but exposes zero tools"
+            description: >
+              Facade {{ $labels.facade }} reached its upstream but it advertised
+              no tools for >5m. The upstream MCP server is up but empty.
+        - alert: TanaMcpFacadeProbeStale
+          expr: time() - mcp_facade_upstream_last_success_timestamp_seconds > 600
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "MCP facade {{ $labels.facade }} has no recent successful probe"
+            description: >
+              No successful upstream probe for facade {{ $labels.facade }} in
+              >10m (probe loop wedged or upstream persistently failing).

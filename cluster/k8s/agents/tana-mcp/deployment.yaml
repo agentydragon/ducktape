@@ -113,7 +113,7 @@ spec:
         # receiver as a tana://auth deep-link. See
         # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: firebase-resigner
-          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260603173144-0649031 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260609182717-b23cf2b # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
           env:
             - name: FIREBASE_API_KEY
               # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project
@@ -124,6 +124,15 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Server-held PAT: readiness then also requires that Tana's MCP
+            # accepts it (POST /mcp initialize -> 200), so a renderer that
+            # drifts off the matching account drives a re-sign instead of
+            # silently leaving the facade serving zero tools.
+            - name: TANA_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: tana-agentydragon-gmail-com-account-pat
+                  key: token
           resources:
             requests:
               cpu: 10m

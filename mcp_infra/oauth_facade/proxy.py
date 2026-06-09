@@ -11,7 +11,12 @@ from fastmcp.server.providers.proxy import ProxyClient
 from mcp_infra.oauth_facade.config import FacadeSettings, HttpUpstream, StdioUpstream
 
 
-def _build_transport(settings: FacadeSettings) -> ClientTransport:
+def build_transport(settings: FacadeSettings) -> ClientTransport:
+    """Build the client transport to the configured upstream MCP server.
+
+    Shared by the proxy and the standalone upstream health probe so both reach
+    the upstream identically (same URL, same server-held bearer token).
+    """
     upstream = settings.upstream
     match upstream:
         case HttpUpstream():
@@ -23,5 +28,5 @@ def _build_transport(settings: FacadeSettings) -> ClientTransport:
 def build_proxy_server(settings: FacadeSettings, **kwargs: object):
     """Create a FastMCP proxy to the configured upstream MCP server."""
     return create_proxy(
-        ProxyClient(_build_transport(settings)), name=settings.facade_name, instructions=settings.instructions, **kwargs
+        ProxyClient(build_transport(settings)), name=settings.facade_name, instructions=settings.instructions, **kwargs
     )

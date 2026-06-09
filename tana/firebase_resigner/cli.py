@@ -28,9 +28,14 @@ def main() -> None:
         api_key=api_key,
         namespace=_detect_namespace(),
         secret_name=os.environ.get("REFRESH_TOKEN_SECRET_NAME", "tana-firebase-refresh-token"),
+        # Optional: when present, readiness also requires that Tana's MCP server
+        # accepts this PAT, so a renderer that drifts off the matching account
+        # drives a re-sign instead of silently leaving the facade tool-less.
+        pat=os.environ.get("TANA_PAT"),
     )
     logger.info(
-        f"Starting tana firebase resigner: {cfg.namespace=} {cfg.secret_name=} {cfg.tana_health_url=} {cfg.reseed_url=}"
+        f"Starting tana firebase resigner: {cfg.namespace=} {cfg.secret_name=} {cfg.tana_health_url=} "
+        f"{cfg.reseed_url=} pat_check={'on' if cfg.pat else 'off'}"
     )
     asyncio.run(run_resigner(cfg))
 

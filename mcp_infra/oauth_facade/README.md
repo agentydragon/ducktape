@@ -31,3 +31,30 @@ MCP_FACADE_UPSTREAM__COMMAND=["..."]  # stdio only (JSON list)
 ```
 
 The image binary is at `//x/mcp_oauth_facade:image` (`ghcr.io/agentydragon/mcp-oauth-facade`).
+
+## Health, readiness, and metrics
+
+Process liveness and upstream availability are deliberately separate, because a
+facade can be "up" while serving zero tools when the upstream rejects the
+server-held bearer token (the recurring Tana failure: the desktop renderer
+starts refusing the PAT while its own `/health` still reports healthy).
+
+- `GET /healthz` (on `port`) — process liveness only. Always `{"ok": true}`
+  once the server is up. Use for the k8s liveness/startup probe.
+- `GET /readyz` (on `port`) — `200` only when a background probe recently listed
+  `> 0` tools from the upstream, else `503`. Use for the k8s **readiness** probe
+  so the pod goes NotReady (and the public route stops serving) when the
+  upstream is dead, instead of silently advertising an empty tool list.
+- `GET /metrics` (on `metrics_port`, default `9090`) — Prometheus exposition.
+  A **separate port** so metrics are scraped cluster-internally and never
+  exposed through the public HTTPRoute. Metrics:
+  - `mcp_facade_upstream_up{facade}` — `1` if the last probe succeeded.
+  - `mcp_facade_upstream_tools{facade}` — tool count from the last probe.
+  - `mcp_facade_upstream_last_success_timestamp_seconds{facade}`.
+
+A background loop (`upstream_probe.py`) lists upstream tools every
+`probe_interval_seconds` (60s) through the same transport the proxy uses.
+Readiness is staleness-based (`probe_max_staleness_seconds`, default 195s > 3
+intervals) so a single transient probe failure does not flap readiness, while
+sustained upstream failure flips the pod NotReady and fires the
+`mcp_facade_upstream_*` alerts.

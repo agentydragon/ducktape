@@ -54,7 +54,13 @@ surface.
   the resulting `tana://auth?token=...&providerId=tanaFirebaseToken` URL to
   the desktop container's localhost reseed receiver, which `exec`s Tana
   so Electron's second-instance handler routes the URL into the renderer.
-  See <../../../docs/plans/tana_mcp_sane_signin.md>.
+  See <../../../docs/plans/tana_mcp_sane_signin.md>. Readiness is **not** just
+  `/health`: when `TANA_PAT` is set (from the PAT secret below) the sidecar also
+  POSTs `/mcp initialize` with the PAT and treats a `401` as unhealthy. This
+  catches the case where `/health` reports the renderer loaded but its
+  `validateToken` is refusing the PAT (the renderer drifted off the matching
+  account), and drives a re-sign to recover it — otherwise the facade silently
+  serves zero tools.
 - **PAT secret**: `tana-agentydragon-gmail-com-account-pat` is a
   SOPS-encrypted Kubernetes secret that stores a Tana personal access token for
   the full `agentydragon@gmail.com` account, used by the cluster MCP clients
@@ -191,6 +197,17 @@ This split is intentional:
 - public `tana-mcp-facade` handles Authentik OAuth and caller allowlisting
 - the Tana PAT never leaves Kubernetes
 
+### Facade readiness & monitoring
+
+The facade probes the upstream's tool list every 60s and exposes it as
+readiness + Prometheus metrics (see <../../../../mcp_infra/oauth_facade/README.md>).
+Its `readinessProbe` is `/readyz`, so the pod goes NotReady (and the public
+route stops serving) when Tana rejects the PAT instead of silently advertising
+zero tools. A `ServiceMonitor` scrapes `:9090/metrics` and a `PrometheusRule`
+(`tana-mcp-facade/monitoring/`) alerts on `mcp_facade_upstream_up == 0` /
+`mcp_facade_upstream_tools == 0`. Combined with the resigner's PAT check above,
+a PAT-rejection now both self-heals (re-sign) and pages if it persists.
+
 ### Health Check
 
 ```bash
@@ -244,3 +261,6 @@ Expected path behavior through the proxy:
 | Secret                                    | Key     | Source                                        |
 | ----------------------------------------- | ------- | --------------------------------------------- |
 | `tana-agentydragon-gmail-com-account-pat` | `token` | SOPS-managed PAT for `agentydragon@gmail.com` |
+
+The PAT secret is consumed by the facade (downstream auth) and, as `TANA_PAT`,
+by the firebase-resigner sidecar (readiness PAT check).

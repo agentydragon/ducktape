@@ -58,4 +58,20 @@ class FacadeSettings(BaseSettings):
     instructions: str | None = None
     host: str = "0.0.0.0"
     port: int = 8765
+    # Prometheus metrics listen on a separate port so they are scraped
+    # cluster-internally and never exposed through the facade's public
+    # HTTPRoute (which forwards every path on `port` to the internet).
+    metrics_port: int = 9090
     persistence: PersistenceConfig = FilePersistence()
+
+    probe_interval_seconds: float = Field(
+        default=60.0, description="How often the background probe lists upstream tools to refresh /metrics and /readyz."
+    )
+    probe_max_staleness_seconds: float = Field(
+        default=195.0,
+        description=(
+            "Readiness staleness window. /readyz reports ready only if a probe succeeded with >0 tools within "
+            "this many seconds. Default > 3 probe intervals so a single transient probe failure does not flap "
+            "readiness; sustained upstream failure flips the pod NotReady."
+        ),
+    )

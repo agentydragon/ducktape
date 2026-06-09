@@ -1,0 +1,19 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tana-mcp-facade-monitoring
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/agents/tana-mcp-facade/monitoring
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # Depends on the namespace owner (tana-mcp) + monitoring CRDs, NOT on
+  # tana-mcp-facade: the facade's readiness now gates on upstream health, so
+  # tying this to it would block the alerts during the very upstream outage
+  # they exist to report. ServiceMonitor/PrometheusRule apply independently.
+  dependsOn:
+    - name: tana-mcp
+    - name: monitoring-stack

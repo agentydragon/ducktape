@@ -1,11 +1,17 @@
-# Branch protection for agentydragon/ducktape `main`.
+# Branch protection for agentydragon/ducktape's default branches.
 #
-# Implemented as `github_repository_ruleset` on `refs/heads/main`. Rulesets
-# are GitHub's modern API and support Integration-actor bypass — the
-# ducktape-automation App is wired in below so direct-push workflows that
-# mint installation tokens (sync-pins, nix-flake-update, pin-digests) keep
-# working after ducktape's default branch flips from devel to main. main
-# is not yet default; the ruleset enforces nothing today.
+# Implemented as a `github_repository_ruleset` on `refs/heads/devel` and
+# `refs/heads/main`. Rulesets are GitHub's modern API and support
+# Integration-actor bypass — the ducktape-automation App is wired in below so
+# direct-push workflows that mint installation tokens (sync-pins,
+# nix-flake-update, container-images pin-digests) keep working. All three
+# already push as the App, so they are covered by the Integration bypass; the
+# admin RepositoryRole bypass covers owner/PAT pushes (Flux image automation,
+# rotation CronJobs, the owner's own pushes).
+#
+# Staged at `enforcement = "evaluate"`: rules are logged in the ruleset
+# insights but not blocked. Flip to "active" once one PR confirms the two
+# required check contexts match and the automation pushes bypass cleanly.
 #
 # Gaffer-private has NO branch protection from this module. GitHub Free
 # does not include any branch protection (rulesets or classic) on private
@@ -44,15 +50,23 @@ locals {
   automation_app_id = 3590331
 }
 
-resource "github_repository_ruleset" "ducktape_main" {
-  name        = "main-protection"
+# CLEANUP(2026-06-09): resource renamed ducktape_main -> default_branch_protection
+# when devel was added to the ruleset. Drop this moved block once the apply
+# (state move) has landed in the tf-runner backend.
+moved {
+  from = github_repository_ruleset.ducktape_main
+  to   = github_repository_ruleset.default_branch_protection
+}
+
+resource "github_repository_ruleset" "default_branch_protection" {
+  name        = "default-branch-protection"
   repository  = "ducktape"
   target      = "branch"
-  enforcement = "active"
+  enforcement = "evaluate"
 
   conditions {
     ref_name {
-      include = ["refs/heads/main"]
+      include = ["refs/heads/devel", "refs/heads/main"]
       exclude = []
     }
   }

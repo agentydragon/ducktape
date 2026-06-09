@@ -23,15 +23,29 @@ py_library(
 )
 
 py_library(
+    name = "upstream_probe",
+    srcs = ["upstream_probe.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config",
+        ":proxy",
+        "@pypi//fastmcp",
+        "@pypi//prometheus_client",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
         ":proxy",
+        ":upstream_probe",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
+        "@pypi//prometheus_client",
         "@pypi//starlette",
         "@pypi//uvicorn",
     ],
@@ -53,6 +67,19 @@ py_test(
         ":config",
         ":proxy",
         "//airlock:conftest",
+        "@pypi//fastmcp",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_upstream_probe",
+    srcs = ["test_upstream_probe.py"],
+    deps = [
+        ":config",
+        ":upstream_probe",
+        "//airlock:conftest",
+        "//mcp_infra/authentik_auth:auth",
         "@pypi//fastmcp",
         "@pypi//pytest_bazel",
     ],
