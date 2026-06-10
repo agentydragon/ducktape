@@ -113,6 +113,19 @@ See <docs/secrets.md> for SOPS procedures, adding/rotating secrets, age key mana
 **Keep <docs/bootstrap_dependencies.md> up to date** when adding/removing/changing secrets,
 SOPS files, tofu resources, or external credential requirements.
 
+### Annotating a SOPS-encrypted Secret
+
+Adding annotations/labels to a `*.sops.yaml` Secret needs **no manual re-MAC**:
+`sops <file>` re-encrypts and recomputes the MAC on save automatically. The
+catch is what an _agent_ hits — these files set no `mac_only_encrypted`, so the
+document MAC covers metadata too, and a **raw text edit** of the ciphertext
+(without re-running `sops`) fails decryption with a `MAC mismatch` (verified:
+adding one annotation to a real `*.sops.yaml` Secret breaks `sops -d`). Agents
+don't hold the cluster age key and can't `sops`-edit, so to add annotations,
+**patch the metadata in kustomize** instead — it leaves the encrypted file
+untouched. Example: `k8s/wayback-cache/kustomization.yaml` annotates
+`wayback-cache-token` for the emberstack reflector via a `patches:` entry.
+
 ### Description Annotations
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
