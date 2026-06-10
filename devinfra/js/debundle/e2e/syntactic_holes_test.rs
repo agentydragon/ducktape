@@ -43,6 +43,54 @@ export { actual };
 }
 
 #[test]
+fn member_source_match_many_expr_holes_match_positionally() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const actual = [
+  1 + 2,
+  Number.parseInt("4", 10),
+  ({ x: 5 }).x,
+  [6, 7].length,
+  Math.max(8, 9),
+  true ? 10 : 11,
+];
+console.log(actual.length);
+export { actual };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha_with_syntactic_holes(
+                "calc_value",
+                r#"const readable = [
+  EXPR_A,
+  EXPR_B,
+  EXPR_C,
+  EXPR_D,
+  EXPR_E,
+  EXPR_F,
+];"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "6\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/calc.js",
+        &[
+            "1 + 2",
+            r#"Number.parseInt("4", 10)"#,
+            "x: 5",
+            "}).x",
+            "7",
+            "].length",
+            "Math.max(8, 9)",
+            "true ? 10 : 11",
+        ],
+        &[],
+    );
+}
+
+#[test]
 fn binding_group_source_match_expr_prefix_holes_match_each_target_binding() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"var first = 1 + 2, second = Number.parseInt("4", 10);

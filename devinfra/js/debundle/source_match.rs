@@ -10,10 +10,7 @@ use anyhow::{Context, Result, bail};
 use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatch, SourceMatchIdentifierMode};
 use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
-use swc_ecma_ast::{
-    Decl, ExportDecl, Expr, ExprStmt, ImportSpecifier, MemberExpr, MemberProp, Module, ModuleDecl,
-    ModuleItem, Prop, PropName, Stmt, Str, VarDecl, VarDeclarator,
-};
+use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 const EXPR_HOLE_PREFIX: &str = "EXPR_";
@@ -562,68 +559,7 @@ fn module_items_match_with_wildcards(
     selector: &AnonymousStatementSelector,
     wildcard_idents: &WildcardIdents,
 ) -> bool {
-    let wildcard_string_literals: Vec<String> =
-        selector.wildcard_string_literals.iter().cloned().collect();
-    let wildcard_expressions: Vec<String> = wildcard_idents.expressions.iter().cloned().collect();
-    let wildcard_statements: Vec<String> = wildcard_idents.statements.iter().cloned().collect();
-
-    let candidate_strings = if wildcard_string_literals.is_empty() {
-        Vec::new()
-    } else {
-        let mut collector = StringLiteralCollector::default();
-        candidate.visit_with(&mut collector);
-        let values: Vec<Wtf8Atom> = collector.values.into_iter().collect();
-        if values.is_empty() {
-            return false;
-        }
-        values
-    };
-
-    let candidate_expressions = if wildcard_expressions.is_empty() {
-        Vec::new()
-    } else {
-        let mut collector = ExprCollector::default();
-        candidate.visit_with(&mut collector);
-        if collector.values.is_empty() {
-            return false;
-        }
-        collector.values
-    };
-
-    let candidate_statements = if wildcard_statements.is_empty() {
-        Vec::new()
-    } else {
-        let mut collector = StmtCollector::default();
-        candidate.visit_with(&mut collector);
-        if collector.values.is_empty() {
-            return false;
-        }
-        collector.values
-    };
-
-    try_wildcard_replacements(
-        needle,
-        candidate,
-        WildcardValues {
-            strings: &wildcard_string_literals,
-            expressions: &wildcard_expressions,
-            statements: &wildcard_statements,
-            candidate_strings: &candidate_strings,
-            candidate_expressions: &candidate_expressions,
-            candidate_statements: &candidate_statements,
-        },
-        WildcardReplacements::default(),
-    )
-}
-
-#[derive(Clone, Copy)]
-struct WildcardValues<'a> {
-    strings: &'a [String],
-    expressions: &'a [String],
-    statements: &'a [String],
-    candidate_strings: &'a [Wtf8Atom],
-    candidate_expressions: &'a [Expr],
-    candidate_statements: &'a [Stmt],
+    AstWildcardMatcher::new(selector, wildcard_idents).match_module_item(needle, candidate)
 }
 
 #[derive(Clone, Default)]
@@ -633,79 +569,1177 @@ struct WildcardReplacements {
     statements: BTreeMap<String, Stmt>,
 }
 
-fn try_wildcard_replacements(
-    needle: &ModuleItem,
-    candidate: &ModuleItem,
-    values: WildcardValues<'_>,
-    mut replacements: WildcardReplacements,
-) -> bool {
-    if let Some((wildcard, rest)) = values.strings.split_first() {
-        for candidate_value in values.candidate_strings {
-            replacements
-                .strings
-                .insert(wildcard.clone(), candidate_value.clone());
-            if try_wildcard_replacements(
-                needle,
-                candidate,
-                WildcardValues {
-                    strings: rest,
-                    ..values
-                },
-                replacements.clone(),
-            ) {
-                return true;
-            }
-            replacements.strings.remove(wildcard);
+struct AstWildcardMatcher<'a> {
+    selector: &'a AnonymousStatementSelector,
+    wildcard_idents: &'a WildcardIdents,
+    replacements: WildcardReplacements,
+}
+
+impl<'a> AstWildcardMatcher<'a> {
+    fn new(selector: &'a AnonymousStatementSelector, wildcard_idents: &'a WildcardIdents) -> Self {
+        Self {
+            selector,
+            wildcard_idents,
+            replacements: WildcardReplacements::default(),
         }
-        return false;
-    }
-    if let Some((wildcard, rest)) = values.expressions.split_first() {
-        for candidate_expr in values.candidate_expressions {
-            replacements
-                .expressions
-                .insert(wildcard.clone(), candidate_expr.clone());
-            if try_wildcard_replacements(
-                needle,
-                candidate,
-                WildcardValues {
-                    expressions: rest,
-                    ..values
-                },
-                replacements.clone(),
-            ) {
-                return true;
-            }
-            replacements.expressions.remove(wildcard);
-        }
-        return false;
-    }
-    if let Some((wildcard, rest)) = values.statements.split_first() {
-        for candidate_stmt in values.candidate_statements {
-            replacements
-                .statements
-                .insert(wildcard.clone(), candidate_stmt.clone());
-            if try_wildcard_replacements(
-                needle,
-                candidate,
-                WildcardValues {
-                    statements: rest,
-                    ..values
-                },
-                replacements.clone(),
-            ) {
-                return true;
-            }
-            replacements.statements.remove(wildcard);
-        }
-        return false;
     }
 
-    {
-        let mut needle = needle.clone();
-        needle.visit_mut_with(&mut WildcardSubstituter {
-            replacements: &replacements,
-        });
+    fn bind_string(&mut self, wildcard: &str, candidate_value: &Wtf8Atom) -> bool {
+        match self.replacements.strings.get(wildcard) {
+            Some(existing) => existing == candidate_value,
+            None => {
+                self.replacements
+                    .strings
+                    .insert(wildcard.to_string(), candidate_value.clone());
+                true
+            }
+        }
+    }
+
+    fn bind_expr(&mut self, wildcard: &str, candidate: &Expr) -> bool {
+        match self.replacements.expressions.get(wildcard) {
+            Some(existing) => existing.eq_ignore_span(candidate),
+            None => {
+                self.replacements
+                    .expressions
+                    .insert(wildcard.to_string(), candidate.clone());
+                true
+            }
+        }
+    }
+
+    fn bind_stmt(&mut self, wildcard: &str, candidate: &Stmt) -> bool {
+        match self.replacements.statements.get(wildcard) {
+            Some(existing) => existing.eq_ignore_span(candidate),
+            None => {
+                self.replacements
+                    .statements
+                    .insert(wildcard.to_string(), candidate.clone());
+                true
+            }
+        }
+    }
+
+    fn match_module_item(&mut self, needle: &ModuleItem, candidate: &ModuleItem) -> bool {
+        match (needle, candidate) {
+            (ModuleItem::Stmt(needle), ModuleItem::Stmt(candidate)) => {
+                self.match_stmt(needle, candidate)
+            }
+            (ModuleItem::ModuleDecl(needle), ModuleItem::ModuleDecl(candidate)) => {
+                self.match_module_decl(needle, candidate)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_module_decl(&mut self, needle: &ModuleDecl, candidate: &ModuleDecl) -> bool {
+        match (needle, candidate) {
+            (ModuleDecl::Import(needle), ModuleDecl::Import(candidate)) => {
+                needle.specifiers.eq_ignore_span(&candidate.specifiers)
+                    && needle.type_only == candidate.type_only
+                    && needle.phase.eq_ignore_span(&candidate.phase)
+                    && needle.with.eq_ignore_span(&candidate.with)
+                    && self.match_str(&needle.src, &candidate.src)
+            }
+            (ModuleDecl::ExportDecl(needle), ModuleDecl::ExportDecl(candidate)) => {
+                self.match_decl(&needle.decl, &candidate.decl)
+            }
+            (ModuleDecl::ExportDefaultDecl(needle), ModuleDecl::ExportDefaultDecl(candidate)) => {
+                self.match_default_decl(&needle.decl, &candidate.decl)
+            }
+            (ModuleDecl::ExportDefaultExpr(needle), ModuleDecl::ExportDefaultExpr(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (ModuleDecl::ExportAll(needle), ModuleDecl::ExportAll(candidate)) => {
+                needle.type_only == candidate.type_only
+                    && needle.with.eq_ignore_span(&candidate.with)
+                    && self.match_str(&needle.src, &candidate.src)
+            }
+            (ModuleDecl::ExportNamed(needle), ModuleDecl::ExportNamed(candidate)) => {
+                needle.specifiers.eq_ignore_span(&candidate.specifiers)
+                    && needle.type_only == candidate.type_only
+                    && needle.with.eq_ignore_span(&candidate.with)
+                    && self.match_option_box_str(&needle.src, &candidate.src)
+            }
+            (ModuleDecl::TsExportAssignment(needle), ModuleDecl::TsExportAssignment(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_decl(&mut self, needle: &Decl, candidate: &Decl) -> bool {
+        match (needle, candidate) {
+            (Decl::Var(needle), Decl::Var(candidate)) => self.match_var_decl(needle, candidate),
+            (Decl::Fn(needle), Decl::Fn(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && needle.declare == candidate.declare
+                    && self.match_function(&needle.function, &candidate.function)
+            }
+            (Decl::Class(needle), Decl::Class(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && needle.declare == candidate.declare
+                    && self.match_class(&needle.class, &candidate.class)
+            }
+            (Decl::Using(needle), Decl::Using(candidate)) => {
+                self.match_using_decl(needle, candidate)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_default_decl(&mut self, needle: &DefaultDecl, candidate: &DefaultDecl) -> bool {
+        match (needle, candidate) {
+            (DefaultDecl::Class(needle), DefaultDecl::Class(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && self.match_class(&needle.class, &candidate.class)
+            }
+            (DefaultDecl::Fn(needle), DefaultDecl::Fn(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && self.match_function(&needle.function, &candidate.function)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_function(&mut self, needle: &Function, candidate: &Function) -> bool {
+        self.match_slice(&needle.params, &candidate.params, Self::match_param)
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && needle.is_generator == candidate.is_generator
+            && needle.is_async == candidate.is_async
+            && needle.type_params.eq_ignore_span(&candidate.type_params)
+            && needle.return_type.eq_ignore_span(&candidate.return_type)
+            && self.match_option_block_stmt(&needle.body, &candidate.body)
+    }
+
+    fn match_param(&mut self, needle: &Param, candidate: &Param) -> bool {
+        self.match_slice(
+            &needle.decorators,
+            &candidate.decorators,
+            Self::match_decorator,
+        ) && self.match_pat(&needle.pat, &candidate.pat)
+    }
+
+    fn match_var_decl(&mut self, needle: &VarDecl, candidate: &VarDecl) -> bool {
+        needle.kind == candidate.kind
+            && needle.declare == candidate.declare
+            && self.match_slice(&needle.decls, &candidate.decls, Self::match_var_declarator)
+    }
+
+    fn match_using_decl(&mut self, needle: &UsingDecl, candidate: &UsingDecl) -> bool {
+        needle.is_await == candidate.is_await
+            && self.match_slice(&needle.decls, &candidate.decls, Self::match_var_declarator)
+    }
+
+    fn match_var_declarator(&mut self, needle: &VarDeclarator, candidate: &VarDeclarator) -> bool {
+        needle.definite == candidate.definite
+            && self.match_pat(&needle.name, &candidate.name)
+            && self.match_option_box_expr(&needle.init, &candidate.init)
+    }
+
+    fn match_stmt(&mut self, needle: &Stmt, candidate: &Stmt) -> bool {
+        if let Some(hole_name) = statement_hole_name(needle)
+            && self.wildcard_idents.statements.contains(hole_name)
+        {
+            return self.bind_stmt(hole_name, candidate);
+        }
+        match (needle, candidate) {
+            (Stmt::Block(needle), Stmt::Block(candidate)) => {
+                self.match_block_stmt(needle, candidate)
+            }
+            (Stmt::With(needle), Stmt::With(candidate)) => {
+                self.match_expr(&needle.obj, &candidate.obj)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::Return(needle), Stmt::Return(candidate)) => {
+                self.match_option_box_expr(&needle.arg, &candidate.arg)
+            }
+            (Stmt::Labeled(needle), Stmt::Labeled(candidate)) => {
+                needle.label.eq_ignore_span(&candidate.label)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::If(needle), Stmt::If(candidate)) => {
+                self.match_expr(&needle.test, &candidate.test)
+                    && self.match_stmt(&needle.cons, &candidate.cons)
+                    && self.match_option_box_stmt(&needle.alt, &candidate.alt)
+            }
+            (Stmt::Switch(needle), Stmt::Switch(candidate)) => {
+                self.match_expr(&needle.discriminant, &candidate.discriminant)
+                    && self.match_slice(&needle.cases, &candidate.cases, Self::match_switch_case)
+            }
+            (Stmt::Throw(needle), Stmt::Throw(candidate)) => {
+                self.match_expr(&needle.arg, &candidate.arg)
+            }
+            (Stmt::Try(needle), Stmt::Try(candidate)) => {
+                self.match_block_stmt(&needle.block, &candidate.block)
+                    && self.match_option_catch_clause(&needle.handler, &candidate.handler)
+                    && self.match_option_block_stmt(&needle.finalizer, &candidate.finalizer)
+            }
+            (Stmt::While(needle), Stmt::While(candidate)) => {
+                self.match_expr(&needle.test, &candidate.test)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::DoWhile(needle), Stmt::DoWhile(candidate)) => {
+                self.match_expr(&needle.test, &candidate.test)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::For(needle), Stmt::For(candidate)) => {
+                self.match_option_var_decl_or_expr(&needle.init, &candidate.init)
+                    && self.match_option_box_expr(&needle.test, &candidate.test)
+                    && self.match_option_box_expr(&needle.update, &candidate.update)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::ForIn(needle), Stmt::ForIn(candidate)) => {
+                self.match_for_head(&needle.left, &candidate.left)
+                    && self.match_expr(&needle.right, &candidate.right)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::ForOf(needle), Stmt::ForOf(candidate)) => {
+                needle.is_await == candidate.is_await
+                    && self.match_for_head(&needle.left, &candidate.left)
+                    && self.match_expr(&needle.right, &candidate.right)
+                    && self.match_stmt(&needle.body, &candidate.body)
+            }
+            (Stmt::Decl(needle), Stmt::Decl(candidate)) => self.match_decl(needle, candidate),
+            (Stmt::Expr(needle), Stmt::Expr(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_expr(&mut self, needle: &Expr, candidate: &Expr) -> bool {
+        if let Some(hole_name) = expression_hole_name(needle)
+            && self.wildcard_idents.expressions.contains(hole_name)
+        {
+            return self.bind_expr(hole_name, candidate);
+        }
+        match (needle, candidate) {
+            (Expr::Array(needle), Expr::Array(candidate)) => self.match_slice(
+                &needle.elems,
+                &candidate.elems,
+                Self::match_option_expr_or_spread,
+            ),
+            (Expr::Object(needle), Expr::Object(candidate)) => {
+                self.match_slice(&needle.props, &candidate.props, Self::match_prop_or_spread)
+            }
+            (Expr::Fn(needle), Expr::Fn(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && self.match_function(&needle.function, &candidate.function)
+            }
+            (Expr::Class(needle), Expr::Class(candidate)) => {
+                needle.ident.eq_ignore_span(&candidate.ident)
+                    && self.match_class(&needle.class, &candidate.class)
+            }
+            (Expr::Unary(needle), Expr::Unary(candidate)) => {
+                needle.op == candidate.op && self.match_expr(&needle.arg, &candidate.arg)
+            }
+            (Expr::Update(needle), Expr::Update(candidate)) => {
+                needle.op == candidate.op
+                    && needle.prefix == candidate.prefix
+                    && self.match_expr(&needle.arg, &candidate.arg)
+            }
+            (Expr::Bin(needle), Expr::Bin(candidate)) => {
+                needle.op == candidate.op
+                    && self.match_expr(&needle.left, &candidate.left)
+                    && self.match_expr(&needle.right, &candidate.right)
+            }
+            (Expr::Assign(needle), Expr::Assign(candidate)) => {
+                needle.op == candidate.op
+                    && self.match_assign_target(&needle.left, &candidate.left)
+                    && self.match_expr(&needle.right, &candidate.right)
+            }
+            (Expr::Member(needle), Expr::Member(candidate)) => {
+                self.match_member_expr(needle, candidate)
+            }
+            (Expr::SuperProp(needle), Expr::SuperProp(candidate)) => {
+                self.match_super_prop(&needle.prop, &candidate.prop)
+            }
+            (Expr::Cond(needle), Expr::Cond(candidate)) => {
+                self.match_expr(&needle.test, &candidate.test)
+                    && self.match_expr(&needle.cons, &candidate.cons)
+                    && self.match_expr(&needle.alt, &candidate.alt)
+            }
+            (Expr::Call(needle), Expr::Call(candidate)) => self.match_call_expr(needle, candidate),
+            (Expr::New(needle), Expr::New(candidate)) => {
+                needle.type_args.eq_ignore_span(&candidate.type_args)
+                    && self.match_expr(&needle.callee, &candidate.callee)
+                    && self.match_option_expr_or_spread_vec(&needle.args, &candidate.args)
+            }
+            (Expr::Seq(needle), Expr::Seq(candidate)) => self.match_slice(
+                &needle.exprs,
+                &candidate.exprs,
+                |matcher, needle, candidate| matcher.match_expr(needle, candidate),
+            ),
+            (Expr::Lit(needle), Expr::Lit(candidate)) => self.match_lit(needle, candidate),
+            (Expr::Tpl(needle), Expr::Tpl(candidate)) => {
+                needle.quasis.eq_ignore_span(&candidate.quasis)
+                    && self.match_slice(
+                        &needle.exprs,
+                        &candidate.exprs,
+                        |matcher, needle, candidate| matcher.match_expr(needle, candidate),
+                    )
+            }
+            (Expr::TaggedTpl(needle), Expr::TaggedTpl(candidate)) => {
+                needle.type_params.eq_ignore_span(&candidate.type_params)
+                    && self.match_expr(&needle.tag, &candidate.tag)
+                    && self.match_tpl(&needle.tpl, &candidate.tpl)
+            }
+            (Expr::Arrow(needle), Expr::Arrow(candidate)) => {
+                self.match_slice(&needle.params, &candidate.params, Self::match_pat)
+                    && needle.is_async == candidate.is_async
+                    && needle.is_generator == candidate.is_generator
+                    && needle.type_params.eq_ignore_span(&candidate.type_params)
+                    && needle.return_type.eq_ignore_span(&candidate.return_type)
+                    && self.match_block_stmt_or_expr(&needle.body, &candidate.body)
+            }
+            (Expr::Yield(needle), Expr::Yield(candidate)) => {
+                needle.delegate == candidate.delegate
+                    && self.match_option_box_expr(&needle.arg, &candidate.arg)
+            }
+            (Expr::Await(needle), Expr::Await(candidate)) => {
+                self.match_expr(&needle.arg, &candidate.arg)
+            }
+            (Expr::Paren(needle), Expr::Paren(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::JSXElement(needle), Expr::JSXElement(candidate)) => {
+                self.match_jsx_element(needle, candidate)
+            }
+            (Expr::JSXFragment(needle), Expr::JSXFragment(candidate)) => {
+                self.match_jsx_fragment(needle, candidate)
+            }
+            (Expr::TsConstAssertion(needle), Expr::TsConstAssertion(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::TsNonNull(needle), Expr::TsNonNull(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::TsAs(needle), Expr::TsAs(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::TsSatisfies(needle), Expr::TsSatisfies(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::TsTypeAssertion(needle), Expr::TsTypeAssertion(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::TsInstantiation(needle), Expr::TsInstantiation(candidate)) => {
+                needle.type_args.eq_ignore_span(&candidate.type_args)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (Expr::OptChain(needle), Expr::OptChain(candidate)) => {
+                needle.optional == candidate.optional
+                    && self.match_opt_chain_base(&needle.base, &candidate.base)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_jsx_element(&mut self, needle: &JSXElement, candidate: &JSXElement) -> bool {
+        self.match_jsx_opening_element(&needle.opening, &candidate.opening)
+            && self.match_slice(
+                &needle.children,
+                &candidate.children,
+                Self::match_jsx_element_child,
+            )
+            && self.match_option_jsx_closing_element(&needle.closing, &candidate.closing)
+    }
+
+    fn match_jsx_opening_element(
+        &mut self,
+        needle: &JSXOpeningElement,
+        candidate: &JSXOpeningElement,
+    ) -> bool {
+        needle.name.eq_ignore_span(&candidate.name)
+            && needle.self_closing == candidate.self_closing
+            && needle.type_args.eq_ignore_span(&candidate.type_args)
+            && self.match_slice(
+                &needle.attrs,
+                &candidate.attrs,
+                Self::match_jsx_attr_or_spread,
+            )
+    }
+
+    fn match_jsx_attr_or_spread(
+        &mut self,
+        needle: &JSXAttrOrSpread,
+        candidate: &JSXAttrOrSpread,
+    ) -> bool {
+        match (needle, candidate) {
+            (JSXAttrOrSpread::JSXAttr(needle), JSXAttrOrSpread::JSXAttr(candidate)) => {
+                self.match_jsx_attr(needle, candidate)
+            }
+            (JSXAttrOrSpread::SpreadElement(needle), JSXAttrOrSpread::SpreadElement(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_jsx_attr(&mut self, needle: &JSXAttr, candidate: &JSXAttr) -> bool {
+        needle.name.eq_ignore_span(&candidate.name)
+            && self.match_option_jsx_attr_value(&needle.value, &candidate.value)
+    }
+
+    fn match_option_jsx_attr_value(
+        &mut self,
+        needle: &Option<JSXAttrValue>,
+        candidate: &Option<JSXAttrValue>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_jsx_attr_value(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_jsx_attr_value(&mut self, needle: &JSXAttrValue, candidate: &JSXAttrValue) -> bool {
+        match (needle, candidate) {
+            (JSXAttrValue::Str(needle), JSXAttrValue::Str(candidate)) => {
+                self.match_str(needle, candidate)
+            }
+            (JSXAttrValue::JSXExprContainer(needle), JSXAttrValue::JSXExprContainer(candidate)) => {
+                self.match_jsx_expr_container(needle, candidate)
+            }
+            (JSXAttrValue::JSXElement(needle), JSXAttrValue::JSXElement(candidate)) => {
+                self.match_jsx_element(needle, candidate)
+            }
+            (JSXAttrValue::JSXFragment(needle), JSXAttrValue::JSXFragment(candidate)) => {
+                self.match_jsx_fragment(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_jsx_expr_container(
+        &mut self,
+        needle: &JSXExprContainer,
+        candidate: &JSXExprContainer,
+    ) -> bool {
+        self.match_jsx_expr(&needle.expr, &candidate.expr)
+    }
+
+    fn match_jsx_expr(&mut self, needle: &JSXExpr, candidate: &JSXExpr) -> bool {
+        match (needle, candidate) {
+            (JSXExpr::JSXEmptyExpr(needle), JSXExpr::JSXEmptyExpr(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (JSXExpr::Expr(needle), JSXExpr::Expr(candidate)) => self.match_expr(needle, candidate),
+            _ => false,
+        }
+    }
+
+    fn match_jsx_element_child(
+        &mut self,
+        needle: &JSXElementChild,
+        candidate: &JSXElementChild,
+    ) -> bool {
+        match (needle, candidate) {
+            (JSXElementChild::JSXText(needle), JSXElementChild::JSXText(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (
+                JSXElementChild::JSXExprContainer(needle),
+                JSXElementChild::JSXExprContainer(candidate),
+            ) => self.match_jsx_expr_container(needle, candidate),
+            (
+                JSXElementChild::JSXSpreadChild(needle),
+                JSXElementChild::JSXSpreadChild(candidate),
+            ) => self.match_expr(&needle.expr, &candidate.expr),
+            (JSXElementChild::JSXElement(needle), JSXElementChild::JSXElement(candidate)) => {
+                self.match_jsx_element(needle, candidate)
+            }
+            (JSXElementChild::JSXFragment(needle), JSXElementChild::JSXFragment(candidate)) => {
+                self.match_jsx_fragment(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_jsx_fragment(&mut self, needle: &JSXFragment, candidate: &JSXFragment) -> bool {
+        needle.opening.eq_ignore_span(&candidate.opening)
+            && needle.closing.eq_ignore_span(&candidate.closing)
+            && self.match_slice(
+                &needle.children,
+                &candidate.children,
+                Self::match_jsx_element_child,
+            )
+    }
+
+    fn match_option_jsx_closing_element(
+        &mut self,
+        needle: &Option<JSXClosingElement>,
+        candidate: &Option<JSXClosingElement>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => needle.eq_ignore_span(candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_block_stmt(&mut self, needle: &BlockStmt, candidate: &BlockStmt) -> bool {
+        self.match_slice(&needle.stmts, &candidate.stmts, Self::match_stmt)
+    }
+
+    fn match_switch_case(&mut self, needle: &SwitchCase, candidate: &SwitchCase) -> bool {
+        self.match_option_box_expr(&needle.test, &candidate.test)
+            && self.match_slice(&needle.cons, &candidate.cons, Self::match_stmt)
+    }
+
+    fn match_catch_clause(&mut self, needle: &CatchClause, candidate: &CatchClause) -> bool {
+        self.match_option_pat(&needle.param, &candidate.param)
+            && self.match_block_stmt(&needle.body, &candidate.body)
+    }
+
+    fn match_var_decl_or_expr(
+        &mut self,
+        needle: &VarDeclOrExpr,
+        candidate: &VarDeclOrExpr,
+    ) -> bool {
+        match (needle, candidate) {
+            (VarDeclOrExpr::VarDecl(needle), VarDeclOrExpr::VarDecl(candidate)) => {
+                self.match_var_decl(needle, candidate)
+            }
+            (VarDeclOrExpr::Expr(needle), VarDeclOrExpr::Expr(candidate)) => {
+                self.match_expr(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_for_head(&mut self, needle: &ForHead, candidate: &ForHead) -> bool {
+        match (needle, candidate) {
+            (ForHead::VarDecl(needle), ForHead::VarDecl(candidate)) => {
+                self.match_var_decl(needle, candidate)
+            }
+            (ForHead::Pat(needle), ForHead::Pat(candidate)) => self.match_pat(needle, candidate),
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_pat(&mut self, needle: &Pat, candidate: &Pat) -> bool {
+        match (needle, candidate) {
+            (Pat::Array(needle), Pat::Array(candidate)) => {
+                needle.optional == candidate.optional
+                    && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_slice(&needle.elems, &candidate.elems, Self::match_option_pat)
+            }
+            (Pat::Object(needle), Pat::Object(candidate)) => {
+                needle.optional == candidate.optional
+                    && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_slice(
+                        &needle.props,
+                        &candidate.props,
+                        Self::match_object_pat_prop,
+                    )
+            }
+            (Pat::Assign(needle), Pat::Assign(candidate)) => {
+                self.match_assign_pat(needle, candidate)
+            }
+            (Pat::Rest(needle), Pat::Rest(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_pat(&needle.arg, &candidate.arg)
+            }
+            (Pat::Expr(needle), Pat::Expr(candidate)) => self.match_expr(needle, candidate),
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_assign_pat(&mut self, needle: &AssignPat, candidate: &AssignPat) -> bool {
+        self.match_pat(&needle.left, &candidate.left)
+            && self.match_expr(&needle.right, &candidate.right)
+    }
+
+    fn match_object_pat_prop(&mut self, needle: &ObjectPatProp, candidate: &ObjectPatProp) -> bool {
+        match (needle, candidate) {
+            (ObjectPatProp::KeyValue(needle), ObjectPatProp::KeyValue(candidate)) => {
+                needle.key.eq_ignore_span(&candidate.key)
+                    && self.match_pat(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::Assign(needle), ObjectPatProp::Assign(candidate)) => {
+                needle.key.eq_ignore_span(&candidate.key)
+                    && self.match_option_box_expr(&needle.value, &candidate.value)
+            }
+            (ObjectPatProp::Rest(needle), ObjectPatProp::Rest(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_pat(&needle.arg, &candidate.arg)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_member_expr(&mut self, needle: &MemberExpr, candidate: &MemberExpr) -> bool {
+        self.match_expr(&needle.obj, &candidate.obj)
+            && self.match_member_prop(&needle.prop, &candidate.prop)
+    }
+
+    fn match_member_prop(&mut self, needle: &MemberProp, candidate: &MemberProp) -> bool {
+        match (needle, candidate) {
+            (MemberProp::Ident(needle), MemberProp::Ident(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (MemberProp::PrivateName(needle), MemberProp::PrivateName(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (MemberProp::Computed(needle), MemberProp::Computed(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_super_prop(&mut self, needle: &SuperProp, candidate: &SuperProp) -> bool {
+        match (needle, candidate) {
+            (SuperProp::Ident(needle), SuperProp::Ident(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (SuperProp::Computed(needle), SuperProp::Computed(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_call_expr(&mut self, needle: &CallExpr, candidate: &CallExpr) -> bool {
+        needle.type_args.eq_ignore_span(&candidate.type_args)
+            && self.match_callee(&needle.callee, &candidate.callee)
+            && self.match_slice(&needle.args, &candidate.args, Self::match_expr_or_spread)
+    }
+
+    fn match_callee(&mut self, needle: &Callee, candidate: &Callee) -> bool {
+        match (needle, candidate) {
+            (Callee::Super(_), Callee::Super(_)) => true,
+            (Callee::Import(needle), Callee::Import(candidate)) => {
+                needle.phase.eq_ignore_span(&candidate.phase)
+            }
+            (Callee::Expr(needle), Callee::Expr(candidate)) => self.match_expr(needle, candidate),
+            _ => false,
+        }
+    }
+
+    fn match_expr_or_spread(&mut self, needle: &ExprOrSpread, candidate: &ExprOrSpread) -> bool {
+        needle.spread.is_some() == candidate.spread.is_some()
+            && self.match_expr(&needle.expr, &candidate.expr)
+    }
+
+    fn match_option_expr_or_spread(
+        &mut self,
+        needle: &Option<ExprOrSpread>,
+        candidate: &Option<ExprOrSpread>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_expr_or_spread(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_prop_or_spread(&mut self, needle: &PropOrSpread, candidate: &PropOrSpread) -> bool {
+        match (needle, candidate) {
+            (PropOrSpread::Spread(needle), PropOrSpread::Spread(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (PropOrSpread::Prop(needle), PropOrSpread::Prop(candidate)) => {
+                self.match_prop(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_prop(&mut self, needle: &Prop, candidate: &Prop) -> bool {
+        match (needle, candidate) {
+            (Prop::Shorthand(needle), Prop::Shorthand(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (Prop::KeyValue(needle), Prop::KeyValue(candidate)) => {
+                self.match_prop_name(&needle.key, &candidate.key)
+                    && self.match_expr(&needle.value, &candidate.value)
+            }
+            (Prop::Assign(needle), Prop::Assign(candidate)) => {
+                needle.key.eq_ignore_span(&candidate.key)
+                    && self.match_expr(&needle.value, &candidate.value)
+            }
+            (Prop::Getter(needle), Prop::Getter(candidate)) => {
+                self.match_prop_name(&needle.key, &candidate.key)
+                    && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_option_block_stmt(&needle.body, &candidate.body)
+            }
+            (Prop::Setter(needle), Prop::Setter(candidate)) => {
+                self.match_prop_name(&needle.key, &candidate.key)
+                    && needle.this_param.eq_ignore_span(&candidate.this_param)
+                    && self.match_pat(&needle.param, &candidate.param)
+                    && self.match_option_block_stmt(&needle.body, &candidate.body)
+            }
+            (Prop::Method(needle), Prop::Method(candidate)) => {
+                self.match_prop_name(&needle.key, &candidate.key)
+                    && self.match_function(&needle.function, &candidate.function)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_prop_name(&mut self, needle: &PropName, candidate: &PropName) -> bool {
+        match (needle, candidate) {
+            (PropName::Str(needle), PropName::Str(candidate)) => self.match_str(needle, candidate),
+            (PropName::Computed(needle), PropName::Computed(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_lit(&mut self, needle: &Lit, candidate: &Lit) -> bool {
+        match (needle, candidate) {
+            (Lit::Str(needle), Lit::Str(candidate)) => self.match_str(needle, candidate),
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_str(&mut self, needle: &Str, candidate: &Str) -> bool {
+        let wildcard = needle.value.to_string_lossy();
+        if self
+            .selector
+            .wildcard_string_literals
+            .contains(wildcard.as_ref())
+        {
+            return self.bind_string(wildcard.as_ref(), &candidate.value);
+        }
         needle.eq_ignore_span(candidate)
+    }
+
+    fn match_tpl(&mut self, needle: &Tpl, candidate: &Tpl) -> bool {
+        needle.quasis.eq_ignore_span(&candidate.quasis)
+            && self.match_slice(
+                &needle.exprs,
+                &candidate.exprs,
+                |matcher, needle, candidate| matcher.match_expr(needle, candidate),
+            )
+    }
+
+    fn match_block_stmt_or_expr(
+        &mut self,
+        needle: &BlockStmtOrExpr,
+        candidate: &BlockStmtOrExpr,
+    ) -> bool {
+        match (needle, candidate) {
+            (BlockStmtOrExpr::BlockStmt(needle), BlockStmtOrExpr::BlockStmt(candidate)) => {
+                self.match_block_stmt(needle, candidate)
+            }
+            (BlockStmtOrExpr::Expr(needle), BlockStmtOrExpr::Expr(candidate)) => {
+                self.match_expr(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_assign_target(&mut self, needle: &AssignTarget, candidate: &AssignTarget) -> bool {
+        match (needle, candidate) {
+            (AssignTarget::Simple(needle), AssignTarget::Simple(candidate)) => {
+                self.match_simple_assign_target(needle, candidate)
+            }
+            (AssignTarget::Pat(needle), AssignTarget::Pat(candidate)) => {
+                self.match_assign_target_pat(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_assign_target_pat(
+        &mut self,
+        needle: &AssignTargetPat,
+        candidate: &AssignTargetPat,
+    ) -> bool {
+        match (needle, candidate) {
+            (AssignTargetPat::Array(needle), AssignTargetPat::Array(candidate)) => {
+                self.match_slice(&needle.elems, &candidate.elems, Self::match_option_pat)
+            }
+            (AssignTargetPat::Object(needle), AssignTargetPat::Object(candidate)) => {
+                self.match_slice(&needle.props, &candidate.props, Self::match_object_pat_prop)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_simple_assign_target(
+        &mut self,
+        needle: &SimpleAssignTarget,
+        candidate: &SimpleAssignTarget,
+    ) -> bool {
+        match (needle, candidate) {
+            (SimpleAssignTarget::Ident(needle), SimpleAssignTarget::Ident(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (SimpleAssignTarget::Member(needle), SimpleAssignTarget::Member(candidate)) => {
+                self.match_member_expr(needle, candidate)
+            }
+            (SimpleAssignTarget::SuperProp(needle), SimpleAssignTarget::SuperProp(candidate)) => {
+                self.match_super_prop(&needle.prop, &candidate.prop)
+            }
+            (SimpleAssignTarget::Paren(needle), SimpleAssignTarget::Paren(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (SimpleAssignTarget::TsAs(needle), SimpleAssignTarget::TsAs(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (
+                SimpleAssignTarget::TsSatisfies(needle),
+                SimpleAssignTarget::TsSatisfies(candidate),
+            ) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (SimpleAssignTarget::TsNonNull(needle), SimpleAssignTarget::TsNonNull(candidate)) => {
+                self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (
+                SimpleAssignTarget::TsTypeAssertion(needle),
+                SimpleAssignTarget::TsTypeAssertion(candidate),
+            ) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            (
+                SimpleAssignTarget::TsInstantiation(needle),
+                SimpleAssignTarget::TsInstantiation(candidate),
+            ) => {
+                needle.type_args.eq_ignore_span(&candidate.type_args)
+                    && self.match_expr(&needle.expr, &candidate.expr)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_opt_chain_base(&mut self, needle: &OptChainBase, candidate: &OptChainBase) -> bool {
+        match (needle, candidate) {
+            (OptChainBase::Member(needle), OptChainBase::Member(candidate)) => {
+                self.match_member_expr(needle, candidate)
+            }
+            (OptChainBase::Call(needle), OptChainBase::Call(candidate)) => {
+                needle.type_args.eq_ignore_span(&candidate.type_args)
+                    && self.match_expr(&needle.callee, &candidate.callee)
+                    && self.match_slice(&needle.args, &candidate.args, Self::match_expr_or_spread)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_class(&mut self, needle: &Class, candidate: &Class) -> bool {
+        needle.is_abstract == candidate.is_abstract
+            && needle.type_params.eq_ignore_span(&candidate.type_params)
+            && needle
+                .super_type_params
+                .eq_ignore_span(&candidate.super_type_params)
+            && needle.implements.eq_ignore_span(&candidate.implements)
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && self.match_option_box_expr(&needle.super_class, &candidate.super_class)
+            && self.match_slice(&needle.body, &candidate.body, Self::match_class_member)
+    }
+
+    fn match_decorator(&mut self, needle: &Decorator, candidate: &Decorator) -> bool {
+        self.match_expr(&needle.expr, &candidate.expr)
+    }
+
+    fn match_class_member(&mut self, needle: &ClassMember, candidate: &ClassMember) -> bool {
+        match (needle, candidate) {
+            (ClassMember::Constructor(needle), ClassMember::Constructor(candidate)) => {
+                self.match_constructor(needle, candidate)
+            }
+            (ClassMember::Method(needle), ClassMember::Method(candidate)) => {
+                self.match_class_method(needle, candidate)
+            }
+            (ClassMember::PrivateMethod(needle), ClassMember::PrivateMethod(candidate)) => {
+                self.match_private_method(needle, candidate)
+            }
+            (ClassMember::ClassProp(needle), ClassMember::ClassProp(candidate)) => {
+                self.match_class_prop(needle, candidate)
+            }
+            (ClassMember::PrivateProp(needle), ClassMember::PrivateProp(candidate)) => {
+                self.match_private_prop(needle, candidate)
+            }
+            (ClassMember::StaticBlock(needle), ClassMember::StaticBlock(candidate)) => {
+                self.match_block_stmt(&needle.body, &candidate.body)
+            }
+            (ClassMember::AutoAccessor(needle), ClassMember::AutoAccessor(candidate)) => {
+                self.match_auto_accessor(needle, candidate)
+            }
+            _ => needle.eq_ignore_span(candidate),
+        }
+    }
+
+    fn match_constructor(&mut self, needle: &Constructor, candidate: &Constructor) -> bool {
+        needle.key.eq_ignore_span(&candidate.key)
+            && self.match_slice(
+                &needle.params,
+                &candidate.params,
+                Self::match_param_or_ts_param_prop,
+            )
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_optional == candidate.is_optional
+            && self.match_option_block_stmt(&needle.body, &candidate.body)
+    }
+
+    fn match_param_or_ts_param_prop(
+        &mut self,
+        needle: &ParamOrTsParamProp,
+        candidate: &ParamOrTsParamProp,
+    ) -> bool {
+        match (needle, candidate) {
+            (ParamOrTsParamProp::Param(needle), ParamOrTsParamProp::Param(candidate)) => {
+                self.match_param(needle, candidate)
+            }
+            (
+                ParamOrTsParamProp::TsParamProp(needle),
+                ParamOrTsParamProp::TsParamProp(candidate),
+            ) => self.match_ts_param_prop(needle, candidate),
+            _ => false,
+        }
+    }
+
+    fn match_ts_param_prop(&mut self, needle: &TsParamProp, candidate: &TsParamProp) -> bool {
+        needle
+            .accessibility
+            .eq_ignore_span(&candidate.accessibility)
+            && needle.is_override == candidate.is_override
+            && needle.readonly == candidate.readonly
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && self.match_ts_param_prop_param(&needle.param, &candidate.param)
+    }
+
+    fn match_ts_param_prop_param(
+        &mut self,
+        needle: &TsParamPropParam,
+        candidate: &TsParamPropParam,
+    ) -> bool {
+        match (needle, candidate) {
+            (TsParamPropParam::Ident(needle), TsParamPropParam::Ident(candidate)) => {
+                needle.eq_ignore_span(candidate)
+            }
+            (TsParamPropParam::Assign(needle), TsParamPropParam::Assign(candidate)) => {
+                self.match_assign_pat(needle, candidate)
+            }
+            _ => false,
+        }
+    }
+
+    fn match_class_method(&mut self, needle: &ClassMethod, candidate: &ClassMethod) -> bool {
+        needle.kind == candidate.kind
+            && needle.is_static == candidate.is_static
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_abstract == candidate.is_abstract
+            && needle.is_optional == candidate.is_optional
+            && needle.is_override == candidate.is_override
+            && self.match_prop_name(&needle.key, &candidate.key)
+            && self.match_function(&needle.function, &candidate.function)
+    }
+
+    fn match_private_method(&mut self, needle: &PrivateMethod, candidate: &PrivateMethod) -> bool {
+        needle.key.eq_ignore_span(&candidate.key)
+            && needle.kind == candidate.kind
+            && needle.is_static == candidate.is_static
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_abstract == candidate.is_abstract
+            && needle.is_optional == candidate.is_optional
+            && needle.is_override == candidate.is_override
+            && self.match_function(&needle.function, &candidate.function)
+    }
+
+    fn match_class_prop(&mut self, needle: &ClassProp, candidate: &ClassProp) -> bool {
+        needle.type_ann.eq_ignore_span(&candidate.type_ann)
+            && needle.is_static == candidate.is_static
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_abstract == candidate.is_abstract
+            && needle.is_optional == candidate.is_optional
+            && needle.is_override == candidate.is_override
+            && needle.readonly == candidate.readonly
+            && needle.declare == candidate.declare
+            && needle.definite == candidate.definite
+            && self.match_prop_name(&needle.key, &candidate.key)
+            && self.match_option_box_expr(&needle.value, &candidate.value)
+    }
+
+    fn match_private_prop(&mut self, needle: &PrivateProp, candidate: &PrivateProp) -> bool {
+        needle.key.eq_ignore_span(&candidate.key)
+            && needle.type_ann.eq_ignore_span(&candidate.type_ann)
+            && needle.is_static == candidate.is_static
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_optional == candidate.is_optional
+            && needle.is_override == candidate.is_override
+            && needle.readonly == candidate.readonly
+            && needle.definite == candidate.definite
+            && self.match_option_box_expr(&needle.value, &candidate.value)
+    }
+
+    fn match_auto_accessor(&mut self, needle: &AutoAccessor, candidate: &AutoAccessor) -> bool {
+        needle.type_ann.eq_ignore_span(&candidate.type_ann)
+            && needle.is_static == candidate.is_static
+            && self.match_slice(
+                &needle.decorators,
+                &candidate.decorators,
+                Self::match_decorator,
+            )
+            && needle
+                .accessibility
+                .eq_ignore_span(&candidate.accessibility)
+            && needle.is_abstract == candidate.is_abstract
+            && needle.is_override == candidate.is_override
+            && needle.definite == candidate.definite
+            && self.match_key(&needle.key, &candidate.key)
+            && self.match_option_box_expr(&needle.value, &candidate.value)
+    }
+
+    fn match_key(&mut self, needle: &Key, candidate: &Key) -> bool {
+        match (needle, candidate) {
+            (Key::Public(needle), Key::Public(candidate)) => {
+                self.match_prop_name(needle, candidate)
+            }
+            (Key::Private(needle), Key::Private(candidate)) => needle.eq_ignore_span(candidate),
+            _ => false,
+        }
+    }
+
+    fn match_option_box_expr(
+        &mut self,
+        needle: &Option<Box<Expr>>,
+        candidate: &Option<Box<Expr>>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_expr(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_box_stmt(
+        &mut self,
+        needle: &Option<Box<Stmt>>,
+        candidate: &Option<Box<Stmt>>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_stmt(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_block_stmt(
+        &mut self,
+        needle: &Option<BlockStmt>,
+        candidate: &Option<BlockStmt>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_block_stmt(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_var_decl_or_expr(
+        &mut self,
+        needle: &Option<VarDeclOrExpr>,
+        candidate: &Option<VarDeclOrExpr>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_var_decl_or_expr(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_catch_clause(
+        &mut self,
+        needle: &Option<CatchClause>,
+        candidate: &Option<CatchClause>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_catch_clause(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_pat(&mut self, needle: &Option<Pat>, candidate: &Option<Pat>) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_pat(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_box_str(
+        &mut self,
+        needle: &Option<Box<Str>>,
+        candidate: &Option<Box<Str>>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_str(needle, candidate),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_option_expr_or_spread_vec(
+        &mut self,
+        needle: &Option<Vec<ExprOrSpread>>,
+        candidate: &Option<Vec<ExprOrSpread>>,
+    ) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => {
+                self.match_slice(needle, candidate, Self::match_expr_or_spread)
+            }
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    fn match_slice<T>(
+        &mut self,
+        needle: &[T],
+        candidate: &[T],
+        mut match_item: impl FnMut(&mut Self, &T, &T) -> bool,
+    ) -> bool {
+        needle.len() == candidate.len()
+            && needle
+                .iter()
+                .zip(candidate)
+                .all(|(needle, candidate)| match_item(self, needle, candidate))
     }
 }
 
@@ -794,17 +1828,6 @@ fn visit_computed_prop_name(prop_name: &mut PropName, visitor: &mut AlphaIdentCa
 }
 
 #[derive(Default)]
-struct StringLiteralCollector {
-    values: BTreeSet<Wtf8Atom>,
-}
-
-impl Visit for StringLiteralCollector {
-    fn visit_str(&mut self, lit: &Str) {
-        self.values.insert(lit.value.clone());
-    }
-}
-
-#[derive(Default)]
 struct WildcardIdents {
     expressions: BTreeSet<String>,
     statements: BTreeSet<String>,
@@ -829,10 +1852,8 @@ struct WildcardIdentCollector {
 
 impl Visit for WildcardIdentCollector {
     fn visit_expr(&mut self, expr: &Expr) {
-        if let Expr::Ident(ident) = expr
-            && ident.sym.as_ref().starts_with(EXPR_HOLE_PREFIX)
-        {
-            self.idents.expressions.insert(ident.sym.to_string());
+        if let Some(hole_name) = expression_hole_name(expr) {
+            self.idents.expressions.insert(hole_name.to_string());
             return;
         }
         expr.visit_children_with(self);
@@ -849,64 +1870,15 @@ impl Visit for WildcardIdentCollector {
     }
 }
 
-#[derive(Default)]
-struct ExprCollector {
-    values: Vec<Expr>,
-}
-
-impl Visit for ExprCollector {
-    fn visit_expr(&mut self, expr: &Expr) {
-        self.values.push(expr.clone());
-        expr.visit_children_with(self);
-    }
-}
-
-#[derive(Default)]
-struct StmtCollector {
-    values: Vec<Stmt>,
-}
-
-impl Visit for StmtCollector {
-    fn visit_stmt(&mut self, stmt: &Stmt) {
-        self.values.push(stmt.clone());
-        stmt.visit_children_with(self);
-    }
-}
-
-struct WildcardSubstituter<'a> {
-    replacements: &'a WildcardReplacements,
-}
-
-impl VisitMut for WildcardSubstituter<'_> {
-    fn visit_mut_str(&mut self, lit: &mut Str) {
-        let value = lit.value.to_string_lossy();
-        if let Some(replacement) = self.replacements.strings.get(value.as_ref()) {
-            lit.value = replacement.clone();
-            lit.raw = None;
-        }
-    }
-
-    fn visit_mut_expr(&mut self, expr: &mut Expr) {
-        if let Expr::Ident(ident) = expr
-            && ident.sym.as_ref().starts_with(EXPR_HOLE_PREFIX)
-            && let Some(replacement) = self.replacements.expressions.get(ident.sym.as_ref())
-        {
-            *expr = replacement.clone();
-            return;
-        }
-        expr.visit_mut_children_with(self);
-    }
-
-    fn visit_mut_stmt(&mut self, stmt: &mut Stmt) {
-        if let Some(hole_name) = statement_hole_name(stmt)
-            && hole_name.starts_with(STMT_HOLE_PREFIX)
-            && let Some(replacement) = self.replacements.statements.get(hole_name)
-        {
-            *stmt = replacement.clone();
-            return;
-        }
-        stmt.visit_mut_children_with(self);
-    }
+fn expression_hole_name(expr: &Expr) -> Option<&str> {
+    let Expr::Ident(ident) = expr else {
+        return None;
+    };
+    ident
+        .sym
+        .as_ref()
+        .starts_with(EXPR_HOLE_PREFIX)
+        .then_some(ident.sym.as_ref())
 }
 
 fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
