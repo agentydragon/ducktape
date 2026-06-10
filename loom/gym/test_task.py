@@ -54,7 +54,8 @@ def test_resolution_before_cutoff_rejected() -> None:
 
 def _evidence(capture_date: date) -> EvidenceItem:
     return EvidenceItem(
-        url=f"https://web.archive.org/web/{capture_date:%Y%m%d}000000/https://example.com/article",
+        url="https://example.com/article",
+        archived_url=f"https://web.archive.org/web/{capture_date:%Y%m%d}000000/https://example.com/article",
         date=capture_date,
         title="An article",
     )
@@ -66,6 +67,31 @@ def test_evidence_after_cutoff_rejected() -> None:
     assert len(task.evidence) == 2
     with pytest.raises(ValidationError, match="evidence dated after the cutoff"):
         _binary_task(evidence=(_evidence(date(2024, 7, 2)),))
+
+
+def test_evidence_capture_pin_must_match_url_and_date() -> None:
+    # The archived_url must be a Wayback capture of exactly `url`, taken on `date`.
+    with pytest.raises(ValidationError, match="capture timestamp disagrees"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://web.archive.org/web/20240601000000/https://example.com/article",
+            date=date(2024, 6, 2),
+            title="An article",
+        )
+    with pytest.raises(ValidationError, match="archived capture is not of"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://web.archive.org/web/20240601000000/https://example.com/other",
+            date=date(2024, 6, 1),
+            title="An article",
+        )
+    with pytest.raises(ValidationError, match="not a Wayback capture URL"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://example.com/article",
+            date=date(2024, 6, 1),
+            title="An article",
+        )
 
 
 def test_task_json_round_trip() -> None:

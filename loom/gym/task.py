@@ -45,20 +45,39 @@ class CategoricalQuestion(BaseModel):
 Question = Annotated[BinaryQuestion | ScalarQuestion | CategoricalQuestion, Field(discriminator="kind")]
 
 
+WAYBACK_PREFIX = "https://web.archive.org/web/"
+
+
 class EvidenceItem(BaseModel):
     """A timestamped piece of public material a contestant may be shown.
 
-    The Wayback capture date is an airtight "existed by then" bound, so an item
-    dated at or before a task's `as_of` cannot leak post-cutoff information
-    (beyond what its title states — titles must not contain post-capture facts).
+    `url` is the original page URL — what prompts show, and what contestants
+    will fetch themselves once the wayback proxy lands (evidence content is
+    never pre-downloaded). `archived_url` pins the specific Wayback capture
+    proving the page existed by `date` — an airtight "existed by then" bound,
+    so an item dated at or before a task's `as_of` cannot leak post-cutoff
+    information (beyond what its title states — titles must not contain
+    post-capture facts).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    url: str = Field(description="Wayback-archived form: https://web.archive.org/web/<YYYYMMDDhhmmss>/<original>.")
+    url: str = Field(description="Original page URL (contestant-facing).")
+    archived_url: str = Field(description=f"Pinned capture: {WAYBACK_PREFIX}<YYYYMMDDhhmmss>/<url>.")
     # Annotated via the module to dodge the pydantic field-name/type-annotation clash (`date: date`).
     date: datetime.date = Field(description="The Wayback capture date.")
     title: str = Field(description="Short human-readable description of what the page says.")
+
+    @model_validator(mode="after")
+    def _check_capture_pin(self) -> EvidenceItem:
+        timestamp, _, original = self.archived_url.removeprefix(WAYBACK_PREFIX).partition("/")
+        if not self.archived_url.startswith(WAYBACK_PREFIX) or len(timestamp) != 14 or not timestamp.isdigit():
+            raise ValueError(f"not a Wayback capture URL: {self.archived_url=}")
+        if timestamp[:8] != f"{self.date:%Y%m%d}":
+            raise ValueError(f"capture timestamp disagrees with {self.date=}: {self.archived_url=}")
+        if original != self.url:
+            raise ValueError(f"archived capture is not of {self.url=}: {self.archived_url=}")
+        return self
 
 
 class BinaryOutcome(BaseModel):

@@ -91,7 +91,8 @@ EVIDENCE_TASK = BINARY_TASK.model_copy(
     update={
         "evidence": (
             EvidenceItem(
-                url="https://web.archive.org/web/20240619000000/https://example.com/forecast",
+                url="https://example.com/forecast",
+                archived_url="https://web.archive.org/web/20240619000000/https://example.com/forecast",
                 date=date(2024, 6, 19),
                 title="Index forecast roundup",
             ),
@@ -103,10 +104,10 @@ EVIDENCE_TASK = BINARY_TASK.model_copy(
 def test_prompts_render_evidence_only_when_present() -> None:
     prompt = build_prompt(EVIDENCE_TASK)
     assert "Dated evidence available to you" in prompt
-    assert (
-        "- 2024-06-19: Index forecast roundup "
-        "(https://web.archive.org/web/20240619000000/https://example.com/forecast)" in prompt
-    )
+    # Prompts show the original URL — the form contestants will fetch through
+    # the wayback proxy — never the pinned archive capture.
+    assert "- 2024-06-19: Index forecast roundup (https://example.com/forecast)" in prompt
+    assert "web.archive.org" not in prompt
     assert "Dated evidence" not in build_prompt(BINARY_TASK)
 
     bundle_prompt = build_bundle_prompt([EVIDENCE_TASK, CATEGORICAL_TASK])
