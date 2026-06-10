@@ -9,6 +9,9 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    # DaemonSet runs on roaming nodes (rugged, iguana) that may be offline.
+    # Without this, Helm waits for all pods including those stuck Pending/Terminating
+    # on offline nodes, causing the HelmRelease to hit RetriesExceeded and stall.
     disableWait: true
   chart:
     spec:
