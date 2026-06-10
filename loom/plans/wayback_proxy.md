@@ -1,18 +1,27 @@
 # Wayback proxy: date-clamped web access for contestants
 
-Status: **in progress** (direction approved 2026-06-10). W1 landed:
+Status: **W1–W4 all landed** (direction approved 2026-06-10). W1:
 `cluster/k8s/wayback-cache/` (ClusterIP-only — the gateway is public-only and
-an open IA relay is undesirable; dev access via `kubectl port-forward`). W2
-landed: per-agent proxy + demo compose + e2e at <../wayback_proxy/>, and the
-gym's Inspect harness generates a per-`as_of` sandbox compose (agent on an
+an open IA relay is undesirable; dev access via `kubectl port-forward`). W2:
+per-agent proxy + demo compose + e2e at <../wayback_proxy/>, and the gym's
+Inspect harness generates a per-`as_of` sandbox compose (agent on an
 internal-only network whose sole peer is the proxy; `WAYBACK_AS_OF` baked as
-a literal) with a mockllm e2e fetching a clamped page end to end on RBE. The
-proxy is the mini-implementation, not a WaybackProxy fork — upstream's
-selection is nearest-capture (can serve post-date content within
+a literal) with a mockllm e2e fetching a clamped page end to end on RBE. W3:
+served-evidence manifest read back into `Score.metadata`. W4: HTTPS MITM (see
+below). The proxy is the mini-implementation, not a WaybackProxy fork —
+upstream's selection is nearest-capture (can serve post-date content within
 `DATE_TOLERANCE`), its in-band settings page can change the date at runtime
 from the client side, CONNECT is fake-accepted, and the upstream host is
 hardcoded; hardening all that approximated writing the clamped proxy
 directly.
+
+A live agent harness (`loom/gym/agent_eval.py`, `//loom/gym:agent_eval_bin`)
+runs a real model against the full chain: the model client runs host-side
+against the cluster LiteLLM (Anthropic-shaped), the react agent's tools
+execute in the Docker sandbox whose only route is the date-clamped proxy, and
+`--wayback-upstream` points at the in-cluster authed pull-through cache
+(`WAYBACK_UPSTREAM_AUTH` carries the `Bearer` token). See "Live eval findings"
+below for the first end-to-end smoke.
 
 ## Goal
 
@@ -121,3 +130,45 @@ fetch them — and browse outward from them — rather than only reading titles.
   `SSL_CERT_FILE` & friends (the gym sandbox mounts the CA and drops the
   "rewrite to http" instruction). Remaining (optional): text-extraction
   convenience endpoint for dossier-style consumption.
+
+## Live eval findings (first end-to-end smoke, 2026-06-10)
+
+`agent_eval_bin` was run against the in-cluster authed `wayback-cache`
+(`--wayback-upstream https://wayback-cache.allegedly.works`, glm-4.5 via
+cluster LiteLLM) on an open-ended, no-starting-URL market. The full chain
+works: host-side model client → LiteLLM (through the claude-web egress MITM,
+TLS verified via the host CA bundle) → react agent in the Docker sandbox →
+embedded mitmproxy → authed cluster cache. The model does genuine open-ended
+archive research — for "did New Glenn reach orbit on its first launch?" it
+fetched Wikipedia (article + REST summary API), blueorigin.com, SpaceNews,
+Spaceflight Now, NASASpaceflight (its 2024-12-30 launch roundup), Ars Technica,
+and a Google-cache search, all as `https://` through the clamped proxy with no
+URL rewriting, and the served-evidence manifest came back in
+`Score.metadata["served_evidence"]` (the W3 read-back works with a live model).
+Findings to act on:
+
+- **`connection_strategy` should be `lazy`.** mitmproxy defaults to eager: for
+  every flow it opens an upstream TLS connection to the _original_ host before
+  our addon runs. That connection egresses through the claude-web TLS-inspecting
+  proxy and fails cert verification (`self-signed certificate in certificate
+chain`), logging a warning per request. It's harmless — the addon sets
+  `flow.response` from the cache so the eager connection is discarded — but
+  wasteful and noisy. Set `connection_strategy=lazy` in `server.py` so the
+  upstream socket is never opened.
+- **CN-hosted models refuse politically sensitive prompts.** glm-4.5 rejects
+  the China/Taiwan invasion market at the API (`invalid_request_error` code
+  `1301`, "potentially unsafe or sensitive content"). That market is now
+  commented out of `market_seed_tasks.py`; the panel is otherwise unaffected,
+  but cross-model runs must tolerate per-model task refusals rather than
+  aborting the whole eval.
+- **Cache returns 5xx under IA pressure.** Live CDX/content lookups returned a
+  mix of `403/502/503/504` from `wayback-cache` (IA throttling/erroring the
+  cold-miss tier-2 hop), so many of the agent's fetches failed. The clamp and
+  manifest logic are correct; this is an operational tuning matter for the
+  cache's `limit_req` pacing and IA retry/backoff, not a proxy bug.
+- **Submission must tolerate a malformed answer.** glm-4.5 researched the task
+  but its final `submit` carried an empty/non-JSON payload, so scoring raised
+  `JSONDecodeError` and the sample scored `value=nan` (no probability). A
+  well-formed run is the next thing to confirm, but the harness should also
+  degrade gracefully — record the parse failure as a scored miss with the
+  served-evidence manifest intact (already captured), not lose the whole sample.

@@ -1,11 +1,13 @@
 """Hand-curated tasks minted from top resolved binary markets on the live Manifold API.
 
-Thirty-four resolved YES/NO binary markets (each with ≥ 20 unique bettors)
+Thirty-three live YES/NO binary markets (each with ≥ 20 unique bettors)
 chosen from topical sweeps of the Manifold `search-markets` endpoint over
 markets resolved between 2024-08 and 2026-05 — recent enough that every model
 in `loom.gym.model_cutoffs` (including glm-4.5, knowledge cutoff 2024-06-30)
-is admissible at every task's `as_of`. The panel is balanced 17 YES / 17 NO
-(a skewed set would reward base-rate guessing) and spans US and non-US
+is admissible at every task's `as_of`. The curated set was 17 YES / 17 NO; the
+China/Taiwan invasion market (a NO) is commented out below because CN-hosted
+models refuse it at the API (moderation error 1301), leaving 17 YES / 16 NO
+active. The panel spans US and non-US
 politics, geopolitics, economic data, courts, space, public health, sports,
 tech business, and entertainment. Probabilities at `as_of` mix mid-range
 questions with calibration tails, including several markets that were
@@ -106,19 +108,21 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             ),
         ),
     ),
-    MarketSeedRecord(
-        market_id="k4XTBQLFuDvBljexbalv",
-        task_id="manifold-china-invades-taiwan-2024",
-        as_of=date(2024, 9, 15),
-        resolution_date=date(2025, 1, 1),
-        resolved_yes=False,
-        prob_at_as_of=0.0634,
-        question=(
-            "Will China invade mainland Taiwan by the end of 2024? Only an invasion of Taiwan's main island "
-            "counts; seizing outlying islands such as Kinmen or Matsu does not."
-        ),
-        evidence=(),
-    ),
+    # Disabled: Zhipu/GLM (and likely other CN-hosted models) reject this prompt at the
+    # API with content-moderation error 1301 ("potentially unsafe or sensitive content"),
+    # so the China/Taiwan invasion market is not runnable across the model panel. Kept here
+    # commented (not deleted) as a record of the curated set; re-enable if the panel drops
+    # CN-hosted models or they stop refusing it.
+    #   MarketSeedRecord(
+    #       market_id="k4XTBQLFuDvBljexbalv",
+    #       task_id="manifold-china-invades-taiwan-2024",
+    #       as_of=date(2024, 9, 15),
+    #       resolution_date=date(2025, 1, 1),
+    #       resolved_yes=False,
+    #       prob_at_as_of=0.0634,
+    #       question=(... China invade mainland Taiwan by end of 2024 ...),
+    #       evidence=(),
+    #   ),
     MarketSeedRecord(
         market_id="9ln3uPEbleLkjwQ5HR4b",
         task_id="manifold-biden-pardons-hunter",

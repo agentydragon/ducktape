@@ -381,8 +381,13 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   served-evidence manifest is read back per sample into
   `Score.metadata["served_evidence"]`. The mockllm e2e proves the loop on
   RBE: lead discovered in the evidence file → fetched through the clamped
-  proxy → manifest in the score. Pending: pointing real runs at the
-  cluster cache.
+  proxy → manifest in the score. A live agent harness
+  (`loom/gym/agent_eval.py`) drives a real model over the same chain against
+  the **in-cluster authed cache**; the first end-to-end smoke (glm-4.5, an
+  open-ended no-starting-URL market) confirmed genuine open-ended archive
+  research over `https://` with no URL rewriting. Follow-ups it surfaced are
+  tracked in <wayback_proxy.md> (mitmproxy `connection_strategy=lazy`,
+  per-model task refusals, cache 5xx under IA pressure).
 - **Bundle tasks — ✅ landed** (`bundle_tasks.py`): one dossier, one
   submission, **many named sub-questions** — more metrics per sampled
   token, and joint structure becomes scoreable. A bundle is a set of
