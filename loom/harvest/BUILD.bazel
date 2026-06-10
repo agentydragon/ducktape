@@ -1,0 +1,21 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "manifold_dump",
+    srcs = ["manifold_dump.py"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_manifold_dump",
+    srcs = ["test_manifold_dump.py"],
+    deps = [
+        ":manifold_dump",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
