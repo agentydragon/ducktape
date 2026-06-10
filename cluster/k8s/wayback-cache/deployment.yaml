@@ -20,7 +20,9 @@ spec:
         app.kubernetes.io/name: wayback-cache
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        # Same zone pinning as other seaweedfs-ovh consumers (forgejo): the
+        # cache lives on always-on OVH nodes, independent of home Proxmox.
+        topology.kubernetes.io/zone: hil-ovh
       securityContext:
         # nginx:alpine workers run as uid/gid 101; make the PVC writable.
         fsGroup: 101
@@ -62,4 +64,4 @@ spec:
             name: wayback-cache-config
         - name: cache
           persistentVolumeClaim:
-            claimName: wayback-cache-data
+            claimName: wayback-cache-data-ovh
