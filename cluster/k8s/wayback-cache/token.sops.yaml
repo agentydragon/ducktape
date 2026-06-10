@@ -1,0 +1,35 @@
+# Bearer token for the cache's gateway-facing :8090 listener. Consumed by the
+# wayback-cache deployment (envsubst into nginx.conf) and by the per-agent
+# wayback proxy (WAYBACK_UPSTREAM_AUTH) when its upstream is the public route.
+apiVersion: v1
+kind: Secret
+metadata:
+    name: wayback-cache-token
+    namespace: wayback-cache
+type: Opaque
+stringData:
+    token: ENC[AES256_GCM,data:RTVgsoLI639MDZ+8QiVjpWqJjDZnF5ZXemTvMS4PqtLgS+7R6tMgDE3jse1GqARRE6XefYNHILyR17V2oSzPRw==,iv:PbR8zS81u9pqXT88jE5A+av6ECpgWqeiKY1knYD8C/Y=,tag:4kUIbsZ1xk9ETVnSt0Jzjg==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6NUZvZWQzWE5SOTM5L0lz
+            b25kWExoOFdPU045QVlIRk8wUVJ0anVnNHljCmtIdFIxR0p5OUo2aGkrYVY0czM5
+            N1JLRmdNbnBWQVBWWTdKRHBGTlh6RjAKLS0tIFk2bnVYUjM5VEpMZHl4b3k0Nm5z
+            cVU1YkdrUTUwN3EzY2h5b3YyM1luTVEK60mWe89fn0DOektnI022CEuGrlWEVExV
+            m+Vlw+o8DObeJaPFnfahsJzVIoYG8XrGtQGLLRi4etdcGM/7khvkNg==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmd3NjOXhRZEtGeWlmS0s5
+            bU1OVVV0RDVncktSWnFydklzY2tMdVNiYTE4CitIWE1MQUxtNEw5WDJEM1RMMWF4
+            ajJXUGMyN1JPS09qUVVQU3EvaytPM2sKLS0tIENicmkzMGprNlBqSlpIbE93UUdK
+            ZkNKbWJxTXhSMzFHeG0vMDF6QlJqN1EKESXkyXRKaZ1r3SwReeRm1Ty09R++uzId
+            0Bqaw7Z5WWM47gizCMhkAKJLUTsDRrXlaV3ddVJVoAWErw6L8mlPcg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-10T10:40:59Z"
+    mac: ENC[AES256_GCM,data:z/jvuMxwdokeGxRlZTGA1MwKYSDXNYBE8mgR4T8peVxyiQa/G20pWI1OLB0BzbHXNJJ5W/71q6qdlEt73zdNob7h9tYZdm1l6tMOJEaISJFKhP99gFEPVTaigxTzoQX/84jNAtvLYkPNl2KQaCf+zUwt2/jVetMa45HSB1MrD5g=,iv:fEFxhb72Nd5dGO/NbLyiNKx7iVz9e1/NQ4RhTsbUk60=,tag:CgF0mn1mU1agcuSXKRbMOg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

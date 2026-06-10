@@ -6,6 +6,8 @@ resources:
   - pvc.yaml
   - deployment.yaml
   - service.yaml
+  - httproute.yaml
+  - token.sops.yaml
 
 configMapGenerator:
   - name: wayback-cache-config

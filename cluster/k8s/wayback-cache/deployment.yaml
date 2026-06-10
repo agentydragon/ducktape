@@ -32,9 +32,24 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+            - containerPort: 8090
+              name: authed
+          env:
+            # nginx:alpine entrypoint renders templates/*.template with
+            # envsubst, substituting only WAYBACK_CACHE_TOKEN (the filter) so
+            # nginx's own $variables survive. Output overwrites nginx.conf.
+            - name: WAYBACK_CACHE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: wayback-cache-token
+                  key: token
+            - name: NGINX_ENVSUBST_FILTER
+              value: WAYBACK_CACHE_TOKEN
+            - name: NGINX_ENVSUBST_OUTPUT_DIR
+              value: /etc/nginx
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx/nginx.conf
+              mountPath: /etc/nginx/templates/nginx.conf.template
               subPath: nginx.conf
               readOnly: true
             - name: cache
