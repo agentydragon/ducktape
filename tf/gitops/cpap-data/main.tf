@@ -73,6 +73,15 @@ resource "forgejo_collaborator" "reader" {
   permission    = "read"
 }
 
+# Read-only access for the claude agent account (user provisioned by
+# tf/gitops/forgejo-claude; until it exists this resource fails and the
+# Terraform CR retries on its interval).
+resource "forgejo_collaborator" "claude" {
+  repository_id = forgejo_repository.data.id
+  user          = "claude"
+  permission    = "read"
+}
+
 # Write credentials for the sync CronJob, consumed in place in cpap-sync.
 resource "kubernetes_secret" "cpap_data_git_write" {
   metadata {
