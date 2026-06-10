@@ -20,7 +20,7 @@ import os
 import sys
 import tempfile
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pygit2
@@ -31,6 +31,17 @@ from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceSource
 logger = logging.getLogger(__name__)
 
 _AUTHOR = pygit2.Signature("augur evidence scraper", "augur@allegedly.works")
+
+# Default freshness window: skip the whole refresh if HEAD (the last committed refresh) is
+# younger than this. < 24h so the daily CronJob still refreshes every day, but enough to skip
+# closely-spaced re-runs (manual triggers, retries) so they don't re-hammer the upstreams.
+DEFAULT_MAX_AGE = timedelta(hours=20)
+
+
+def _head_committed_at(repo: pygit2.Repository) -> datetime:
+    """UTC time of the tip commit — i.e. when the evidence was last refreshed."""
+    commit = repo[repo.head.target].peel(pygit2.Commit)
+    return datetime.fromtimestamp(commit.commit_time, UTC)
 
 
 async def write_sources(workdir: Path, sources: Iterable[EvidenceSource], *, http_get: HttpGet) -> int:
@@ -89,6 +100,7 @@ async def run_scrape(
     http_get: HttpGet,
     now: datetime,
     depth: int = 1,
+    max_age: timedelta | None = None,
 ) -> int:
     """Clone, refresh every source, commit-if-changed + push.
 
@@ -99,6 +111,12 @@ async def run_scrape(
     the refresh and commit on top of it, and the full history stays server-side in Forgejo.
     Tests against a local filesystem remote must pass `depth=0` (libgit2's local transport
     does not support shallow fetch).
+
+    `max_age` (when set) skips the refresh entirely if HEAD — the last committed refresh — is
+    younger than it: the committed evidence is still fresh, so re-GETting the upstreams would
+    just re-download unchanged data (and burn upstream rate limits). Every run commits all
+    sources in one commit, so HEAD's age is each file's last-change age — making this the
+    per-file commit-age check the shallow clone can't otherwise compute (no history at depth 1).
     """
     # Empty creds (tests against a local filesystem remote) clone without a credential callback.
     callbacks = (
@@ -109,6 +127,9 @@ async def run_scrape(
         repo = pygit2.clone_repository(
             git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=depth
         )
+        if max_age is not None and (age := now - _head_committed_at(repo)) < max_age:
+            logger.info("evidence refreshed %s ago (< %s); skipping refetch", age, max_age)
+            return 0
         failures = await write_sources(repo_path, sources, http_get=http_get)
         commit_and_push(repo, branch, now=now, callbacks=callbacks)
     return 1 if failures else 0
@@ -120,6 +141,12 @@ async def async_main(argv: list[str] | None = None) -> int:
         "--git-url", required=True, help="Evidence repo http(s) URL (creds via GIT_USERNAME/GIT_PASSWORD)."
     )
     parser.add_argument("--branch", default="main", help="Branch to clone + push (default: main).")
+    parser.add_argument(
+        "--max-age-hours",
+        type=float,
+        default=DEFAULT_MAX_AGE.total_seconds() / 3600,
+        help="Skip the refresh if the committed evidence is younger than this many hours (0 to always refetch).",
+    )
     args = parser.parse_args(argv)
 
     return await run_scrape(
@@ -130,6 +157,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         password=os.environ["GIT_PASSWORD"],
         http_get=_real_http_get,
         now=datetime.now(UTC),
+        max_age=timedelta(hours=args.max_age_hours) if args.max_age_hours > 0 else None,
     )
 
 

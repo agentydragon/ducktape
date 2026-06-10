@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -55,6 +55,11 @@ def _remote_blob(remote: Path, path: str) -> bytes:
 
 def _remote_last_message(remote: Path) -> str:
     return pygit2.Repository(str(remote)).revparse_single("main").peel(pygit2.Commit).message
+
+
+def _remote_head_time(remote: Path) -> datetime:
+    commit = pygit2.Repository(str(remote)).revparse_single("main").peel(pygit2.Commit)
+    return datetime.fromtimestamp(commit.commit_time, UTC)
 
 
 async def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
@@ -147,6 +152,55 @@ async def test_run_scrape_returns_nonzero_when_a_source_fails(tmp_path: Path) ->
     assert (
         await run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW, depth=0) == 1
     )
+
+
+async def test_run_scrape_skips_when_evidence_is_fresh(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_remote(remote)
+    fetched = False
+
+    async def get(url: str, user_agent: str) -> bytes:
+        nonlocal fetched
+        fetched = True
+        return b"body"
+
+    # HEAD committed 1h ago, max_age 20h -> still fresh, so no upstream fetch and no new commit.
+    fresh_now = _remote_head_time(remote) + timedelta(hours=1)
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=get,
+        now=fresh_now,
+        depth=0,
+        max_age=timedelta(hours=20),
+    )
+    assert code == 0
+    assert not fetched
+    assert "evidence: refresh" not in _remote_last_message(remote)
+
+
+async def test_run_scrape_refetches_when_evidence_is_stale(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_remote(remote)
+
+    # HEAD committed 48h ago, max_age 20h -> stale, so it refetches and commits.
+    stale_now = _remote_head_time(remote) + timedelta(hours=48)
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=_constant_get(b"body"),
+        now=stale_now,
+        depth=0,
+        max_age=timedelta(hours=20),
+    )
+    assert code == 0
+    assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
 
 
 if __name__ == "__main__":
