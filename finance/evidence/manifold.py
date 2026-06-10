@@ -74,7 +74,9 @@ def load_market(data: bytes) -> ManifoldMarket:
 
 
 def _ms_to_datetime(column: str) -> pl.Expr:
-    return pl.from_epoch(pl.col(column), time_unit="ms").dt.replace_time_zone("UTC")
+    # The explicit final cast pins the column dtype (epoch-ms source precision)
+    # regardless of what unit from_epoch/replace_time_zone produce internally.
+    return pl.from_epoch(pl.col(column), time_unit="ms").dt.replace_time_zone("UTC").cast(pl.Datetime("ms", "UTC"))
 
 
 _BETS_SCHEMA = {

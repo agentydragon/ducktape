@@ -20,6 +20,8 @@ py_library(
     srcs = ["fetch.py"],
     deps = [
         ":http_fetch",
+        ":market_mirror",
+        "//finance/evidence:markets",
         "//finance/evidence:sources",
         "@pypi//pydantic",
         "@pypi//pygit2",
@@ -28,8 +30,8 @@ py_library(
 
 py_binary(
     name = "evidence",
-    main_module = "finance.scraper.fetch",
-    deps = [":fetch"],
+    main_module = "finance.scraper.scrape",
+    deps = [":scrape"],
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
@@ -41,8 +43,8 @@ py_binary(
 # certifi via httpx (see http_fetch).
 aspect_py_binary(
     name = "evidence_image_bin",
-    main = "fetch.py",
-    deps = [":fetch"],
+    main = "scrape.py",
+    deps = [":scrape"],
 )
 
 py_image_layer(
@@ -80,11 +82,64 @@ py_test(
     deps = [
         ":fetch",
         ":http_fetch",
+        ":market_mirror",
         "//:conftest",
+        "//finance/evidence:markets",
         "//finance/evidence:sources",
         "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "market_mirror",
+    srcs = ["market_mirror.py"],
+    deps = [
+        ":http_fetch",
+        "//finance/evidence:markets",
+    ],
+)
+
+py_library(
+    name = "scrape",
+    srcs = ["scrape.py"],
+    deps = [
+        ":fetch",
+        "//finance/augur/calibration:catalog",
+        "//finance/evidence:markets",
+    ],
+)
+
+py_test(
+    name = "test_market_mirror",
+    srcs = ["test_market_mirror.py"],
+    deps = [
+        ":http_fetch",
+        ":market_mirror",
+        "//:conftest",
+        "//finance/evidence:markets",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_scrape",
+    srcs = ["test_scrape.py"],
+    data = [
+        "//finance/augur/calibration:example_openai_catalog",
+        "//finance/evidence:example_market_roster.yaml",
+    ],
+    deps = [
+        ":scrape",
+        "//:conftest",
+        "//finance/augur/calibration:catalog",
+        "//finance/evidence:markets",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

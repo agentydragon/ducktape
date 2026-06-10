@@ -2,6 +2,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["example_market_roster.yaml"])
+
 py_library(
     name = "loading",
     srcs = ["loading.py"],

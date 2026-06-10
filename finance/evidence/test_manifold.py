@@ -81,7 +81,7 @@ def test_load_market_multiple_choice_has_no_probability() -> None:
 def test_bets_frame_schema_and_order() -> None:
     frame = bets_frame(_jsonl([_bet("b1", 1_000, 0.3), _bet("b2", 2_000, 0.5)]))
     assert frame["id"].to_list() == ["b1", "b2"]
-    assert frame["created_time"].dtype.time_zone == "UTC"
+    assert frame["created_time"].dtype == pl.Datetime("ms", "UTC")
     assert frame["created_time"].to_list() == [_at(1_000), _at(2_000)]
     assert frame["prob_after"].to_list() == [0.3, 0.5]
 
@@ -89,7 +89,7 @@ def test_bets_frame_schema_and_order() -> None:
 def test_bets_frame_empty() -> None:
     frame = bets_frame(b"")
     assert frame.is_empty()
-    assert frame["created_time"].dtype.time_zone == "UTC"
+    assert frame["created_time"].dtype == pl.Datetime("ms", "UTC")
 
 
 def test_bet_record_strictly_validates() -> None:
