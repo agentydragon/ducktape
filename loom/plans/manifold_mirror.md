@@ -26,10 +26,13 @@ said then"), which is the M2 forward-capture story falling out for free.
     appends the gap atomically (Manifold deep entries only);
   - `comments.jsonl` — full deterministic rewrite each sync (comments are
     editable/deletable upstream).
-- **Roster**: deployment config, not code — ConfigMap-mounted YAML files
-  (`--roster`, schema `finance.evidence.markets.MarketRoster`; format
-  documented by `finance/evidence/example_market_roster.yaml`), unioned with
-  every market the calibration catalogs reference (`--catalog`).
+- **Roster**: deployment config — ConfigMap-mounted YAML files (`--roster`,
+  schema `finance.evidence.markets.MarketRoster`; format documented by
+  `finance/evidence/example_market_roster.yaml`), unioned with every market
+  the calibration catalogs reference (`--catalog`). The production roster
+  lives in ducktape at `cluster/k8s/budget/market-roster/` (reflected
+  budget → augur, like the evidence git creds), seeded from the loom gym's
+  curated panel; `test_market_seed_tasks` asserts panel ⊆ roster.
 - **Pacing**: one global limiter (`RequestPacer`, 0.2s min interval ≈ 300
   req/min) well under Manifold's 500 req/min; reuses `http_fetch`'s
   tenacity/User-Agent discipline.
@@ -62,12 +65,23 @@ said then"), which is the M2 forward-capture story falling out for free.
   valkey as the live-read path. Kalshi bonus: Kalshi purges its settled back
   catalog, so the dated git snapshots are the only history that will exist.
 - **Layout**: `markets/<platform>/<id>/`, not `manifold/<id>/`.
-- **Roster is a ConfigMap-mounted YAML**, not a checked-in Python module —
-  `loom/gym/market_seed_tasks.py` never existed; the curated panel joins the
-  deployed roster when it materializes.
+- **Roster is a ConfigMap-mounted YAML**, not a checked-in Python module.
+  The curated panel (`loom/gym/market_seed_tasks.py`, landed separately in
+  #1974) seeds the production roster ConfigMap, with a gym test guarding
+  coverage.
 - **MULTIPLE_CHOICE markets are fine for deep capture** (raw capture is
   shape-agnostic; bets carry `answerId`); whole-market `prob_at` is
   binary-only and MC consumers pre-filter on `answer_id`.
+
+## Deploy wiring (gaffer-private)
+
+The augur namespace is reconciled from gaffer-private; remaining steps there:
+hourly CronJob schedule; mount the reflected `market-roster` ConfigMap and the
+calibration-catalog ConfigMap and pass `--roster` / `--catalog`; drop
+`AUGUR_MARKET_CACHE_URL`/TTL/retention envs from the Deployment; delete the
+warm-cache CronJob + `augur-market-warmer` image refs; decommission the
+backing valkey. Optionally pass `MANIFOLD_API_KEY` (already reflected into
+augur) to the scraper for rate headroom.
 
 ## Remaining (was M3)
 

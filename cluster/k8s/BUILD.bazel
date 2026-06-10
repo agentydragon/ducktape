@@ -19,3 +19,11 @@ filegroup(
     ],
     visibility = ["//cluster:__subpackages__"],
 )
+
+# The production mirror roster, consumed by loom/gym's panel-coverage test (the gym
+# panel and the deployed roster must not drift).
+filegroup(
+    name = "market_roster_yaml",
+    srcs = ["budget/market-roster/market-roster.yaml"],
+    visibility = ["//loom/gym:__pkg__"],
+)

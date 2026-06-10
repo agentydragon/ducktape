@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pytest_bazel
 
+from finance.evidence.markets import Platform, load_roster
 from loom.gym.baseline_llm import build_prompt
 from loom.gym.market_seed_tasks import MARKET_PROB_AT_AS_OF, MARKET_SEED_RECORDS, MARKET_SEED_TASKS
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import WAYBACK_PREFIX, Task
+from util.bazel.runfiles import get_required_path
 
 
 def test_task_ids_unique_across_seed_families() -> None:
@@ -19,6 +21,16 @@ def test_market_ids_unique() -> None:
     # ids would mean two tasks silently sharing one upstream market.
     market_ids = [record.market_id for record in MARKET_SEED_RECORDS]
     assert len(set(market_ids)) == len(market_ids)
+
+
+def test_panel_markets_are_in_the_deployed_mirror_roster() -> None:
+    """Every panel market must be deep-rostered in the deployed mirror ConfigMap
+    (cluster/k8s/budget/market-roster/), so panel data stays reproducible from the
+    mirror instead of trusted from one-off fetches."""
+    roster = load_roster(get_required_path("_main/cluster/k8s/budget/market-roster/market-roster.yaml"))
+    rostered = {entry.market_id for entry in roster if entry.platform is Platform.MANIFOLD and entry.deep}
+    missing = {record.market_id for record in MARKET_SEED_RECORDS} - rostered
+    assert not missing, f"panel markets missing from the mirror roster ConfigMap: {sorted(missing)}"
 
 
 def test_market_baseline_probs_cover_exactly_the_market_tasks() -> None:

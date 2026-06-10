@@ -189,6 +189,7 @@ resources:
   # --- budget (Beancount ledger + exporter + Fava) ---
   - budget/namespace/flux-kustomization.yaml
   - budget/app/flux-kustomization.yaml
+  - budget/market-roster/flux-kustomization.yaml
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml

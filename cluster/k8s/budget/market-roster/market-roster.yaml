@@ -1,0 +1,143 @@
+# Production mirror roster for the augur-evidence scraper (schema:
+# finance.evidence.markets.MarketRoster). Deployed as the `market-roster`
+# ConfigMap (see kustomization.yaml) and mounted into the scraper CronJob
+# (`--roster`). Seeded from the loom gym's curated panel
+# (loom/gym/market_seed_tasks.py); test_market_seed_tasks asserts every panel
+# market stays rostered. Deep capture: market.json + bets.jsonl + comments.jsonl.
+markets:
+  - platform: manifold
+    market_id: hKB9iD8knG4R2RuSyyCu
+    deep: true
+    note: manifold-bitcoin-100k-2024
+  - platform: manifold
+    market_id: k4XTBQLFuDvBljexbalv
+    deep: true
+    note: manifold-china-invades-taiwan-2024
+  - platform: manifold
+    market_id: 9ln3uPEbleLkjwQ5HR4b
+    deep: true
+    note: manifold-biden-pardons-hunter
+  - platform: manifold
+    market_id: M5HyCkqDZ3CdIRLa7fKp
+    deep: true
+    note: manifold-verstappen-2024-f1-title
+  - platform: manifold
+    market_id: d1t4k3nz3t
+    deep: true
+    note: manifold-trump-wins-2024-election
+  - platform: manifold
+    market_id: ha8siwsis8
+    deep: true
+    note: manifold-barnier-pm-on-2025-01-01
+  - platform: manifold
+    market_id: W6sxwGRpBmQOiooR560w
+    deep: true
+    note: manifold-assad-in-power-end-2024
+  - platform: manifold
+    market_id: tSmI97iXzTCHLh61JPTs
+    deep: true
+    note: manifold-ulbricht-clemency-before-march-2025
+  - platform: manifold
+    market_id: aRIE73wma9FTmrEL1tEs
+    deep: true
+    note: manifold-canada-conservative-majority
+  - platform: manifold
+    market_id: O8HQvFthF03qYOSaUo9R
+    deep: true
+    note: manifold-new-glenn-orbit-first-launch
+  - platform: manifold
+    market_id: 02n9uqqCSl
+    deep: true
+    note: manifold-gabbard-confirmed-dni
+  - platform: manifold
+    market_id: ti5toE64slB9MgfzSDBR
+    deep: true
+    note: manifold-afd-beats-spd-2025
+  - platform: manifold
+    market_id: CkcepPGTqdaOmeYWcWgj
+    deep: true
+    note: manifold-h5n1-100-us-cases-by-2026
+  - platform: manifold
+    market_id: r7CIGIOnWlD8OTe0XPHZ
+    deep: true
+    note: manifold-capital-one-discover-merger
+  - platform: manifold
+    market_id: glI2NUEE2A
+    deep: true
+    note: manifold-labor-wins-2025-australian-election
+  - platform: manifold
+    market_id: gk05ncy0lw
+    deep: true
+    note: manifold-minecraft-outgrosses-sonic-3
+  - platform: manifold
+    market_id: 4gdkzbfvtt
+    deep: true
+    note: manifold-russia-ukraine-ceasefire-aug-2025
+  - platform: manifold
+    market_id: yZpALnnSSy
+    deep: true
+    note: manifold-celtics-win-2025-nba-finals
+  - platform: manifold
+    market_id: 2SA2SUCPI2
+    deep: true
+    note: manifold-us-strikes-iran-2025
+  - platform: manifold
+    market_id: LZlomZnzAVwVvaPmWUy5
+    deep: true
+    note: manifold-gpt5-before-aug-2025
+  - platform: manifold
+    market_id: D5o5fIGpQnjANdl2DxdU
+    deep: true
+    note: manifold-us-recession-in-2025
+  - platform: manifold
+    market_id: 3ns0hmvp6i
+    deep: true
+    note: manifold-sweden-wins-eurovision-2025
+  - platform: manifold
+    market_id: tu2ouer9zq
+    deep: true
+    note: manifold-ai-imo-gold-2025
+  - platform: manifold
+    market_id: q59su0Cs5l
+    deep: true
+    note: manifold-mangione-murder-conviction-2025
+  - platform: manifold
+    market_id: s5sgqZ9qQ5
+    deep: true
+    note: manifold-powell-out-before-2026
+  - platform: manifold
+    market_id: 2z2Q9zdN60
+    deep: true
+    note: manifold-fed-cuts-september-2025
+  - platform: manifold
+    market_id: sPqzu6CUPZ
+    deep: true
+    note: manifold-trump-2025-nobel-peace-prize
+  - platform: manifold
+    market_id: kt6f2t09kv
+    deep: true
+    note: manifold-us-govt-shutdown-2025
+  - platform: manifold
+    market_id: n6llpZNcUU
+    deep: true
+    note: manifold-uk-wealth-tax-2025
+  - platform: manifold
+    market_id: NscOsEu2qs
+    deep: true
+    note: manifold-yoon-insurrection-conviction
+  - platform: manifold
+    market_id: lqsLQ9NPnC
+    deep: true
+    note: manifold-scotus-upholds-trump-tariffs
+  - platform: manifold
+    market_id: LfRsm10GqnSzXQVeAon3
+    deep: true
+    note: manifold-artemis-2-crew-returns-alive
+  - platform: manifold
+    market_id: ZJ9LlySKX4dldqcpdQ4G
+    deep: true
+    note: manifold-orban-stays-pm-2026
+  - platform: manifold
+    market_id: mIQ8YdCJlAcMz9fFmIUX
+    deep: true
+    note: manifold-italy-2026-world-cup
