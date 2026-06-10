@@ -30,6 +30,8 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
+import yaml
+
 # Aliased to avoid colliding with the gym's own Task.
 from inspect_ai import Task as InspectTask
 from inspect_ai.agent import AgentSubmit, react
@@ -62,84 +64,93 @@ DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
 HOST_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
 _PROXY_EGRESS_CA = "/etc/ssl/proxy-egress-ca.crt"
 
-# Generated per as_of: WAYBACK_AS_OF is a baked literal, not compose env
-# interpolation, so the clamp is pinned per sandbox and can never be
-# influenced from inside the agent container.
-_COMPOSE_TEMPLATE = """\
-services:
-  default:
-    image: {agent_image}
-    x-local: true
-    init: true
-    command: tail -f /dev/null
-    cpus: 1.0
-    mem_limit: 2gb
-    # The internal network's only other member is the proxy: every web
-    # request goes through the date clamp; nothing else is routable.
-    networks: [sandbox]
-    environment:
-      http_proxy: http://proxy:8080
-      HTTP_PROXY: http://proxy:8080
-      https_proxy: http://proxy:8080
-      HTTPS_PROXY: http://proxy:8080
-      # The proxy MITMs TLS with its own CA (written to the shared volume at
-      # startup); trust it through the standard env-var contract so https://
-      # fetches validate without rewriting to http://.
-      SSL_CERT_FILE: /wayback-ca/mitmproxy-ca-cert.pem
-      REQUESTS_CA_BUNDLE: /wayback-ca/mitmproxy-ca-cert.pem
-      CURL_CA_BUNDLE: /wayback-ca/mitmproxy-ca-cert.pem
-      NODE_EXTRA_CA_CERTS: /wayback-ca/mitmproxy-ca-cert.pem
-    volumes:
-      - wayback-ca:/wayback-ca:ro
-    depends_on:
-      proxy:
-        condition: service_healthy
+AGENT_CA = "/wayback-ca/mitmproxy-ca-cert.pem"
+# Probe through the proxy itself (mitmproxy has no origin-form endpoint): the
+# addon answers the reserved wayback-proxy.local host directly.
+_HEALTH_PROBE = (
+    "import urllib.request; "
+    'urllib.request.build_opener(urllib.request.ProxyHandler({"http": "http://127.0.0.1:8080"}))'
+    '.open("http://wayback-proxy.local/healthz", timeout=3)'
+)
 
-  proxy:
-    # x-local: the proxy image is bazel-built and docker-loaded, never in a
-    # registry — without this Inspect attempts a doomed `compose pull`.
-    image: {image}
-    x-local: true
-    init: true
-    # Run as root only to populate the fresh (root-owned) wayback-ca volume
-    # with the generated CA; the agent mounts it read-only.
-    user: "0:0"
-    networks: [sandbox, egress]
-    environment:
-      WAYBACK_AS_OF: "{as_of}"
-      WAYBACK_UPSTREAM: "{upstream}"
-      WAYBACK_UPSTREAM_AUTH: "{upstream_auth}"
-      WAYBACK_MANIFEST_PATH: "{manifest_path}"
-      WAYBACK_CONFDIR: /wayback-ca
-{proxy_egress_ca_env}    volumes:
-      - wayback-ca:/wayback-ca
-{proxy_egress_ca_volume}    extra_hosts:
-      # Lets upstream point at a host port: a kubectl port-forward of the
-      # cluster wayback-cache, or a test's in-process fake IA.
-      - host.docker.internal:host-gateway
-    healthcheck:
-      # Probe through the proxy (mitmproxy has no origin-form endpoint): the
-      # addon answers the reserved wayback-proxy.local host directly.
-      test:
-        - CMD
-        - python3
-        - -c
-        # Single-quoted YAML scalar: the inline dict's ": " would otherwise make
-        # YAML parse this block-sequence item as a mapping (yaml: did not find expected key).
-        - 'import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({{"http": "http://127.0.0.1:8080"}})).open("http://wayback-proxy.local/healthz", timeout=3)'
-      interval: 2s
-      timeout: 5s
-      retries: 15
-      start_period: 10s
 
-networks:
-  sandbox:
-    internal: true
-  egress: {{}}
+def _sandbox_compose(
+    as_of: date, upstream: str, upstream_auth: str, agent_image: str, manifest_path: str
+) -> dict[str, object]:
+    """The per-as_of sandbox compose as a data structure (serialized with yaml).
 
-volumes:
-  wayback-ca: {{}}
-"""
+    WAYBACK_AS_OF is a baked literal, not compose env interpolation, so the
+    clamp is pinned per sandbox and can never be influenced from inside the
+    agent container. The agent's only network peer is the proxy (internal
+    network, no other route); it trusts the proxy's MITM CA via the standard
+    env-var contract so https:// fetches validate without rewriting to http://.
+    """
+    proxy_env = {
+        "WAYBACK_AS_OF": str(as_of),
+        "WAYBACK_UPSTREAM": upstream,
+        "WAYBACK_UPSTREAM_AUTH": upstream_auth,
+        "WAYBACK_MANIFEST_PATH": manifest_path,
+        "WAYBACK_CONFDIR": "/wayback-ca",
+    }
+    proxy_volumes = ["wayback-ca:/wayback-ca"]
+    # Mount the host CA bundle into the proxy when present so its upstream HTTPS
+    # validates behind a TLS-inspecting egress proxy (the agent never sees it).
+    if HOST_CA_BUNDLE.is_file():
+        proxy_env["SSL_CERT_FILE"] = _PROXY_EGRESS_CA
+        proxy_env["REQUESTS_CA_BUNDLE"] = _PROXY_EGRESS_CA
+        proxy_volumes.append(f"{HOST_CA_BUNDLE}:{_PROXY_EGRESS_CA}:ro")
+    return {
+        "services": {
+            "default": {
+                "image": agent_image,
+                "x-local": True,
+                "init": True,
+                "command": "tail -f /dev/null",
+                "cpus": 1.0,
+                "mem_limit": "2gb",
+                "networks": ["sandbox"],
+                "environment": {
+                    "http_proxy": "http://proxy:8080",
+                    "HTTP_PROXY": "http://proxy:8080",
+                    "https_proxy": "http://proxy:8080",
+                    "HTTPS_PROXY": "http://proxy:8080",
+                    "SSL_CERT_FILE": AGENT_CA,
+                    "REQUESTS_CA_BUNDLE": AGENT_CA,
+                    "CURL_CA_BUNDLE": AGENT_CA,
+                    "NODE_EXTRA_CA_CERTS": AGENT_CA,
+                },
+                "volumes": ["wayback-ca:/wayback-ca:ro"],
+                "depends_on": {"proxy": {"condition": "service_healthy"}},
+            },
+            "proxy": {
+                # x-local: the proxy image is bazel-built and docker-loaded, never
+                # in a registry — without this Inspect attempts a doomed `compose pull`.
+                "image": WAYBACK_PROXY_IMAGE_TAG,
+                "x-local": True,
+                "init": True,
+                # Root only to populate the fresh (root-owned) wayback-ca volume
+                # with the generated CA; the agent mounts it read-only.
+                "user": "0:0",
+                "networks": ["sandbox", "egress"],
+                "environment": proxy_env,
+                "volumes": proxy_volumes,
+                # host.docker.internal lets upstream point at a host port: a kubectl
+                # port-forward of the cluster wayback-cache, or a test's fake IA.
+                "extra_hosts": ["host.docker.internal:host-gateway"],
+                "healthcheck": {
+                    "test": ["CMD", "python3", "-c", _HEALTH_PROBE],
+                    "interval": "2s",
+                    "timeout": "5s",
+                    "retries": 15,
+                    "start_period": "10s",
+                },
+            },
+        },
+        # internal: the agent has no route out except the proxy.
+        "networks": {"sandbox": {"internal": True}, "egress": {}},
+        "volumes": {"wayback-ca": {}},
+    }
+
 
 AGENT_PROMPT = (
     "You are a careful forecaster. You have one tool: bash. Data files are under /data (start with "
@@ -164,25 +175,8 @@ def write_sandbox_compose(
 ) -> Path:
     """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
     path = directory / f"sandbox-{as_of}.yaml"
-    # Mount the host CA bundle into the proxy when present so its upstream HTTPS
-    # validates behind a TLS-inspecting egress proxy (the agent never sees it).
-    if HOST_CA_BUNDLE.is_file():
-        proxy_egress_ca_env = f"      SSL_CERT_FILE: {_PROXY_EGRESS_CA}\n      REQUESTS_CA_BUNDLE: {_PROXY_EGRESS_CA}\n"
-        proxy_egress_ca_volume = f"      - {HOST_CA_BUNDLE}:{_PROXY_EGRESS_CA}:ro\n"
-    else:
-        proxy_egress_ca_env = proxy_egress_ca_volume = ""
-    path.write_text(
-        _COMPOSE_TEMPLATE.format(
-            agent_image=agent_image,
-            image=WAYBACK_PROXY_IMAGE_TAG,
-            as_of=as_of,
-            upstream=upstream,
-            upstream_auth=upstream_auth,
-            manifest_path=MANIFEST_PATH,
-            proxy_egress_ca_env=proxy_egress_ca_env,
-            proxy_egress_ca_volume=proxy_egress_ca_volume,
-        )
-    )
+    compose = _sandbox_compose(as_of, upstream, upstream_auth, agent_image, MANIFEST_PATH)
+    path.write_text(yaml.safe_dump(compose, sort_keys=False))
     return path
 
 

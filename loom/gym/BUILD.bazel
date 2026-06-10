@@ -139,6 +139,8 @@ py_library(
         ":scoring",
         ":task",
         "@pypi//inspect_ai",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
     ],
 )
 
