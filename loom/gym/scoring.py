@@ -32,7 +32,11 @@ class BinaryAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["binary"] = "binary"
-    p: float = Field(ge=0.0, le=1.0, description="Stated probability that the question resolves YES.")
+    # Strictly in (0, 1): p=0/1 are numerically degenerate (infinite log loss)
+    # and express impossible certainty; a forecaster must state a real probability.
+    p: float = Field(
+        gt=0.0, lt=1.0, description="Stated probability that the question resolves YES, strictly in (0, 1)."
+    )
 
 
 class QuantileAnswer(BaseModel):

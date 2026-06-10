@@ -446,6 +446,34 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   currently hand-set priors — get tuned against held-out gym loss instead of
   argued about.
 
+## Roadmap: decouple events from tasks
+
+Today `loom/gym/task.py` fuses question + outcome + as_of into one `Task`. A
+cleaner model separates two concepts:
+
+- **Event**: a thing that resolves at some point in time, optionally carrying a
+  "market probability" trajectory up to resolution. Examples: "S&P 500 close on
+  day X", "will X happen by day Y", "which FOO happens on day BAR". A Manifold
+  market is an event (question text, eventual answer, resolution day); our
+  financial series are another source of events. Events are the durable,
+  reusable unit — independent of any particular forecast prompt.
+- **Task**: an `as_of` date plus a set of **distribution queries** about future
+  events. A query is a joint distribution over one or more event outcomes —
+  a single binary marginal, a scalar's full distribution at a date, the N-way
+  categorical or continuous joint of several events, etc. The `as_of` must
+  strictly precede the resolution date of every event the task references.
+
+Consequences of the split: one event can appear in many tasks (different
+`as_of`s, solo vs. jointly with others); a task can bundle many queries over a
+shared `as_of` (this is what `bundle_tasks.py` approximates today, but keyed by
+task id rather than by event). Scoring stays per-query. This generalizes the
+current binary/scalar/categorical `Question` kinds into "distribution query
+over a set of event outcomes", with the marginal cases as the 1-event
+specializations.
+
+Not built yet — recorded here so the eventual schema refactor (Event store +
+Task = as_of + queries-over-events) is deliberate rather than emergent.
+
 ## What loom is not
 
 - **Not trading or market-making.** "Coherence" means "a joint with these

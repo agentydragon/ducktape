@@ -37,15 +37,26 @@ BINARY_TASK_YES = _task(BinaryQuestion(text="?"), BinaryOutcome(value=True))
 
 
 def test_binary_scores() -> None:
-    assert score(BINARY_TASK_YES, BinaryAnswer(p=1.0)).metrics == {"log_loss": 0.0, "brier": 0.0}
+    confident = score(BINARY_TASK_YES, BinaryAnswer(p=0.99)).metrics
+    assert confident["log_loss"] == pytest.approx(-math.log(0.99))
+    assert confident["brier"] == pytest.approx(0.0001)
     half = score(BINARY_TASK_YES, BinaryAnswer(p=0.5)).metrics
     assert half["log_loss"] == pytest.approx(math.log(2))
     assert half["brier"] == pytest.approx(0.25)
 
 
-def test_hard_wrong_binary_answer_scores_finite() -> None:
-    # p=0 on a YES outcome must produce a large but finite log loss, not infinity.
-    metrics = score(BINARY_TASK_YES, BinaryAnswer(p=0.0)).metrics
+@pytest.mark.parametrize("p", [0.0, 1.0])
+def test_binary_answer_rejects_degenerate_probability(p: float) -> None:
+    # p=0/1 give infinite log loss and express impossible certainty; the answer
+    # boundary requires a strict probability in (0, 1).
+    with pytest.raises(ValidationError):
+        BinaryAnswer(p=p)
+
+
+def test_near_certain_wrong_binary_answer_scores_finite() -> None:
+    # A near-0 probability on a YES outcome is clamped to a large but finite log
+    # loss, not infinity (p=0 itself is rejected at the answer boundary).
+    metrics = score(BINARY_TASK_YES, BinaryAnswer(p=1e-9)).metrics
     assert math.isfinite(metrics["log_loss"])
     assert metrics["log_loss"] > 10
     assert metrics["brier"] == pytest.approx(1.0)

@@ -66,7 +66,14 @@ def question_schema(question: Question) -> dict[str, object]:
         case BinaryQuestion():
             return {
                 "type": "object",
-                "properties": {"p": {"type": "number", "minimum": 0, "maximum": 1}},
+                "properties": {
+                    "p": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "exclusiveMaximum": 1,
+                        "description": "Probability that the question resolves YES, strictly between 0 and 1 (never 0 or 1).",
+                    }
+                },
                 "required": ["p"],
                 "additionalProperties": False,
             }
@@ -76,6 +83,7 @@ def question_schema(question: Question) -> dict[str, object]:
                 "properties": {
                     "quantiles": {
                         "type": "object",
+                        "description": "Your stated value at each quantile level, non-decreasing in level.",
                         "properties": {str(level): {"type": "number"} for level in QUANTILE_LEVELS},
                         "required": [str(level) for level in QUANTILE_LEVELS],
                         "additionalProperties": False,
@@ -90,6 +98,7 @@ def question_schema(question: Question) -> dict[str, object]:
                 "properties": {
                     "probabilities": {
                         "type": "object",
+                        "description": "Your probability for each listed category; the values must sum to 1.",
                         "properties": {category: {"type": "number", "minimum": 0} for category in categories},
                         "required": list(categories),
                         "additionalProperties": False,

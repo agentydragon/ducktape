@@ -26,9 +26,11 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -38,14 +40,14 @@ from inspect_ai.agent import AgentSubmit, react
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
-from inspect_ai.tool import bash
+from inspect_ai.tool import ToolDef, ToolParams, ToolResult, bash
 from inspect_ai.util import sandbox
 
 from loom.gym import scoring
-from loom.gym.baseline_llm import answer_instruction, parse_answer
+from loom.gym.baseline_llm import answer_instruction, parse_answer, question_schema
 from loom.gym.dossier import series_dossier
 from loom.gym.monthly_series import MonthlySeries
-from loom.gym.task import Task
+from loom.gym.task import Question, Task
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +164,8 @@ AGENT_PROMPT = (
     "starting points for your research, which you can follow and branch out from. You can browse the "
     "web as it existed at your information cutoff through a preconfigured proxy: ordinary http:// and "
     "https:// URLs both work (curl, urllib, and requests honor the proxy and its CA automatically). "
-    "When confident, call submit with ONLY the JSON answer object, no prose."
+    "When confident, call the submit tool with your forecast — its arguments are the structured "
+    "answer fields, which the tool schema enforces."
 )
 
 # Container path the proxy sidecar writes its served-evidence manifest to;
@@ -202,7 +205,7 @@ def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> 
         f"knowledge of events on or before {task.as_of}.\n"
         f"Question: {task.question.text}\n"
         f"Resolution date: {task.resolution_date}\n"
-        f"Submit ONLY a JSON object: {answer_instruction(task.question)}."
+        f"When done, call the submit tool with your forecast: {answer_instruction(task.question)}."
     )
     files = {f"/data/{name}": content for name, content in dossier.items()}
     if task.evidence:
@@ -259,6 +262,36 @@ def gym_proper_loss():
     return score_fn
 
 
+def _submit_tool(question: Question) -> ToolDef:
+    """Submit tool whose input_schema is the question's strict answer shape.
+
+    react's default submit takes a free-form `answer` string, which a sloppy
+    model can leave empty or fill with prose — an unparseable non-submission
+    (observed live: glm-4.5 researched a task then submitted an empty payload →
+    `JSONDecodeError`). Carrying `question_schema(question)` as the tool's
+    parameters instead makes the Anthropic-shaped API enforce a well-formed
+    forecast object — the same forced-schema path the bare baseline uses, which
+    z.ai's GLM honors — so the model cannot submit the wrong shape. The
+    structured arguments are returned as JSON for the scorer's parse_answer.
+    (inspect's JSONSchema drops the numeric min/max bounds it doesn't model;
+    the Answer pydantic models re-enforce them on parse.)
+    """
+
+    # Signature must be exactly `**kwargs: Any` — Inspect's tool-arg coercion
+    # special-cases that to pass the model's structured arguments through
+    # unchanged; any other name/annotation makes it bind a VAR_KEYWORD parameter
+    # and inject `inspect.Parameter.empty` (a type, which then fails to serialize).
+    async def submit(**kwargs: Any) -> ToolResult:
+        return json.dumps(kwargs)
+
+    return ToolDef(
+        submit,
+        name="submit",
+        description=f"Submit your final forecast: {answer_instruction(question)}.",
+        parameters=ToolParams.model_validate(question_schema(question)),
+    )
+
+
 def agent_eval_task(
     tasks: Sequence[Task],
     series: Sequence[MonthlySeries],
@@ -267,8 +300,11 @@ def agent_eval_task(
     wayback_upstream_auth: str = "",
     agent_image: str = SANDBOX_IMAGE_TAG,
     compose_dir: Path | None = None,
-) -> InspectTask:
-    """Inspect task over gym tasks; one sandbox compose is generated per distinct as_of."""
+) -> list[InspectTask]:
+    """Inspect tasks over gym tasks: one sandbox compose per distinct as_of, and
+    one Inspect task per distinct answer schema. The react submit tool carries a
+    single question's strict shape (`_submit_tool`), so tasks are grouped by it —
+    a uniform-kind panel (e.g. the binary market set) stays a single task."""
     if compose_dir is None:
         compose_dir = Path(tempfile.mkdtemp(prefix="gym-sandbox-"))
     as_ofs = {task.as_of for task in tasks}
@@ -277,8 +313,21 @@ def agent_eval_task(
         as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream, agent_image, wayback_upstream_auth)
         for as_of in as_ofs
     }
-    return InspectTask(
-        dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in tasks]),
-        solver=react(prompt=AGENT_PROMPT, tools=[bash(timeout=180)], submit=AgentSubmit(answer_only=True)),
-        scorer=gym_proper_loss(),
-    )
+    by_schema: dict[str, list[Task]] = defaultdict(list)
+    for task in tasks:
+        by_schema[json.dumps(question_schema(task.question), sort_keys=True)].append(task)
+    return [
+        InspectTask(
+            name=f"agent_eval_{group[0].question.kind}_{index}",
+            dataset=MemoryDataset(
+                [sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in group]
+            ),
+            solver=react(
+                prompt=AGENT_PROMPT,
+                tools=[bash(timeout=180)],
+                submit=AgentSubmit(tool=_submit_tool(group[0].question), answer_only=True),
+            ),
+            scorer=gym_proper_loss(),
+        )
+        for index, group in enumerate(by_schema.values())
+    ]

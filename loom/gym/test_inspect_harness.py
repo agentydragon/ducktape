@@ -20,7 +20,13 @@ from inspect_ai.model import ModelOutput, get_model
 from more_itertools import one
 
 from loom.gym.dossier import series_dossier
-from loom.gym.inspect_harness import WAYBACK_PROXY_IMAGE_TAG, agent_eval_task, sample_for_task, write_sandbox_compose
+from loom.gym.inspect_harness import (
+    WAYBACK_PROXY_IMAGE_TAG,
+    _submit_tool,
+    agent_eval_task,
+    sample_for_task,
+    write_sandbox_compose,
+)
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, EvidenceItem
@@ -78,9 +84,22 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     assert sample.metadata is not None
     assert sample.metadata["gym_task"]["task_id"] == GYM_TASK.task_id
     assert json.loads(str(sample.target))["value"] is True
-    assert "Submit ONLY a JSON object" in str(sample.input)
+    assert "call the submit tool" in str(sample.input)
     assert sample.sandbox is not None
     assert sample.sandbox.config == str(compose_path)
+
+
+def test_submit_tool_enforces_answer_shape() -> None:
+    # The strict submit tool is what stops empty/prose non-submissions: its
+    # parameters require the answer field and forbid anything else, so the
+    # (Anthropic-shaped) API rejects a malformed tool call before it reaches us.
+    tool = _submit_tool(GYM_TASK.question)
+    assert tool.name == "submit"
+    assert tool.parameters.required == ["p"]
+    assert set(tool.parameters.properties) == {"p"}
+    assert tool.parameters.additionalProperties is False
+    # A well-formed call echoes the structured args as JSON for the scorer to parse.
+    assert json.loads(asyncio.run(tool.tool(p=0.8))) == {"p": 0.8}
 
 
 def test_evidence_lands_as_url_file_never_in_prompt(tmp_path: Path) -> None:
@@ -225,7 +244,9 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
         custom_outputs=[
             ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": fetch_cmd}),
             ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": "head -3 /data/ramp_monthly.csv"}),
-            ModelOutput.for_tool_call("mockllm/model", "submit", {"answer": json.dumps({"p": 0.8})}),
+            # The submit tool now carries the strict answer schema, so its
+            # arguments are the structured fields (p), not a free-form JSON string.
+            ModelOutput.for_tool_call("mockllm/model", "submit", {"p": 0.8}),
         ],
     )
     try:
@@ -254,8 +275,13 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     assert sample.scores is not None
     score = sample.scores["gym_proper_loss"]
     assert score.value == pytest.approx(-math.log(0.8))
-    # W3: the proxy's served-evidence manifest rides along in the score.
     assert score.metadata is not None
+    # The structured submit registered cleanly as the scored answer: the strict
+    # tool's arguments round-trip into the completion and the scorer parses them,
+    # taking the success path (no `submission_error` fallback).
+    assert "submission_error" not in score.metadata
+    assert json.loads(str(score.answer)) == {"p": 0.8}
+    # W3: the proxy's served-evidence manifest rides along in the score.
     served = one(score.metadata["served_evidence"])
     assert served["url"] == fake_ia.EXAMPLE_ORIGINAL
     assert served["capture_ts"] == fake_ia.GOOD_TS
