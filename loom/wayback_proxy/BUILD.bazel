@@ -20,6 +20,7 @@ py_library(
     name = "fake_ia",
     testonly = True,
     srcs = ["fake_ia.py"],
+    visibility = ["//loom/gym:__pkg__"],
     deps = ["@pypi//aiohttp"],
 )
 
@@ -91,6 +92,7 @@ oci_layout_rloc(
     name = "image_info",
     testonly = True,
     image = ":image",
+    visibility = ["//loom/gym:__pkg__"],
 )
 
 filegroup(

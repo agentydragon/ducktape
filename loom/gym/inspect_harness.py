@@ -1,18 +1,29 @@
-"""Gym tasks as Inspect AI evals: agent contestants in a network-less Docker sandbox.
+"""Gym tasks as Inspect AI evals: agent contestants in a date-clamped sandbox.
 
 Each gym task becomes an inspect `Sample` whose `files` land the
-as-of-truncated dossier under `/data` in the sandbox; `sandbox/compose.yaml`
-sets `network_mode: none`, so the as-of discipline is physical, not
-prompt-level. The react agent explores with bash/python tools and must call
+as-of-truncated dossier under `/data`. The sandbox compose is generated per
+`as_of`: the agent container's only network route is the wayback proxy
+sidecar (`loom/wayback_proxy`), which answers every URL with the newest
+Internet Archive capture at-or-before the task's `as_of` — the as-of
+discipline stays physical (no direct egress) while the agent can research the
+pre-cutoff web. The react agent explores with bash/python tools and must call
 `submit` with the bare answer JSON; the scorer applies the gym's proper
 losses (full metric set in `Score.metadata`, headline metric as the value).
+
+Runs need the proxy image on the local Docker daemon
+(`bazelisk run //loom/wayback_proxy:load`); for real evals point
+`wayback_upstream` at the shared cluster pull-through cache
+(`cluster/k8s/wayback-cache/`, e.g. via kubectl port-forward) so IA is never
+hammered directly.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import tempfile
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 # Aliased to avoid colliding with the gym's own Task.
@@ -31,19 +42,83 @@ from loom.gym.task import Task
 
 logger = logging.getLogger(__name__)
 
-COMPOSE_PATH = Path(__file__).parent / "sandbox" / "compose.yaml"
+WAYBACK_PROXY_IMAGE_TAG = "wayback-proxy:latest"
+DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
+
+# Generated per as_of: WAYBACK_AS_OF is a baked literal, not compose env
+# interpolation, so the clamp is pinned per sandbox and can never be
+# influenced from inside the agent container.
+_COMPOSE_TEMPLATE = """\
+services:
+  default:
+    image: python:3.13-slim
+    x-local: true
+    init: true
+    command: tail -f /dev/null
+    cpus: 1.0
+    mem_limit: 1gb
+    # The internal network's only other member is the proxy: every web
+    # request goes through the date clamp; nothing else is routable.
+    networks: [sandbox]
+    environment:
+      http_proxy: http://proxy:8080
+      HTTP_PROXY: http://proxy:8080
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  proxy:
+    # x-local: the proxy image is bazel-built and docker-loaded, never in a
+    # registry — without this Inspect attempts a doomed `compose pull`.
+    image: {image}
+    x-local: true
+    init: true
+    networks: [sandbox, egress]
+    environment:
+      WAYBACK_AS_OF: "{as_of}"
+      WAYBACK_UPSTREAM: "{upstream}"
+    extra_hosts:
+      # Lets upstream point at a host port: a kubectl port-forward of the
+      # cluster wayback-cache, or a test's in-process fake IA.
+      - host.docker.internal:host-gateway
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+networks:
+  sandbox:
+    internal: true
+  egress: {{}}
+"""
 
 AGENT_PROMPT = (
     "You are a careful forecaster. Data files are available under /data (start with /data/README.txt); "
-    "inspect them with the bash and python tools before answering. When confident, call submit with "
-    "ONLY the JSON answer object, no prose."
+    "inspect them with the bash and python tools. You can also browse the web as it existed at your "
+    "information cutoff through a preconfigured HTTP proxy: fetch plain http:// URLs (urllib and "
+    "requests honor http_proxy automatically; https and the live web are unreachable). When confident, "
+    "call submit with ONLY the JSON answer object, no prose."
 )
 
 
-def sample_for_task(task: Task, dossier: dict[str, str]) -> Sample:
+def write_sandbox_compose(directory: Path, as_of: date, upstream: str) -> Path:
+    """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
+    path = directory / f"sandbox-{as_of}.yaml"
+    path.write_text(_COMPOSE_TEMPLATE.format(image=WAYBACK_PROXY_IMAGE_TAG, as_of=as_of, upstream=upstream))
+    return path
+
+
+def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> Sample:
     instructions = (
-        f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then; "
-        f"use only them and knowledge of events on or before {task.as_of}.\n"
+        f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then, "
+        f"and the web proxy serves pages as archived on or before {task.as_of}; use only those sources and "
+        f"knowledge of events on or before {task.as_of}.\n"
         f"Question: {task.question.text}\n"
         f"Resolution date: {task.resolution_date}\n"
         f"Submit ONLY a JSON object: {answer_instruction(task.question)}."
@@ -54,6 +129,7 @@ def sample_for_task(task: Task, dossier: dict[str, str]) -> Sample:
         target=json.dumps(task.outcome.model_dump(mode="json")),
         files={f"/data/{name}": content for name, content in dossier.items()},
         metadata={"gym_task": task.model_dump(mode="json")},
+        sandbox=("docker", str(compose_path)),
     )
 
 
@@ -78,13 +154,23 @@ def gym_proper_loss():
     return score_fn
 
 
-def agent_eval_task(tasks: Sequence[Task], series: Sequence[MonthlySeries]) -> InspectTask:
-    dossiers = {as_of: series_dossier(series, as_of) for as_of in {task.as_of for task in tasks}}
+def agent_eval_task(
+    tasks: Sequence[Task],
+    series: Sequence[MonthlySeries],
+    *,
+    wayback_upstream: str = DEFAULT_WAYBACK_UPSTREAM,
+    compose_dir: Path | None = None,
+) -> InspectTask:
+    """Inspect task over gym tasks; one sandbox compose is generated per distinct as_of."""
+    if compose_dir is None:
+        compose_dir = Path(tempfile.mkdtemp(prefix="gym-sandbox-"))
+    as_ofs = {task.as_of for task in tasks}
+    dossiers = {as_of: series_dossier(series, as_of) for as_of in as_ofs}
+    composes = {as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream) for as_of in as_ofs}
     return InspectTask(
-        dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of]) for task in tasks]),
+        dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in tasks]),
         solver=react(
             prompt=AGENT_PROMPT, tools=[bash(timeout=120), python(timeout=120)], submit=AgentSubmit(answer_only=True)
         ),
         scorer=gym_proper_loss(),
-        sandbox=("docker", str(COMPOSE_PATH)),
     )

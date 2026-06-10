@@ -3,13 +3,16 @@
 Status: **in progress** (direction approved 2026-06-10). W1 landed:
 `cluster/k8s/wayback-cache/` (ClusterIP-only — the gateway is public-only and
 an open IA relay is undesirable; dev access via `kubectl port-forward`). W2
-partially landed: per-agent proxy + demo compose + e2e at
-<../wayback_proxy/>; Inspect/gym wiring still pending. The proxy is the
-mini-implementation, not a WaybackProxy fork — upstream's selection is
-nearest-capture (can serve post-date content within `DATE_TOLERANCE`), its
-in-band settings page can change the date at runtime from the client side,
-CONNECT is fake-accepted, and the upstream host is hardcoded; hardening all
-that approximated writing the clamped proxy directly.
+landed: per-agent proxy + demo compose + e2e at <../wayback_proxy/>, and the
+gym's Inspect harness generates a per-`as_of` sandbox compose (agent on an
+internal-only network whose sole peer is the proxy; `WAYBACK_AS_OF` baked as
+a literal) with a mockllm e2e fetching a clamped page end to end on RBE. The
+proxy is the mini-implementation, not a WaybackProxy fork — upstream's
+selection is nearest-capture (can serve post-date content within
+`DATE_TOLERANCE`), its in-band settings page can change the date at runtime
+from the client side, CONNECT is fake-accepted, and the upstream host is
+hardcoded; hardening all that approximated writing the clamped proxy
+directly.
 
 ## Goal
 
@@ -98,10 +101,10 @@ fetch them — and browse outward from them — rather than only reading titles.
 ## Phasing
 
 - **W1** ✅: deploy `wayback-cache` (`cluster/k8s/wayback-cache/`).
-- **W2** (proxy + demo compose ✅; Inspect wiring pending): per-agent proxy
-  image (mini-implementation, `loom/wayback_proxy/`) + Inspect compose wiring
-  - `as_of` env plumbing; mockllm e2e test on RBE that fetches a known
-    snapshot through the full chain.
+- **W2** ✅: per-agent proxy image (mini-implementation,
+  `loom/wayback_proxy/`) + Inspect compose wiring with per-`as_of` plumbing
+  (`loom/gym/inspect_harness.py`); mockllm e2e on RBE fetches a known
+  snapshot through the full chain.
 - **W3**: served-evidence manifest → run payload → S3.
 - **W4** (optional): HTTPS MITM; text-extraction convenience endpoint for
   dossier-style consumption.

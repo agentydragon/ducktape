@@ -107,15 +107,9 @@ py_library(
     deps = ["@pypi//boto3"],
 )
 
-filegroup(
-    name = "sandbox_compose",
-    srcs = ["sandbox/compose.yaml"],
-)
-
 py_library(
     name = "inspect_harness",
     srcs = ["inspect_harness.py"],
-    data = [":sandbox_compose"],  # keep
     deps = [
         ":baseline_llm",
         ":dossier",
@@ -353,6 +347,10 @@ py_test(
     name = "test_inspect_harness",
     size = "large",
     srcs = ["test_inspect_harness.py"],
+    data = [
+        "//loom/wayback_proxy:image_info",
+        "//third_party/containers:python_3_13_slim",
+    ],
     requires_docker = True,
     deps = [
         ":dossier",
@@ -361,6 +359,10 @@ py_test(
         ":series_tasks",
         ":task",
         "//:conftest",
+        "//loom/wayback_proxy:fake_ia",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
         "@pypi//inspect_ai",
         "@pypi//more_itertools",
         "@pypi//pytest",
