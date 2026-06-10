@@ -7,6 +7,7 @@ LITELLM_PROXY_RUNTIME_DEPS = [
     "@pypi//aiohttp",
     "@pypi//apscheduler",
     "@pypi//backoff",
+    "@pypi//cryptography",
     "@pypi//fastapi",
     "@pypi//opentelemetry_api",
     "@pypi//opentelemetry_exporter_otlp_proto_http",
@@ -76,8 +77,10 @@ py_test(
 py_test(
     name = "test_proxy_runtime",
     srcs = ["test_proxy_runtime.py"],
+    data = [":server_bin"],
     deps = [
         ":provider",
+        "//util/bazel:runfiles",
         "@pypi//litellm",
     ] + LITELLM_PROXY_RUNTIME_DEPS,
 )
