@@ -8,6 +8,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "resigner",
     srcs = ["resigner.py"],
+    visibility = ["//tana:__subpackages__"],
     deps = [
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",

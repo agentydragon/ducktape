@@ -1,0 +1,37 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "provider",
+    srcs = [
+        "__init__.py",
+        "provider.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tana/firebase_resigner:resigner",
+        "@pypi//httpx",
+        "@pypi//litellm",
+    ],
+)
+
+py_binary(
+    name = "demo",
+    srcs = ["demo.py"],
+    main_module = "tana.litellm_proxy.demo",
+    tags = ["manual"],
+    deps = [
+        ":provider",
+        "@pypi//litellm",
+    ],
+)
+
+py_test(
+    name = "test_provider",
+    srcs = ["test_provider.py"],
+    deps = [
+        ":provider",
+        "@pypi//httpx",
+        "@pypi//litellm",
+        "@pypi//pytest_bazel",
+    ],
+)
