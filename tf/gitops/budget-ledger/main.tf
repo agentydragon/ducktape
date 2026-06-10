@@ -44,6 +44,15 @@ resource "forgejo_repository" "ledger" {
   auto_init = true
 }
 
+# Read-only access for the claude agent account (user provisioned by
+# tf/gitops/forgejo-claude; until it exists this resource fails and the
+# Terraform CR retries on its interval).
+resource "forgejo_collaborator" "claude" {
+  repository_id = forgejo_repository.ledger.id
+  user          = "claude"
+  permission    = "read"
+}
+
 # Git credentials for the exporter + Fava, in the budget namespace. Reflected into
 # the augur namespace (emberstack reflector) so the exporter CronJob -- which runs
 # alongside augur to reuse its config ConfigMap + plaid DB creds -- can read them.
