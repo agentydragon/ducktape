@@ -74,7 +74,7 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     sample = sample_for_task(GYM_TASK, series_dossier([RAMP], GYM_TASK.as_of), compose_path)
     assert sample.files is not None
     assert {"/data/README.txt", "/data/ramp_monthly.csv"} <= set(sample.files)
-    assert "/data/evidence.jsonl" not in sample.files
+    assert "/data/sources.txt" not in sample.files
     assert sample.metadata is not None
     assert sample.metadata["gym_task"]["task_id"] == GYM_TASK.task_id
     assert json.loads(str(sample.target))["value"] is True
@@ -83,15 +83,17 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     assert sample.sandbox.config == str(compose_path)
 
 
-def test_evidence_lands_as_file_never_in_prompt(tmp_path: Path) -> None:
+def test_evidence_lands_as_url_file_never_in_prompt(tmp_path: Path) -> None:
     compose_path = write_sandbox_compose(tmp_path, EVIDENCE_TASK.as_of, "https://web.archive.org")
     sample = sample_for_task(EVIDENCE_TASK, series_dossier([RAMP], EVIDENCE_TASK.as_of), compose_path)
     assert sample.files is not None
-    leads = [json.loads(line) for line in sample.files["/data/evidence.jsonl"].splitlines()]
-    assert leads == [{"url": fake_ia.EXAMPLE_URL, "date": "2020-01-15", "title": "archived example.com homepage"}]
+    sources = sample.files["/data/sources.txt"]
+    # URLs only — no titles (a title could carry the curator's framing).
+    url_lines = [line for line in sources.splitlines() if line.startswith("http")]
+    assert url_lines == [fake_ia.EXAMPLE_URL]
+    assert "archived example.com homepage" not in sources
     # Evidence is data the agent chooses to read, not prompt content.
     assert fake_ia.EXAMPLE_URL not in str(sample.input)
-    assert "archived example.com homepage" not in str(sample.input)
 
 
 def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> None:
@@ -202,10 +204,10 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     fetch_cmd = dedent(
         """
         python3 - <<'PY'
-        import json, urllib.request
-        lead = json.loads(open("/data/evidence.jsonl").readline())
-        print("lead:", lead["url"], lead["date"])
-        with urllib.request.urlopen(lead["url"], timeout=30) as response:
+        import urllib.request
+        url = next(line for line in open("/data/sources.txt") if line.startswith("http")).strip()
+        print("lead:", url)
+        with urllib.request.urlopen(url, timeout=30) as response:
             print(response.status, response.headers["X-Wayback-Timestamp"])
             print(response.read().decode())
         PY

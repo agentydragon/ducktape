@@ -114,8 +114,8 @@ AGENT_PROMPT = (
     "persist between calls, so make every command self-contained. python3 is available; the image "
     "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
     "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
-    "If /data/evidence.jsonl exists, it lists dated starting points (url, date, title) you might want "
-    "to begin your research from — follow links outward from them as you see fit. You can browse the "
+    "If /data/sources.txt exists, it lists URLs that may contain relevant information — possible "
+    "starting points for your research, which you can follow and branch out from. You can browse the "
     "web as it existed at your information cutoff through a preconfigured HTTP proxy. IMPORTANT: only "
     "plain http:// URLs work — there is no https; rewrite any https:// link to http:// before fetching "
     "(curl, urllib, and requests honor http_proxy automatically). When confident, call submit with "
@@ -145,13 +145,19 @@ def write_sandbox_compose(
     return path
 
 
-def _evidence_jsonl(task: Task) -> str:
-    """Evidence leads as a /data file, not prompt text: read only if the agent
-    chooses (tokens pay per use), uniform with the rest of the dossier, and
-    leads stay data to evaluate rather than harness-asserted facts."""
-    return "".join(
-        json.dumps({"url": item.url, "date": str(item.date), "title": item.title}) + "\n" for item in task.evidence
-    )
+_SOURCES_HEADER = (
+    "URLs that may contain information relevant to this question, archived at or before your "
+    "information cutoff. They are possible starting points only — fetch them (http:// form) through "
+    "the proxy and branch out as you see fit.\n"
+)
+
+
+def _sources_txt(task: Task) -> str:
+    """Evidence leads as a plaintext URL list in /data — not prompt text, and
+    URLs only (no titles): the agent reads it if it chooses (tokens pay per
+    use), titles never leak a curator's framing, and the URLs stay leads to
+    investigate rather than harness-asserted facts."""
+    return _SOURCES_HEADER + "".join(f"{item.url}\n" for item in task.evidence)
 
 
 def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> Sample:
@@ -165,7 +171,7 @@ def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> 
     )
     files = {f"/data/{name}": content for name, content in dossier.items()}
     if task.evidence:
-        files["/data/evidence.jsonl"] = _evidence_jsonl(task)
+        files["/data/sources.txt"] = _sources_txt(task)
     return Sample(
         id=task.task_id,
         input=instructions,

@@ -134,16 +134,15 @@ def _as_of_header(task: Task, dossier: dict[str, str] | None) -> str:
 
 
 def _evidence_block(task: Task, indent: str = "") -> str:
-    """Dated-evidence lines, each ending in a newline; empty when the task has none.
-
-    Task validation guarantees every item is dated at or before `as_of`, so the
-    block can be included unconditionally.
+    """Source-URL lines (no titles), each ending in a newline; empty when the
+    task has none. Titles are withheld so the prompt never carries a curator's
+    framing of what a source says.
     """
     if not task.evidence:
         return ""
     lines = [
-        "Dated evidence available to you (published on or before the information cutoff):",
-        *(f"- {item.date}: {item.title} ({item.url})" for item in task.evidence),
+        "URLs that may contain relevant information (published on or before the information cutoff):",
+        *(f"- {item.url}" for item in task.evidence),
     ]
     return "".join(f"{indent}{line}\n" for line in lines)
 

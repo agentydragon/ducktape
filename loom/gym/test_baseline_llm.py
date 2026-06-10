@@ -103,16 +103,17 @@ EVIDENCE_TASK = BINARY_TASK.model_copy(
 
 def test_prompts_render_evidence_only_when_present() -> None:
     prompt = build_prompt(EVIDENCE_TASK)
-    assert "Dated evidence available to you" in prompt
-    # Prompts show the original URL — the form contestants will fetch through
-    # the wayback proxy — never the pinned archive capture.
-    assert "- 2024-06-19: Index forecast roundup (https://example.com/forecast)" in prompt
+    assert "URLs that may contain relevant information" in prompt
+    # Original URL only — no title (which could carry a curator's framing) and
+    # never the pinned archive capture.
+    assert "- https://example.com/forecast" in prompt
+    assert "Index forecast roundup" not in prompt
     assert "web.archive.org" not in prompt
-    assert "Dated evidence" not in build_prompt(BINARY_TASK)
+    assert "URLs that may contain" not in build_prompt(BINARY_TASK)
 
     bundle_prompt = build_bundle_prompt([EVIDENCE_TASK, CATEGORICAL_TASK])
-    assert "  - 2024-06-19: Index forecast roundup" in bundle_prompt
-    assert bundle_prompt.count("Dated evidence") == 1
+    assert "  - https://example.com/forecast" in bundle_prompt
+    assert bundle_prompt.count("URLs that may contain") == 1
 
 
 def test_question_schema_shapes() -> None:

@@ -11,20 +11,25 @@ tech business, and entertainment. Probabilities at `as_of` mix mid-range
 questions with calibration tails, including several markets that were
 confidently wrong at `as_of` (Assad surviving 2024, a Canadian Conservative
 majority, a 2025 US recession, 100+ US H5N1 cases) — the sharpest
-discrimination tests. Question texts are rewritten to be self-contained: they
-state the resolution criterion and any `as_of`-dated context a reader needs
-without Manifold access. Each `as_of` falls strictly between market creation
-and resolution, at a point where the question was genuinely open;
-`resolution_date` is the market's actual resolution time (UTC date part).
+discrimination tests. Question texts state only the proposition and its
+resolution criterion (what resolves YES/NO, by when, judged how) — the
+`as_of` world state (prices, poll standings, who is ahead) is deliberately
+left out, since it is retrievable data: the contestant gets it from the
+dossier, the source URLs, and the dated web proxy rather than being
+hand-fed (and editorialized) in the prompt. Each `as_of` falls strictly
+between market creation and resolution, at a point where the question was
+genuinely open; `resolution_date` is the market's actual resolution time
+(UTC date part).
 
 The data lives as `MarketSeedRecord` rows minted into gym tasks — the shape
 that mirror-harvested markets (see `loom/plans/manifold_mirror.md`) will join,
-and the seed of the mirror's market-id roster. Evidence is optional per task
-(0-3 items), attached only where a cheap contemporaneous capture existed.
-Items carry the original page URL (what prompts show, and what contestants
-fetch themselves once the wayback proxy of `loom/plans/wayback_proxy.md`
-lands — content is never pre-downloaded) plus the pinned Wayback capture
-proving the page existed by its date.
+and the seed of the mirror's market-id roster. Evidence is optional per task,
+attached only where a cheap contemporaneous capture existed. Contestants see
+the original page URLs as a titleless list (a `/data/sources.txt` file in the
+container harness, a URL list in the bare-LLM prompt) — possible research
+starting points they fetch through the proxy themselves; the title and the
+pinned Wayback capture stay in the record (human note + "existed by then"
+proof), never shown to the contestant.
 
 Data source: the public Manifold Markets API (https://api.manifold.markets/v0,
 fetched 2026-06-10). License: personal/academic/non-commercial use only;
@@ -33,8 +38,8 @@ license from data@manifold.markets — see
 s3://loom-gym/harvest/raw/manifold-20240706/README.md; the same terms apply to
 API data. Caveat: the API serves the *current* question text and description,
 which the creator may have edited after `as_of` (no edit history is exposed),
-so curation prefers markets with stable, unambiguous titles; rewritten question
-texts state the criterion the market actually resolved by.
+so curation prefers markets with stable, unambiguous titles; question texts
+state the criterion the market actually resolved by.
 """
 
 from __future__ import annotations
@@ -86,8 +91,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.1811,
         question=(
             "Will the price of Bitcoin (BTC/USD) reach $100,000 at any point in 2024? Resolves YES if Bitcoin "
-            "trades at or above $100,000 on major exchanges before the end of 2024. At the information cutoff "
-            "Bitcoin trades near $59,000, below its March 2024 all-time high of roughly $73,800."
+            "trades at or above $100,000 on major exchanges before the end of 2024."
         ),
         evidence=(
             _capture(
@@ -111,10 +115,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.0634,
         question=(
             "Will China invade mainland Taiwan by the end of 2024? Only an invasion of Taiwan's main island "
-            "counts; seizing outlying islands such as Kinmen or Matsu does not. At the information cutoff "
-            "cross-strait tensions are elevated: China staged the large-scale 'Joint Sword-2024A' exercises "
-            "encircling Taiwan in May 2024 after President Lai Ching-te's inauguration, and PLA aircraft "
-            "incursions across the strait's median line are running at record levels."
+            "counts; seizing outlying islands such as Kinmen or Matsu does not."
         ),
         evidence=(),
     ),
@@ -128,9 +129,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will US President Joe Biden pardon his son Hunter Biden, or commute a sentence of his, before "
             "2025-01-21 (the end of Biden's term)? Any presidential pardon or commutation of sentence for "
-            "Hunter Biden resolves YES. Hunter Biden was convicted on federal gun charges on 2024-06-11 and "
-            "pleaded guilty to federal tax charges on 2024-09-05, with sentencing scheduled for December 2024; "
-            "the White House has repeatedly said the President will not pardon him."
+            "Hunter Biden resolves YES."
         ),
         evidence=(
             _capture(
@@ -157,12 +156,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         resolution_date=date(2024, 11, 24),
         resolved_yes=True,
         prob_at_as_of=0.6646,
-        question=(
-            "Will Max Verstappen win the 2024 Formula 1 World Drivers' Championship? At the information "
-            "cutoff Verstappen leads McLaren's Lando Norris by 52 points with six grands prix (plus three "
-            "sprint races) remaining; Verstappen has not won a race since June 2024, and McLaren has had "
-            "the fastest car for several months."
-        ),
+        question=("Will Max Verstappen win the 2024 Formula 1 World Drivers' Championship?"),
         evidence=(),
     ),
     MarketSeedRecord(
@@ -206,10 +200,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Michel Barnier be the Prime Minister of France on 2025-01-01? Resolves NO if by that date "
             "he has resigned or been ousted — including if he stays on only as a caretaker ('démissionnaire') "
-            "pending a successor. At the information cutoff Barnier, appointed 2024-09-05 by President Macron "
-            "after a hung parliamentary election, leads a minority government trying to pass a 2025 austerity "
-            "budget under censure-motion threats from both the left-wing alliance and Marine Le Pen's "
-            "National Rally."
+            "pending a successor."
         ),
         evidence=(),
     ),
@@ -223,10 +214,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Bashar al-Assad remain in power as President of Syria through 2024-12-31 (11:59 PM ET)? "
             "Resolves NO immediately if he ceases to hold the office of President for any reason before "
-            "then, as confirmed by reliable news outlets. At the information cutoff Assad — in power since "
-            "2000, having survived 13 years of civil war with Russian and Iranian help — faces no major "
-            "active offensive; front lines have been largely frozen since 2020, while his allies Russia, "
-            "Iran, and Hezbollah are stretched by their own wars."
+            "then, as confirmed by reliable news outlets."
         ),
         evidence=(),
     ),
@@ -241,9 +229,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "Will Ross Ulbricht — founder of the Silk Road darknet marketplace, serving a double life "
             "sentence plus 40 years since 2015 — be pardoned or have his sentence commuted to time served "
             "before 2025-03-01? Any full pardon or commutation to time served, by whichever president, "
-            "resolves YES. At the information cutoff Donald Trump, who told the Libertarian National "
-            "Convention in May 2024 that he would commute Ulbricht's sentence on day one, has won the 2024 "
-            "election and takes office 2025-01-20."
+            "resolves YES."
         ),
         evidence=(),
     ),
@@ -257,10 +243,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will the Conservative Party of Canada win a majority government — more than half the seats in "
             "the House of Commons — at the 45th Canadian federal election, due on or before 2025-10-20? "
-            "Winning the most seats but falling short of a majority resolves NO. At the information cutoff "
-            "the Conservatives under Pierre Poilievre lead Justin Trudeau's Liberals by roughly 20 points in "
-            "national polling averages, Trudeau faces growing calls from his own caucus to resign, and seat "
-            "models project a large Conservative majority."
+            "Winning the most seats but falling short of a majority resolves NO."
         ),
         evidence=(
             _capture(
@@ -285,10 +268,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Blue Origin's New Glenn rocket achieve orbit on its first launch? An attempt counts as a "
             "launch only if the countdown completes and the hold-down clamps release (a scrub does not "
-            "count); achieving orbit means accelerating the payload to orbital velocity. At the information "
-            "cutoff the NG-1 vehicle has completed an integrated second-stage hotfire on the pad at Cape "
-            "Canaveral and a first launch attempt is expected within days; maiden flights of new orbital "
-            "rockets have historically failed roughly half the time."
+            "count); achieving orbit means accelerating the payload to orbital velocity."
         ),
         evidence=(),
     ),
@@ -301,9 +281,8 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.7176,
         question=(
             "Will the United States Senate confirm Tulsi Gabbard as Director of National Intelligence? "
-            "President-elect Trump announced her nomination on 2024-11-13; confirmation requires a Senate "
-            "majority vote. Resolves YES if the Senate confirms her for the role, NO if her nomination is "
-            "withdrawn, rejected, or otherwise fails."
+            "Confirmation requires a Senate majority vote. Resolves YES if the Senate confirms her for the "
+            "role, NO if her nomination is withdrawn, rejected, or otherwise fails."
         ),
         evidence=(
             _capture(
@@ -334,9 +313,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "Will the far-right Alternative für Deutschland (AfD) receive more votes than the Social "
             "Democrats (SPD) at Germany's next federal election, held early on 2025-02-23 after the "
             "governing coalition collapsed in November 2024? Resolves by the official second-vote "
-            "(Zweitstimme) totals. At the information cutoff national polls put the CDU/CSU around 30%, "
-            "the AfD around 20-22%, and Chancellor Scholz's SPD around 15-17%, with Elon Musk publicly "
-            "campaigning for the AfD."
+            "(Zweitstimme) totals."
         ),
         evidence=(),
     ),
@@ -349,11 +326,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.9084,
         question=(
             "Will there be 100 or more cumulative confirmed human cases of H5N1 avian influenza in the "
-            "United States by the end of 2025, as reported on the CDC's bird-flu situation summary page? "
-            "At the information cutoff the CDC count stands at about 66 confirmed human cases since April "
-            "2024 — almost all added during 2024's final quarter, mostly among dairy and poultry workers — "
-            "the first US H5N1 death was reported 2025-01-06, and California has declared a state of "
-            "emergency over the dairy-cattle outbreak."
+            "United States by the end of 2025, as reported on the CDC's bird-flu situation summary page?"
         ),
         evidence=(
             _capture(
@@ -373,10 +346,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Capital One's announced $35 billion acquisition of Discover Financial Services be "
             "completed? Resolves YES if the merger closes; resolves NO if the deal is blocked, abandoned, "
-            "or still unconsummated when the market closes in mid-May 2025. At the information cutoff the "
-            "deal — announced 2024-02-19 — has Delaware state approval and shareholder votes scheduled for "
-            "2025-02-18, but the required Federal Reserve and OCC approvals are still pending after almost "
-            "a year of review, and New York's attorney general is investigating the merger."
+            "or still unconsummated when the market closes in mid-May 2025."
         ),
         evidence=(),
     ),
@@ -389,11 +359,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.3900,
         question=(
             "Will the Australian Labor Party win the 2025 Australian federal election — that is, will Labor "
-            "supply the Prime Minister of the 48th Parliament of Australia? At the information cutoff the "
-            "election must be held by 2025-05-17 but has not been formally called; Anthony Albanese's Labor "
-            "government has trailed Peter Dutton's Liberal-National Coalition for most of the preceding six "
-            "months, with several recent polls showing the Coalition slightly ahead on the two-party-"
-            "preferred measure."
+            "supply the Prime Minister of the 48th Parliament of Australia?"
         ),
         evidence=(),
     ),
@@ -407,10 +373,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will 'A Minecraft Movie' (Warner Bros., releasing 2025-04-04) earn more at the worldwide box "
             "office than 'Sonic the Hedgehog 3' (Paramount, released 2024-12-20), comparing lifetime "
-            "worldwide grosses per Box Office Mojo? At the information cutoff Sonic the Hedgehog 3 has "
-            "grossed about $485 million worldwide and is near the end of its theatrical run, while A "
-            "Minecraft Movie — based on the best-selling video game of all time — is tracking toward a "
-            "$60-70 million domestic opening weekend."
+            "worldwide grosses per Box Office Mojo?"
         ),
         evidence=(),
     ),
@@ -426,9 +389,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "Resolves YES if either (a) Ukraine, Russia, and the United States all announce, at roughly the "
             "same time, a ceasefire, a winding-down of military activity, or a desire to negotiate peace, "
             "or (b) there is a roughly 30-day period with no change of territorial control and very few "
-            "casualties. At the information cutoff Ukraine has accepted a US-proposed immediate 30-day "
-            "ceasefire at talks in Jeddah (2025-03-11), the US has restored military aid and intelligence "
-            "sharing, and the proposal awaits Russia's answer as US envoys travel to Moscow."
+            "casualties."
         ),
         evidence=(
             _capture(
@@ -447,10 +408,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.3100,
         question=(
             "Will the Boston Celtics win the 2025 NBA Championship? Resolves YES only if the Celtics win "
-            "the 2025 NBA Finals, per official NBA results. At the information cutoff the defending-champion "
-            "Celtics have finished the regular season 61-21, second in the Eastern Conference behind "
-            "Cleveland, with the playoffs starting 2025-04-19; sportsbooks price Boston around +250 to +300 "
-            "(roughly 25-30% implied) to repeat, second only to Oklahoma City among title favorites."
+            "the 2025 NBA Finals, per official NBA results."
         ),
         evidence=(),
     ),
@@ -465,8 +423,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "Will the United States carry out a bombing or missile strike on Iranian territory during 2025, "
             "with the US taking credit for the action? Any US-acknowledged strike that sets off bombs in Iran "
             "resolves YES; strikes carried out by Israel alone, even with US-manufactured weapons, do not "
-            "count. At the information cutoff the US and Iran are holding indirect nuclear talks (first round "
-            "2025-04-12 in Oman), after President Trump threatened bombing if no deal is reached."
+            "count."
         ),
         evidence=(
             _capture(
@@ -496,8 +453,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will OpenAI release a model named GPT-5 before 2025-08-01? Resolves YES only if a model called "
             "'GPT-5' is released to the public by that date; differently-named releases (GPT-4.5, o3, o4-mini) "
-            "do not count. At the information cutoff OpenAI has said (2025-04-04) that GPT-5 is delayed by 'a "
-            "few months' while o3 and o4-mini ship first."
+            "do not count."
         ),
         evidence=(
             _capture(
@@ -522,10 +478,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will the US economy enter a recession in 2025, defined as two consecutive quarters of negative "
             "real GDP growth with both quarters falling within calendar 2025, judged by the BEA's initial "
-            "(advance) estimate for each quarter? At the information cutoff the BEA's advance estimate "
-            "released 2025-04-30 shows real GDP contracting at a 0.3% annual rate in Q1 2025 — the first "
-            "negative quarter since 2022, driven by a surge of imports ahead of the Trump administration's "
-            "April tariffs — so a negative Q2 advance print would resolve YES."
+            "(advance) estimate for each quarter?"
         ),
         evidence=(
             _capture(
@@ -543,11 +496,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         resolved_yes=False,
         prob_at_as_of=0.4400,
         question=(
-            "Will Sweden win the 2025 Eurovision Song Contest, whose grand final takes place in Basel on "
-            "2025-05-17? At the information cutoff Sweden's entry — comedy trio KAJ's sauna song 'Bara bada "
-            "bastu', the first Swedish-language Swedish entry since 1998 — tops the bookmakers' aggregated "
-            "odds with roughly a 40% implied win probability, ahead of Austria and France, with the "
-            "semifinals (2025-05-13 and 2025-05-15) still to come."
+            "Will Sweden win the 2025 Eurovision Song Contest, whose grand final takes place in Basel on 2025-05-17?"
         ),
         evidence=(
             _capture(
@@ -569,8 +518,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "(IMO) problem set, under the same time limits as human contestants (4.5 hours per 3-problem "
             "session), with the result reported by reliable publications within one month after the contest "
             "(held 2025-07-10 to 2025-07-20)? Input and output may be informal natural language or formal "
-            "(e.g. Lean). For reference, in 2024 Google DeepMind's AlphaProof/AlphaGeometry 2 scored one "
-            "point short of gold, taking days of computation on some problems."
+            "(e.g. Lean)."
         ),
         evidence=(
             _capture(
@@ -600,10 +548,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Luigi Mangione be convicted of murder (any degree, whether by verdict or guilty plea) in "
             "connection with the December 2024 killing of UnitedHealthcare CEO Brian Thompson before "
-            "2026-01-01? A murder conviction in any court — New York state or federal — counts. At the "
-            "information cutoff Mangione has pleaded not guilty in both cases: the New York state murder "
-            "case is in pretrial proceedings with no trial date set, and federal prosecutors, who are "
-            "seeking the death penalty, have proposed a 2026 trial."
+            "2026-01-01? A murder conviction in any court — New York state or federal — counts."
         ),
         evidence=(),
     ),
@@ -617,10 +562,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Jerome Powell cease to hold the office of Chair of the US Federal Reserve before "
             "2026-01-01 (Eastern Time)? Resolves YES if he is no longer Fed Chair for any reason — removal, "
-            "resignation, or death — before that moment. At the information cutoff President Trump has for "
-            "months publicly demanded Powell resign or slash rates, administration officials are floating "
-            "cost overruns in the Fed's headquarters renovation as potential cause for removal, and Powell "
-            "has said he will not leave voluntarily; his term as chair runs into May 2026."
+            "resignation, or death — before that moment."
         ),
         evidence=(),
     ),
@@ -634,10 +576,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will the Federal Reserve cut interest rates at its September 2025 FOMC meeting (scheduled for "
             "2025-09-16/17)? Any reduction of the federal funds target range announced at that meeting "
-            "resolves YES. At the information cutoff the Fed has just held rates at 4.25-4.50% for a fifth "
-            "consecutive meeting (2025-07-30) with two governors dissenting in favor of a cut — the first "
-            "double dissent by governors since 1993 — President Trump is publicly demanding deep cuts, and "
-            "the July jobs report is due 2025-08-01."
+            "resolves YES."
         ),
         evidence=(
             _capture(
@@ -656,10 +595,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         prob_at_as_of=0.0400,
         question=(
             "Will Donald Trump win the 2025 Nobel Peace Prize, to be announced by the Norwegian Nobel "
-            "Committee on 2025-10-10? At the information cutoff Trump has been nominated by several "
-            "politicians and foreign governments and is publicly campaigning for the prize, citing his "
-            "administration's role in ceasefires including India-Pakistan and Thailand-Cambodia; the formal "
-            "nomination deadline for the 2025 cycle was 2025-01-31."
+            "Committee on 2025-10-10?"
         ),
         evidence=(),
     ),
@@ -673,9 +609,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will a US federal government shutdown that involves furloughing federal workers begin between "
             "2025-01-01 and 2025-12-31? A funding lapse so brief that no workers are furloughed does not "
-            "count, nor would a shutdown that began in 2024. At the information cutoff federal appropriations "
-            "expire at the end of 2025-09-30; the House has passed a seven-week stopgap bill, which the "
-            "Senate has rejected amid a dispute over health-care subsidies."
+            "count, nor would a shutdown that began in 2024."
         ),
         evidence=(
             _capture(
@@ -707,10 +641,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "wealth, such as an annual net-wealth tax, an unrealized-capital-gains tax, or a recurring "
             "wealth tax limited to real estate — passed by Parliament by 2025-12-18, when Parliament rises? "
             "Changes to existing property taxes (e.g. council tax), a land-value tax, or higher rates on "
-            "realized income or gains do not count. At the information cutoff Chancellor Rachel Reeves's "
-            "autumn Budget is scheduled for 2025-11-26 against a reported fiscal gap of £20-40 billion, "
-            "with campaigners and some Labour MPs urging a wealth tax and ministers declining to rule one "
-            "out."
+            "realized income or gains do not count."
         ),
         evidence=(),
     ),
@@ -724,10 +655,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will former South Korean president Yoon Suk Yeol be convicted of insurrection over his "
             "2024-12-03 martial-law declaration? Resolves YES on a guilty verdict on the insurrection "
-            "charge at his criminal trial. At the information cutoff Yoon has been removed from office by "
-            "the Constitutional Court (2025-04-04) and his insurrection trial at the Seoul Central District "
-            "Court, under way since February 2025, is ongoing; South Korea last convicted former presidents "
-            "over a coup in 1996, and an insurrection conviction can carry up to life imprisonment or death."
+            "charge at his criminal trial."
         ),
         evidence=(),
     ),
@@ -743,10 +671,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "International Emergency Economic Powers Act (IEEPA) to impose the 2025 'reciprocal' and "
             "'trafficking' tariffs challenged in Learning Resources v. Trump / V.O.S. Selections v. Trump? "
             "Resolves YES if by 2026-06-30 a SCOTUS merits decision (5+ justices) holds the challenged "
-            "tariffs were lawful; a decision striking them down, or no decision by then, resolves NO. At "
-            "the information cutoff the Federal Circuit has held the tariffs unlawful (2025-08-29), the "
-            "Supreme Court heard expedited oral argument 2025-11-05 — where several justices sounded "
-            "skeptical of the government's position — and the decision is pending."
+            "tariffs were lawful; a decision striking them down, or no decision by then, resolves NO."
         ),
         evidence=(),
     ),
@@ -761,10 +686,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
             "Will NASA's Artemis II mission — the first crewed flight of the SLS rocket and Orion capsule, "
             "carrying four astronauts around the Moon and back — return to Earth with all of its crew "
             "alive? Resolves YES when the crew returns alive, NO if a crew member dies during the mission; "
-            "the question is void if the mission is scrapped before launch. At the information cutoff "
-            "launch is targeted for early February 2026 from Kennedy Space Center; no crewed Orion has "
-            "flown before, and the capsule's heat shield charred unexpectedly during the uncrewed Artemis I "
-            "reentry in 2022."
+            "the question is void if the mission is scrapped before launch."
         ),
         evidence=(
             _capture(
@@ -784,8 +706,7 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         question=(
             "Will Viktor Orbán remain Hungary's prime minister following the Hungarian parliamentary election "
             "scheduled for 2026-04-12 — that is, will the newly elected National Assembly choose Orbán as "
-            "prime minister? At the information cutoff, opposition leader Péter Magyar's Tisza party leads "
-            "most independent polls, while pro-government pollsters show Orbán's Fidesz ahead."
+            "prime minister?"
         ),
         evidence=(
             _capture(
@@ -808,10 +729,8 @@ MARKET_SEED_RECORDS: tuple[MarketSeedRecord, ...] = (
         resolved_yes=False,
         prob_at_as_of=0.6300,
         question=(
-            "Will Italy qualify for the 2026 FIFA World Cup? Italy finished second in UEFA qualifying Group I "
-            "behind Norway and enters the March 2026 playoffs: a semifinal at home against Northern Ireland "
-            "on 2026-03-26 and, with a win, an away final on 2026-03-31 against the winner of Wales vs Bosnia "
-            "and Herzegovina. Resolves YES only if Italy secures a place in the World Cup finals tournament."
+            "Will Italy qualify for the 2026 FIFA World Cup? Resolves YES only if Italy secures a place in "
+            "the World Cup finals tournament."
         ),
         evidence=(
             _capture(
