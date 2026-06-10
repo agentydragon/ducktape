@@ -14,9 +14,11 @@ losses (full metric set in `Score.metadata`, headline metric as the value).
 Runs need two images on the local Docker daemon: the proxy
 (`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
 (`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`). For real evals
-point `wayback_upstream` at the shared cluster pull-through cache
-(`cluster/k8s/wayback-cache/`, e.g. via kubectl port-forward) so IA is never
-hammered directly.
+point `wayback_upstream` at the shared cluster pull-through cache so IA is
+never hammered directly — from out of cluster use its authed gateway route
+(`https://wayback-cache.allegedly.works` + `wayback_upstream_auth="Bearer
+<token>"` from the `wayback-cache-token` secret); in-cluster use the
+unauthed `http://wayback-cache.wayback-cache.svc:8080`.
 """
 
 from __future__ import annotations
