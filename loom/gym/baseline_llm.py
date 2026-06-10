@@ -133,9 +133,25 @@ def _as_of_header(task: Task, dossier: dict[str, str] | None) -> str:
     )
 
 
+def _evidence_block(task: Task, indent: str = "") -> str:
+    """Dated-evidence lines, each ending in a newline; empty when the task has none.
+
+    Task validation guarantees every item is dated at or before `as_of`, so the
+    block can be included unconditionally.
+    """
+    if not task.evidence:
+        return ""
+    lines = [
+        "Dated evidence available to you (published on or before the information cutoff):",
+        *(f"- {item.date}: {item.title} ({item.url})" for item in task.evidence),
+    ]
+    return "".join(f"{indent}{line}\n" for line in lines)
+
+
 def build_prompt(task: Task, dossier: dict[str, str] | None = None) -> str:
     return (
         _as_of_header(task, dossier)
+        + _evidence_block(task)
         + f"Question: {task.question.text}\n"
         + f"Resolution date: {task.resolution_date}\n"
         + f"Call submit_answer: {answer_instruction(task.question)}."
@@ -146,6 +162,8 @@ def build_bundle_prompt(tasks: Sequence[Task], dossier: dict[str, str] | None = 
     lines = [_as_of_header(tasks[0], dossier), "Sub-questions:"]
     for task in tasks:
         lines.append(f"[{task.task_id}] {task.question.text} (resolves {task.resolution_date})")
+        if evidence_block := _evidence_block(task, indent="  "):
+            lines.append(evidence_block.rstrip("\n"))
         lines.append(f"  → {answer_instruction(task.question)}")
     lines.append("Call submit_answers once, with an answer for every sub-question id.")
     return "\n".join(lines)
