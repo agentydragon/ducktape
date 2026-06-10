@@ -338,7 +338,7 @@ async def test_run_scrape_unchanged_markets_skip_the_commit(tmp_path: Path) -> N
     _seed_remote(remote)
     get, _ = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
-    async def scrape_once() -> int:
+    async def scrape_once(now: datetime) -> int:
         return await run_scrape(
             str(remote),
             "main",
@@ -346,15 +346,31 @@ async def test_run_scrape_unchanged_markets_skip_the_commit(tmp_path: Path) -> N
             username="",
             password="",
             http_get=get,
-            now=NOW,
+            now=now,
             depth=0,
             markets=[MANIFOLD_ENTRY, KALSHI_ENTRY],
         )
 
-    assert await scrape_once() == 0
+    assert await scrape_once(NOW) == 0
     count_after_first = _remote_commit_count(remote)
-    assert await scrape_once() == 0
+    # An hour later (the hourly-cron case): identical payloads and a manifest stamp
+    # young enough to keep — nothing to commit, not even a manifest-only diff.
+    assert await scrape_once(NOW + timedelta(hours=1)) == 0
     assert _remote_commit_count(remote) == count_after_first
+
+
+async def test_run_scrape_restamps_manifest_after_refresh_floor(tmp_path: Path) -> None:
+    # Quiet markets skip the manifest bump (no churn), but the stamp still refreshes
+    # about daily so the stale-after exit stays honest about ongoing successes.
+    remote = tmp_path / "remote.git"
+    _seed_with_last_fetched(remote, {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=21)})
+    get, _ = _dispatch_get(_MARKET_RESPONSES)
+    code = await run_scrape(
+        str(remote), "main", [], username="", password="", http_get=get, now=NOW, depth=0, markets=[KALSHI_ENTRY]
+    )
+    assert code == 0
+    manifest = EvidenceManifest.model_validate_json(_remote_blob(remote, EVIDENCE_META_FILENAME))
+    assert manifest.last_fetched[KALSHI_ENTRY.provenance_label] == NOW
 
 
 async def test_run_scrape_market_syncs_while_fresh_source_skips(tmp_path: Path) -> None:

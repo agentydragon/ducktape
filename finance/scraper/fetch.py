@@ -58,6 +58,13 @@ DEFAULT_MAX_AGE = timedelta(hours=20)
 # outages, short enough that a genuinely stuck source still surfaces.
 DEFAULT_STALE_AFTER = timedelta(days=3)
 
+# A successful sync re-stamps the committed last_fetched only once the stored stamp
+# is this old. Its consumers (freshness skip, stale-aware exit) tolerate day-level
+# accuracy, and skipping the no-op bump keeps an hourly run whose data didn't change
+# from committing a manifest-only diff every time — the mirror's git history stays
+# a record of real data changes (plus one liveness attestation per ~day).
+MANIFEST_REFRESH_FLOOR = DEFAULT_MAX_AGE
+
 
 class EvidenceManifest(BaseModel):
     """Per-source last-successful-fetch times, committed as evidence_meta.json."""
@@ -196,12 +203,12 @@ async def run_scrape(
         due_markets = _due(markets, manifest, now, market_max_age)
         failed_markets = await sync_markets(repo_path, due_markets, http_get=http_get)
 
-        for source in due_sources:
-            if source not in failed_sources:
-                manifest.last_fetched[source.provenance_label] = now
-        for entry in due_markets:
-            if entry not in failed_markets:
-                manifest.last_fetched[entry.provenance_label] = now
+        succeeded: list[_Provenanced] = [source for source in due_sources if source not in failed_sources]
+        succeeded += [entry for entry in due_markets if entry not in failed_markets]
+        for item in succeeded:
+            age = _age_since_fetch(manifest, item.provenance_label, now)
+            if age is None or age >= MANIFEST_REFRESH_FLOOR:
+                manifest.last_fetched[item.provenance_label] = now
         _write_manifest(repo_path, manifest)
         commit_and_push(repo, branch, now=now, callbacks=callbacks)
 
