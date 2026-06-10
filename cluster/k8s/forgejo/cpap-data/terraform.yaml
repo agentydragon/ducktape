@@ -12,6 +12,11 @@ spec:
     name: flux-system
     namespace: flux-system
 
+  # forgejo_collaborator.claude grants read to the claude agent account, so the
+  # forgejo-claude module (which provisions that user) must apply first.
+  dependsOn:
+    - name: forgejo-claude
+
   serviceAccountName: tf-runner
   approvePlan: "auto"
 
