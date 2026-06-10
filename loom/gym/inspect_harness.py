@@ -71,6 +71,17 @@ services:
     environment:
       http_proxy: http://proxy:8080
       HTTP_PROXY: http://proxy:8080
+      https_proxy: http://proxy:8080
+      HTTPS_PROXY: http://proxy:8080
+      # The proxy MITMs TLS with its own CA (written to the shared volume at
+      # startup); trust it through the standard env-var contract so https://
+      # fetches validate without rewriting to http://.
+      SSL_CERT_FILE: /wayback-ca/mitmproxy-ca-cert.pem
+      REQUESTS_CA_BUNDLE: /wayback-ca/mitmproxy-ca-cert.pem
+      CURL_CA_BUNDLE: /wayback-ca/mitmproxy-ca-cert.pem
+      NODE_EXTRA_CA_CERTS: /wayback-ca/mitmproxy-ca-cert.pem
+    volumes:
+      - wayback-ca:/wayback-ca:ro
     depends_on:
       proxy:
         condition: service_healthy
@@ -81,22 +92,30 @@ services:
     image: {image}
     x-local: true
     init: true
+    # Run as root only to populate the fresh (root-owned) wayback-ca volume
+    # with the generated CA; the agent mounts it read-only.
+    user: "0:0"
     networks: [sandbox, egress]
     environment:
       WAYBACK_AS_OF: "{as_of}"
       WAYBACK_UPSTREAM: "{upstream}"
       WAYBACK_UPSTREAM_AUTH: "{upstream_auth}"
       WAYBACK_MANIFEST_PATH: "{manifest_path}"
+      WAYBACK_CONFDIR: /wayback-ca
+    volumes:
+      - wayback-ca:/wayback-ca
     extra_hosts:
       # Lets upstream point at a host port: a kubectl port-forward of the
       # cluster wayback-cache, or a test's in-process fake IA.
       - host.docker.internal:host-gateway
     healthcheck:
+      # Probe through the proxy (mitmproxy has no origin-form endpoint): the
+      # addon answers the reserved wayback-proxy.local host directly.
       test:
         - CMD
         - python3
         - -c
-        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)
+        - import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({{"http": "http://127.0.0.1:8080"}})).open("http://wayback-proxy.local/healthz", timeout=3)
       interval: 2s
       timeout: 5s
       retries: 15
@@ -106,6 +125,9 @@ networks:
   sandbox:
     internal: true
   egress: {{}}
+
+volumes:
+  wayback-ca: {{}}
 """
 
 AGENT_PROMPT = (
@@ -116,10 +138,9 @@ AGENT_PROMPT = (
     "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
     "If /data/sources.txt exists, it lists URLs that may contain relevant information — possible "
     "starting points for your research, which you can follow and branch out from. You can browse the "
-    "web as it existed at your information cutoff through a preconfigured HTTP proxy. IMPORTANT: only "
-    "plain http:// URLs work — there is no https; rewrite any https:// link to http:// before fetching "
-    "(curl, urllib, and requests honor http_proxy automatically). When confident, call submit with "
-    "ONLY the JSON answer object, no prose."
+    "web as it existed at your information cutoff through a preconfigured proxy: ordinary http:// and "
+    "https:// URLs both work (curl, urllib, and requests honor the proxy and its CA automatically). "
+    "When confident, call submit with ONLY the JSON answer object, no prose."
 )
 
 # Container path the proxy sidecar writes its served-evidence manifest to;
@@ -147,8 +168,8 @@ def write_sandbox_compose(
 
 _SOURCES_HEADER = (
     "URLs that may contain information relevant to this question, archived at or before your "
-    "information cutoff. They are possible starting points only — fetch them (http:// form) through "
-    "the proxy and branch out as you see fit.\n"
+    "information cutoff. They are possible starting points only — fetch them (http:// or https://) "
+    "through the proxy and branch out as you see fit.\n"
 )
 
 

@@ -51,15 +51,15 @@ GYM_TASK = one(
     )
 )
 
-# The same task with an evidence lead pointing at the fake IA's canned page:
-# the agent discovers it in /data/evidence.jsonl and fetches it through the
-# clamped proxy.
+# The same task with an evidence lead pointing at the fake IA's canned page,
+# given as an https:// URL: the agent discovers it in /data/sources.txt and
+# fetches it through the clamped MITM proxy without rewriting to http://.
 EVIDENCE_TASK = GYM_TASK.model_copy(
     update={
         "evidence": (
             EvidenceItem(
-                url=fake_ia.EXAMPLE_URL,
-                archived_url=f"https://web.archive.org/web/{fake_ia.GOOD_TS}/{fake_ia.EXAMPLE_URL}",
+                url=fake_ia.EXAMPLE_ORIGINAL,
+                archived_url=f"https://web.archive.org/web/{fake_ia.GOOD_TS}/{fake_ia.EXAMPLE_ORIGINAL}",
                 date=date(2020, 1, 15),
                 title="archived example.com homepage",
             ),
@@ -90,10 +90,10 @@ def test_evidence_lands_as_url_file_never_in_prompt(tmp_path: Path) -> None:
     sources = sample.files["/data/sources.txt"]
     # URLs only — no titles (a title could carry the curator's framing).
     url_lines = [line for line in sources.splitlines() if line.startswith("http")]
-    assert url_lines == [fake_ia.EXAMPLE_URL]
+    assert url_lines == [fake_ia.EXAMPLE_ORIGINAL]
     assert "archived example.com homepage" not in sources
     # Evidence is data the agent chooses to read, not prompt content.
-    assert fake_ia.EXAMPLE_URL not in str(sample.input)
+    assert fake_ia.EXAMPLE_ORIGINAL not in str(sample.input)
 
 
 def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> None:
@@ -105,9 +105,15 @@ def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> 
     assert agent["networks"] == ["sandbox"]
     assert "network_mode" not in agent
     assert config["networks"]["sandbox"]["internal"] is True
+    # https egress goes through the same proxy, and the agent trusts the MITM
+    # CA from the shared volume — so https:// works without rewriting to http.
+    assert agent["environment"]["HTTPS_PROXY"] == "http://proxy:8080"
+    assert agent["environment"]["SSL_CERT_FILE"] == "/wayback-ca/mitmproxy-ca-cert.pem"
+    assert "wayback-ca:/wayback-ca:ro" in agent["volumes"]
     proxy = config["services"]["proxy"]
     assert proxy["environment"]["WAYBACK_AS_OF"] == "2020-02-01"
     assert proxy["environment"]["WAYBACK_UPSTREAM"] == "http://host.docker.internal:9999"
+    assert proxy["environment"]["WAYBACK_CONFDIR"] == "/wayback-ca"
     assert set(proxy["networks"]) == {"sandbox", "egress"}
 
 
@@ -197,10 +203,11 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # and the gym's proper loss (outcome YES → -ln(0.8)).
     load_oci_image(WAYBACK_PROXY_IMAGE)
     load_oci_image(PYTHON_3_13_SLIM)
-    # Bash-only tool: the agent runs python via the shell. Fetch the evidence
-    # lead through the clamped proxy (urllib honors http_proxy). The harness's
-    # rich sandbox image is for real runs; the mechanics test uses the
-    # lightweight bazel-loaded python:3.13-slim (also has bash + urllib).
+    # Bash-only tool: the agent runs python via the shell. Fetch the https://
+    # evidence lead through the clamped MITM proxy unmodified — urllib honors
+    # https_proxy and trusts the proxy CA via SSL_CERT_FILE. The harness's rich
+    # sandbox image is for real runs; the mechanics test uses the lightweight
+    # bazel-loaded python:3.13-slim (also has bash + urllib).
     fetch_cmd = dedent(
         """
         python3 - <<'PY'
@@ -250,7 +257,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # W3: the proxy's served-evidence manifest rides along in the score.
     assert score.metadata is not None
     served = one(score.metadata["served_evidence"])
-    assert served["url"] == fake_ia.EXAMPLE_URL
+    assert served["url"] == fake_ia.EXAMPLE_ORIGINAL
     assert served["capture_ts"] == fake_ia.GOOD_TS
     assert served["sha256"]
 
