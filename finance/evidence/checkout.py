@@ -3,9 +3,11 @@
 The augur-evidence scraper maintains raw upstream data files in a private
 Forgejo repo. `AUGUR_EVIDENCE_DIR` (the same variable augur's fit pipeline
 uses) points at an existing checkout and wins; otherwise a shallow clone is
-kept under `~/.cache/loom/augur-evidence` using the `augur-evidence-reader`
-credentials (k8s Secret `augur-evidence-git-read`, reflected into
-`claude-sandbox`).
+kept under `~/.cache/loom/augur-evidence` using HTTP Basic creds from
+`AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD`. In a Claude agent
+session those come from the `claude` Forgejo service account (which has
+read-only collaboration on the repo) — k8s Secret
+`claude-sandbox/claude-forgejo-credentials`.
 """
 
 from __future__ import annotations
@@ -41,8 +43,11 @@ def ensure_checkout() -> Path:
     if username is None or password is None:
         raise RuntimeError(
             "set AUGUR_EVIDENCE_DIR to an existing augur-evidence checkout, or set "
-            "AUGUR_EVIDENCE_GIT_USERNAME / AUGUR_EVIDENCE_GIT_PASSWORD "
-            "(from `kubectl get secret augur-evidence-git-read -n claude-sandbox`)"
+            "AUGUR_EVIDENCE_GIT_USERNAME / AUGUR_EVIDENCE_GIT_PASSWORD. In a Claude agent "
+            "session the `claude` Forgejo account has read access:\n"
+            "  U=$(kubectl get secret -n claude-sandbox claude-forgejo-credentials -o jsonpath='{.data.username}' | base64 -d)\n"
+            "  P=$(kubectl get secret -n claude-sandbox claude-forgejo-credentials -o jsonpath='{.data.password}' | base64 -d)\n"
+            "  export AUGUR_EVIDENCE_GIT_USERNAME=$U AUGUR_EVIDENCE_GIT_PASSWORD=$P"
         )
     checkout = Path.home() / ".cache" / "loom" / "augur-evidence"
     if (checkout / ".git").exists():
