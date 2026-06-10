@@ -288,6 +288,9 @@ resources:
   - proxmox-proxy/flux-kustomization.yaml
   - proxmox-proxy/agent-rbac/flux-kustomization.yaml
 
+  # --- wayback-cache ---
+  - wayback-cache/flux-kustomization.yaml
+
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml
 
