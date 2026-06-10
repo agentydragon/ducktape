@@ -43,13 +43,14 @@ from finance.augur.calibration.catalog import (
     ThresholdLadderFamily,
     ThresholdLadderMember,
 )
-from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
+from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import InflationKey, IssuerId, PrivateEquityEventKindCode, SP500Key
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
+from finance.evidence.markets import Platform
 
 _ISSUER = "issuer_x"
 _HORIZON = 120

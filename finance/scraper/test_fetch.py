@@ -8,15 +8,9 @@ import httpx
 import pygit2
 import pytest_bazel
 
-from finance.augur.ingest.fetch import (
-    EVIDENCE_META_FILENAME,
-    EvidenceManifest,
-    commit_and_push,
-    run_scrape,
-    write_sources,
-)
-from finance.augur.ingest.http_fetch import HttpGet
 from finance.evidence.sources import EvidenceKind, EvidenceSource
+from finance.scraper.fetch import EVIDENCE_META_FILENAME, EvidenceManifest, commit_and_push, run_scrape, write_sources
+from finance.scraper.http_fetch import HttpGet
 
 SOURCE = EvidenceSource(
     kind=EvidenceKind.FRED,

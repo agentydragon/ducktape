@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from finance.augur.calibration.platform import Market, Platform
+from finance.augur.calibration.platform import Market
 from finance.augur.calibration.quote import PoolQuote
 from finance.augur.calibration.redis_cache import (
     MarketSnapshot,
@@ -13,6 +13,7 @@ from finance.augur.calibration.redis_cache import (
     _market_to_dict,
     market_cache_config_from_env,
 )
+from finance.evidence.markets import Platform
 
 
 class _FakeStore:

@@ -19,8 +19,9 @@ from datetime import date
 from finance.augur.calibration.calibration import _fit_ladder_curve, _threshold_ladder_buckets
 from finance.augur.calibration.catalog import ThresholdLadderFamily, ThresholdLadderMember
 from finance.augur.calibration.kalshi import KalshiClient
-from finance.augur.calibration.platform import Direction, Market, Platform
+from finance.augur.calibration.platform import Direction, Market
 from finance.augur.calibration.quote import BookQuote, implied_probability, quote_confidence
+from finance.evidence.markets import Platform
 
 _TICKERS = [f"KXCPIYOY-26JUL-T{whole}.{tenth}" for whole in (3, 4) for tenth in range(10)] + ["KXCPIYOY-26JUL-T5.0"]
 _THRESHOLDS = [whole * 0.01 + tenth * 0.001 for whole in (3, 4) for tenth in range(10)] + [0.05]

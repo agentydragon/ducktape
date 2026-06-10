@@ -13,7 +13,6 @@ filegroup(
 py_library(
     name = "quote",
     srcs = ["quote.py"],
-    deps = [],
 )
 
 py_library(
@@ -39,9 +38,9 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":platform",
+        "//finance/evidence:markets",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -98,6 +97,7 @@ py_library(
         ":platform",
         ":polymarket",
         ":redis_cache",
+        "//finance/evidence:markets",
     ],
 )
 
@@ -107,9 +107,9 @@ py_library(
     deps = [
         ":platform",
         ":quote",
+        "//finance/evidence:markets",
         "@pypi//py_key_value_aio",
         "@pypi//pydantic",
-        "@pypi//valkey_glide",
     ],
 )
 
@@ -122,6 +122,7 @@ py_library(
         ":manifold",
         ":platform",
         ":quote",
+        "//finance/evidence:markets",
         "@pypi//httpx",
     ],
 )
@@ -131,13 +132,13 @@ py_library(
     srcs = ["calibration.py"],
     deps = [
         ":catalog",
-        ":manifold",
         ":platform",
         ":quote",
         ":resolvers",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
+        "//finance/evidence:markets",
         "@pypi//httpx",
         "@pypi//numpy",
         "@pypi//polymarket_client",
@@ -154,6 +155,7 @@ py_library(
         ":default_clients",
         ":platform",
         ":redis_cache",
+        "//finance/evidence:markets",
         "@pypi//httpx",
         "@pypi//polymarket_client",
     ],
@@ -177,9 +179,7 @@ py_library(
         ":manifold",
         ":resolvers",
         "//finance/augur/model:private_equity_risk",
-        "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -249,8 +249,10 @@ py_test(
     name = "test_quote",
     srcs = ["test_quote.py"],
     deps = [
+        ":conftest",
         ":quote",
         "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -260,9 +262,11 @@ py_test(
     name = "test_resolvers",
     srcs = ["test_resolvers.py"],
     deps = [
+        ":conftest",
         ":platform",
         ":resolvers",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
@@ -275,8 +279,10 @@ py_test(
     data = ["example_openai_catalog.yaml"],
     deps = [
         ":catalog",
-        ":platform",
+        ":conftest",
         "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -290,12 +296,17 @@ py_test(
     deps = [
         ":calibration",
         ":catalog",
+        ":conftest",
+        ":platform",
         ":quote",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
+        "//finance/evidence:markets",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -319,8 +330,8 @@ py_test(
         ":macro_anchors",
         ":platform",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/fit:evidence_data",
-        "//finance/evidence:loading",
         "@pypi//pytest_bazel",
     ],
 )
@@ -329,10 +340,12 @@ py_test(
     name = "test_manifold",
     srcs = ["test_manifold.py"],
     deps = [
+        ":conftest",
         ":manifold",
         ":quote",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -344,10 +357,13 @@ py_test(
     name = "test_redis_cache",
     srcs = ["test_redis_cache.py"],
     deps = [
+        ":conftest",
         ":platform",
         ":quote",
         ":redis_cache",
         "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
@@ -358,9 +374,11 @@ py_test(
     name = "test_transient_retry",
     srcs = ["test_transient_retry.py"],
     deps = [
+        ":conftest",
         ":kalshi",
         ":transient_retry",
         "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -373,10 +391,12 @@ py_test(
     srcs = ["test_ipo_prior.py"],
     deps = [
         ":catalog",
+        ":conftest",
         ":ipo_prior",
         ":manifold",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:private_equity_risk",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -389,10 +409,13 @@ py_test(
     srcs = ["test_warm_cache.py"],
     deps = [
         ":catalog",
+        ":conftest",
         ":platform",
         ":quote",
         ":warm_cache",
         "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

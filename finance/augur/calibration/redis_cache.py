@@ -15,8 +15,9 @@ from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.valkey import ValkeyStore
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from finance.augur.calibration.platform import Market, Platform, PriceClient
+from finance.augur.calibration.platform import Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote, Quote
+from finance.evidence.markets import Platform
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -34,9 +34,9 @@ import uvicorn
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
-from finance.augur.calibration.platform import Platform
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
+from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port, wait_for_port
 from util.testing.frontend_visual import (

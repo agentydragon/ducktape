@@ -49,7 +49,7 @@ from finance.augur.calibration.catalog import (
     SurfacedMarket,
     ThresholdLadderFamily,
 )
-from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
+from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import implied_probability, quote_confidence
 from finance.augur.calibration.resolvers import (
     Resolution,
@@ -76,6 +76,7 @@ from finance.augur.model.exogenous import (
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
+from finance.evidence.markets import Platform
 
 logger = logging.getLogger(__name__)
 

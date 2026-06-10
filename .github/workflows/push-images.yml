@@ -78,11 +78,7 @@ jobs:
               image_name: augur-market-warmer,
               test_target: "//finance/augur/calibration/...",
             }
-          - {
-              image: "//finance/augur/ingest:image",
-              image_name: augur-evidence,
-              test_target: "//finance/augur/ingest/...",
-            }
+          - { image: "//finance/scraper:image", image_name: augur-evidence, test_target: "//finance/scraper/..." }
           - {
               image: "//homeassistant/proxy:image",
               image_name: homeassistant-proxy,

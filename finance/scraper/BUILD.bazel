@@ -28,24 +28,8 @@ py_library(
 
 py_binary(
     name = "evidence",
-    main_module = "finance.augur.ingest.fetch",
+    main_module = "finance.scraper.fetch",
     deps = [":fetch"],
-)
-
-py_test(
-    name = "test_ingest",
-    srcs = ["test_ingest.py"],
-    deps = [
-        ":fetch",
-        ":http_fetch",
-        "//:conftest",
-        "//finance/evidence:sources",
-        "@pypi//httpx",
-        "@pypi//pygit2",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 # ── OCI image: augur-evidence (git-scrape CronJob) ──────────────────────
@@ -88,4 +72,19 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["augur-evidence:latest"],
+)
+
+py_test(
+    name = "test_fetch",
+    srcs = ["test_fetch.py"],
+    deps = [
+        ":fetch",
+        ":http_fetch",
+        "//:conftest",
+        "//finance/evidence:sources",
+        "@pypi//httpx",
+        "@pypi//pygit2",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
 )

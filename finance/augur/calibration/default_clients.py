@@ -12,13 +12,14 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from finance.augur.calibration.kalshi import KalshiClient
 from finance.augur.calibration.manifold import ManifoldClient
-from finance.augur.calibration.platform import Platform, PriceClient
+from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.polymarket import PolymarketClient
 from finance.augur.calibration.redis_cache import (
     market_cache_config_from_env,
     open_market_cache_store,
     wrap_price_clients_with_redis_cache,
 )
+from finance.evidence.markets import Platform
 
 # These clients are constructed once per server process and reused for every calibration run, so
 # the TTL bounds how stale a surfaced price/title can be — not how often a single request re-fetches.

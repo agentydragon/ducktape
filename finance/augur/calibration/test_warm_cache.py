@@ -10,9 +10,10 @@ import pytest
 import pytest_bazel
 
 from finance.augur.calibration.catalog import CorrelateMarket, ExactMarket, IpoByDateMapping, ManifoldRef, MarketCatalog
-from finance.augur.calibration.platform import Market, Platform
+from finance.augur.calibration.platform import Market
 from finance.augur.calibration.quote import BookQuote
 from finance.augur.calibration.warm_cache import WarmSummary, _run, warm_market_cache
+from finance.evidence.markets import Platform
 
 
 class _RecordingClient:

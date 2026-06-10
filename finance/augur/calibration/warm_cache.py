@@ -28,8 +28,9 @@ from polymarket.errors import PolymarketError
 
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.default_clients import default_price_clients
-from finance.augur.calibration.platform import Platform, PriceClient
+from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.redis_cache import market_cache_config_from_env
+from finance.evidence.markets import Platform
 
 logger = logging.getLogger(__name__)
 

@@ -337,8 +337,8 @@ apt.install(
 # whole process at import without a system CA bundle).
 apt.install(
     name = "trixie_evidence",
-    lock = "//finance/augur/ingest:trixie_evidence.lock.json",
-    manifest = "//finance/augur/ingest:trixie_evidence.yaml",
+    lock = "//finance/scraper:trixie_evidence.lock.json",
+    manifest = "//finance/scraper:trixie_evidence.yaml",
 )
 use_repo(apt, "bookworm_cpap_sync", "bookworm_fc_vm_pod", "gnome_shell_test", "trixie_attic_rotation", "trixie_budget_exporter", "trixie_e2e", "trixie_evidence", "trixie_jwt_rotation")
 

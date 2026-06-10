@@ -20,8 +20,9 @@ import httpx
 
 from finance.augur.calibration.kalshi import KalshiClient
 from finance.augur.calibration.manifold import ManifoldClient
-from finance.augur.calibration.platform import Market, Platform, PriceClient
+from finance.augur.calibration.platform import Market, PriceClient
 from finance.augur.calibration.quote import BookQuote
+from finance.evidence.markets import Platform
 
 
 @dataclass(frozen=True)
