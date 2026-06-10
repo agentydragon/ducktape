@@ -48,6 +48,11 @@ async def amain(config: Config, manifest: TextIO) -> None:
         resolver = WaybackResolver(config, session, manifest)
         options = Options(listen_host="0.0.0.0", listen_port=config.port, confdir=str(ca_dir))
         master = DumpMaster(options, with_termlog=False, with_dumper=False)
+        # lazy: the addon answers every flow from the archive (flow.response set in
+        # the request hook), so mitmproxy must never open a connection to the real
+        # upstream. Default "eager" opens one before the addon runs — wasted work
+        # that also fails TLS verification behind a TLS-inspecting egress proxy.
+        master.options.connection_strategy = "lazy"
         master.addons.add(WaybackAddon(resolver))
         await master.run()
 
