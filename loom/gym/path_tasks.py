@@ -17,7 +17,7 @@ from more_itertools import first
 
 from loom.gym.bundle_tasks import bucket_for
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
-from loom.gym.task import CategoricalOutcome, CategoricalQuestion, Task
+from loom.gym.task import CategoricalOutcome, CategoricalQuestion, GridCoordinates, GridShape, Task
 
 HORIZON_MONTHS = 12
 
@@ -78,6 +78,7 @@ def tasks_for_path(series: MonthlySeries, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=bucket_for(yoy, _YOY_EDGES, labels)),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.YOY, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
 
@@ -115,6 +116,7 @@ def tasks_for_path(series: MonthlySeries, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=bucket_for(max(fractions) * 100.0, edges, labels)),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.DRAWDOWN, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
 
@@ -139,6 +141,7 @@ def tasks_for_path(series: MonthlySeries, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=realized),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.FIRST_CROSS, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
     return tasks

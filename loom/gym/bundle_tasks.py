@@ -24,7 +24,15 @@ from datetime import date
 from itertools import pairwise
 
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
-from loom.gym.task import BinaryOutcome, BinaryQuestion, CategoricalOutcome, CategoricalQuestion, Task
+from loom.gym.task import (
+    BinaryOutcome,
+    BinaryQuestion,
+    CategoricalOutcome,
+    CategoricalQuestion,
+    GridCoordinates,
+    GridShape,
+    Task,
+)
 
 HORIZON_MONTHS = 12
 
@@ -103,6 +111,7 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=bucket_for(target_value, level_edges, level_labels)),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.LEVEL_PARTITION, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
         tasks.append(
@@ -116,6 +125,7 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
                 outcome=BinaryOutcome(value=target_value >= anchor_level),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.DIRECTION, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
     if band is not None:
@@ -136,6 +146,7 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=bucket_for(band, band_edges, band_labels)),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.BAND_PARTITION, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
     if target_value is not None and band is not None:
@@ -162,6 +173,7 @@ def tasks_for_bundle(spec: BundleSpec, anchor: date) -> list[Task]:
                 outcome=CategoricalOutcome(category=realized_joint),
                 outcome_source=source,
                 bundle_id=bundle_id,
+                grid=GridCoordinates(shape=GridShape.JOINT, anchor=anchor, horizon_months=HORIZON_MONTHS),
             )
         )
     return tasks

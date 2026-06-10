@@ -6,7 +6,7 @@ import pytest_bazel
 
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
-from loom.gym.task import BinaryOutcome, ScalarOutcome, Task
+from loom.gym.task import BinaryOutcome, GridCoordinates, GridShape, ScalarOutcome, Task
 
 # Linear ramp 100, 102, ... over 2020-01..2020-12 with a hole at 2020-05
 # (mimics the BLS Oct-2025 CPI gap).
@@ -72,6 +72,9 @@ def test_scalar_horizon_emission() -> None:
     (task,) = tasks_for_spec(spec, anchor_start=date(2020, 1, 1), anchor_step_months=12)
     assert task.task_id == "ramp-level-2020-01-h3"
     assert task.outcome == ScalarOutcome(value=106.0)
+    # The generator stamps its grid point onto the task — the structured form
+    # the id above is merely rendered from.
+    assert task.grid == GridCoordinates(shape=GridShape.SCALAR_LEVEL, anchor=date(2020, 1, 1), horizon_months=3)
 
 
 def test_generated_outcomes_match_series() -> None:

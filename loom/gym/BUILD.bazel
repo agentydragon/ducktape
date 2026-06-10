@@ -126,6 +126,12 @@ py_library(
 )
 
 py_library(
+    name = "panel",
+    srcs = ["panel.py"],
+    deps = [":task"],
+)
+
+py_library(
     name = "run_eval",
     srcs = ["run_eval.py"],
     deps = [
@@ -133,6 +139,7 @@ py_library(
         ":dossier",
         ":model_cutoffs",
         ":monthly_series",
+        ":panel",
         ":results_store",
         ":scoring",
         ":series_tasks",
@@ -240,6 +247,20 @@ py_test(
     srcs = ["test_series_tasks.py"],
     deps = [
         ":monthly_series",
+        ":series_tasks",
+        ":task",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_panel",
+    srcs = ["test_panel.py"],
+    deps = [
+        ":monthly_series",
+        ":panel",
+        ":seed_tasks",
         ":series_tasks",
         ":task",
         "//:conftest",

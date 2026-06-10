@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 from datetime import date
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -104,6 +105,37 @@ class CategoricalOutcome(BaseModel):
 Outcome = Annotated[BinaryOutcome | ScalarOutcome | CategoricalOutcome, Field(discriminator="kind")]
 
 
+class GridShape(StrEnum):
+    """The question shape a generated task instantiates at its grid point."""
+
+    SCALAR_LEVEL = "scalar_level"
+    CEILING = "ceiling"
+    FLOOR = "floor"
+    LEVEL_PARTITION = "level_partition"
+    DIRECTION = "direction"
+    BAND_PARTITION = "band_partition"
+    JOINT = "joint"
+    YOY = "yoy"
+    DRAWDOWN = "drawdown"
+    FIRST_CROSS = "first_cross"
+    COMPARISON = "comparison"
+
+
+class GridCoordinates(BaseModel):
+    """Where a generated task sits in the (shape × anchor × horizon) grid.
+
+    Stamped by the generator at mint time — the structured source the task id
+    is rendered from, so downstream selection (e.g. the panel) processes these
+    fields instead of parsing ids back apart.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    shape: GridShape
+    anchor: date = Field(description="First-of-month anchor the question window starts at.")
+    horizon_months: int = Field(gt=0)
+
+
 class Task(BaseModel):
     """One resolved forecasting task."""
 
@@ -123,6 +155,9 @@ class Task(BaseModel):
         default=(),
         description="Dated evidence captured at or before as_of (enforced), so prompts may include it unconditionally.",
     )
+    grid: GridCoordinates | None = Field(
+        default=None, description="Grid point for generated tasks; None for hand-curated ones."
+    )
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Task:
@@ -133,6 +168,14 @@ class Task(BaseModel):
         for item in self.evidence:
             if item.date > self.as_of:
                 raise ValueError(f"evidence dated after the cutoff: {item.date=} {self.as_of=} {item.url=}")
+        # The anchor month's close is only knowable once the month ends, so
+        # every generated task's as_of is the first day of anchor month + 1.
+        if self.grid is not None and (
+            self.as_of.day != 1
+            or self.grid.anchor.day != 1
+            or self.grid.anchor.year * 12 + self.grid.anchor.month + 1 != self.as_of.year * 12 + self.as_of.month
+        ):
+            raise ValueError(f"grid anchor must be the month before as_of: {self.grid.anchor=} {self.as_of=}")
         if (
             isinstance(self.question, CategoricalQuestion)
             and isinstance(self.outcome, CategoricalOutcome)

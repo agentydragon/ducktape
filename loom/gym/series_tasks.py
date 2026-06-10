@@ -23,7 +23,7 @@ from loom.gym.market_seed_tasks import MARKET_SEED_TASKS
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.path_tasks import path_tasks
 from loom.gym.seed_tasks import SEED_TASKS
-from loom.gym.task import BinaryOutcome, BinaryQuestion, ScalarOutcome, ScalarQuestion, Task
+from loom.gym.task import BinaryOutcome, BinaryQuestion, GridCoordinates, GridShape, ScalarOutcome, ScalarQuestion, Task
 
 
 @dataclass(frozen=True)
@@ -96,6 +96,7 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                     question=ScalarQuestion(text=f"{header} What will it be for {target:%Y-%m}?", unit=series.unit),
                     outcome=ScalarOutcome(value=target_value),
                     outcome_source=f"computed from {series.provenance}",
+                    grid=GridCoordinates(shape=GridShape.SCALAR_LEVEL, anchor=anchor, horizon_months=horizon),
                 )
             )
 
@@ -119,6 +120,7 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                     ),
                     outcome=BinaryOutcome(value=observed_max >= threshold),
                     outcome_source=f"computed from {series.provenance}",
+                    grid=GridCoordinates(shape=GridShape.CEILING, anchor=anchor, horizon_months=horizon),
                 )
             )
 
@@ -142,6 +144,7 @@ def tasks_for_spec(spec: SeriesTaskSpec, anchor_start: date, anchor_step_months:
                     ),
                     outcome=BinaryOutcome(value=observed_min <= threshold),
                     outcome_source=f"computed from {series.provenance}",
+                    grid=GridCoordinates(shape=GridShape.FLOOR, anchor=anchor, horizon_months=horizon),
                 )
             )
         anchor = add_months(anchor, anchor_step_months)

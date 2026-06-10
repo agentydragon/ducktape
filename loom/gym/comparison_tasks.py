@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from datetime import date
 
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
-from loom.gym.task import BinaryOutcome, BinaryQuestion, Task
+from loom.gym.task import BinaryOutcome, BinaryQuestion, GridCoordinates, GridShape, Task
 
 HORIZON_MONTHS = 12
 
@@ -42,6 +42,7 @@ def comparison_task(a: MonthlySeries, b: MonthlySeries, anchor: date) -> Task | 
         outcome=BinaryOutcome(value=a_target / a_anchor > b_target / b_anchor),
         outcome_source=f"computed from {a.provenance} and {b.provenance}",
         bundle_id=f"compare-bundle-{anchor:%Y-%m}",
+        grid=GridCoordinates(shape=GridShape.COMPARISON, anchor=anchor, horizon_months=HORIZON_MONTHS),
     )
 
 

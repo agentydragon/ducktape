@@ -24,6 +24,7 @@ from loom.gym.baseline_llm import LITELLM_BASE_URL, ChatEndpoint, ForecastResult
 from loom.gym.dossier import series_dossier
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.monthly_series import MonthlySeries, load_series
+from loom.gym.panel import build_panel
 from loom.gym.results_store import results_client, upload_run
 from loom.gym.scoring import Answer, TaskScore, cluster_bootstrap_ci, score
 from loom.gym.series_tasks import all_tasks
@@ -173,6 +174,9 @@ def main() -> None:
     )
     parser.add_argument("--bundled", action="store_true", help="Elicit tasks sharing a bundle_id in one request each.")
     parser.add_argument(
+        "--panel", action="store_true", help="Run the curated non-redundant panel instead of the full grid."
+    )
+    parser.add_argument(
         "--strict", action="store_true", help="Bound admissibility by weights-release date, not knowledge cutoff."
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional path for JSON results.")
@@ -187,11 +191,13 @@ def main() -> None:
     )
     series = list(load_series(ensure_checkout()))
     tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
+    if args.panel:
+        tasks = list(build_panel(tasks))
     if not tasks:
-        raise SystemExit(f"no admissible tasks ({args.model_id=}, {args.strict=}, {args.task_filter=})")
+        raise SystemExit(f"no admissible tasks ({args.model_id=}, {args.strict=}, {args.panel=}, {args.task_filter=})")
     print(
         f"{len(tasks)} admissible tasks for {args.model_id} "
-        f"(strict={args.strict}, with_data={args.with_data}, bundled={args.bundled})"
+        f"(strict={args.strict}, panel={args.panel}, with_data={args.with_data}, bundled={args.bundled})"
     )
     rows, totals = asyncio.run(run_forecasts(endpoint, series, tasks, with_data=args.with_data, bundled=args.bundled))
     print(
@@ -199,7 +205,9 @@ def main() -> None:
         f"tasks_per_request={len(rows) / totals.requests:.2f}"
     )
     report(rows)
-    mode = ("data" if args.with_data else "bare") + ("-bundled" if args.bundled else "")
+    mode = (
+        ("data" if args.with_data else "bare") + ("-bundled" if args.bundled else "") + ("-panel" if args.panel else "")
+    )
     payload = run_payload(rows=rows, model_id=endpoint.model_id, mode=mode, totals=totals)
     if args.output is not None:
         args.output.write_text(json.dumps(payload, indent=2))
