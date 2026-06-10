@@ -31,7 +31,9 @@ def _kubectl_secret_field(secret: str, namespace: str, field: str) -> str | None
         check=False,
     )
     if result.returncode != 0 or not result.stdout:
-        logger.warning("kubectl read of %s/%s .%s failed: %s", namespace, secret, field, result.stderr.strip())
+        # Log the exit code, not stderr — a secret-read command's stderr is
+        # treated as sensitive (and could echo argv/values back).
+        logger.warning("kubectl read of %s/%s .%s failed (exit %d)", namespace, secret, field, result.returncode)
         return None
     return base64.b64decode(result.stdout).decode()
 
@@ -52,4 +54,3 @@ def ensure_evidence_git_creds() -> None:
         return
     os.environ["AUGUR_EVIDENCE_GIT_USERNAME"] = username
     os.environ["AUGUR_EVIDENCE_GIT_PASSWORD"] = password
-    logger.info("augur-evidence: using the claude Forgejo account from %s/%s", _SANDBOX_NAMESPACE, _FORGEJO_SECRET)
