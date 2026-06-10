@@ -17,12 +17,7 @@ DEMO_TOOL = {
         "description": "Look up one short demo fact by topic.",
         "parameters": {
             "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "The exact topic to look up.",
-                }
-            },
+            "properties": {"topic": {"type": "string", "description": "The exact topic to look up."}},
             "required": ["topic"],
             "additionalProperties": False,
         },
@@ -49,10 +44,7 @@ def main() -> int:
     tools = None
     if args.tool_demo:
         tools = [DEMO_TOOL]
-        prompt = (
-            "Call the lookup_demo_fact tool exactly once with topic "
-            "'tana-litellm-tool'. Do not answer directly."
-        )
+        prompt = "Call the lookup_demo_fact tool exactly once with topic 'tana-litellm-tool'. Do not answer directly."
     messages.append({"role": "user", "content": prompt})
 
     completion_kwargs = {
@@ -96,10 +88,7 @@ def main() -> int:
                     {
                         "id": tool_call.id,
                         "type": tool_call.type,
-                        "function": {
-                            "name": tool_call.function.name,
-                            "arguments": tool_call.function.arguments,
-                        },
+                        "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments},
                     }
                     for tool_call in choice.message.tool_calls
                 ],
@@ -122,10 +111,7 @@ def _tool_call_to_dict(tool_call: Any) -> dict[str, Any]:
     return {
         "id": _field(tool_call, "id"),
         "type": _field(tool_call, "type"),
-        "function": {
-            "name": _field(function, "name"),
-            "arguments": _field(function, "arguments"),
-        },
+        "function": {"name": _field(function, "name"), "arguments": _field(function, "arguments")},
     }
 
 
@@ -133,11 +119,7 @@ def _merge_tool_call_delta(tool_calls: dict[str, dict[str, Any]], delta: dict[st
     key = str(delta.get("id") or len(tool_calls))
     existing = tool_calls.setdefault(
         key,
-        {
-            "id": delta.get("id"),
-            "type": delta.get("type") or "function",
-            "function": {"name": None, "arguments": ""},
-        },
+        {"id": delta.get("id"), "type": delta.get("type") or "function", "function": {"name": None, "arguments": ""}},
     )
     function = delta.get("function") or {}
     if delta.get("id"):

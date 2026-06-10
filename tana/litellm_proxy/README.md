@@ -71,18 +71,18 @@ The provider maps basic OpenAI-style chat fields onto Tana's request shape.
 OpenAI/LiteLLM `messages` are always sent as Tana `args.messages` envelopes;
 the provider does not collapse chat into a single prompt string.
 
-| LiteLLM/OpenAI option | Tana option |
-| --- | --- |
-| `model="tana/<model>"` | `args.options.model="<model>"` |
-| `messages` | `args.messages` |
-| `temperature` | `args.options.temperature` |
-| `top_p` | `args.options.topP` |
-| `max_tokens` / `max_completion_tokens` | `args.options.maxOutputTokens` |
-| `stop` | `args.options.stopStrings` |
-| `frequency_penalty` | `args.options.frequencyPenalty` |
-| `presence_penalty` | `args.options.presencePenalty` |
-| `tools` | `llmProxyNext.dynamicTools` |
-| `stream=True` | `isStreaming: true` |
+| LiteLLM/OpenAI option                  | Tana option                     |
+| -------------------------------------- | ------------------------------- |
+| `model="tana/<model>"`                 | `args.options.model="<model>"`  |
+| `messages`                             | `args.messages`                 |
+| `temperature`                          | `args.options.temperature`      |
+| `top_p`                                | `args.options.topP`             |
+| `max_tokens` / `max_completion_tokens` | `args.options.maxOutputTokens`  |
+| `stop`                                 | `args.options.stopStrings`      |
+| `frequency_penalty`                    | `args.options.frequencyPenalty` |
+| `presence_penalty`                     | `args.options.presencePenalty`  |
+| `tools`                                | `llmProxyNext.dynamicTools`     |
+| `stream=True`                          | `isStreaming: true`             |
 
 Message normalization preserves message boundaries and maps common OpenAI/AI SDK
 aliases into the Tana core-message shape:
@@ -102,7 +102,7 @@ Tana client-runtime dynamic tools:
   "description": "Tool description",
   "kind": "mcpTool",
   "runtime": "client",
-  "schema": {"type": "object", "properties": {}}
+  "schema": { "type": "object", "properties": {} }
 }
 ```
 

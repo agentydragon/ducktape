@@ -28,18 +28,12 @@ class _ModelResponseWithUsage(Protocol):
 
 class _NoStreamingClient:
     def stream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
     ) -> Iterator[GenericStreamingChunk]:
         raise AssertionError("non-streaming test should not call stream_completion")
 
     async def astream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
     ) -> AsyncIterator[GenericStreamingChunk]:
         raise AssertionError("non-streaming test should not call astream_completion")
         yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
@@ -53,8 +47,7 @@ def test_client_maps_basic_chat_request() -> None:
         seen_requests.append(request)
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
-                200,
-                json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"},
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxy"
         seen_bodies.append(json.loads(request.content.decode("utf-8")))
@@ -62,18 +55,12 @@ def test_client_maps_basic_chat_request() -> None:
         return httpx.Response(
             200,
             headers={"content-type": "application/json"},
-            json={
-                "text": "hello from tana",
-                "usage": {"inputTokens": 2, "outputTokens": 3},
-            },
+            json={"text": "hello from tana", "usage": {"inputTokens": 2, "outputTokens": 3}},
         )
 
     async def run() -> TanaChatResult:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(
-                TanaProxyConfig(refresh_token="refresh-1"),
-                http_client=http,
-            )
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "tana/claude-test",
                 [{"role": "user", "content": "hi"}],
@@ -119,23 +106,15 @@ def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
-                200,
-                json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"},
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxy"
         seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={"text": "ok"},
-        )
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
 
     async def run() -> TanaChatResult:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(
-                TanaProxyConfig(refresh_token="refresh-1"),
-                http_client=http,
-            )
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-test",
                 [
@@ -162,23 +141,13 @@ def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
                             {
                                 "id": "call-1",
                                 "type": "function",
-                                "function": {
-                                    "name": "lookup_demo_fact",
-                                    "arguments": "{\"topic\":\"tana-litellm-tool\"}",
-                                },
+                                "function": {"name": "lookup_demo_fact", "arguments": '{"topic":"tana-litellm-tool"}'},
                             }
                         ],
                     },
-                    {
-                        "role": "tool",
-                        "tool_call_id": "call-1",
-                        "name": "lookup_demo_fact",
-                        "content": "{\"ok\":true}",
-                    },
+                    {"role": "tool", "tool_call_id": "call-1", "name": "lookup_demo_fact", "content": '{"ok":true}'},
                 ],
-                {
-                    "provider_options": {"openai": {"promptCacheKey": "conversation-1"}},
-                },
+                {"provider_options": {"openai": {"promptCacheKey": "conversation-1"}}},
             )
 
     result = asyncio.run(run())
@@ -225,7 +194,7 @@ def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
                             "type": "tool-result",
                             "toolCallId": "call-1",
                             "toolName": "lookup_demo_fact",
-                            "output": "{\"ok\":true}",
+                            "output": '{"ok":true}',
                         }
                     ],
                 },
@@ -246,8 +215,7 @@ def test_client_maps_tool_request_to_llm_proxy_next() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
-                200,
-                json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"},
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxyNext"
         assert request.headers["authorization"] == "Bearer id-token-1"
@@ -258,11 +226,7 @@ def test_client_maps_tool_request_to_llm_proxy_next() -> None:
             json={
                 "text": "",
                 "toolCalls": [
-                    {
-                        "toolCallId": "call-1",
-                        "toolName": "lookup_demo_fact",
-                        "input": {"topic": "tana-litellm-tool"},
-                    }
+                    {"toolCallId": "call-1", "toolName": "lookup_demo_fact", "input": {"topic": "tana-litellm-tool"}}
                 ],
                 "usage": {"promptTokens": 4, "completionTokens": 5},
             },
@@ -270,10 +234,7 @@ def test_client_maps_tool_request_to_llm_proxy_next() -> None:
 
     async def run() -> TanaChatResult:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-            client = TanaProxyClient(
-                TanaProxyConfig(refresh_token="refresh-1"),
-                http_client=http,
-            )
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-test",
                 [{"role": "user", "content": "call the tool"}],
@@ -321,11 +282,7 @@ def test_client_maps_tool_request_to_llm_proxy_next() -> None:
                     "description": "Look up a demo fact.",
                     "kind": "mcpTool",
                     "runtime": "client",
-                    "schema": {
-                        "type": "object",
-                        "properties": {"topic": {"type": "string"}},
-                        "required": ["topic"],
-                    },
+                    "schema": {"type": "object", "properties": {"topic": {"type": "string"}}, "required": ["topic"]},
                 }
             ],
         }
@@ -338,8 +295,7 @@ def test_client_streams_text_chunks_from_llm_proxy() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
-                200,
-                json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"},
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxy"
         assert request.headers["authorization"] == "Bearer id-token-1"
@@ -356,15 +312,10 @@ def test_client_streams_text_chunks_from_llm_proxy() -> None:
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
-        client = TanaProxyClient(
-            TanaProxyConfig(refresh_token="refresh-1"),
-            sync_http_client=http,
-        )
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
         chunks = list(
             client.stream_completion(
-                "tana/claude-test",
-                [{"role": "user", "content": "hi"}],
-                {"temperature": 0.0, "max_tokens": 16},
+                "tana/claude-test", [{"role": "user", "content": "hi"}], {"temperature": 0.0, "max_tokens": 16}
             )
         )
 
@@ -396,8 +347,7 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
             return httpx.Response(
-                200,
-                json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"},
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
             )
         assert request.url == "https://app.tana.inc/functions/llmProxyNext"
         seen_bodies.append(json.loads(request.content.decode("utf-8")))
@@ -415,10 +365,7 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
         )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
-        client = TanaProxyClient(
-            TanaProxyConfig(refresh_token="refresh-1"),
-            sync_http_client=http,
-        )
+        client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
         chunks = list(
             client.stream_completion(
                 "claude-test",
@@ -456,10 +403,7 @@ def test_reads_refresh_token_from_kubernetes_secret_json() -> None:
 def test_litellm_handler_returns_model_response() -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
         ) -> TanaChatResult:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -469,9 +413,7 @@ def test_litellm_handler_returns_model_response() -> None:
     handler = TanaLiteLLM(FakeClient())
     response = asyncio.run(
         handler.acompletion(
-            model="claude-test",
-            messages=[{"role": "user", "content": "hi"}],
-            optional_params={"temperature": 0.0},
+            model="claude-test", messages=[{"role": "user", "content": "hi"}], optional_params={"temperature": 0.0}
         )
     )
 
@@ -488,10 +430,7 @@ def test_litellm_handler_returns_model_response() -> None:
 def test_litellm_handler_returns_tool_calls() -> None:
     class FakeClient(_NoStreamingClient):
         async def chat_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
         ) -> TanaChatResult:
             assert model == "claude-test"
             assert optional_params is not None
@@ -499,11 +438,7 @@ def test_litellm_handler_returns_tool_calls() -> None:
             return TanaChatResult(
                 text="",
                 tool_calls=[
-                    {
-                        "toolCallId": "call-1",
-                        "toolName": "lookup_demo_fact",
-                        "input": {"topic": "tana-litellm-tool"},
-                    }
+                    {"toolCallId": "call-1", "toolName": "lookup_demo_fact", "input": {"topic": "tana-litellm-tool"}}
                 ],
                 usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
             )
@@ -531,18 +466,12 @@ def test_litellm_handler_returns_tool_calls() -> None:
 def test_litellm_routes_streaming_to_custom_provider() -> None:
     class FakeClient:
         async def chat_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
         ) -> TanaChatResult:
             raise AssertionError("streaming test should not call non-streaming chat_completion")
 
         def stream_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
         ) -> Iterator[GenericStreamingChunk]:
             assert model == "claude-test"
             assert messages == [{"role": "user", "content": "hi"}]
@@ -551,20 +480,13 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
         async def astream_completion(
-            self,
-            model: str,
-            messages: Sequence[Mapping[str, Any]],
-            optional_params: Mapping[str, Any] | None = None,
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
         ) -> AsyncIterator[GenericStreamingChunk]:
             raise AssertionError("sync streaming test should not call astream_completion")
             yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
 
     register_litellm_provider(TanaLiteLLM(FakeClient()))
-    stream = litellm.completion(
-        model="tana/claude-test",
-        messages=[{"role": "user", "content": "hi"}],
-        stream=True,
-    )
+    stream = litellm.completion(model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], stream=True)
 
     chunks = list(stream)
 
@@ -575,10 +497,7 @@ def test_litellm_routes_streaming_to_custom_provider() -> None:
 def test_registers_tana_as_litellm_custom_provider() -> None:
     handler = register_litellm_provider(TanaLiteLLM())
 
-    assert any(
-        item["provider"] == "tana" and item["custom_handler"] is handler
-        for item in litellm.custom_provider_map
-    )
+    assert any(item["provider"] == "tana" and item["custom_handler"] is handler for item in litellm.custom_provider_map)
 
 
 if __name__ == "__main__":

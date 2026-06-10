@@ -8,6 +8,7 @@ import subprocess
 import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import httpx
@@ -71,28 +72,16 @@ class TanaChatResult:
 
 class _ChatClient(Protocol):
     async def chat_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
-    ) -> TanaChatResult:
-        ...
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+    ) -> TanaChatResult: ...
 
     def stream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
-    ) -> Iterator[GenericStreamingChunk]:
-        ...
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+    ) -> Iterator[GenericStreamingChunk]: ...
 
     def astream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
-    ) -> AsyncIterator[GenericStreamingChunk]:
-        ...
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+    ) -> AsyncIterator[GenericStreamingChunk]: ...
 
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -106,19 +95,15 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    return subprocess.run(args, check=True, capture_output=True, text=True)
 
 
 def _secret_ref_parts(secret_ref: str) -> tuple[str, str]:
     if "/" not in secret_ref:
-        raise TanaProxyError(
-            f"TANA_FIREBASE_REFRESH_TOKEN_SECRET must be namespace/name, got {secret_ref!r}"
-        )
+        raise TanaProxyError(f"TANA_FIREBASE_REFRESH_TOKEN_SECRET must be namespace/name, got {secret_ref!r}")
     namespace, name = secret_ref.split("/", 1)
     if not namespace or not name:
-        raise TanaProxyError(
-            f"TANA_FIREBASE_REFRESH_TOKEN_SECRET must be namespace/name, got {secret_ref!r}"
-        )
+        raise TanaProxyError(f"TANA_FIREBASE_REFRESH_TOKEN_SECRET must be namespace/name, got {secret_ref!r}")
     return namespace, name
 
 
@@ -126,7 +111,7 @@ def read_refresh_token_from_config(cfg: TanaProxyConfig, runner: Runner = _run_c
     if cfg.refresh_token:
         return cfg.refresh_token.strip()
     if cfg.refresh_token_file:
-        with open(cfg.refresh_token_file, encoding="utf-8") as token_file:
+        with Path(cfg.refresh_token_file).open(encoding="utf-8") as token_file:
             return token_file.read().strip()
 
     namespace, name = _secret_ref_parts(cfg.refresh_token_secret)
@@ -134,8 +119,7 @@ def read_refresh_token_from_config(cfg: TanaProxyConfig, runner: Runner = _run_c
         completed = runner(["kubectl", "get", "secret", "-n", namespace, name, "-o", "json"])
     except FileNotFoundError as exc:
         raise TanaProxyError(
-            "kubectl is required when TANA_FIREBASE_REFRESH_TOKEN or "
-            "TANA_FIREBASE_REFRESH_TOKEN_FILE is not set"
+            "kubectl is required when TANA_FIREBASE_REFRESH_TOKEN or TANA_FIREBASE_REFRESH_TOKEN_FILE is not set"
         ) from exc
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.strip() if exc.stderr else str(exc)
@@ -151,9 +135,7 @@ def read_refresh_token_from_config(cfg: TanaProxyConfig, runner: Runner = _run_c
         ) from exc
 
 
-async def _refresh_id_token_once(
-    http: httpx.AsyncClient, cfg: ResignerConfig, refresh_token: str
-) -> FreshTokens:
+async def _refresh_id_token_once(http: httpx.AsyncClient, cfg: ResignerConfig, refresh_token: str) -> FreshTokens:
     response = await http.post(
         "https://securetoken.googleapis.com/v1/token",
         params={"key": cfg.api_key},
@@ -209,10 +191,7 @@ class TanaProxyClient:
         self._refresh_token: str | None = self._cfg.refresh_token
 
     async def chat_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
     ) -> TanaChatResult:
         if self._http_client is not None:
             return await self._chat_completion(self._http_client, model, messages, optional_params or {})
@@ -231,17 +210,8 @@ class TanaProxyClient:
         id_token = await self._id_token_for_request(http)
         if _has_tools(optional_params):
             return await self._tool_chat_completion(http, id_token, model, messages, optional_params)
-        args = _basic_chat_args(
-            self._cfg.user_context,
-            _strip_tana_prefix(model),
-            messages,
-            optional_params,
-            self._cfg,
-        )
-        body = {
-            "isStreaming": False,
-            "args": args,
-        }
+        args = _basic_chat_args(self._cfg.user_context, _strip_tana_prefix(model), messages, optional_params, self._cfg)
+        body = {"isStreaming": False, "args": args}
         response = await http.post(
             f"{self._cfg.functions_base_url.rstrip('/')}/llmProxy",
             json=body,
@@ -299,10 +269,7 @@ class TanaProxyClient:
         return fresh.id_token
 
     def stream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
     ) -> Iterator[GenericStreamingChunk]:
         if self._sync_http_client is not None:
             yield from self._stream_completion(self._sync_http_client, model, messages, optional_params or {})
@@ -312,11 +279,7 @@ class TanaProxyClient:
             yield from self._stream_completion(http, model, messages, optional_params or {})
 
     def _stream_completion(
-        self,
-        http: httpx.Client,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any],
+        self, http: httpx.Client, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any]
     ) -> Iterator[GenericStreamingChunk]:
         _reject_unsupported(optional_params)
         id_token = self._id_token_for_request_sync(http)
@@ -336,15 +299,10 @@ class TanaProxyClient:
             yield from _parse_tana_stream_lines(response.iter_lines())
 
     async def astream_completion(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any] | None = None,
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
     ) -> AsyncIterator[GenericStreamingChunk]:
         if self._http_client is not None:
-            async for chunk in self._astream_completion(
-                self._http_client, model, messages, optional_params or {}
-            ):
+            async for chunk in self._astream_completion(self._http_client, model, messages, optional_params or {}):
                 yield chunk
             return
 
@@ -378,10 +336,7 @@ class TanaProxyClient:
                 yield chunk
 
     def _stream_request(
-        self,
-        model: str,
-        messages: Sequence[Mapping[str, Any]],
-        optional_params: Mapping[str, Any],
+        self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any]
     ) -> tuple[str, dict[str, Any]]:
         if _has_tools(optional_params):
             return (
@@ -451,9 +406,7 @@ class TanaLiteLLM(CustomLLM):
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
     custom_handler = handler or TanaLiteLLM()
-    litellm.custom_provider_map = [
-        item for item in litellm.custom_provider_map if item.get("provider") != "tana"
-    ]
+    litellm.custom_provider_map = [item for item in litellm.custom_provider_map if item.get("provider") != "tana"]
     litellm.custom_provider_map.append({"provider": "tana", "custom_handler": custom_handler})
     custom_llm_setup()
     return custom_handler
@@ -560,10 +513,7 @@ def _normalize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict[str,
             content = _append_content_parts(content, _normalize_tool_call_parts(tool_calls))
         if role == "tool":
             content = _normalize_tool_result_content(message, content)
-        normalized_message = {
-            "role": role,
-            "content": content,
-        }
+        normalized_message = {"role": role, "content": content}
         _copy_first_set(message, normalized_message, ("providerOptions", "provider_options"), "providerOptions")
         normalized.append(normalized_message)
     return normalized
@@ -670,11 +620,7 @@ def _normalize_tool_result_content(message: Mapping[str, Any], content: Any) -> 
             return normalized_parts
     if not isinstance(tool_call_id, str) or not tool_call_id:
         raise TanaProxyError(f"tool message is missing tool_call_id/toolCallId: {message!r}")
-    part: dict[str, Any] = {
-        "type": "tool-result",
-        "toolCallId": tool_call_id,
-        "output": content,
-    }
+    part: dict[str, Any] = {"type": "tool-result", "toolCallId": tool_call_id, "output": content}
     if isinstance(tool_name, str) and tool_name:
         part["toolName"] = tool_name
     return [part]
@@ -717,9 +663,7 @@ def _copy_if_set(source: Mapping[str, Any], dest: dict[str, Any], source_key: st
         dest[dest_key] = value
 
 
-def _copy_first_set(
-    source: Mapping[str, Any], dest: dict[str, Any], source_keys: Sequence[str], dest_key: str
-) -> None:
+def _copy_first_set(source: Mapping[str, Any], dest: dict[str, Any], source_keys: Sequence[str], dest_key: str) -> None:
     for source_key in source_keys:
         value = source.get(source_key)
         if value is not None:
@@ -747,11 +691,7 @@ def _parse_tana_response(response: httpx.Response) -> TanaChatResult:
         tool_results = data.get("toolResults") if isinstance(data.get("toolResults"), list) else None
         if "text" in data:
             return TanaChatResult(
-                text=str(data["text"] or ""),
-                tool_calls=tool_calls,
-                tool_results=tool_results,
-                usage=usage,
-                raw=data,
+                text=str(data["text"] or ""), tool_calls=tool_calls, tool_results=tool_results, usage=usage, raw=data
             )
         result = data.get("result")
         if isinstance(result, Mapping) and "text" in result:
@@ -763,8 +703,7 @@ def _parse_tana_response(response: httpx.Response) -> TanaChatResult:
 
 def _parse_tana_stream_lines(lines: Iterator[str]) -> Iterator[GenericStreamingChunk]:
     for line in lines:
-        for chunk in _parse_tana_stream_line(line):
-            yield chunk
+        yield from _parse_tana_stream_line(line)
 
 
 async def _parse_tana_stream_lines_async(lines: AsyncIterator[str]) -> AsyncIterator[GenericStreamingChunk]:
@@ -892,10 +831,7 @@ def _openai_tool_call_chunk(
         {
             "id": str(normalized["toolCallId"]),
             "type": "function",
-            "function": {
-                "name": str(normalized["toolName"]),
-                "arguments": arguments,
-            },
+            "function": {"name": str(normalized["toolName"]), "arguments": arguments},
             "index": index,
         },
     )
@@ -975,12 +911,7 @@ def _stream_chunk(
     provider_specific_fields: dict[str, Any] | None = None,
 ) -> GenericStreamingChunk:
     chunk = GenericStreamingChunk(
-        text=text,
-        tool_use=tool_use,
-        is_finished=is_finished,
-        finish_reason=finish_reason,
-        usage=usage,
-        index=0,
+        text=text, tool_use=tool_use, is_finished=is_finished, finish_reason=finish_reason, usage=usage, index=0
     )
     if provider_specific_fields:
         chunk["provider_specific_fields"] = provider_specific_fields
@@ -997,10 +928,7 @@ def _normalize_stream_usage(data: Mapping[str, Any]) -> dict[str, int] | None:
 def _list_of_mappings(value: Any) -> list[dict[str, Any]] | None:
     if not isinstance(value, list):
         return None
-    mappings: list[dict[str, Any]] = []
-    for item in value:
-        if isinstance(item, Mapping):
-            mappings.append(dict(item))
+    mappings = [dict(item) for item in value if isinstance(item, Mapping)]
     return mappings or None
 
 
@@ -1053,13 +981,7 @@ def _openai_tool_calls(tool_calls: list[dict[str, Any]] | None) -> list[dict[str
         chunk = _openai_tool_call_chunk(tool_call, index)
         if chunk is None:
             continue
-        converted.append(
-            {
-                "id": chunk["id"] or f"call_{index}",
-                "type": chunk["type"],
-                "function": chunk["function"],
-            }
-        )
+        converted.append({"id": chunk["id"] or f"call_{index}", "type": chunk["type"], "function": chunk["function"]})
     return converted or None
 
 
