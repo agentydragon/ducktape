@@ -41,6 +41,8 @@ def _manifold_market(market_id: str, price: float) -> Market:
         id=market_id,
         url=f"https://manifold.markets/test/{market_id}",
         quote=PoolQuote(price=price),
+        # Production manifold parses always carry the mana unit, even with no volume figure.
+        volume_unit="\U0001d544",
         title=market_id,
         rules=f"Resolves per market {market_id}.",
     )
@@ -56,11 +58,12 @@ def _kalshi_market(market_id: str, spec: float | KalshiRungQuote) -> Market:
     )
     return Market(
         id=market_id,
-        url=f"https://kalshi.test/{market_id}",
+        url=f"https://kalshi.com/markets/{market_id}",
         quote=BookQuote(
             bid=quote.bid, ask=quote.ask, bid_size=quote.bid_size, ask_size=quote.ask_size, last_trade=quote.last
         ),
         volume=quote.volume,
+        volume_unit="contracts" if quote.volume is not None else None,
         title=market_id,
         rules=f"Resolves per market {market_id}.",
     )
