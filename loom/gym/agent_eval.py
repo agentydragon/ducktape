@@ -49,6 +49,11 @@ def main() -> None:
     )
     parser.add_argument("--max-tasks", type=int, default=None, help="Cap the number of tasks (after filtering).")
     parser.add_argument("--wayback-upstream", default=DEFAULT_WAYBACK_UPSTREAM)
+    parser.add_argument(
+        "--wayback-upstream-auth-env",
+        default="WAYBACK_UPSTREAM_AUTH",
+        help="Env var holding the 'Bearer <token>' value for the authed cache route; empty if unset.",
+    )
     parser.add_argument("--log-dir", type=Path, required=True, help="Inspect eval log directory.")
     parser.add_argument("--message-limit", type=int, default=80, help="Max conversation turns per sample.")
     args = parser.parse_args()
@@ -68,7 +73,12 @@ def main() -> None:
         f"anthropic/{args.endpoint_model or f'{args.model_id}-anthropic'}", base_url=args.base_url, api_key=api_key
     )
     logs = inspect_eval(
-        agent_eval_task(tasks, series, wayback_upstream=args.wayback_upstream),
+        agent_eval_task(
+            tasks,
+            series,
+            wayback_upstream=args.wayback_upstream,
+            wayback_upstream_auth=os.environ.get(args.wayback_upstream_auth_env, ""),
+        ),
         model=model,
         log_dir=str(args.log_dir),
         display="plain",

@@ -83,6 +83,7 @@ services:
     environment:
       WAYBACK_AS_OF: "{as_of}"
       WAYBACK_UPSTREAM: "{upstream}"
+      WAYBACK_UPSTREAM_AUTH: "{upstream_auth}"
       WAYBACK_MANIFEST_PATH: "{manifest_path}"
     extra_hosts:
       # Lets upstream point at a host port: a kubectl port-forward of the
@@ -124,7 +125,9 @@ AGENT_PROMPT = (
 MANIFEST_PATH = "/tmp/wayback-manifest.jsonl"
 
 
-def write_sandbox_compose(directory: Path, as_of: date, upstream: str, agent_image: str = SANDBOX_IMAGE_TAG) -> Path:
+def write_sandbox_compose(
+    directory: Path, as_of: date, upstream: str, agent_image: str = SANDBOX_IMAGE_TAG, upstream_auth: str = ""
+) -> Path:
     """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
     path = directory / f"sandbox-{as_of}.yaml"
     path.write_text(
@@ -133,6 +136,7 @@ def write_sandbox_compose(directory: Path, as_of: date, upstream: str, agent_ima
             image=WAYBACK_PROXY_IMAGE_TAG,
             as_of=as_of,
             upstream=upstream,
+            upstream_auth=upstream_auth,
             manifest_path=MANIFEST_PATH,
         )
     )
@@ -217,6 +221,7 @@ def agent_eval_task(
     series: Sequence[MonthlySeries],
     *,
     wayback_upstream: str = DEFAULT_WAYBACK_UPSTREAM,
+    wayback_upstream_auth: str = "",
     agent_image: str = SANDBOX_IMAGE_TAG,
     compose_dir: Path | None = None,
 ) -> InspectTask:
@@ -225,7 +230,10 @@ def agent_eval_task(
         compose_dir = Path(tempfile.mkdtemp(prefix="gym-sandbox-"))
     as_ofs = {task.as_of for task in tasks}
     dossiers = {as_of: series_dossier(series, as_of) for as_of in as_ofs}
-    composes = {as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream, agent_image) for as_of in as_ofs}
+    composes = {
+        as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream, agent_image, wayback_upstream_auth)
+        for as_of in as_ofs
+    }
     return InspectTask(
         dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in tasks]),
         solver=react(prompt=AGENT_PROMPT, tools=[bash(timeout=180)], submit=AgentSubmit(answer_only=True)),

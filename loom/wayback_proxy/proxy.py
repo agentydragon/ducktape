@@ -94,6 +94,10 @@ class Config:
     upstream: str  # base URL, no trailing slash
     port: int
     manifest_path: Path | None = None  # None: manifest lines go to stdout
+    # Sent as the Authorization header on every upstream request (the proxy
+    # only ever contacts `upstream`). Used when upstream is the authed public
+    # route of the shared cache; None for direct IA or the unauthed ClusterIP.
+    upstream_auth: str | None = None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -106,6 +110,8 @@ class Config:
             upstream=os.environ.get("WAYBACK_UPSTREAM", f"https://{ARCHIVE_HOST}").rstrip("/"),
             port=int(os.environ.get("PORT", "8080")),
             manifest_path=Path(manifest_raw) if manifest_raw is not None else None,
+            # Empty (the compose default when no auth) is treated as unset.
+            upstream_auth=os.environ.get("WAYBACK_UPSTREAM_AUTH") or None,
         )
 
     @property
@@ -313,8 +319,11 @@ async def start_proxy(
 
 async def amain(config: Config, manifest: TextIO) -> None:
     logger.info("wayback proxy: as_of=%s upstream=%s port=%d", config.as_of, config.upstream, config.port)
+    # Authorization rides on every request; the proxy only ever GETs `upstream`
+    # (off-archive redirects are returned to the client, never followed).
+    headers = {"Authorization": config.upstream_auth} if config.upstream_auth is not None else {}
     # Total timeout rides out wayback-cache limit_req delays (burst 60 @ 30r/m).
-    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300), headers=headers) as session:
         await start_proxy(config, session, manifest)
         await asyncio.Event().wait()
 
