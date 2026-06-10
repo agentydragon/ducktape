@@ -21,6 +21,7 @@ py_library(
     deps = [
         ":http_fetch",
         "//finance/evidence:sources",
+        "@pypi//pydantic",
         "@pypi//pygit2",
     ],
 )

@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pygit2
 import pytest_bazel
 
-from finance.augur.ingest.fetch import commit_and_push, run_scrape, write_sources
+from finance.augur.ingest.fetch import (
+    EVIDENCE_META_FILENAME,
+    EvidenceManifest,
+    commit_and_push,
+    run_scrape,
+    write_sources,
+)
 from finance.augur.ingest.http_fetch import HttpGet
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 
@@ -29,6 +35,10 @@ def _constant_get(body: bytes) -> HttpGet:
     return get
 
 
+async def _boom(url: str, user_agent: str) -> bytes:
+    raise httpx.ConnectError("upstream down")
+
+
 def _commit_all(repo: pygit2.Repository, message: str, *, push: bool = False) -> None:
     repo.index.add_all()
     repo.index.write()
@@ -39,14 +49,21 @@ def _commit_all(repo: pygit2.Repository, message: str, *, push: bool = False) ->
         repo.remotes["origin"].push(["refs/heads/main"])
 
 
-def _seed_remote(remote: Path) -> None:
+def _seed_remote(remote: Path, files: dict[str, str] | None = None) -> None:
     """Create a bare remote on `main` with one seed commit, ready for a --branch main clone."""
     pygit2.init_repository(str(remote), bare=True, initial_head="main")
     work = remote.parent / f"{remote.name}-seed"
     repo = pygit2.init_repository(str(work), initial_head="main")
     (work / ".keep").write_text("")
+    for name, content in (files or {}).items():
+        (work / name).write_text(content)
     repo.remotes.create("origin", str(remote))
     _commit_all(repo, "init", push=True)
+
+
+def _seed_with_last_fetched(remote: Path, last_fetched: dict[str, datetime]) -> None:
+    manifest = EvidenceManifest(last_fetched=last_fetched).model_dump_json()
+    _seed_remote(remote, {EVIDENCE_META_FILENAME: manifest})
 
 
 def _remote_blob(remote: Path, path: str) -> bytes:
@@ -58,12 +75,12 @@ def _remote_last_message(remote: Path) -> str:
 
 
 async def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
-    failures = await write_sources(tmp_path, [SOURCE], http_get=_constant_get(b"payload"))
-    assert failures == 0
+    failed = await write_sources(tmp_path, [SOURCE], http_get=_constant_get(b"payload"))
+    assert failed == set()
     assert (tmp_path / "fred_cpi_us.csv").read_bytes() == b"payload"
 
 
-async def test_write_sources_counts_upstream_failures_and_keeps_going(tmp_path: Path) -> None:
+async def test_write_sources_reports_failed_sources_and_keeps_going(tmp_path: Path) -> None:
     other = EvidenceSource(
         kind=EvidenceKind.YAHOO, series_id="SPY", upstream_url="https://example.test/spy", output_filename="spy.json"
     )
@@ -73,8 +90,8 @@ async def test_write_sources_counts_upstream_failures_and_keeps_going(tmp_path: 
             raise httpx.ConnectError("upstream down")
         return b"ok"
 
-    failures = await write_sources(tmp_path, [SOURCE, other], http_get=get)
-    assert failures == 1
+    failed = await write_sources(tmp_path, [SOURCE, other], http_get=get)
+    assert failed == {SOURCE}
     # The failed source wrote no file; the healthy one still did.
     assert not (tmp_path / "fred_cpi_us.csv").exists()
     assert (tmp_path / "spy.json").read_bytes() == b"ok"
@@ -99,8 +116,8 @@ async def test_write_sources_fetches_concurrently(tmp_path: Path) -> None:
             await barrier.wait()
         return b"ok"
 
-    failures = await write_sources(tmp_path, sources, http_get=get)
-    assert failures == 0
+    failed = await write_sources(tmp_path, sources, http_get=get)
+    assert failed == set()
     assert all((tmp_path / s.output_filename).read_bytes() == b"ok" for s in sources)
 
 
@@ -133,20 +150,99 @@ async def test_run_scrape_clones_writes_and_pushes(tmp_path: Path) -> None:
         str(remote), "main", [SOURCE], username="", password="", http_get=_constant_get(b"body"), now=NOW, depth=0
     )
     assert code == 0
-    # The fetched file is now committed on the remote's main.
+    # The fetched file is now committed on the remote's main, with the fetch recorded in the manifest.
+    assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
+    manifest = EvidenceManifest.model_validate_json(_remote_blob(remote, EVIDENCE_META_FILENAME))
+    assert manifest.last_fetched[SOURCE.provenance_label] == NOW
+
+
+async def test_run_scrape_fails_on_any_miss_without_stale_policy(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_remote(remote)
+    # No stale_after -> any failed source fails the Job.
+    assert (
+        await run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=_boom, now=NOW, depth=0) == 1
+    )
+
+
+async def test_run_scrape_skips_source_fetched_within_max_age(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=1)})
+    fetched = False
+
+    async def get(url: str, user_agent: str) -> bytes:
+        nonlocal fetched
+        fetched = True
+        return b"new"
+
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=get,
+        now=NOW,
+        depth=0,
+        max_age=timedelta(hours=20),
+    )
+    assert code == 0
+    assert not fetched  # fetched 1h ago (< 20h) -> skipped
+
+
+async def test_run_scrape_refetches_source_older_than_max_age(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=48)})
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=_constant_get(b"body"),
+        now=NOW,
+        depth=0,
+        max_age=timedelta(hours=20),
+    )
+    assert code == 0
     assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
 
 
-async def test_run_scrape_returns_nonzero_when_a_source_fails(tmp_path: Path) -> None:
+async def test_run_scrape_tolerates_failure_when_committed_copy_is_fresh(tmp_path: Path) -> None:
     remote = tmp_path / "remote.git"
-    _seed_remote(remote)
-
-    async def boom(url: str, user_agent: str) -> bytes:
-        raise httpx.ConnectError("upstream down")
-
-    assert (
-        await run_scrape(str(remote), "main", [SOURCE], username="", password="", http_get=boom, now=NOW, depth=0) == 1
+    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=1)})
+    # max_age=None forces a fetch attempt (which fails); the 1h-old copy is < stale_after, so green.
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=_boom,
+        now=NOW,
+        depth=0,
+        max_age=None,
+        stale_after=timedelta(hours=72),
     )
+    assert code == 0
+
+
+async def test_run_scrape_fails_when_failed_source_is_stale(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=100)})
+    code = await run_scrape(
+        str(remote),
+        "main",
+        [SOURCE],
+        username="",
+        password="",
+        http_get=_boom,
+        now=NOW,
+        depth=0,
+        max_age=None,
+        stale_after=timedelta(hours=72),
+    )
+    assert code == 1  # last fetched 100h ago (> 72h) and still failing
 
 
 if __name__ == "__main__":
