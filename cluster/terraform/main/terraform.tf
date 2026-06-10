@@ -14,7 +14,7 @@ terraform {
     talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
     # From flux
-    flux = { source = "fluxcd/flux", version = "~> 1.8.0" }
+    flux = { source = "fluxcd/flux", version = "~> 1.7.0" }
     helm = { source = "hashicorp/helm", version = "~> 3.1.0" }
     # Utility (from multiple)
     local = { source = "hashicorp/local", version = "~> 2.5.0" }
