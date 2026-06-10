@@ -53,6 +53,15 @@ WAYBACK_PROXY_IMAGE_TAG = "wayback-proxy:latest"
 SANDBOX_IMAGE_TAG = "loom-gym-sandbox:latest"
 DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
 
+# Standard host CA bundle. In a TLS-inspecting egress environment (e.g. Claude
+# Code web) it carries the inspection CA, so mounting it into the proxy lets the
+# proxy's upstream HTTPS to the cache/IA validate. Elsewhere it's just the host's
+# normal public trust — mounting it is a harmless no-op. The agent container
+# never gets it (its only route is the proxy, whose own MITM CA it already
+# trusts); only the proxy's outbound hop needs it.
+HOST_CA_BUNDLE = Path("/etc/ssl/certs/ca-certificates.crt")
+_PROXY_EGRESS_CA = "/etc/ssl/proxy-egress-ca.crt"
+
 # Generated per as_of: WAYBACK_AS_OF is a baked literal, not compose env
 # interpolation, so the clamp is pinned per sandbox and can never be
 # influenced from inside the agent container.
@@ -102,9 +111,9 @@ services:
       WAYBACK_UPSTREAM_AUTH: "{upstream_auth}"
       WAYBACK_MANIFEST_PATH: "{manifest_path}"
       WAYBACK_CONFDIR: /wayback-ca
-    volumes:
+{proxy_egress_ca_env}    volumes:
       - wayback-ca:/wayback-ca
-    extra_hosts:
+{proxy_egress_ca_volume}    extra_hosts:
       # Lets upstream point at a host port: a kubectl port-forward of the
       # cluster wayback-cache, or a test's in-process fake IA.
       - host.docker.internal:host-gateway
@@ -155,6 +164,13 @@ def write_sandbox_compose(
 ) -> Path:
     """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
     path = directory / f"sandbox-{as_of}.yaml"
+    # Mount the host CA bundle into the proxy when present so its upstream HTTPS
+    # validates behind a TLS-inspecting egress proxy (the agent never sees it).
+    if HOST_CA_BUNDLE.is_file():
+        proxy_egress_ca_env = f"      SSL_CERT_FILE: {_PROXY_EGRESS_CA}\n      REQUESTS_CA_BUNDLE: {_PROXY_EGRESS_CA}\n"
+        proxy_egress_ca_volume = f"      - {HOST_CA_BUNDLE}:{_PROXY_EGRESS_CA}:ro\n"
+    else:
+        proxy_egress_ca_env = proxy_egress_ca_volume = ""
     path.write_text(
         _COMPOSE_TEMPLATE.format(
             agent_image=agent_image,
@@ -163,6 +179,8 @@ def write_sandbox_compose(
             upstream=upstream,
             upstream_auth=upstream_auth,
             manifest_path=MANIFEST_PATH,
+            proxy_egress_ca_env=proxy_egress_ca_env,
+            proxy_egress_ca_volume=proxy_egress_ca_volume,
         )
     )
     return path

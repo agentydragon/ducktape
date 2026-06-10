@@ -26,6 +26,7 @@ py_library(
     srcs = ["agent_eval.py"],
     deps = [
         ":baseline_llm",
+        ":evidence_creds",
         ":inspect_harness",
         ":monthly_series",
         ":panel",
@@ -148,11 +149,17 @@ py_library(
 )
 
 py_library(
+    name = "evidence_creds",
+    srcs = ["evidence_creds.py"],
+)
+
+py_library(
     name = "run_eval",
     srcs = ["run_eval.py"],
     deps = [
         ":baseline_llm",
         ":dossier",
+        ":evidence_creds",
         ":model_cutoffs",
         ":monthly_series",
         ":panel",

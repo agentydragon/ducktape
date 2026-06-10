@@ -10,7 +10,7 @@ Requires two images in the local Docker daemon: the wayback proxy
 (`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
 (`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`).
 
-    LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval -- \\
+    LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \\
         --model-id glm-4.5 --task-filter manifold-bitcoin-100k-2024
 """
 
@@ -26,6 +26,7 @@ from inspect_ai.model import get_model
 
 from finance.evidence.checkout import ensure_checkout
 from loom.gym.baseline_llm import LITELLM_BASE_URL
+from loom.gym.evidence_creds import ensure_evidence_git_creds
 from loom.gym.inspect_harness import DEFAULT_WAYBACK_UPSTREAM, agent_eval_task
 from loom.gym.monthly_series import load_series
 from loom.gym.panel import build_panel
@@ -59,6 +60,7 @@ def main() -> None:
     args = parser.parse_args()
     api_key = os.environ.get(args.api_key_env) or Path("/tmp/litellm_key").read_text().strip()
 
+    ensure_evidence_git_creds()
     series = list(load_series(ensure_checkout()))
     tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=False)
     if args.panel:
