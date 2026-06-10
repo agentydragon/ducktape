@@ -40,14 +40,15 @@ def test_market_tasks_admissible_for_every_registry_model() -> None:
             assert cutoff.knowledge_cutoff <= task.as_of, f"{cutoff.model_id} inadmissible at {task.task_id}"
 
 
-def test_market_tasks_carry_original_url_evidence() -> None:
-    # Curation contract: 2-5 evidence items per task, each carrying the
-    # original page URL (what prompts show and what contestants will fetch
-    # through the wayback proxy), never the archived form. Pin consistency
-    # (archived_url is a capture of exactly url, on date <= as_of) is enforced
-    # by the EvidenceItem and Task validators.
+def test_market_task_evidence_original_urls_and_bounded() -> None:
+    # Curation contract: evidence is optional per task (contestants fetch
+    # sources themselves through the wayback proxy), capped at 5 items, each
+    # carrying the original page URL — never the archived form. Pin
+    # consistency (archived_url is a capture of exactly url, on date <= as_of)
+    # is enforced by the EvidenceItem and Task validators.
+    assert any(task.evidence for task in MARKET_SEED_TASKS)
     for task in MARKET_SEED_TASKS:
-        assert 2 <= len(task.evidence) <= 5, f"{task.task_id} has {len(task.evidence)} evidence items"
+        assert len(task.evidence) <= 5, f"{task.task_id} has {len(task.evidence)} evidence items"
         for item in task.evidence:
             assert not item.url.startswith(WAYBACK_PREFIX), f"{task.task_id}: archived form in url: {item.url}"
 
