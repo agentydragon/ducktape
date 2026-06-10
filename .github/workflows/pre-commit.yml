@@ -58,6 +58,11 @@ jobs:
       # ============================================================================
 
       - name: Run pre-commit
+        env:
+          # no-commit-to-branch is a local guard against committing directly to
+          # devel/main. CI deliberately runs pre-commit against the protected
+          # branch's own checkout, where that hook would always fail — skip it here.
+          SKIP: no-commit-to-branch
         run: |
           # Unset NODE_OPTIONS to avoid global-agent requirement in pre-commit's
           # isolated node environments (markdownlint-cli2 hook uses npm)
