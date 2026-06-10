@@ -297,6 +297,7 @@ resources:
 
   # --- wayback-cache ---
   - wayback-cache/flux-kustomization.yaml
+  - wayback-cache/agent-rbac/flux-kustomization.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/flux-kustomization.yaml
