@@ -29,6 +29,10 @@ background_commands:
     command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/authentik_banner.sh"
     timeout: 10
     after_env: true
+  - name: forgejo banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/forgejo_banner.sh"
+    timeout: 10
+    after_env: true
   - name: bazelisk warmup (query //...)
     command: |
       bazelisk query //... >/dev/null &

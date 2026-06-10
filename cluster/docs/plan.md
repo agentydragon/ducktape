@@ -42,7 +42,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
   currently used.
 - **Tandoor**: `tandoor`, `tandoor-{db,namespace}` — using Grocy instead.
 - **claude-sandbox-firecracker** — parked to free resources.
-- **listing-monitor-smoke**, **thrive-scraper** — parked.
+- **listing-monitor-smoke** — parked. (thrive-scraper was un-parked by moving it to
+  git-based storage in Forgejo — no PVC, no wyrm2 pinning; see gaffer-private
+  `x/thrive_scrape/DESIGN.md`.)
 
 ### Down while Proxmox (`atlas`/`wyrm2`) is offline
 
