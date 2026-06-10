@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import tempfile
 from datetime import date
 from pathlib import Path
-from urllib.parse import quote, urlsplit, urlunsplit
 
+import pygit2
 import structlog
 import typer
 import yaml
@@ -134,23 +133,6 @@ def _validate(ledger: str) -> None:
         )
 
 
-def _authenticated_url(url: str) -> str:
-    """Inject GIT_USERNAME/GIT_PASSWORD into an https URL, if both are set."""
-    user, password = os.environ.get("GIT_USERNAME"), os.environ.get("GIT_PASSWORD")
-    if not (user and password):
-        return url
-    parts = urlsplit(url)
-    netloc = f"{quote(user, safe='')}:{quote(password, safe='')}@{parts.hostname}"
-    if parts.port:
-        netloc += f":{parts.port}"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
-
-
-def _git(repo: Path, *args: str) -> str:
-    result = subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True)
-    return result.stdout
-
-
 @app.command()
 def render(out: Path = _OUT_OPTION, config_path: Path | None = _CONFIG_OPTION, title: str = _TITLE_OPTION) -> None:
     """Render the ledger to a local file (no git)."""
@@ -173,26 +155,25 @@ def sync(
     config = _load_budget_config(config_path)
     ledger = build_ledger(config, _database_url(config), window_end=date.today(), title=title)
 
-    url = _authenticated_url(git_url)
+    # UserPass credential callback — no credentials embedded in the remote URL.
+    user, password = os.environ.get("GIT_USERNAME"), os.environ.get("GIT_PASSWORD")
+    callbacks = pygit2.RemoteCallbacks(credentials=pygit2.UserPass(user, password)) if user and password else None
     with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp) / "repo"
-        _git(Path(tmp), "clone", "--depth", "1", "--branch", branch, url, str(repo))
-        (repo / ledger_name).write_text(ledger)
-        if not _git(repo, "status", "--porcelain").strip():
+        repo_path = Path(tmp) / "repo"
+        repo = pygit2.clone_repository(git_url, str(repo_path), checkout_branch=branch, callbacks=callbacks, depth=1)
+        (repo_path / ledger_name).write_text(ledger)
+        repo.index.add(ledger_name)
+        repo.index.write()
+        tree = repo.index.write_tree()
+        head_commit = repo[repo.head.target].peel(pygit2.Commit)
+        if tree == head_commit.tree_id:
             log.info("ledger unchanged; nothing to commit")
             return
-        _git(repo, "add", ledger_name)
-        _git(
-            repo,
-            "-c",
-            f"user.name={author_name}",
-            "-c",
-            f"user.email={author_email}",
-            "commit",
-            "-m",
-            f"budget ledger: {date.today().isoformat()}",
+        author = pygit2.Signature(author_name, author_email)
+        repo.create_commit(
+            repo.head.name, author, author, f"budget ledger: {date.today().isoformat()}", tree, [head_commit.id]
         )
-        _git(repo, "push", "origin", branch)
+        repo.remotes["origin"].push([f"refs/heads/{branch}"], callbacks=callbacks)
         log.info("pushed ledger", branch=branch, ledger=ledger_name)
 
 

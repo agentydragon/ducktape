@@ -23,6 +23,7 @@ py_library(
         "//finance/augur/budget:sql_read_model",
         "//finance/plaid/db:schema",
         "@pypi//beancount",
+        "@pypi//pygit2",
         "@pypi//pyyaml",
         "@pypi//structlog",
         "@pypi//typer",
