@@ -10,3 +10,4 @@ resources:
   - clusterrole-cluster-diagnostics-reader.yaml
   - clusterrole-logs-configmaps-reader.yaml
   - clusterrole-namespace-diagnostics-reader.yaml
+  - cleanuppolicy-sandbox-janitor.yaml

@@ -1,0 +1,25 @@
+# The props backend spawns bare critic/agent pods and does not reap the ones
+# that fail (e.g. critic-dev-opt-* pods sitting in Error for days). Delete
+# Succeeded/Failed pods after 3 days — recent failures stay inspectable, and
+# agent traces live in the database regardless. Running pods never match.
+# Delete RBAC: kyverno/policies/clusterrole-cleanup-controller-workloads.yaml.
+apiVersion: kyverno.io/v2
+kind: CleanupPolicy
+metadata:
+  name: reap-finished-pods
+  namespace: props
+spec:
+  schedule: "10 * * * *"
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+  conditions:
+    all:
+      - key: "{{ target.status.phase }}"
+        operator: AnyIn
+        value: [Succeeded, Failed]
+      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
+        operator: GreaterThan
+        value: 72h

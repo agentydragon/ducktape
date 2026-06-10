@@ -22,3 +22,4 @@ resources:
   - httproute.yaml
   - registry-httproute.yaml
   - rolebinding-ollama-consumer.yaml
+  - cleanuppolicy-finished-pods.yaml

@@ -1,0 +1,21 @@
+# Aggregates into the kyverno cleanup controller alongside
+# clusterrole-cleanup-controller-jobs.yaml (which covers batch/jobs).
+# Consumers: the claude-sandbox janitor (agents/claude-rbac/) and the props
+# finished-pod reaper (props/app/) — kyverno rejects a CleanupPolicy at
+# admission unless the controller can delete every kind it matches.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno-cleanup-controller-workloads
+  labels:
+    rbac.kyverno.io/aggregate-to-cleanup-controller: "true"
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs"]
+    verbs: ["get", "list", "watch", "delete"]
