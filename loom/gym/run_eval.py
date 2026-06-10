@@ -187,6 +187,8 @@ def main() -> None:
     )
     series = list(load_series(ensure_checkout()))
     tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=args.strict)
+    if not tasks:
+        raise SystemExit(f"no admissible tasks ({args.model_id=}, {args.strict=}, {args.task_filter=})")
     print(
         f"{len(tasks)} admissible tasks for {args.model_id} "
         f"(strict={args.strict}, with_data={args.with_data}, bundled={args.bundled})"
