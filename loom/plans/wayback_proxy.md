@@ -1,6 +1,15 @@
 # Wayback proxy: date-clamped web access for contestants
 
-Status: **plan** (direction approved 2026-06-10; build pending go-ahead).
+Status: **in progress** (direction approved 2026-06-10). W1 landed:
+`cluster/k8s/wayback-cache/` (ClusterIP-only — the gateway is public-only and
+an open IA relay is undesirable; dev access via `kubectl port-forward`). W2
+partially landed: per-agent proxy + demo compose + e2e at
+<../wayback_proxy/>; Inspect/gym wiring still pending. The proxy is the
+mini-implementation, not a WaybackProxy fork — upstream's selection is
+nearest-capture (can serve post-date content within `DATE_TOLERANCE`), its
+in-band settings page can change the date at runtime from the client side,
+CONNECT is fake-accepted, and the upstream host is hardcoded; hardening all
+that approximated writing the clamped proxy directly.
 
 ## Goal
 
@@ -88,10 +97,11 @@ fetch them — and browse outward from them — rather than only reading titles.
 
 ## Phasing
 
-- **W1**: deploy `wayback-cache` (drafted manifests).
-- **W2**: per-agent proxy image (WaybackProxy fork or mini-implementation) +
-  Inspect compose wiring + `as_of` env plumbing; mockllm e2e test on RBE that
-  fetches a known snapshot through the full chain.
+- **W1** ✅: deploy `wayback-cache` (`cluster/k8s/wayback-cache/`).
+- **W2** (proxy + demo compose ✅; Inspect wiring pending): per-agent proxy
+  image (mini-implementation, `loom/wayback_proxy/`) + Inspect compose wiring
+  - `as_of` env plumbing; mockllm e2e test on RBE that fetches a known
+    snapshot through the full chain.
 - **W3**: served-evidence manifest → run payload → S3.
 - **W4** (optional): HTTPS MITM; text-extraction convenience endpoint for
   dossier-style consumption.
