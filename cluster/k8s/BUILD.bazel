@@ -24,6 +24,6 @@ filegroup(
 # panel and the deployed roster must not drift).
 filegroup(
     name = "market_roster_yaml",
-    srcs = ["budget/market-roster/market-roster.yaml"],
+    srcs = ["evidence/market-roster/market-roster.yaml"],
     visibility = ["//loom/gym:__pkg__"],
 )

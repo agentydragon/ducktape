@@ -11,7 +11,7 @@ generatorOptions:
     description: >-
       Mirror roster for the augur-evidence scraper (finance/scraper); schema
       finance.evidence.markets.MarketRoster. Edit in ducktape
-      cluster/k8s/budget/market-roster/, never by hand here.
+      cluster/k8s/evidence/market-roster/, never by hand here.
     reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
     reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur
     reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
@@ -19,6 +19,6 @@ generatorOptions:
 
 configMapGenerator:
   - name: market-roster
-    namespace: budget
+    namespace: evidence
     files:
       - market-roster.yaml

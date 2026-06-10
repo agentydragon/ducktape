@@ -56,7 +56,7 @@ website/posts/** filename-conventions-ignored=true
 # images. cluster/validation/cluster.py reads this attribute via `git check-attr`
 # (pygit2) and skips the file from orphan detection + resource parsing.
 cluster/k8s/**/trixie_*.yaml cluster-manifest-ignored=true
-cluster/k8s/budget/market-roster/market-roster.yaml cluster-manifest-ignored=true
+cluster/k8s/evidence/market-roster/market-roster.yaml cluster-manifest-ignored=true
 
 # Dotfiles/dotdirs follow their own naming conventions
 .* filename-conventions-ignored=true

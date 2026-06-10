@@ -30,8 +30,8 @@ said then"), which is the M2 forward-capture story falling out for free.
   schema `finance.evidence.markets.MarketRoster`; format documented by
   `finance/evidence/example_market_roster.yaml`), unioned with every market
   the calibration catalogs reference (`--catalog`). The production roster
-  lives in ducktape at `cluster/k8s/budget/market-roster/` (reflected
-  budget → augur, like the evidence git creds), seeded from the loom gym's
+  lives in ducktape at `cluster/k8s/evidence/market-roster/` (reflected
+  evidence → augur, like the budget-staged evidence git creds), seeded from the loom gym's
   curated panel; `test_market_seed_tasks` asserts panel ⊆ roster.
 - **Pacing**: one global limiter (`RequestPacer`, 0.2s min interval ≈ 300
   req/min) well under Manifold's 500 req/min; reuses `http_fetch`'s
