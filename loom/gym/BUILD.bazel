@@ -76,11 +76,18 @@ py_library(
 )
 
 py_library(
+    name = "market_seed_tasks",
+    srcs = ["market_seed_tasks.py"],
+    deps = [":task"],
+)
+
+py_library(
     name = "series_tasks",
     srcs = ["series_tasks.py"],
     deps = [
         ":bundle_tasks",
         ":comparison_tasks",
+        ":market_seed_tasks",
         ":monthly_series",
         ":path_tasks",
         ":seed_tasks",
@@ -168,6 +175,20 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_market_seed_tasks",
+    srcs = ["test_market_seed_tasks.py"],
+    deps = [
+        ":baseline_llm",
+        ":market_seed_tasks",
+        ":model_cutoffs",
+        ":seed_tasks",
+        ":task",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
