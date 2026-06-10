@@ -1,11 +1,16 @@
 """Async HTTPS GET for the public upstreams, with certifi trust + transient retry.
 
-debian-slim ships no CA bundle, so the client is pinned to certifi's bundled
-certs rather than the (absent) system trust store.
+debian-slim ships no CA bundle, so the client defaults to certifi's bundled certs
+rather than the (absent) system trust store. An explicit `SSL_CERT_FILE` wins when
+set: agent sandboxes (Claude Code sessions, the claude-sandbox namespace) force
+egress through a TLS-intercepting proxy and inject its CA via that variable — the
+standard contract curl/requests/node already honor. Production CronJobs set
+neither, so they stay on certifi.
 """
 
 from __future__ import annotations
 
+import os
 import ssl
 from collections.abc import Awaitable, Callable
 
@@ -19,7 +24,12 @@ HttpGet = Callable[[str, str], Awaitable[bytes]]  # (url, user_agent) -> body
 # as per-source skips (a dead upstream shouldn't block refreshing the rest).
 FETCH_ERRORS: tuple[type[BaseException], ...] = (httpx.HTTPError,)
 
-_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+
+def _ca_file() -> str:
+    return os.environ.get("SSL_CERT_FILE") or certifi.where()
+
+
+_SSL_CONTEXT = ssl.create_default_context(cafile=_ca_file())
 
 
 def _is_transient(exc: BaseException) -> bool:

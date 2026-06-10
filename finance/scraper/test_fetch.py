@@ -6,12 +6,13 @@ from pathlib import Path
 
 import httpx
 import pygit2
+import pytest
 import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform
 from finance.evidence.sources import EvidenceKind, EvidenceSource
 from finance.scraper.fetch import EVIDENCE_META_FILENAME, EvidenceManifest, commit_and_push, run_scrape, write_sources
-from finance.scraper.http_fetch import HttpGet
+from finance.scraper.http_fetch import HttpGet, _ca_file
 from finance.scraper.market_mirror import KALSHI_API, MANIFOLD_API
 
 SOURCE = EvidenceSource(
@@ -74,6 +75,15 @@ def _remote_last_message(remote: Path) -> str:
 def _remote_commit_count(remote: Path) -> int:
     repo = pygit2.Repository(str(remote))
     return sum(1 for _ in repo.walk(repo.revparse_single("main").peel(pygit2.Commit).id))
+
+
+def test_ca_file_honors_ssl_cert_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Agent sandboxes inject a TLS-intercepting proxy's CA via SSL_CERT_FILE; the
+    # fetcher must trust it there while staying on certifi when the env is unset.
+    monkeypatch.setenv("SSL_CERT_FILE", "/tmp/proxy-ca.pem")
+    assert _ca_file() == "/tmp/proxy-ca.pem"
+    monkeypatch.delenv("SSL_CERT_FILE")
+    assert _ca_file().endswith("cacert.pem")
 
 
 async def test_write_sources_writes_each_file_by_output_filename(tmp_path: Path) -> None:
