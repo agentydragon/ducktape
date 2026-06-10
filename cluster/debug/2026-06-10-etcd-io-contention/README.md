@@ -93,6 +93,58 @@ currently about 8 MB compressed, hundreds of Kustomizations after a source
 revision can easily produce GB-scale temp-dir writes from repeated artifact
 fetch/untar/build work.
 
+## Source artifact scope
+
+The main `flux-system` `GitRepository` is the source for most of the graph:
+
+- 254 of 263 live Flux Kustomizations use `GitRepository/flux-system`.
+- 18 live Flux Terraform resources use the same source.
+- All live Kustomization paths using that source are under `cluster/k8s/`.
+- All live Terraform paths using that source are under `tf/gitops/`.
+
+The previous sparse checkout included all of `cluster/` and all of `tf/`.
+Locally, that pulled in several MiB of non-apply content such as
+`cluster/debug/` and `cluster/docs/` that every Kustomization reconcile then had
+to download and unpack. Narrow it to:
+
+- `cluster/k8s/`
+- `tf/gitops/`
+
+This reduces artifact size and temp-dir write amplification. It does not remove
+all broad fan-out: the `GitRepository` still tracks branch `devel`, and Flux
+uses the branch HEAD SHA as the source revision. A non-cluster commit can still
+create a new source revision even if the sparse artifact contents are almost
+unchanged. Avoiding that class of fan-out requires a source that only advances
+for deployable content, for example a generated deploy branch or OCI artifact.
+
+## Kustomization count
+
+Having a few hundred Kustomizations is not inherently wrong. The tradeoff is
+mostly operational:
+
+- Good: smaller ownership units, clearer status per app/component, bounded
+  prune scope, explicit dependency edges, and easier selective reconcile.
+- Bad: each Kustomization is a reconcile unit with its own source artifact
+  fetch/unpack/build, API dry-run apply drift check, health wait, status update,
+  events, and dependency polling.
+
+The expensive combination here is not just "many Kustomizations"; it is many
+Kustomizations sharing one branch-tracking source plus a large dependency graph
+with unhealthy roots. Splitting the Git repository only helps if it also splits
+the source revision stream. Moving the same manifests into another monorepo
+layout but still advancing one shared `GitRepository` would not materially
+change kustomize-controller fan-out.
+
+Prefer this order before any repo split:
+
+1. Keep the main source artifact narrow (`cluster/k8s/`, `tf/gitops/`).
+2. Fix or suspend unhealthy roots so dependency followers stop polling.
+3. Move static/cold Kustomizations to longer drift intervals, such as 1h.
+4. Merge only tiny static units where the separate status/prune boundary is not
+   useful.
+5. If non-cluster commits still cause expensive deploy waves, introduce a
+   deploy-only source stream rather than a human-facing repo split.
+
 Parallelism is inside one active controller process today:
 
 - live `kustomize-controller` replicas: 1;
@@ -120,6 +172,8 @@ retry multiplier:
 
 - `--concurrent=16` -> `--concurrent=8`
 - `--requeue-dependency=5s` -> `--requeue-dependency=30s`
+- `GitRepository/flux-system` sparse checkout -> `cluster/k8s/` and
+  `tf/gitops/`
 
 This intentionally does not make Flux worker-only. The cluster currently allows
 regular workloads on the three control-plane nodes, and that is useful capacity.

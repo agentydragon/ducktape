@@ -19,8 +19,8 @@ patches:
       - op: add
         path: /spec/sparseCheckout
         value:
-          - cluster/
-          - tf/
+          - cluster/k8s/
+          - tf/gitops/
   # Reconcile with moderate fan-out. With 244 Kustomizations and dependsOn
   # chains up to 9 deep, the upstream defaults serialise propagation:
   #   --concurrent=4          — at most 4 Kustomizations in flight at a time
