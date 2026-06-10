@@ -369,6 +369,14 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   workers — no quota spent. Python stack inside the sandbox is
   `python:3.13-slim` for now; a custom image with pandas/numpy is a
   follow-up.
+- **Dated web access in the sandbox — planned** (<wayback_proxy.md>): the
+  agent gets HTTP **only** through a per-agent date-clamping proxy (every
+  URL answered by the newest Wayback capture ≤ the task's `as_of`), backed
+  by a shared in-cluster pull-through cache so IA only ever sees paced cold
+  misses. Open-ended research over the pre-cutoff web, with the as-of
+  discipline still physical (the sandbox's sole route is the proxy).
+  Task-attached evidence URLs (`Task.evidence`) become fetchable starting
+  points instead of just titles.
 - **Bundle tasks — ✅ landed** (`bundle_tasks.py`): one dossier, one
   submission, **many named sub-questions** — more metrics per sampled
   token, and joint structure becomes scoreable. A bundle is a set of
@@ -388,6 +396,17 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   cluster-bootstrap CI**, clustered by `as_of` — tasks sharing an anchor
   saw the same era and are not independent, so per-task bootstrap would be
   anti-conservative.
+- **Run on a panel, not the grid**: redundant tasks add tokens, not
+  information, so routine LLM runs use a **curated non-redundant panel**
+  (~100–150 tasks) rather than every generated task: stratified across
+  series × anchor × shape × horizon, at most one variant per correlated
+  cluster (e.g. `dir` is nearly implied by `level`; h6×1.05 and h12×1.10
+  thresholds on the same anchor are near-duplicates), with cross-series
+  comparison tasks over-weighted (era cancels inside them — highest
+  information per token). Deliberately-correlated bundle members (the
+  `joint` cell and its marginals) stay in bundles for coherence scoring
+  but count once for power. The full grid remains for the classical
+  contestant (free) and occasional deep runs.
 - **Statistical power, honestly**: ~800 tasks ≠ ~800 data points. The
   glm-4.5-admissible slice is ~100 tasks on ~8 quarterly anchors in one
   23-month era over 3 correlated series with overlapping windows —
