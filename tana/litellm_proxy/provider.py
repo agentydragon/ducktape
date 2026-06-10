@@ -396,12 +396,28 @@ class TanaLiteLLM(CustomLLM):
         optional_params = kwargs.get("optional_params") or {}
         return self._client.stream_completion(model, messages, optional_params)
 
-    async def astreaming(self, *args: Any, **kwargs: Any) -> AsyncIterator[GenericStreamingChunk]:
-        model = _required_kwarg("model", kwargs)
-        messages = _required_kwarg("messages", kwargs)
-        optional_params = kwargs.get("optional_params") or {}
-        async for chunk in self._client.astream_completion(model, messages, optional_params):
-            yield chunk
+    async def astreaming(
+        self,
+        model: str,
+        messages: list[Any],
+        api_base: str,
+        custom_prompt_dict: dict[Any, Any],
+        model_response: ModelResponse,
+        print_verbose: Callable[..., Any],
+        encoding: Any,
+        api_key: Any,
+        logging_obj: Any,
+        optional_params: dict[Any, Any],
+        acompletion: Any = None,
+        litellm_params: Any = None,
+        logger_fn: Any = None,
+        headers: Any = None,
+        timeout: Any = None,  # noqa: ASYNC109 - LiteLLM's override signature includes timeout.
+        client: Any = None,
+    ) -> AsyncIterator[GenericStreamingChunk]:
+        del api_base, custom_prompt_dict, model_response, print_verbose, encoding, api_key
+        del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
+        return self._client.astream_completion(model, cast(Sequence[Mapping[str, Any]], messages), optional_params)
 
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
@@ -620,10 +636,10 @@ def _normalize_tool_result_content(message: Mapping[str, Any], content: Any) -> 
             return normalized_parts
     if not isinstance(tool_call_id, str) or not tool_call_id:
         raise TanaProxyError(f"tool message is missing tool_call_id/toolCallId: {message!r}")
-    part: dict[str, Any] = {"type": "tool-result", "toolCallId": tool_call_id, "output": content}
+    result_part: dict[str, Any] = {"type": "tool-result", "toolCallId": tool_call_id, "output": content}
     if isinstance(tool_name, str) and tool_name:
-        part["toolName"] = tool_name
-    return [part]
+        result_part["toolName"] = tool_name
+    return [result_part]
 
 
 def _parse_tool_arguments(arguments: Any) -> Any:
@@ -838,17 +854,16 @@ def _openai_tool_call_chunk(
 
 
 def _normalize_tana_tool_call(tool_call: Mapping[str, Any]) -> dict[str, Any] | None:
-    function_call = tool_call.get("functionCall")
-    if not isinstance(function_call, Mapping):
-        function_call = {}
-    provider_metadata = tool_call.get("providerMetadata")
-    if not isinstance(provider_metadata, Mapping):
-        provider_metadata = {}
-    provider_options = tool_call.get("providerOptions")
-    if not isinstance(provider_options, Mapping):
-        provider_options = {}
-    google_metadata = provider_metadata.get("google") if isinstance(provider_metadata.get("google"), Mapping) else {}
-    google_options = provider_options.get("google") if isinstance(provider_options.get("google"), Mapping) else {}
+    raw_function_call = tool_call.get("functionCall")
+    function_call: Mapping[str, Any] = raw_function_call if isinstance(raw_function_call, Mapping) else {}
+    raw_provider_metadata = tool_call.get("providerMetadata")
+    provider_metadata: Mapping[str, Any] = raw_provider_metadata if isinstance(raw_provider_metadata, Mapping) else {}
+    raw_provider_options = tool_call.get("providerOptions")
+    provider_options: Mapping[str, Any] = raw_provider_options if isinstance(raw_provider_options, Mapping) else {}
+    raw_google_metadata = provider_metadata.get("google")
+    google_metadata: Mapping[str, Any] = raw_google_metadata if isinstance(raw_google_metadata, Mapping) else {}
+    raw_google_options = provider_options.get("google")
+    google_options: Mapping[str, Any] = raw_google_options if isinstance(raw_google_options, Mapping) else {}
 
     tool_call_id = _first_non_none(tool_call.get("toolCallId"), tool_call.get("id"), tool_call.get("tool_call_id"))
     tool_name = _first_non_none(tool_call.get("toolName"), function_call.get("name"), tool_call.get("name"))
@@ -911,7 +926,12 @@ def _stream_chunk(
     provider_specific_fields: dict[str, Any] | None = None,
 ) -> GenericStreamingChunk:
     chunk = GenericStreamingChunk(
-        text=text, tool_use=tool_use, is_finished=is_finished, finish_reason=finish_reason, usage=usage, index=0
+        text=text,
+        tool_use=tool_use,
+        is_finished=is_finished,
+        finish_reason=finish_reason,
+        usage=cast(Any, usage),
+        index=0,
     )
     if provider_specific_fields:
         chunk["provider_specific_fields"] = provider_specific_fields
@@ -950,7 +970,7 @@ def _normalize_usage(usage: Mapping[str, Any]) -> dict[str, int] | None:
 
 
 def _model_response(model: str, result: TanaChatResult) -> ModelResponse:
-    usage = Usage(**result.usage) if result.usage is not None else None
+    usage = Usage(**cast(Any, result.usage)) if result.usage is not None else None
     tool_calls = _openai_tool_calls(result.tool_calls)
     provider_fields: dict[str, Any] = {}
     if result.tool_results:
