@@ -19,4 +19,4 @@ spec:
       name: wayback-cache
       namespace: wayback-cache
   dependsOn:
-    - name: openebs-lvm
+    - name: seaweedfs-csi
