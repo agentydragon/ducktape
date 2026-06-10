@@ -77,16 +77,35 @@ _HEALTH_PROBE = (
 
 
 def _sandbox_compose(
-    as_of: date, upstream: str, upstream_auth: str, agent_image: str, manifest_path: str
+    as_of: date, upstream: str, upstream_auth: str, agent_image: str, manifest_path: str, *, archive: bool
 ) -> dict[str, object]:
     """The per-as_of sandbox compose as a data structure (serialized with yaml).
 
-    WAYBACK_AS_OF is a baked literal, not compose env interpolation, so the
-    clamp is pinned per sandbox and can never be influenced from inside the
-    agent container. The agent's only network peer is the proxy (internal
-    network, no other route); it trusts the proxy's MITM CA via the standard
-    env-var contract so https:// fetches validate without rewriting to http://.
+    With `archive=True` the agent's only network peer is the wayback proxy
+    (internal network, no other route); WAYBACK_AS_OF is a baked literal, not
+    compose env interpolation, so the clamp is pinned per sandbox and can never
+    be influenced from inside the agent container. The agent trusts the proxy's
+    MITM CA via the standard env-var contract so https:// fetches validate
+    without rewriting to http://.
+
+    With `archive=False` the agent gets a single no-network service: no proxy,
+    no archive access, so it must forecast from the mounted /data files and its
+    own knowledge of events on or before `as_of`.
     """
+    if not archive:
+        return {
+            "services": {
+                "default": {
+                    "image": agent_image,
+                    "x-local": True,
+                    "init": True,
+                    "command": "tail -f /dev/null",
+                    "cpus": 1.0,
+                    "mem_limit": "2gb",
+                    "network_mode": "none",
+                }
+            }
+        }
     proxy_env = {
         "WAYBACK_AS_OF": str(as_of),
         "WAYBACK_UPSTREAM": upstream,
@@ -168,17 +187,36 @@ AGENT_PROMPT = (
     "answer fields, which the tool schema enforces."
 )
 
+AGENT_PROMPT_NO_ARCHIVE = (
+    "You are a careful forecaster. You have one tool: bash. Data files are under /data (start with "
+    "/data/README.txt). Each bash call runs in a FRESH shell — variables and working state do NOT "
+    "persist between calls, so make every command self-contained. python3 is available; the image "
+    "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
+    "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
+    "You have NO network access: forecast from the /data files and your own knowledge of events at or "
+    "before your information cutoff. "
+    "When confident, call the submit tool with your forecast — its arguments are the structured "
+    "answer fields, which the tool schema enforces."
+)
+
 # Container path the proxy sidecar writes its served-evidence manifest to;
 # the scorer reads it back per sample (W3 of the wayback proxy plan).
 MANIFEST_PATH = "/tmp/wayback-manifest.jsonl"
 
 
 def write_sandbox_compose(
-    directory: Path, as_of: date, upstream: str, agent_image: str = SANDBOX_IMAGE_TAG, upstream_auth: str = ""
+    directory: Path,
+    as_of: date,
+    upstream: str,
+    agent_image: str = SANDBOX_IMAGE_TAG,
+    upstream_auth: str = "",
+    *,
+    archive: bool = True,
 ) -> Path:
-    """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
-    path = directory / f"sandbox-{as_of}.yaml"
-    compose = _sandbox_compose(as_of, upstream, upstream_auth, agent_image, MANIFEST_PATH)
+    """The sandbox compose for one as_of: with archive, the agent's only route is
+    the clamped proxy; without it, the agent has no network at all."""
+    path = directory / f"sandbox-{as_of}-{'archive' if archive else 'noarchive'}.yaml"
+    compose = _sandbox_compose(as_of, upstream, upstream_auth, agent_image, MANIFEST_PATH, archive=archive)
     path.write_text(yaml.safe_dump(compose, sort_keys=False))
     return path
 
@@ -198,17 +236,26 @@ def _sources_txt(task: Task) -> str:
     return _SOURCES_HEADER + "".join(f"{item.url}\n" for item in task.evidence)
 
 
-def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> Sample:
+def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path, *, archive: bool = True) -> Sample:
+    if archive:
+        as_of_line = (
+            f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then, "
+            f"and the web proxy serves pages as archived on or before {task.as_of}; use only those sources and "
+            f"knowledge of events on or before {task.as_of}.\n"
+        )
+    else:
+        as_of_line = (
+            f"You are forecasting as of {task.as_of}. You have no network access: use only the /data files "
+            f"(truncated to what was knowable then) and your own knowledge of events on or before {task.as_of}.\n"
+        )
     instructions = (
-        f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then, "
-        f"and the web proxy serves pages as archived on or before {task.as_of}; use only those sources and "
-        f"knowledge of events on or before {task.as_of}.\n"
-        f"Question: {task.question.text}\n"
+        as_of_line + f"Question: {task.question.text}\n"
         f"Resolution date: {task.resolution_date}\n"
         f"When done, call the submit tool with your forecast: {answer_instruction(task.question)}."
     )
     files = {f"/data/{name}": content for name, content in dossier.items()}
-    if task.evidence:
+    # No archive means no way to fetch the source URLs, so don't land them.
+    if archive and task.evidence:
         files["/data/sources.txt"] = _sources_txt(task)
     return Sample(
         id=task.task_id,
@@ -237,10 +284,11 @@ async def _served_evidence() -> list[dict[str, object]]:
 
 
 @scorer(metrics=[mean()])
-def gym_proper_loss():
+def gym_proper_loss(*, archive: bool = True):
     async def score_fn(state: TaskState, target: Target) -> Score:
         gym_task = Task.model_validate(state.metadata["gym_task"])
-        served = await _served_evidence()
+        # No-archive runs have no `proxy` service, so sandbox("proxy") would raise.
+        served = await _served_evidence() if archive else []
         # A contestant that emits no parseable answer (ran out of turns, wrote
         # prose) is a non-submission, not a crash: record it as NaN with the
         # reason so the run can report a submission rate separately from loss.
@@ -300,17 +348,23 @@ def agent_eval_task(
     wayback_upstream_auth: str = "",
     agent_image: str = SANDBOX_IMAGE_TAG,
     compose_dir: Path | None = None,
+    archive: bool = True,
 ) -> list[InspectTask]:
     """Inspect tasks over gym tasks: one sandbox compose per distinct as_of, and
     one Inspect task per distinct answer schema. The react submit tool carries a
     single question's strict shape (`_submit_tool`), so tasks are grouped by it —
-    a uniform-kind panel (e.g. the binary market set) stays a single task."""
+    a uniform-kind panel (e.g. the binary market set) stays a single task.
+
+    With `archive=False` the sandbox has no network: the agent forecasts from
+    /data and its own knowledge only (the wayback_upstream* args go unused)."""
     if compose_dir is None:
         compose_dir = Path(tempfile.mkdtemp(prefix="gym-sandbox-"))
     as_ofs = {task.as_of for task in tasks}
     dossiers = {as_of: series_dossier(series, as_of) for as_of in as_ofs}
     composes = {
-        as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream, agent_image, wayback_upstream_auth)
+        as_of: write_sandbox_compose(
+            compose_dir, as_of, wayback_upstream, agent_image, wayback_upstream_auth, archive=archive
+        )
         for as_of in as_ofs
     }
     by_schema: dict[str, list[Task]] = defaultdict(list)
@@ -320,14 +374,14 @@ def agent_eval_task(
         InspectTask(
             name=f"agent_eval_{group[0].question.kind}_{index}",
             dataset=MemoryDataset(
-                [sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in group]
+                [sample_for_task(task, dossiers[task.as_of], composes[task.as_of], archive=archive) for task in group]
             ),
             solver=react(
-                prompt=AGENT_PROMPT,
+                prompt=AGENT_PROMPT if archive else AGENT_PROMPT_NO_ARCHIVE,
                 tools=[bash(timeout=180)],
                 submit=AgentSubmit(tool=_submit_tool(group[0].question), answer_only=True),
             ),
-            scorer=gym_proper_loss(),
+            scorer=gym_proper_loss(archive=archive),
         )
         for index, group in enumerate(by_schema.values())
     ]

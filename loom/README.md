@@ -15,11 +15,16 @@ thin bridge on augur's side. `//loom/...` never depends on
 `loom/gym/` is the forecasting eval: resolved tasks (question + info-cutoff
 `as_of` + realized outcome), proper-loss scoring (log/Brier, pinball), a
 registry of LLMs with asserted weight-freeze cutoffs (a model may only
-forecast tasks whose `as_of` is at or after its cutoff), and the bare-prompt
-LLM baseline every fancier method must beat:
+forecast tasks whose `as_of` is at or after its cutoff), and an Inspect `react`
+agent contestant in a date-clamped Docker sandbox. The agent's only network
+route is the wayback proxy sidecar, which serves the pre-cutoff archived web;
+`--no-archive` drops the proxy entirely so the agent forecasts from the mounted
+`/data` files and its own knowledge alone — the floor every archive-enabled or
+fancier method must beat:
 
 ```bash
-ZAI_API_KEY=... bazelisk run //loom/gym:baseline_eval -- --model-id glm-4.5
+LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval_bin -- \
+    --model-id glm-4.5 --log-dir /tmp/gym-logs --no-archive
 ```
 
 Status: gym core landed; pipeline at plan stage — see <plans/program_plan.md>.

@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest_bazel
 
 from finance.evidence.markets import Platform, load_roster
-from loom.gym.baseline_llm import build_prompt
 from loom.gym.market_seed_tasks import MARKET_PROB_AT_AS_OF, MARKET_SEED_RECORDS, MARKET_SEED_TASKS
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.seed_tasks import SEED_TASKS
@@ -65,11 +64,11 @@ def test_market_task_evidence_original_urls_and_bounded() -> None:
             assert not item.url.startswith(WAYBACK_PREFIX), f"{task.task_id}: archived form in url: {item.url}"
 
 
-def test_market_baseline_prob_never_reaches_prompts() -> None:
+def test_market_baseline_prob_never_reaches_question_text() -> None:
     # The market's own probability is a scoring reference; leaking it into the
-    # prompt would hand contestants the crowd answer.
+    # question text would hand contestants the crowd answer.
     for task in MARKET_SEED_TASKS:
-        assert str(MARKET_PROB_AT_AS_OF[task.task_id]) not in build_prompt(task)
+        assert str(MARKET_PROB_AT_AS_OF[task.task_id]) not in task.question.text
 
 
 if __name__ == "__main__":

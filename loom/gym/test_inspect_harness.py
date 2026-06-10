@@ -136,6 +136,26 @@ def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> 
     assert set(proxy["networks"]) == {"sandbox", "egress"}
 
 
+def test_no_archive_compose_is_route_less(tmp_path: Path) -> None:
+    # archive=False yields a single no-network service: no proxy, no networks
+    # block, so the agent must forecast from /data and its own knowledge.
+    compose_path = write_sandbox_compose(tmp_path, date(2020, 2, 1), "http://host.docker.internal:9999", archive=False)
+    config = yaml.safe_load(compose_path.read_text())
+    assert set(config["services"]) == {"default"}
+    agent = config["services"]["default"]
+    assert agent["network_mode"] == "none"
+    assert "networks" not in config
+
+
+def test_no_archive_sample_omits_sources_and_proxy_mention(tmp_path: Path) -> None:
+    compose_path = write_sandbox_compose(tmp_path, EVIDENCE_TASK.as_of, "https://web.archive.org", archive=False)
+    sample = sample_for_task(EVIDENCE_TASK, series_dossier([RAMP], EVIDENCE_TASK.as_of), compose_path, archive=False)
+    assert sample.files is not None
+    # No network means no way to fetch the leads, so they are not landed.
+    assert "/data/sources.txt" not in sample.files
+    assert "proxy" not in str(sample.input).lower()
+
+
 @pytest.fixture
 def fake_upstream_port() -> Iterator[int]:
     # The fake IA needs its event loop RUNNING for the whole test (a parked

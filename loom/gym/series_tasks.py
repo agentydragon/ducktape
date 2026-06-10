@@ -13,6 +13,7 @@ anchored at month M has `as_of` = first day of M+1.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -20,10 +21,13 @@ from datetime import date
 from loom.gym.bundle_tasks import bundle_tasks
 from loom.gym.comparison_tasks import comparison_tasks
 from loom.gym.market_seed_tasks import MARKET_SEED_TASKS
+from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.path_tasks import path_tasks
 from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import BinaryOutcome, BinaryQuestion, GridCoordinates, GridShape, ScalarOutcome, ScalarQuestion, Task
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -170,3 +174,21 @@ def all_tasks(series: Sequence[MonthlySeries]) -> tuple[Task, ...]:
         + path_tasks(series)
         + comparison_tasks(series)
     )
+
+
+def admissible_tasks(series: list[MonthlySeries], model_id: str, task_filter: str | None, strict: bool) -> list[Task]:
+    """Tasks the model may forecast: as_of at or after the model's bound (weights
+    release if strict, else knowledge cutoff), optionally filtered by id substring."""
+    if model_id not in KNOWN_MODEL_CUTOFFS:
+        raise ValueError(f"unknown model — add it to KNOWN_MODEL_CUTOFFS with provenance: {model_id=}")
+    model_cutoff = KNOWN_MODEL_CUTOFFS[model_id]
+    bound = model_cutoff.weights_released if strict else model_cutoff.knowledge_cutoff
+    tasks = []
+    for task in all_tasks(series):
+        if task_filter is not None and task_filter not in task.task_id:
+            continue
+        if bound > task.as_of:
+            logger.info("skipping %s: model bound %s is after task as_of %s", task.task_id, bound, task.as_of)
+            continue
+        tasks.append(task)
+    return tasks

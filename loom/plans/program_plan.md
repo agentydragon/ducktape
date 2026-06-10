@@ -248,12 +248,15 @@ S&P 500 / BTC / CPI history read from the **augur-evidence checkout** —
 `AUGUR_EVIDENCE_DIR`, or a shallow clone via the `augur-evidence-git-read`
 credentials reflected into claude-sandbox; the repo vendors no market data,
 known-history values are validated at load, and the Oct-2025 BLS CPI hole is
-handled), and the **bare-prompt structured-answer baseline**
-(`//loom/gym:baseline_eval`). Sampling routes through the cluster
-LiteLLM proxy speaking the **Anthropic messages API** with a forced
-`submit_answer` tool call (the shape known to give reliable structured
-objects from the GLM models), tagged `x-litellm-tags: loom-gym` so the
-proxy's `langfuse_otel` callback records every trace.
+handled), and the **agent contestant** (`//loom/gym:agent_eval_bin`): an
+Inspect `react` agent in a date-clamped Docker sandbox whose only network route
+is the wayback proxy sidecar, with a `--no-archive` arm that drops the proxy so
+the agent forecasts from `/data` and its own knowledge alone (the floor). It
+forces a strict `submit` tool call carrying the question's answer schema (the
+shape known to give reliable structured objects from the GLM models). The
+earlier bare-prompt one-shot baseline that this replaced routed the same forced
+structured-answer call through the cluster LiteLLM proxy's Anthropic messages
+API, tagged `x-litellm-tags: loom-gym` for Langfuse.
 
 First full glm-4.5 run (53 admissible tasks): binary mean `log_loss` 0.78 /
 Brier 0.29 — **below the constant-p=0.5 floor** (0.693 / 0.25); scalar mean

@@ -2,13 +2,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # keep
 py_binary(
-    name = "baseline_eval",
-    main_module = "loom.gym.run_eval",
-    deps = [":run_eval"],
-)
-
-# keep
-py_binary(
     name = "compare_eval_runs",
     main_module = "loom.gym.compare_runs",
     deps = [":compare_runs"],
@@ -25,11 +18,10 @@ py_library(
     name = "agent_eval",
     srcs = ["agent_eval.py"],
     deps = [
-        ":baseline_llm",
         ":inspect_harness",
         ":monthly_series",
         ":panel",
-        ":run_eval",
+        ":series_tasks",
         "//finance/evidence:checkout",
         "@pypi//anthropic",  # inspect_ai's anthropic provider imports it lazily
         "@pypi//inspect_ai",
@@ -53,9 +45,7 @@ py_library(
     deps = [
         ":scoring",
         ":task",
-        "@pypi//httpx",
-        "@pypi//more_itertools",
-        "@pypi//tenacity",
+        "@pypi//pydantic",
     ],
 )
 
@@ -110,6 +100,7 @@ py_library(
         ":bundle_tasks",
         ":comparison_tasks",
         ":market_seed_tasks",
+        ":model_cutoffs",
         ":monthly_series",
         ":path_tasks",
         ":seed_tasks",
@@ -121,12 +112,6 @@ py_library(
     name = "dossier",
     srcs = ["dossier.py"],
     deps = [":monthly_series"],
-)
-
-py_library(
-    name = "results_store",
-    srcs = ["results_store.py"],
-    deps = ["@pypi//boto3"],
 )
 
 py_library(
@@ -147,24 +132,6 @@ py_library(
     name = "panel",
     srcs = ["panel.py"],
     deps = [":task"],
-)
-
-py_library(
-    name = "run_eval",
-    srcs = ["run_eval.py"],
-    deps = [
-        ":baseline_llm",
-        ":dossier",
-        ":model_cutoffs",
-        ":monthly_series",
-        ":panel",
-        ":results_store",
-        ":scoring",
-        ":series_tasks",
-        ":task",
-        "//finance/evidence:checkout",
-        "@pypi//httpx",
-    ],
 )
 
 py_library(
@@ -196,10 +163,8 @@ py_test(
         ":scoring",
         ":task",
         "//:conftest",
-        "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
@@ -209,7 +174,6 @@ py_test(
     srcs = ["test_market_seed_tasks.py"],
     data = ["//cluster/k8s:market_roster_yaml"],
     deps = [
-        ":baseline_llm",
         ":market_seed_tasks",
         ":model_cutoffs",
         ":seed_tasks",
@@ -344,17 +308,6 @@ py_test(
         ":compare_runs",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_results_store",
-    srcs = ["test_results_store.py"],
-    deps = [
-        ":results_store",
-        "//:conftest",
-        "@pypi//boto3",
         "@pypi//pytest_bazel",
     ],
 )

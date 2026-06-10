@@ -25,13 +25,14 @@ from inspect_ai import eval as inspect_eval
 from inspect_ai.model import get_model
 
 from finance.evidence.checkout import ensure_checkout
-from loom.gym.baseline_llm import LITELLM_BASE_URL
 from loom.gym.inspect_harness import DEFAULT_WAYBACK_UPSTREAM, agent_eval_task
 from loom.gym.monthly_series import load_series
 from loom.gym.panel import build_panel
-from loom.gym.run_eval import admissible_tasks
+from loom.gym.series_tasks import admissible_tasks
 
 logger = logging.getLogger(__name__)
+
+LITELLM_BASE_URL = "https://litellm.allegedly.works"
 
 
 def main() -> None:
@@ -54,6 +55,12 @@ def main() -> None:
         default="WAYBACK_UPSTREAM_AUTH",
         help="Env var holding the 'Bearer <token>' value for the authed cache route; empty if unset.",
     )
+    parser.add_argument(
+        "--no-archive",
+        action="store_true",
+        help="Run the agent with no network at all (no wayback proxy); it forecasts from /data and its own "
+        "knowledge. The --wayback-upstream* args are then unused.",
+    )
     parser.add_argument("--log-dir", type=Path, required=True, help="Inspect eval log directory.")
     parser.add_argument("--message-limit", type=int, default=80, help="Max conversation turns per sample.")
     args = parser.parse_args()
@@ -67,7 +74,8 @@ def main() -> None:
         tasks = tasks[: args.max_tasks]
     if not tasks:
         raise SystemExit(f"no admissible tasks ({args.model_id=}, {args.task_filter=}, {args.panel=})")
-    print(f"{len(tasks)} tasks for {args.model_id} via {args.base_url} (upstream {args.wayback_upstream})")
+    mode = "no-archive" if args.no_archive else f"archive (upstream {args.wayback_upstream})"
+    print(f"{len(tasks)} tasks for {args.model_id} via {args.base_url} [{mode}]")
 
     model = get_model(
         f"anthropic/{args.endpoint_model or f'{args.model_id}-anthropic'}", base_url=args.base_url, api_key=api_key
@@ -78,6 +86,7 @@ def main() -> None:
             series,
             wayback_upstream=args.wayback_upstream,
             wayback_upstream_auth=os.environ.get(args.wayback_upstream_auth_env, ""),
+            archive=not args.no_archive,
         ),
         model=model,
         log_dir=str(args.log_dir),
