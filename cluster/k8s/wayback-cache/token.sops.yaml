@@ -1,35 +1,44 @@
 # Bearer token for the cache's gateway-facing :8090 listener. Consumed by the
 # wayback-cache deployment (envsubst into nginx.conf) and by the per-agent
 # wayback proxy (WAYBACK_UPSTREAM_AUTH) when its upstream is the public route.
+# The emberstack reflector annotations mirror it into claude-sandbox so agent
+# sessions can read it without cross-namespace RBAC. (Authored fresh + rotated
+# rather than edited in place: the SOPS MAC covers metadata, so adding
+# annotations to the ciphertext by hand would fail decryption.)
 apiVersion: v1
 kind: Secret
 metadata:
     name: wayback-cache-token
     namespace: wayback-cache
+    annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: claude-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: claude-sandbox
 type: Opaque
 stringData:
-    token: ENC[AES256_GCM,data:RTVgsoLI639MDZ+8QiVjpWqJjDZnF5ZXemTvMS4PqtLgS+7R6tMgDE3jse1GqARRE6XefYNHILyR17V2oSzPRw==,iv:PbR8zS81u9pqXT88jE5A+av6ECpgWqeiKY1knYD8C/Y=,tag:4kUIbsZ1xk9ETVnSt0Jzjg==,type:str]
+    token: ENC[AES256_GCM,data:ssX6wX/7D7pfzTT+4zG7KVGALJPqtC/RNQlnum+Xptq8nRIdi3/QI2Bi03hA9VB5K+taw/zm62jas4LSwNK1BA==,iv:ziJBWWkMUjutwmJ8oeJauuQcpBHwEvWqYF2fBQhCPLo=,tag:/BvFr5clfJ9HA3eo50lbfQ==,type:str]
 sops:
     age:
         - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6NUZvZWQzWE5SOTM5L0lz
-            b25kWExoOFdPU045QVlIRk8wUVJ0anVnNHljCmtIdFIxR0p5OUo2aGkrYVY0czM5
-            N1JLRmdNbnBWQVBWWTdKRHBGTlh6RjAKLS0tIFk2bnVYUjM5VEpMZHl4b3k0Nm5z
-            cVU1YkdrUTUwN3EzY2h5b3YyM1luTVEK60mWe89fn0DOektnI022CEuGrlWEVExV
-            m+Vlw+o8DObeJaPFnfahsJzVIoYG8XrGtQGLLRi4etdcGM/7khvkNg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPNGdzQ2EzaklWVXQ2RlJX
+            aHl1elZkbnoyK3R2QlJCaUJJRWRSdzh2S0hvCnB4Y1hjQnl6RFl4UmtONWRDaWFh
+            bm5Ham40d3dpUjF1WXN6SU5zU0h4M2cKLS0tIGx4WU93T3RlZmJ0UHhBOEFKMkxn
+            Unc3bGhmNnBGK3dSWFh2Rm5DdTJVVWsK2ZU1CwP3CMtB9TgUHLn30da61dKZgEDd
+            +/4AKsQbxDM2HRVcwrm3XU2F9kyZMgSInjiOVzXb17Jpg9fD4aauuw==
             -----END AGE ENCRYPTED FILE-----
         - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmd3NjOXhRZEtGeWlmS0s5
-            bU1OVVV0RDVncktSWnFydklzY2tMdVNiYTE4CitIWE1MQUxtNEw5WDJEM1RMMWF4
-            ajJXUGMyN1JPS09qUVVQU3EvaytPM2sKLS0tIENicmkzMGprNlBqSlpIbE93UUdK
-            ZkNKbWJxTXhSMzFHeG0vMDF6QlJqN1EKESXkyXRKaZ1r3SwReeRm1Ty09R++uzId
-            0Bqaw7Z5WWM47gizCMhkAKJLUTsDRrXlaV3ddVJVoAWErw6L8mlPcg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB6RDBvaGxyT3dFRWZvN0xh
+            aXRlaHkwR0xZTkVqUmVEclFDc2FMN0RoeVVNCnR6SFJLT1FwT0JTYnRieXFobUpX
+            c0kwYXJiRDlKUlU5c0tzTEF3T2hqWGcKLS0tIEM3SFBJTXZEdUZqRVBsViszWE5V
+            Ny8wK1pSZW1YS0pLTHppTjRnUU1LSDQKCI8yS0d42eYWKHWWZVFUq1AUFiiFMWQw
+            /0BiERTExG7ZN0Wvq7kPihEFfx77jrfhAzlIFS13bUSMI5EVpr627Q==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-06-10T10:40:59Z"
-    mac: ENC[AES256_GCM,data:z/jvuMxwdokeGxRlZTGA1MwKYSDXNYBE8mgR4T8peVxyiQa/G20pWI1OLB0BzbHXNJJ5W/71q6qdlEt73zdNob7h9tYZdm1l6tMOJEaISJFKhP99gFEPVTaigxTzoQX/84jNAtvLYkPNl2KQaCf+zUwt2/jVetMa45HSB1MrD5g=,iv:fEFxhb72Nd5dGO/NbLyiNKx7iVz9e1/NQ4RhTsbUk60=,tag:CgF0mn1mU1agcuSXKRbMOg==,type:str]
+    lastmodified: "2026-06-10T18:27:57Z"
+    mac: ENC[AES256_GCM,data:ylTaNeyahX59hLlssvEGaZ8H3CIXnAOa5CFGOM1Ho1o+6juStm9wbyWPTTaKpcohitiIbUVPZuGIfW7oNzuUBkEDkSU168/MxADQATgsiV9Qx5bNUPlPW+HKd8mqa+/2FN4rQfexOIiXTn8K63SLGwaxUz4To46JFvgcT1ja7d4=,iv:T+kK43EAqoIE1IjEpn+d2XvoiMa0yFMUnncAOvkjq9A=,tag:Sax9sDLU08A8mKxx0iTahw==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1

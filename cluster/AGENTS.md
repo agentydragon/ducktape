@@ -115,16 +115,17 @@ SOPS files, tofu resources, or external credential requirements.
 
 ### Annotating a SOPS-encrypted Secret
 
-Adding annotations/labels to a `*.sops.yaml` Secret needs **no manual re-MAC**:
-`sops <file>` re-encrypts and recomputes the MAC on save automatically. The
-catch is what an _agent_ hits — these files set no `mac_only_encrypted`, so the
-document MAC covers metadata too, and a **raw text edit** of the ciphertext
-(without re-running `sops`) fails decryption with a `MAC mismatch` (verified:
-adding one annotation to a real `*.sops.yaml` Secret breaks `sops -d`). Agents
-don't hold the cluster age key and can't `sops`-edit, so to add annotations,
-**patch the metadata in kustomize** instead — it leaves the encrypted file
-untouched. Example: `k8s/wayback-cache/kustomization.yaml` annotates
-`wayback-cache-token` for the emberstack reflector via a `patches:` entry.
+Adding annotations/labels to a `*.sops.yaml` Secret needs **no manual re-MAC** —
+encrypting recomputes the MAC. But these files set no `mac_only_encrypted`, so
+the document MAC covers metadata too: a **raw text edit** of the ciphertext
+(without re-encrypting) fails decryption with a `MAC mismatch` (verified —
+adding one annotation to a real `*.sops.yaml` Secret breaks `sops -d`). Go
+through `sops`: with the cluster age key, `sops <file>` edits and re-MACs in one
+step. An **agent** that lacks the key can still _encrypt_ to a rule's recipients
+(encryption only needs their public keys), so it authors the whole Secret as
+plaintext and `sops -e -i`s it — minting a fresh value for any opaque field it
+can't recover (i.e. rotate). Example: `k8s/wayback-cache/token.sops.yaml` carries
+the emberstack reflector annotations inline and was (re)authored that way.
 
 ### Description Annotations
 
