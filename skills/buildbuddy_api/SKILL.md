@@ -73,6 +73,18 @@ bbapi artifact cat <invocation-id> <name-substring>
 # override with -o/--output)
 bbapi artifact download <invocation-id> <name-substring> [-o PATH]
 
+# List invocation-level build tool logs such as Bazel command profiles
+bbapi tool-log list <invocation-id>
+
+# Stream an inline or bytestream-backed build tool log to stdout
+bbapi tool-log cat <invocation-id> "critical path"
+
+# Download a Bazel JSON profile emitted as a build tool log
+bbapi tool-log download <invocation-id> command.profile.gz [-o PATH]
+
+# Download logs from all child invocations of a workflow/runner invocation
+bbapi tool-log download <runner-invocation-id> command.profile.gz --all -o profiles/
+
 # List remote executions for an invocation
 bbapi execution <invocation-id>
 
@@ -144,6 +156,33 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 - `"compositor/test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
 
 When no match is found, the CLI prints available labels as hints.
+
+### Build Tool Logs vs Test Artifacts
+
+Bazel files attached to the invocation itself, such as `command.profile.gz`, are BES
+`BuildToolLogs`, not test artifacts. Use `bbapi tool-log {list,cat,download}` for these
+files. Use `bbapi artifact` only for test outputs like `test.log`, `test.xml`, and files
+under `test.outputs/`. Build tool logs can be inline (`elapsed time`, `critical path`,
+`process stats`) or bytestream-backed (`command.profile.gz`); `bbapi tool-log cat` handles
+both.
+
+For CI phase profiling, start with:
+
+```bash
+bb view <runner-or-child-invocation> --lines=200000
+bbapi invocation <runner-invocation>   # shows child invocations
+bbapi tool-log list <runner-invocation>
+bbapi tool-log cat <child-invocation> "process stats"
+bbapi tool-log download <runner-invocation> command.profile.gz --all -o profiles/
+```
+
+The runner log line `Syncing existing repo...` identifies a warm outer `bb remote` runner
+workspace, but it does not by itself prove the inner Bazel analysis cache survived. Check
+Bazel's package/configuration counts, elapsed time, `targetConfiguredCount`, and
+`command.profile.gz`. Treat `targetConfiguredCount` as the configured graph size/result
+count, not by itself proof that those configured targets were recomputed; profile markers,
+`discarding analysis cache` warnings, and time-to-first-action are better recomputation
+signals.
 
 ## Bisecting Test Failures with Target History
 

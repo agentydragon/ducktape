@@ -10,6 +10,7 @@ go_library(
         "cmd_execution.go",
         "cmd_invocation.go",
         "cmd_target.go",
+        "cmd_tool_log.go",
         "cmd_trend.go",
         "cmd_workflow.go",
         "git.go",

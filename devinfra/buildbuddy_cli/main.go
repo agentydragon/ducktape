@@ -34,6 +34,7 @@ Full service definition:
 	root.AddCommand(executionCmd())
 	root.AddCommand(cacheCmd())
 	root.AddCommand(artifactCmd())
+	root.AddCommand(toolLogCmd())
 	root.AddCommand(trendCmd())
 	root.AddCommand(workflowCmd())
 	root.AddCommand(askCmd())

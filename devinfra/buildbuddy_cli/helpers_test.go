@@ -60,6 +60,87 @@ func TestFilterArtifacts(t *testing.T) {
 	}
 }
 
+func TestFilterToolLogs(t *testing.T) {
+	logs := []toolLog{
+		{InvocationID: "inv-test", Name: "elapsed time"},
+		{InvocationID: "inv-test", Name: "command.profile.gz"},
+		{InvocationID: "inv-build", Name: "command.profile.gz"},
+	}
+	tests := []struct {
+		pattern string
+		want    int
+	}{
+		{"command.profile.gz", 2},
+		{"inv-test/command.profile.gz", 1},
+		{"inv-*/command.profile.gz", 2},
+		{"elapsed", 1},
+		{"missing", 0},
+	}
+	for _, tt := range tests {
+		matches := filterToolLogs(logs, tt.pattern)
+		if len(matches) != tt.want {
+			t.Errorf("filterToolLogs(%q) = %d matches, want %d", tt.pattern, len(matches), tt.want)
+		}
+	}
+}
+
+func TestReadToolLogInline(t *testing.T) {
+	got, err := readToolLog(nil, toolLog{Name: "elapsed time", contents: []byte("12.300000")})
+	if err != nil {
+		t.Fatalf("readToolLog inline returned error: %v", err)
+	}
+	if string(got) != "12.300000" {
+		t.Fatalf("readToolLog inline = %q, want %q", got, "12.300000")
+	}
+
+	_, err = readToolLog(nil, toolLog{Name: "empty"})
+	if err == nil {
+		t.Fatal("readToolLog empty expected error")
+	}
+}
+
+func TestToolLogSourceAndSize(t *testing.T) {
+	tests := []struct {
+		name       string
+		uri        string
+		contents   []byte
+		wantSource string
+		wantSize   int
+	}{
+		{
+			name:       "inline",
+			contents:   []byte("critical path"),
+			wantSource: "inline",
+			wantSize:   13,
+		},
+		{
+			name:       "bytestream with size",
+			uri:        "bytestream://remote.buildbuddy.io/blobs/abc/3232454",
+			wantSource: "bytestream",
+			wantSize:   3232454,
+		},
+		{
+			name:       "bytestream malformed size",
+			uri:        "bytestream://remote.buildbuddy.io/blobs/abc/not-a-size",
+			wantSource: "bytestream",
+			wantSize:   0,
+		},
+		{
+			name:       "empty",
+			wantSource: "empty",
+			wantSize:   0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSource, gotSize := toolLogSourceAndSize(tt.uri, tt.contents)
+			if gotSource != tt.wantSource || gotSize != tt.wantSize {
+				t.Fatalf("toolLogSourceAndSize() = (%q, %d), want (%q, %d)", gotSource, gotSize, tt.wantSource, tt.wantSize)
+			}
+		})
+	}
+}
+
 func TestNormalizeGitURL(t *testing.T) {
 	tests := []struct {
 		name string
