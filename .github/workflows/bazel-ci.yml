@@ -59,35 +59,14 @@ jobs:
           script: |
             set -euo pipefail
             RBE_FLAGS="--config=rbe --config=ci --remote_default_exec_properties=container-image=docker://$RBE_IMAGE"
+            export CI_VM_PROBE_DIR="/home/buildbuddy/workspace/.ducktape-ci-vm-probe"
             probe_bb_runner() {
-              local phase="$1"
-              local marker="/home/buildbuddy/workspace/.ducktape-ci-vm-recycle-marker"
-
-              echo "CI_VM_PROBE phase=${phase}"
-              echo "CI_VM_PROBE ts=$(date -Is)"
-              echo "CI_VM_PROBE hostname=$(hostname 2>/dev/null || true)"
-              echo "CI_VM_PROBE boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
-              echo "CI_VM_PROBE uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || true)"
-              echo "CI_VM_PROBE cwd=$(pwd)"
-              echo "CI_VM_PROBE commit=$(git rev-parse HEAD 2>/dev/null || true)"
-              echo "CI_VM_PROBE marker_path=${marker}"
-              if [[ -r "$marker" ]]; then
-                sed 's/^/CI_VM_PROBE previous_marker /' "$marker"
-              else
-                echo "CI_VM_PROBE previous_marker=missing"
-              fi
-              ps -eo pid,ppid,lstart,etime,cmd | awk '/[b]azel|[b]laze/ {print "CI_VM_PROBE bazel_process " $0}'
-
-              if mkdir -p "$(dirname "$marker")"; then
-                {
-                  echo "phase=${phase}"
-                  echo "ts=$(date -Is)"
-                  echo "commit=$(git rev-parse HEAD 2>/dev/null || true)"
-                  echo "boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
-                  echo "uptime=$(cut -d' ' -f1 /proc/uptime 2>/dev/null || true)"
-                } >"$marker" || true
-              fi
+              python3 devinfra/ci/bb_runner_probe.py snapshot "$1" || true
             }
+            finalize_bb_runner_probe() {
+              python3 devinfra/ci/bb_runner_probe.py finalize --upload || true
+            }
+            trap finalize_bb_runner_probe EXIT
             probe_bb_runner before-test
             bazel test --keep_going $RBE_FLAGS //... && \
               probe_bb_runner after-test && \

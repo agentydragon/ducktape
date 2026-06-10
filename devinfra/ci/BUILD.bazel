@@ -69,6 +69,12 @@ py_library(
     visibility = ["//:__subpackages__"],
 )
 
+py_library(
+    name = "bb_runner_probe",
+    srcs = ["bb_runner_probe.py"],
+    visibility = ["//:__subpackages__"],
+)
+
 # === Binaries ===
 
 py_binary(
@@ -89,11 +95,26 @@ py_binary(
     deps = [":release_metadata"],
 )
 
+py_binary(
+    name = "bb_runner_probe_bin",
+    main_module = "devinfra.ci.bb_runner_probe",
+    deps = [":bb_runner_probe"],
+)
+
 py_test(
     name = "test_release_metadata",
     srcs = ["test_release_metadata.py"],
     deps = [
         ":release_metadata",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bb_runner_probe",
+    srcs = ["test_bb_runner_probe.py"],
+    deps = [
+        ":bb_runner_probe",
         "@pypi//pytest_bazel",
     ],
 )

@@ -40,6 +40,8 @@ header. It does not independently measure inner Bazel analysis work in CI.
   - `recycle-runner=true`
   - `remote-snapshot-save-policy=always`
   - `snapshot-read-policy=newest`
+- Opened PR #2013 from this branch to run instrumented CI against the real GitHub Actions
+  -> BuildBuddy path.
 
 ## Evidence Tables
 
@@ -155,6 +157,58 @@ the combined load/analyze/execute marker.
 | `27304748140` | build | `835339f9` | build   |     7.3s |             2 |                   21030 |
 | `27305863277` | test  | `32b6919b` | test    |   124.5s |           656 |                   21162 |
 
+### Self-Instrumented PR Run
+
+PR #2013's first CI run used the initial inline runner probe. It produced a more interesting
+case than the earlier samples:
+
+- GitHub run `27310006267`, job `80677575140`, passed in about 2m2s.
+- The runner log still said `Syncing existing repo...`.
+- Before the first Bazel command, the probe saw a pre-existing Bazel server:
+  - PID `11591`
+  - start time `Wed Jun 10 22:10:07 2026`
+  - age about 9m35s at the `before-test` probe
+  - output base `/home/buildbuddy/workspace/output-base`
+  - workspace `/home/buildbuddy/workspace/repo-root`
+- The marker from the previous implementation was missing, because this was the first run
+  with marker instrumentation.
+- `boot_id` was `acc2ffc5-1fbe-443a-b33d-08f76b58c8be`; per the older Firecracker notes,
+  `boot_id` is recorded but is not treated as decisive.
+
+The first Bazel child in that run, `a2d71f3f-1c08-41fe-af1e-dd1a00e7488b`, showed:
+
+- `Elapsed time: 57.345s`, `Critical Path: 48.85s`.
+- `704 processes: 61408 action cache hit, 695 remote cache hit, 1 internal, 8 remote`.
+- Console progress included:
+  - `Analyzing: 3529 targets (1 packages loaded, 0 targets configured)`
+  - `Analyzing: 3529 targets (1 packages loaded, 3437 targets configured)`
+  - `Analyzing: 3529 targets (1 packages loaded, 297270 targets configured)`
+- Profile phase summary:
+  - launch: 0.813s
+  - init: 2.415s
+  - target pattern evaluation: 0.044s
+  - interleaved loading/analysis/execution: 54.072s
+  - finish: 0.021s
+- The critical path was dominated by one remote test action:
+  `Testing //devinfra/claude/claude_hook/container_e2e:test_container_e2e` at 48.85s.
+
+The second Bazel child in the same runner, `9528ade3-d76c-42c4-a60f-2427f3da73dd`, was a
+small `bazel build //...`:
+
+- `Elapsed time: 7.982s`, `Critical Path: 0.97s`.
+- Console progress showed `0 packages loaded, 0 targets configured`.
+- Profile phase summary:
+  - init: 3.414s
+  - interleaved loading/analysis/execution: 4.548s
+  - critical path: `OCI Image //devinfra/firecracker/vm_pod:image` at 968ms.
+
+This is the strongest evidence so far that the old runner-recycle note was too strong:
+we positively observed VM/Bazel-process reuse, while the first Bazel command still emitted
+large configured-target progress. That does not by itself prove a cold analysis cache, because
+Bazel 8/Skymeld interleaves analysis and execution and the profile critical path was remote
+execution. It does mean outer runner reuse and even a pre-existing Bazel JVM are insufficient
+evidence for "no reanalysis".
+
 ### Local Validation Caveat
 
 While validating the new `bbapi tool-log` command locally:
@@ -181,12 +235,15 @@ The prior runner-recycle analysis is right about the outer runner state for the 
 window: the logs show warm runner workspaces (`Syncing existing repo...`). It overreaches if
 it treats that header alone as proof that the inner Bazel analysis cache survived.
 
-For the sampled CI runs, the inner Bazel evidence points mostly toward analysis cache reuse:
+The current evidence is mixed:
 
-- no `discarding analysis cache` warnings;
-- `0-3 packages loaded`, `0 targets configured` in CI console progress;
-- actions begin within <1s after the load/analyze marker;
-- the second `bazel build //...` child in the same runner is consistently tiny.
+- sampled recent devel/PR CI runs showed no `discarding analysis cache` warnings and mostly
+  `0-3 packages loaded`, `0 targets configured`;
+- the self-instrumented PR run positively found a pre-existing Bazel server before the first
+  command, but still showed a large configured-target progress counter;
+- the second `bazel build //...` child inside the same runner remains consistently tiny;
+- in the profile, the long wall-clock critical path is still dominated by remote tests/actions,
+  not a separable serial target-pattern or package-loading phase.
 
 The residual time the user noticed is real, but in these samples it is primarily:
 
@@ -194,28 +251,43 @@ The residual time the user noticed is real, but in these samples it is primarily
 - remote action cache checking for thousands of actions in the large PR sample;
 - a small number of long remote executions/tests/mypy actions.
 
-This does not rule out occasional cold runner or analysis-cache-loss cases. It does mean the
-specific recent sampled CI jobs do not support the hypothesis that CI is broadly losing the
-Bazel analysis cache across Firecracker snapshot reuse.
+This does not yet prove that the analysis cache is being dropped between Firecracker snapshots,
+but it does disprove the simpler claim that Firecracker/Bazel-process reuse is enough to infer
+no reanalysis. The next useful data is a structured per-run bundle showing raw procfs state,
+previous local probe logs, Bazel server identity, and BuildBuddy tool profiles for consecutive
+recycled runs.
 
 ## Instrumentation Added On This Branch
 
-`.github/workflows/bazel-ci.yml` now logs `CI_VM_PROBE ...` lines from inside the `bb remote`
-runner script:
+`.github/workflows/bazel-ci.yml` now runs `devinfra/ci/bb_runner_probe.py` from inside the
+`bb remote` runner script:
 
 - before the first Bazel command;
 - after `bazel test`;
 - after `bazel build`.
 
-The probe records timestamp, hostname, `boot_id`, uptime, cwd, commit, previous marker contents,
-and currently-running Bazel/Blaze processes. It writes a marker to
-`/home/buildbuddy/workspace/.ducktape-ci-vm-recycle-marker`, outside the git-cleaned repo.
+The probe writes structured JSONL to
+`/home/buildbuddy/workspace/.ducktape-ci-vm-probe/current/probes.jsonl`, persists the completed
+run under `latest/`, and reads `latest/probes.jsonl` at the next `before-test` probe. On exit it
+creates `current/probe.tgz` and attempts to upload that tarball with `bb upload`; successful
+uploads are printed as `CI_VM_PROBE_CAS digest=...`.
+
+The tarball includes:
+
+- `probes.jsonl`;
+- raw current-run procfs snapshots under `proc/<phase>/...`;
+- previous-run logs under `previous/probes.jsonl`;
+- previous-run procfs snapshots under `previous/proc/...`, if the VM has a local `latest/`
+  directory from an earlier run.
+
+The JSON summary parses `/proc/<pid>/stat` only for compact CI log fields such as Bazel server
+start time and age. The raw `/proc` files in the tarball are the source of truth.
 
 Positive recycle signal to look for on a later CI run:
 
-- `CI_VM_PROBE previous_marker ...` from an earlier run before the first Bazel command; and
-- a pre-existing Bazel/Blaze JVM in `CI_VM_PROBE bazel_process ...` before the first Bazel
-  command.
+- `CI_VM_PROBE_SUMMARY phase=before-test previous_run_log=yes`;
+- a pre-existing Bazel server in `CI_VM_PROBE_SERVER ...` before the first Bazel command;
+- matching current raw procfs state plus previous local probe logs in the uploaded tarball.
 
 `boot_id` is logged but should not be used as the decisive signal; prior Firecracker notes say
 it can change on snapshot restore.
