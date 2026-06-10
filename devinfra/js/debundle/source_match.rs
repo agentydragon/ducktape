@@ -11,10 +11,13 @@ use spec::{AnonymousStatementSelector, BindingSourceKind, SourceMatchIdentifierM
 use swc_atoms::{Atom, Wtf8Atom};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::{
-    Decl, ExportDecl, ImportSpecifier, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem,
-    Prop, PropName, Stmt, Str, VarDecl, VarDeclarator,
+    Decl, ExportDecl, Expr, ExprStmt, ImportSpecifier, MemberExpr, MemberProp, Module, ModuleDecl,
+    ModuleItem, Prop, PropName, Stmt, Str, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
+
+const EXPR_HOLE_PREFIX: &str = "EXPR_";
+const STMT_HOLE_PREFIX: &str = "STMT_";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -519,80 +522,190 @@ fn module_items_match(
     SyntaxContext::within_ignored_ctxt(|| {
         let mut needle = needle.clone();
         let mut candidate = candidate.clone();
+        let wildcard_idents = wildcard_ident_names(&needle);
         if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
-            needle.visit_mut_with(&mut AlphaIdentCanonicalizer::default());
-            candidate.visit_mut_with(&mut AlphaIdentCanonicalizer::default());
+            needle.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
+            candidate.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
         }
-        if selector.wildcard_string_literals.is_empty() {
+        if selector.wildcard_string_literals.is_empty() && wildcard_idents.is_empty() {
             return needle.eq_ignore_span(&candidate);
         }
-        module_items_match_with_string_wildcards(
-            &needle,
-            &candidate,
-            &selector.wildcard_string_literals,
-        )
+        module_items_match_with_wildcards(&needle, &candidate, selector, &wildcard_idents)
     })
 }
 
-fn module_items_match_with_string_wildcards(
+fn module_items_match_with_wildcards(
     needle: &ModuleItem,
     candidate: &ModuleItem,
-    wildcard_string_literals: &BTreeSet<String>,
+    selector: &AnonymousStatementSelector,
+    wildcard_idents: &WildcardIdents,
 ) -> bool {
-    let mut collector = StringLiteralCollector::default();
-    candidate.visit_with(&mut collector);
-    if collector.values.is_empty() {
-        return false;
-    }
-    let wildcard_values: Vec<String> = wildcard_string_literals.iter().cloned().collect();
-    let candidate_values: Vec<Wtf8Atom> = collector.values.into_iter().collect();
-    try_string_wildcard_replacements(
+    let wildcard_string_literals: Vec<String> =
+        selector.wildcard_string_literals.iter().cloned().collect();
+    let wildcard_expressions: Vec<String> = wildcard_idents.expressions.iter().cloned().collect();
+    let wildcard_statements: Vec<String> = wildcard_idents.statements.iter().cloned().collect();
+
+    let candidate_strings = if wildcard_string_literals.is_empty() {
+        Vec::new()
+    } else {
+        let mut collector = StringLiteralCollector::default();
+        candidate.visit_with(&mut collector);
+        let values: Vec<Wtf8Atom> = collector.values.into_iter().collect();
+        if values.is_empty() {
+            return false;
+        }
+        values
+    };
+
+    let candidate_expressions = if wildcard_expressions.is_empty() {
+        Vec::new()
+    } else {
+        let mut collector = ExprCollector::default();
+        candidate.visit_with(&mut collector);
+        if collector.values.is_empty() {
+            return false;
+        }
+        collector.values
+    };
+
+    let candidate_statements = if wildcard_statements.is_empty() {
+        Vec::new()
+    } else {
+        let mut collector = StmtCollector::default();
+        candidate.visit_with(&mut collector);
+        if collector.values.is_empty() {
+            return false;
+        }
+        collector.values
+    };
+
+    try_wildcard_replacements(
         needle,
         candidate,
-        wildcard_string_literals,
-        &wildcard_values,
-        &candidate_values,
-        &mut BTreeMap::new(),
+        WildcardValues {
+            strings: &wildcard_string_literals,
+            expressions: &wildcard_expressions,
+            statements: &wildcard_statements,
+            candidate_strings: &candidate_strings,
+            candidate_expressions: &candidate_expressions,
+            candidate_statements: &candidate_statements,
+        },
+        WildcardReplacements::default(),
     )
 }
 
-fn try_string_wildcard_replacements(
+#[derive(Clone, Copy)]
+struct WildcardValues<'a> {
+    strings: &'a [String],
+    expressions: &'a [String],
+    statements: &'a [String],
+    candidate_strings: &'a [Wtf8Atom],
+    candidate_expressions: &'a [Expr],
+    candidate_statements: &'a [Stmt],
+}
+
+#[derive(Clone, Default)]
+struct WildcardReplacements {
+    strings: BTreeMap<String, Wtf8Atom>,
+    expressions: BTreeMap<String, Expr>,
+    statements: BTreeMap<String, Stmt>,
+}
+
+fn try_wildcard_replacements(
     needle: &ModuleItem,
     candidate: &ModuleItem,
-    wildcard_string_literals: &BTreeSet<String>,
-    wildcard_values: &[String],
-    candidate_values: &[Wtf8Atom],
-    replacements: &mut BTreeMap<String, Wtf8Atom>,
+    values: WildcardValues<'_>,
+    mut replacements: WildcardReplacements,
 ) -> bool {
-    let Some((wildcard, rest)) = wildcard_values.split_first() else {
-        let mut needle = needle.clone();
-        needle.visit_mut_with(&mut WildcardStringSubstituter {
-            wildcard_string_literals,
-            replacements,
-        });
-        return needle.eq_ignore_span(candidate);
-    };
-    for candidate_value in candidate_values {
-        replacements.insert(wildcard.clone(), candidate_value.clone());
-        if try_string_wildcard_replacements(
-            needle,
-            candidate,
-            wildcard_string_literals,
-            rest,
-            candidate_values,
-            replacements,
-        ) {
-            return true;
+    if let Some((wildcard, rest)) = values.strings.split_first() {
+        for candidate_value in values.candidate_strings {
+            replacements
+                .strings
+                .insert(wildcard.clone(), candidate_value.clone());
+            if try_wildcard_replacements(
+                needle,
+                candidate,
+                WildcardValues {
+                    strings: rest,
+                    ..values
+                },
+                replacements.clone(),
+            ) {
+                return true;
+            }
+            replacements.strings.remove(wildcard);
         }
+        return false;
     }
-    replacements.remove(wildcard);
-    false
+    if let Some((wildcard, rest)) = values.expressions.split_first() {
+        for candidate_expr in values.candidate_expressions {
+            replacements
+                .expressions
+                .insert(wildcard.clone(), candidate_expr.clone());
+            if try_wildcard_replacements(
+                needle,
+                candidate,
+                WildcardValues {
+                    expressions: rest,
+                    ..values
+                },
+                replacements.clone(),
+            ) {
+                return true;
+            }
+            replacements.expressions.remove(wildcard);
+        }
+        return false;
+    }
+    if let Some((wildcard, rest)) = values.statements.split_first() {
+        for candidate_stmt in values.candidate_statements {
+            replacements
+                .statements
+                .insert(wildcard.clone(), candidate_stmt.clone());
+            if try_wildcard_replacements(
+                needle,
+                candidate,
+                WildcardValues {
+                    statements: rest,
+                    ..values
+                },
+                replacements.clone(),
+            ) {
+                return true;
+            }
+            replacements.statements.remove(wildcard);
+        }
+        return false;
+    }
+
+    {
+        let mut needle = needle.clone();
+        needle.visit_mut_with(&mut WildcardSubstituter {
+            replacements: &replacements,
+        });
+        needle.eq_ignore_span(candidate)
+    }
 }
 
 #[derive(Default)]
 struct AlphaIdentCanonicalizer {
     next: usize,
     names: BTreeMap<Atom, Atom>,
+    reserved_idents: BTreeSet<String>,
+}
+
+impl AlphaIdentCanonicalizer {
+    fn new(wildcard_idents: &WildcardIdents) -> Self {
+        Self {
+            reserved_idents: wildcard_idents
+                .expressions
+                .iter()
+                .chain(&wildcard_idents.statements)
+                .cloned()
+                .collect(),
+            ..Self::default()
+        }
+    }
 }
 
 impl AlphaIdentCanonicalizer {
@@ -609,6 +722,9 @@ impl AlphaIdentCanonicalizer {
 
 impl VisitMut for AlphaIdentCanonicalizer {
     fn visit_mut_ident(&mut self, ident: &mut swc_ecma_ast::Ident) {
+        if self.reserved_idents.contains(ident.sym.as_ref()) {
+            return;
+        }
         ident.sym = self.canonical(&ident.sym);
     }
 
@@ -666,19 +782,117 @@ impl Visit for StringLiteralCollector {
     }
 }
 
-struct WildcardStringSubstituter<'a> {
-    wildcard_string_literals: &'a BTreeSet<String>,
-    replacements: &'a BTreeMap<String, Wtf8Atom>,
+#[derive(Default)]
+struct WildcardIdents {
+    expressions: BTreeSet<String>,
+    statements: BTreeSet<String>,
 }
 
-impl VisitMut for WildcardStringSubstituter<'_> {
+impl WildcardIdents {
+    fn is_empty(&self) -> bool {
+        self.expressions.is_empty() && self.statements.is_empty()
+    }
+}
+
+fn wildcard_ident_names(needle: &ModuleItem) -> WildcardIdents {
+    let mut collector = WildcardIdentCollector::default();
+    needle.visit_with(&mut collector);
+    collector.idents
+}
+
+#[derive(Default)]
+struct WildcardIdentCollector {
+    idents: WildcardIdents,
+}
+
+impl Visit for WildcardIdentCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Ident(ident) = expr
+            && ident.sym.as_ref().starts_with(EXPR_HOLE_PREFIX)
+        {
+            self.idents.expressions.insert(ident.sym.to_string());
+            return;
+        }
+        expr.visit_children_with(self);
+    }
+
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if let Some(hole_name) = statement_hole_name(stmt)
+            && hole_name.starts_with(STMT_HOLE_PREFIX)
+        {
+            self.idents.statements.insert(hole_name.to_string());
+            return;
+        }
+        stmt.visit_children_with(self);
+    }
+}
+
+#[derive(Default)]
+struct ExprCollector {
+    values: Vec<Expr>,
+}
+
+impl Visit for ExprCollector {
+    fn visit_expr(&mut self, expr: &Expr) {
+        self.values.push(expr.clone());
+        expr.visit_children_with(self);
+    }
+}
+
+#[derive(Default)]
+struct StmtCollector {
+    values: Vec<Stmt>,
+}
+
+impl Visit for StmtCollector {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        self.values.push(stmt.clone());
+        stmt.visit_children_with(self);
+    }
+}
+
+struct WildcardSubstituter<'a> {
+    replacements: &'a WildcardReplacements,
+}
+
+impl VisitMut for WildcardSubstituter<'_> {
     fn visit_mut_str(&mut self, lit: &mut Str) {
         let value = lit.value.to_string_lossy();
-        if self.wildcard_string_literals.contains(value.as_ref())
-            && let Some(replacement) = self.replacements.get(value.as_ref())
-        {
+        if let Some(replacement) = self.replacements.strings.get(value.as_ref()) {
             lit.value = replacement.clone();
             lit.raw = None;
         }
     }
+
+    fn visit_mut_expr(&mut self, expr: &mut Expr) {
+        if let Expr::Ident(ident) = expr
+            && ident.sym.as_ref().starts_with(EXPR_HOLE_PREFIX)
+            && let Some(replacement) = self.replacements.expressions.get(ident.sym.as_ref())
+        {
+            *expr = replacement.clone();
+            return;
+        }
+        expr.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_stmt(&mut self, stmt: &mut Stmt) {
+        if let Some(hole_name) = statement_hole_name(stmt)
+            && hole_name.starts_with(STMT_HOLE_PREFIX)
+            && let Some(replacement) = self.replacements.statements.get(hole_name)
+        {
+            *stmt = replacement.clone();
+            return;
+        }
+        stmt.visit_mut_children_with(self);
+    }
+}
+
+fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
+    let Stmt::Expr(ExprStmt { expr, .. }) = stmt else {
+        return None;
+    };
+    let Expr::Ident(ident) = expr.as_ref() else {
+        return None;
+    };
+    Some(ident.sym.as_ref())
 }

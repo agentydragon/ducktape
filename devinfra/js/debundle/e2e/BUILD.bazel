@@ -86,6 +86,7 @@ _STANDARD_E2E_DEPS = [
         "mediator_reaches_asymmetric_cycle_test",
         "namespace_aggregator_split_tdz_test",
         "spec_comments_test",
+        "syntactic_holes_test",
     ]
 ]
 

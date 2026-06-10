@@ -63,6 +63,13 @@ impl BindingGroup {
             exports: exports.iter().copied().collect(),
         }
     }
+
+    pub fn source_alpha_with_syntactic_holes(
+        match_source: impl Into<String>,
+        exports: &[(&'static str, &'static str)],
+    ) -> Self {
+        Self::source_alpha(match_source, exports)
+    }
 }
 
 impl Member {
@@ -120,6 +127,13 @@ impl Member {
             }),
             comment: None,
         }
+    }
+
+    pub fn source_alpha_with_syntactic_holes(
+        name: &'static str,
+        match_source: impl Into<String>,
+    ) -> Self {
+        Self::source_alpha(name, match_source)
     }
 
     /// Attach an author comment to be emitted above the binding's owner
@@ -229,6 +243,20 @@ impl FixtureAnonymousStatement {
                     .iter()
                     .map(|literal| (*literal).to_string())
                     .collect(),
+                match_source: match_source.into(),
+            }),
+            comment: None,
+            note: None,
+        }
+    }
+
+    fn alpha_all_with_syntactic_holes(match_source: impl Into<String>) -> Self {
+        Self {
+            match_source: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
                 match_source: match_source.into(),
             }),
             comment: None,
@@ -419,6 +447,25 @@ pub fn logical_module_with_anon_alpha_string_wildcards(
             anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_with_wildcard_strings(
                 anon_match,
                 wildcard_string_literals,
+            )],
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+pub fn logical_module_with_anon_alpha_syntactic_holes(
+    path: &str,
+    members: &[Member],
+    anon_match: &str,
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            binding_groups: Vec::new(),
+            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_with_syntactic_holes(
+                anon_match,
             )],
         })
         .expect("logical module fixture must serialize"),

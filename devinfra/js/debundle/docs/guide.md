@@ -297,12 +297,34 @@ by a large copied helper body plus one neighboring line, treat that as a
 tooling gap: prefer a future contextual selector (`before` / `after` /
 `near`) over spreading duplicated boilerplate.
 
-TODO: evaluate AST wildcard holes for expression subtrees. For example,
-`var x = foo(EXPR1, EXPR2, x);` could match
-`var xxx = foofoo(a(b(c())), b(a(100)), xx);` by binding `EXPR1` and
-`EXPR2` to arbitrary expression subtrees while alpha-renaming identifiers
-around them. If added, wildcard holes should stay structural and auditable,
-and they must still reject ambiguous matches rather than selecting by source
+Use syntactic holes for small volatile subtrees that are not stable enough
+to spell exactly:
+
+```yaml
+members:
+  - selector:
+      source_match:
+        identifiers: alpha_all
+        match: |
+          var x = foo(EXPR_LEFT, EXPR_RIGHT, x);
+    name: resolvedValue
+
+anonymous_statements:
+  - source_match:
+      identifiers: alpha_all
+      match: |
+        if (ready) {
+          STMT_REGISTER_PRELUDE;
+          register(Service);
+        }
+```
+
+Identifier expressions whose names start with `EXPR_` match one arbitrary
+expression subtree. Bare expression statements whose names start with `STMT_`
+match one arbitrary statement. Reusing the same placeholder name requires the
+same candidate subtree/statement everywhere it appears. These are still
+structural selectors: surrounding syntax is exact after the identifier policy
+is applied, and ambiguous matches are rejected rather than resolved by source
 order.
 
 ## Workflow: renaming a binding without moving
