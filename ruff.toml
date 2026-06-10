@@ -135,6 +135,7 @@ known-first-party = [
     "util",
     "agent_core",
     "agent_pkg",
+    "cpap",
     "x",
     "props",
     "difftree",
