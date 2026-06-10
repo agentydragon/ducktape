@@ -4,6 +4,114 @@
       "arch": "amd64",
       "dependencies": [
         {
+          "key": "debconf_1.5.82_amd64",
+          "name": "debconf",
+          "version": "1.5.82"
+        },
+        {
+          "key": "openssl_3.0.18-1_deb12u2_amd64",
+          "name": "openssl",
+          "version": "3.0.18-1~deb12u2"
+        },
+        {
+          "key": "libssl3_3.0.18-1_deb12u2_amd64",
+          "name": "libssl3",
+          "version": "3.0.18-1~deb12u2"
+        },
+        {
+          "key": "libc6_2.36-9-p-deb12u13_amd64",
+          "name": "libc6",
+          "version": "2.36-9+deb12u13"
+        },
+        {
+          "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+          "name": "libgcc-s1",
+          "version": "12.2.0-14+deb12u1"
+        },
+        {
+          "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+          "name": "gcc-12-base",
+          "version": "12.2.0-14+deb12u1"
+        }
+      ],
+      "key": "ca-certificates_20230311-p-deb12u1_amd64",
+      "name": "ca-certificates",
+      "sha256": "0d5f444f594e48c1e16a41d8fc628a09b24c658916a1274025c2330f2a802bed",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/c/ca-certificates/ca-certificates_20230311+deb12u1_all.deb"
+      ],
+      "version": "20230311+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "debconf_1.5.82_amd64",
+      "name": "debconf",
+      "sha256": "74ab14194a3762b2fc717917dcfda42929ab98e3c59295a063344dc551cd7cc8",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/d/debconf/debconf_1.5.82_all.deb"
+      ],
+      "version": "1.5.82"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "openssl_3.0.18-1_deb12u2_amd64",
+      "name": "openssl",
+      "sha256": "9107c374e0f760d5d7c9c7372788d4e618e1433db4fdef9a3a25788dfd5588bb",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian-security/20260301T000000Z/pool/updates/main/o/openssl/openssl_3.0.18-1~deb12u2_amd64.deb"
+      ],
+      "version": "3.0.18-1~deb12u2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libssl3_3.0.18-1_deb12u2_amd64",
+      "name": "libssl3",
+      "sha256": "ed44f11b74763cded2ad406f4de4d585ea27b0ce6377e7c8d98c2ddf2ed35cb3",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian-security/20260301T000000Z/pool/updates/main/o/openssl/libssl3_3.0.18-1~deb12u2_amd64.deb"
+      ],
+      "version": "3.0.18-1~deb12u2"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libc6_2.36-9-p-deb12u13_amd64",
+      "name": "libc6",
+      "sha256": "3d8072c73b017e907bbf44b7db870687888a991961d74f1ecbba6b9458f32a2c",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/glibc/libc6_2.36-9+deb12u13_amd64.deb"
+      ],
+      "version": "2.36-9+deb12u13"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
+      "name": "libgcc-s1",
+      "sha256": "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [],
+      "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
+      "name": "gcc-12-base",
+      "sha256": "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619",
+      "urls": [
+        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb"
+      ],
+      "version": "12.2.0-14+deb12u1"
+    },
+    {
+      "arch": "amd64",
+      "dependencies": [
+        {
           "key": "git-man_1-2.39.5-0-p-deb12u3_amd64",
           "name": "git-man",
           "version": "1:2.39.5-0+deb12u3"
@@ -368,39 +476,6 @@
     {
       "arch": "amd64",
       "dependencies": [],
-      "key": "libc6_2.36-9-p-deb12u13_amd64",
-      "name": "libc6",
-      "sha256": "3d8072c73b017e907bbf44b7db870687888a991961d74f1ecbba6b9458f32a2c",
-      "urls": [
-        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/glibc/libc6_2.36-9+deb12u13_amd64.deb"
-      ],
-      "version": "2.36-9+deb12u13"
-    },
-    {
-      "arch": "amd64",
-      "dependencies": [],
-      "key": "libgcc-s1_12.2.0-14-p-deb12u1_amd64",
-      "name": "libgcc-s1",
-      "sha256": "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7",
-      "urls": [
-        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb"
-      ],
-      "version": "12.2.0-14+deb12u1"
-    },
-    {
-      "arch": "amd64",
-      "dependencies": [],
-      "key": "gcc-12-base_12.2.0-14-p-deb12u1_amd64",
-      "name": "gcc-12-base",
-      "sha256": "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619",
-      "urls": [
-        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb"
-      ],
-      "version": "12.2.0-14+deb12u1"
-    },
-    {
-      "arch": "amd64",
-      "dependencies": [],
       "key": "libacl1_2.3.1-3_amd64",
       "name": "libacl1",
       "sha256": "8be9df5795114bfe90e2be3d208ef47a5edd3fc7b3e20d387a597486d444e5e2",
@@ -538,17 +613,6 @@
         "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/libs/libssh2/libssh2-1_1.10.0-3+b1_amd64.deb"
       ],
       "version": "1.10.0-3+b1"
-    },
-    {
-      "arch": "amd64",
-      "dependencies": [],
-      "key": "libssl3_3.0.18-1_deb12u2_amd64",
-      "name": "libssl3",
-      "sha256": "ed44f11b74763cded2ad406f4de4d585ea27b0ce6377e7c8d98c2ddf2ed35cb3",
-      "urls": [
-        "https://snapshot.debian.org/archive/debian-security/20260301T000000Z/pool/updates/main/o/openssl/libssl3_3.0.18-1~deb12u2_amd64.deb"
-      ],
-      "version": "3.0.18-1~deb12u2"
     },
     {
       "arch": "amd64",
@@ -1487,17 +1551,6 @@
         "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/p/pam/libpam0g_1.5.2-6+deb12u2_amd64.deb"
       ],
       "version": "1.5.2-6+deb12u2"
-    },
-    {
-      "arch": "amd64",
-      "dependencies": [],
-      "key": "debconf_1.5.82_amd64",
-      "name": "debconf",
-      "sha256": "74ab14194a3762b2fc717917dcfda42929ab98e3c59295a063344dc551cd7cc8",
-      "urls": [
-        "https://snapshot.debian.org/archive/debian/20260301T000000Z/pool/main/d/debconf/debconf_1.5.82_all.deb"
-      ],
-      "version": "1.5.82"
     },
     {
       "arch": "amd64",

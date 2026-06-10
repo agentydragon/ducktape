@@ -15,16 +15,14 @@ WiFi SD card into the private Forgejo repo `cpap-data/cpap-data`.
 
 ## Data access
 
-Clone the repo with the read-only `cpap-data-reader` credentials from the
+Clone `https://git.allegedly.works/cpap-data/cpap-data.git` (the secret's
+`repo_url` key) with the read-only `cpap-data-reader` credentials from the
 `cpap-data-git-read` Kubernetes secret (keys: `username`, `password`,
 `repo_url`):
 
-- **Claude Code web / in-cluster**: read the reflected copy in `claude-sandbox`
-  (via kubectl-local MCP): `kubectl -n claude-sandbox get secret cpap-data-git-read`.
-  The secret's `repo_url` key holds the in-cluster URL
-  (`http://forgejo-http.forgejo:3000/cpap-data/cpap-data.git`), usable from pods.
-- **Laptops** (admin kubeconfig): `kubectl -n cpap-sync get secret cpap-data-git-read`,
-  then clone via the external URL `https://git.allegedly.works/cpap-data/cpap-data.git`.
+- **Claude Code web**: read the reflected copy in `claude-sandbox` (via
+  kubectl-local MCP): `kubectl -n claude-sandbox get secret cpap-data-git-read`.
+- **Laptops** (admin kubeconfig): `kubectl -n cpap-sync get secret cpap-data-git-read`.
 
 ```bash
 USERNAME=$(kubectl -n claude-sandbox get secret cpap-data-git-read -o jsonpath='{.data.username}' | base64 -d)

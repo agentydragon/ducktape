@@ -1,7 +1,7 @@
 # Deb packages layered on debian:bookworm-slim for the CPAP sync container.
 # nmcli talks to host NetworkManager over dbus (the cronjob mounts /run/dbus
-# and /var/run/NetworkManager from the host); git clones/pushes the cpap-data
-# Forgejo repo over plain in-cluster http (no ca-certificates needed).
+# and /var/run/NetworkManager from the host); git + ca-certificates clone/push
+# the cpap-data Forgejo repo via https://git.allegedly.works.
 #
 # Regenerate the lock file after any change:
 #   bazel run @bookworm_cpap_sync//:lock
@@ -17,5 +17,6 @@ archs:
   - "amd64"
 
 packages:
+  - "ca-certificates"
   - "git"
   - "network-manager"

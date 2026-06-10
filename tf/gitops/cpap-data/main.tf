@@ -5,8 +5,11 @@
 # nightly cpap-sync CronJob to commit+push files pulled from the ez Share SD
 # card), plus a read-only `cpap-data-reader` collaborator (used by Claude Code
 # to clone the archive for analysis). Two Kubernetes Secrets carry the
-# respective git credentials. Auth is HTTPS Basic over the in-cluster Forgejo
-# service (no SSH endpoint needed). Mirrors tf/gitops/augur-evidence.
+# respective git credentials. Auth is HTTPS Basic against the public ingress
+# (git.allegedly.works) — unlike augur-evidence's in-cluster URL, because the
+# sync CronJob runs hostNetwork on wyrm2 where host DNS is simpler than
+# cluster DNS, and the same URL then works for every consumer (CronJob,
+# laptops, Claude Code web). Mirrors tf/gitops/augur-evidence otherwise.
 #
 # The Secrets land directly in the ducktape-owned `cpap-sync` namespace (no
 # cross-repo reflection dance like budget -> augur); the read Secret is
@@ -80,7 +83,7 @@ resource "kubernetes_secret" "cpap_data_git_write" {
   data = {
     username = forgejo_user.writer.login
     password = random_password.writer.result
-    repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
+    repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
   }
 }
 
@@ -100,6 +103,6 @@ resource "kubernetes_secret" "cpap_data_git_read" {
   data = {
     username = forgejo_user.reader.login
     password = random_password.reader.result
-    repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
+    repo_url = "https://git.allegedly.works/${forgejo_user.writer.login}/${forgejo_repository.data.name}.git"
   }
 }

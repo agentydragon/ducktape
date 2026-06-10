@@ -20,9 +20,6 @@ spec:
         spec:
           restartPolicy: OnFailure
           hostNetwork: true
-          # hostNetwork pods don't use cluster DNS by default; the sync must
-          # resolve forgejo-http.forgejo to push.
-          dnsPolicy: ClusterFirstWithHostNet
           nodeSelector:
             kubernetes.io/hostname: wyrm2
           securityContext:

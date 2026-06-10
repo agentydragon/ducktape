@@ -38,12 +38,13 @@ the old PVC-era data was discarded).
   discards mtimes); recording the _stored_ byte count makes mid-write downloads
   self-heal on the next run.
 - Image: `ghcr.io/agentydragon/cpap-sync` (`//cpap:image`,
-  `debian:bookworm-slim` + `network-manager` + `git` via apt manifest), built
-  by `push-images.yml`, tagged `devel-*` for Flux image automation.
-- Cluster: `cluster/k8s/cpap-sync/` — CronJob (hostNetwork on wyrm2,
-  `dnsPolicy: ClusterFirstWithHostNet` to resolve Forgejo) + namespace
-  (`pod-security.kubernetes.io/enforce: privileged` — needs NET_ADMIN,
-  hostNetwork, hostPath).
+  `debian:bookworm-slim` + `network-manager` + `git` + `ca-certificates` via
+  apt manifest), built by `push-images.yml`, tagged `devel-*` for Flux image
+  automation.
+- Cluster: `cluster/k8s/cpap-sync/` — CronJob (hostNetwork on wyrm2; pushes
+  via `https://git.allegedly.works`, so host DNS suffices — no cluster-DNS
+  dependency) + namespace (`pod-security.kubernetes.io/enforce: privileged` —
+  needs NET_ADMIN, hostNetwork, hostPath).
 
 ## Credentials
 
