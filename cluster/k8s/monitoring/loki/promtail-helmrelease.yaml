@@ -8,6 +8,8 @@ spec:
   install:
     remediation:
       retries: 3
+  upgrade:
+    disableWait: true
   chart:
     spec:
       chart: promtail
