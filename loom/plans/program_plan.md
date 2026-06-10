@@ -374,10 +374,15 @@ date, realized outcome)`; a contestant may use any data dated ≤ t.
   `as_of` (`WAYBACK_AS_OF` baked as a literal, never client-influencable),
   backed by the shared in-cluster pull-through cache so IA only ever sees
   paced cold misses. Open-ended research over the pre-cutoff web, with the
-  as-of discipline still physical. The mockllm e2e proves the chain on RBE:
-  route-less agent → clamped proxy → archived page → scored submit.
-  Pending: the proxy's served-evidence JSONL manifest into the run payload
-  (W3); pointing real runs at the cluster cache.
+  as-of discipline still physical. Evidence leads land as
+  `/data/evidence.jsonl` in the container — files the agent chooses to read
+  (pay-per-use tokens, uniform substrate, leads stay data to evaluate
+  rather than harness-asserted facts), never prompt content; the proxy's
+  served-evidence manifest is read back per sample into
+  `Score.metadata["served_evidence"]`. The mockllm e2e proves the loop on
+  RBE: lead discovered in the evidence file → fetched through the clamped
+  proxy → manifest in the score. Pending: pointing real runs at the
+  cluster cache.
 - **Bundle tasks — ✅ landed** (`bundle_tasks.py`): one dossier, one
   submission, **many named sub-questions** — more metrics per sampled
   token, and joint structure becomes scoreable. A bundle is a set of

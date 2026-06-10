@@ -10,7 +10,8 @@ line per response on stdout. See loom/plans/wayback_proxy.md.
 Configuration (env): ``WAYBACK_AS_OF`` (required ISO date, inclusive),
 ``WAYBACK_UPSTREAM`` (default ``https://web.archive.org``; point at the
 wayback-cache cluster service to share a pull-through cache), ``PORT``
-(default 8080).
+(default 8080), ``WAYBACK_MANIFEST_PATH`` (write the manifest to this file
+instead of stdout — the gym scorer reads it out of the sandbox per sample).
 """
 
 from __future__ import annotations
@@ -22,8 +23,10 @@ import logging
 import os
 import re
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import TextIO
 
 import aiohttp
@@ -90,16 +93,19 @@ class Config:
     as_of: date
     upstream: str  # base URL, no trailing slash
     port: int
+    manifest_path: Path | None = None  # None: manifest lines go to stdout
 
     @classmethod
     def from_env(cls) -> Config:
         as_of_raw = os.environ.get("WAYBACK_AS_OF")
         if as_of_raw is None:
             raise RuntimeError("WAYBACK_AS_OF must be set to the ISO information-cutoff date")
+        manifest_raw = os.environ.get("WAYBACK_MANIFEST_PATH")
         return cls(
             as_of=date.fromisoformat(as_of_raw),
             upstream=os.environ.get("WAYBACK_UPSTREAM", f"https://{ARCHIVE_HOST}").rstrip("/"),
             port=int(os.environ.get("PORT", "8080")),
+            manifest_path=Path(manifest_raw) if manifest_raw is not None else None,
         )
 
     @property
@@ -305,18 +311,24 @@ async def start_proxy(
     return runner
 
 
-async def amain() -> None:
-    config = Config.from_env()
+async def amain(config: Config, manifest: TextIO) -> None:
     logger.info("wayback proxy: as_of=%s upstream=%s port=%d", config.as_of, config.upstream, config.port)
     # Total timeout rides out wayback-cache limit_req delays (burst 60 @ 30r/m).
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300)) as session:
-        await start_proxy(config, session, sys.stdout)
+        await start_proxy(config, session, manifest)
         await asyncio.Event().wait()
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    asyncio.run(amain())
+    config = Config.from_env()
+    # The manifest file opens in sync main: blocking open in async code is an
+    # antipattern, and line buffering keeps records readable mid-run.
+    manifest_cm = (
+        nullcontext(sys.stdout) if config.manifest_path is None else config.manifest_path.open("a", buffering=1)
+    )
+    with manifest_cm as manifest:
+        asyncio.run(amain(config, manifest))
 
 
 if __name__ == "__main__":

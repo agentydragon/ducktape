@@ -105,6 +105,11 @@ fetch them — and browse outward from them — rather than only reading titles.
   `loom/wayback_proxy/`) + Inspect compose wiring with per-`as_of` plumbing
   (`loom/gym/inspect_harness.py`); mockllm e2e on RBE fetches a known
   snapshot through the full chain.
-- **W3**: served-evidence manifest → run payload → S3.
+- **W3** ✅ (sandbox side): the proxy writes its served-evidence manifest to
+  `WAYBACK_MANIFEST_PATH`; the gym scorer reads it back from the proxy
+  sandbox per sample into `Score.metadata["served_evidence"]`. Evidence
+  leads land as `/data/evidence.jsonl` in the agent container — files the
+  agent chooses to read, never prompt content. Remaining: surfacing the
+  manifests in uploaded run payloads.
 - **W4** (optional): HTTPS MITM; text-extraction convenience endpoint for
   dossier-style consumption.

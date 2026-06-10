@@ -33,6 +33,7 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import bash, python
+from inspect_ai.util import sandbox
 
 from loom.gym import scoring
 from loom.gym.baseline_llm import answer_instruction, parse_answer
@@ -77,6 +78,7 @@ services:
     environment:
       WAYBACK_AS_OF: "{as_of}"
       WAYBACK_UPSTREAM: "{upstream}"
+      WAYBACK_MANIFEST_PATH: "{manifest_path}"
     extra_hosts:
       # Lets upstream point at a host port: a kubectl port-forward of the
       # cluster wayback-cache, or a test's in-process fake IA.
@@ -100,18 +102,36 @@ networks:
 
 AGENT_PROMPT = (
     "You are a careful forecaster. Data files are available under /data (start with /data/README.txt); "
-    "inspect them with the bash and python tools. You can also browse the web as it existed at your "
-    "information cutoff through a preconfigured HTTP proxy: fetch plain http:// URLs (urllib and "
-    "requests honor http_proxy automatically; https and the live web are unreachable). When confident, "
-    "call submit with ONLY the JSON answer object, no prose."
+    "inspect them with the bash and python tools. If /data/evidence.jsonl exists, it lists dated leads "
+    "(url, date, title) published on or before your information cutoff. You can fetch those urls — and "
+    "browse the web as it existed at the cutoff generally — through a preconfigured HTTP proxy: use "
+    "plain http:// URLs (urllib and requests honor http_proxy automatically; https and the live web "
+    "are unreachable). When confident, call submit with ONLY the JSON answer object, no prose."
 )
+
+# Container path the proxy sidecar writes its served-evidence manifest to;
+# the scorer reads it back per sample (W3 of the wayback proxy plan).
+MANIFEST_PATH = "/tmp/wayback-manifest.jsonl"
 
 
 def write_sandbox_compose(directory: Path, as_of: date, upstream: str) -> Path:
     """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
     path = directory / f"sandbox-{as_of}.yaml"
-    path.write_text(_COMPOSE_TEMPLATE.format(image=WAYBACK_PROXY_IMAGE_TAG, as_of=as_of, upstream=upstream))
+    path.write_text(
+        _COMPOSE_TEMPLATE.format(
+            image=WAYBACK_PROXY_IMAGE_TAG, as_of=as_of, upstream=upstream, manifest_path=MANIFEST_PATH
+        )
+    )
     return path
+
+
+def _evidence_jsonl(task: Task) -> str:
+    """Evidence leads as a /data file, not prompt text: read only if the agent
+    chooses (tokens pay per use), uniform with the rest of the dossier, and
+    leads stay data to evaluate rather than harness-asserted facts."""
+    return "".join(
+        json.dumps({"url": item.url, "date": str(item.date), "title": item.title}) + "\n" for item in task.evidence
+    )
 
 
 def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> Sample:
@@ -123,11 +143,14 @@ def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path) -> 
         f"Resolution date: {task.resolution_date}\n"
         f"Submit ONLY a JSON object: {answer_instruction(task.question)}."
     )
+    files = {f"/data/{name}": content for name, content in dossier.items()}
+    if task.evidence:
+        files["/data/evidence.jsonl"] = _evidence_jsonl(task)
     return Sample(
         id=task.task_id,
         input=instructions,
         target=json.dumps(task.outcome.model_dump(mode="json")),
-        files={f"/data/{name}": content for name, content in dossier.items()},
+        files=files,
         metadata={"gym_task": task.model_dump(mode="json")},
         sandbox=("docker", str(compose_path)),
     )
@@ -145,10 +168,17 @@ def gym_proper_loss():
         gym_task = Task.model_validate(state.metadata["gym_task"])
         answer = parse_answer(gym_task, json.loads(state.output.completion))
         task_score = scoring.score(gym_task, answer)
+        try:
+            manifest_text = await sandbox("proxy").read_file(MANIFEST_PATH)
+        except FileNotFoundError:
+            # The proxy creates the manifest lazily on its first served
+            # response; absence just means this sample fetched nothing.
+            manifest_text = ""
+        served = [json.loads(line) for line in manifest_text.splitlines() if line]
         return Score(
             value=task_score.metrics[headline_metric(task_score.metrics, gym_task.question.kind)],
             answer=state.output.completion,
-            metadata=task_score.metrics,
+            metadata={**task_score.metrics, "served_evidence": served},
         )
 
     return score_fn

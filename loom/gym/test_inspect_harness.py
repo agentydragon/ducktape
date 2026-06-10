@@ -23,7 +23,7 @@ from loom.gym.dossier import series_dossier
 from loom.gym.inspect_harness import WAYBACK_PROXY_IMAGE_TAG, agent_eval_task, sample_for_task, write_sandbox_compose
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
-from loom.gym.task import BinaryOutcome
+from loom.gym.task import BinaryOutcome, EvidenceItem
 from loom.wayback_proxy import fake_ia
 from third_party.containers.rlocations import PYTHON_3_13_SLIM
 from util.oci import OciImage, load_oci_image
@@ -51,6 +51,22 @@ GYM_TASK = one(
     )
 )
 
+# The same task with an evidence lead pointing at the fake IA's canned page:
+# the agent discovers it in /data/evidence.jsonl and fetches it through the
+# clamped proxy.
+EVIDENCE_TASK = GYM_TASK.model_copy(
+    update={
+        "evidence": (
+            EvidenceItem(
+                url=fake_ia.EXAMPLE_URL,
+                archived_url=f"https://web.archive.org/web/{fake_ia.GOOD_TS}/{fake_ia.EXAMPLE_URL}",
+                date=date(2020, 1, 15),
+                title="archived example.com homepage",
+            ),
+        )
+    }
+)
+
 
 def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     assert GYM_TASK.outcome == BinaryOutcome(value=True)
@@ -58,12 +74,24 @@ def test_sample_carries_dossier_task_and_sandbox(tmp_path: Path) -> None:
     sample = sample_for_task(GYM_TASK, series_dossier([RAMP], GYM_TASK.as_of), compose_path)
     assert sample.files is not None
     assert {"/data/README.txt", "/data/ramp_monthly.csv"} <= set(sample.files)
+    assert "/data/evidence.jsonl" not in sample.files
     assert sample.metadata is not None
     assert sample.metadata["gym_task"]["task_id"] == GYM_TASK.task_id
     assert json.loads(str(sample.target))["value"] is True
     assert "Submit ONLY a JSON object" in str(sample.input)
     assert sample.sandbox is not None
     assert sample.sandbox.config == str(compose_path)
+
+
+def test_evidence_lands_as_file_never_in_prompt(tmp_path: Path) -> None:
+    compose_path = write_sandbox_compose(tmp_path, EVIDENCE_TASK.as_of, "https://web.archive.org")
+    sample = sample_for_task(EVIDENCE_TASK, series_dossier([RAMP], EVIDENCE_TASK.as_of), compose_path)
+    assert sample.files is not None
+    leads = [json.loads(line) for line in sample.files["/data/evidence.jsonl"].splitlines()]
+    assert leads == [{"url": fake_ia.EXAMPLE_URL, "date": "2020-01-15", "title": "archived example.com homepage"}]
+    # Evidence is data the agent chooses to read, not prompt content.
+    assert fake_ia.EXAMPLE_URL not in str(sample.input)
+    assert "archived example.com homepage" not in str(sample.input)
 
 
 def test_sandbox_compose_isolates_agent_behind_clamped_proxy(tmp_path: Path) -> None:
@@ -159,17 +187,20 @@ def _dump_sandbox_diagnostics_and_cleanup(upstream_port: int) -> None:
 
 
 def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> None:
-    # Scripted model: fetch a pre-as_of page through the clamped proxy, read
-    # the mounted dossier with bash, then submit p=0.8. Proves end-to-end:
-    # sandbox up with the proxy sidecar, archived web reachable from an
-    # otherwise route-less container, files visible inside, tool loop, and
-    # submission scored with the gym's proper loss (outcome YES → -ln(0.8)).
+    # Scripted model: discover the evidence lead in /data/evidence.jsonl,
+    # fetch it through the clamped proxy, read the mounted dossier with bash,
+    # then submit p=0.8. Proves end-to-end: sandbox up with the proxy
+    # sidecar, archived web reachable from an otherwise route-less container,
+    # evidence-as-files, the served-evidence manifest landing in the score,
+    # and the gym's proper loss (outcome YES → -ln(0.8)).
     load_oci_image(WAYBACK_PROXY_IMAGE)
     load_oci_image(PYTHON_3_13_SLIM)
     fetch_code = dedent(
-        f"""
-        import urllib.request
-        with urllib.request.urlopen({fake_ia.EXAMPLE_URL!r}, timeout=30) as response:
+        """
+        import json, urllib.request
+        lead = json.loads(open("/data/evidence.jsonl").readline())
+        print("lead:", lead["url"], lead["date"])
+        with urllib.request.urlopen(lead["url"], timeout=30) as response:
             print(response.status, response.headers["X-Wayback-Timestamp"])
             print(response.read().decode())
         """
@@ -185,7 +216,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     try:
         logs = inspect_eval(
             agent_eval_task(
-                [GYM_TASK],
+                [EVIDENCE_TASK],
                 [RAMP],
                 wayback_upstream=f"http://host.docker.internal:{fake_upstream_port}",
                 compose_dir=tmp_path,
@@ -205,7 +236,14 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     assert any(fake_ia.GOOD_TS in text and "archived example.com" in text for text in tool_texts), tool_texts
     assert any("2020-01" in text for text in tool_texts), tool_texts
     assert sample.scores is not None
-    assert sample.scores["gym_proper_loss"].value == pytest.approx(-math.log(0.8))
+    score = sample.scores["gym_proper_loss"]
+    assert score.value == pytest.approx(-math.log(0.8))
+    # W3: the proxy's served-evidence manifest rides along in the score.
+    assert score.metadata is not None
+    served = one(score.metadata["served_evidence"])
+    assert served["url"] == fake_ia.EXAMPLE_URL
+    assert served["capture_ts"] == fake_ia.GOOD_TS
+    assert served["sha256"]
 
 
 if __name__ == "__main__":
