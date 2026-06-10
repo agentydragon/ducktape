@@ -24,9 +24,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, cast
 
 import httpx
 from more_itertools import one
+from pydantic import BaseModel, ConfigDict, Field, create_model
 from tenacity import before_sleep_log, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from loom.gym.scoring import QUANTILE_LEVELS, Answer, BinaryAnswer, CategoricalAnswer, QuantileAnswer
@@ -61,52 +63,77 @@ class ForecastResult:
     output_tokens: int
 
 
-def question_schema(question: Question) -> dict[str, object]:
+# extra="forbid" closes every object (additionalProperties: false in the schema);
+# the per-question required keys (the fixed quantile levels, the question's
+# category set) are real fields, so the Anthropic-shaped API enforces exactly the
+# answer shape. Semantic checks (quantiles non-decreasing, probabilities sum to 1)
+# stay on the scoring Answer models that parse_answer builds from a validated input.
+_FORBID = ConfigDict(extra="forbid")
+
+
+def _model(name: str, **fields: Any) -> type[BaseModel]:
+    # **fields: Any so pydantic's loose create_model overload accepts the
+    # (type, FieldInfo) tuples (it types field_definitions as Any | tuple[str, Any]).
+    return create_model(name, __config__=_FORBID, **fields)
+
+
+def _answer_input_model(question: Question) -> type[BaseModel]:
+    """Per-question model that is the single source for both the submit tool's
+    input schema (`question_schema`) and the shape validation of the model's tool
+    call (`parse_answer`). Nested objects use aliased fields so the JSON keys are
+    the quantile levels / category names."""
     match question:
         case BinaryQuestion():
-            return {
-                "type": "object",
-                "properties": {
-                    "p": {
-                        "type": "number",
-                        "exclusiveMinimum": 0,
-                        "exclusiveMaximum": 1,
-                        "description": "Probability that the question resolves YES, strictly between 0 and 1 (never 0 or 1).",
-                    }
+            p = Field(gt=0, lt=1, description="Probability the question resolves YES, strictly in (0, 1).")
+            return _model("BinaryAnswerInput", p=(float, p))
+        case ScalarQuestion(unit=unit):
+            quantiles = _model(
+                "QuantilesInput",
+                **{
+                    f"q{index}": (float, Field(alias=str(level), description=f"value at the {level} quantile"))
+                    for index, level in enumerate(QUANTILE_LEVELS)
                 },
-                "required": ["p"],
-                "additionalProperties": False,
-            }
-        case ScalarQuestion():
-            return {
-                "type": "object",
-                "properties": {
-                    "quantiles": {
-                        "type": "object",
-                        "description": "Your stated value at each quantile level, non-decreasing in level.",
-                        "properties": {str(level): {"type": "number"} for level in QUANTILE_LEVELS},
-                        "required": [str(level) for level in QUANTILE_LEVELS],
-                        "additionalProperties": False,
-                    }
-                },
-                "required": ["quantiles"],
-                "additionalProperties": False,
-            }
+            )
+            description = f"your value (in {unit}) at each quantile level, non-decreasing in level"
+            return _model("ScalarAnswerInput", quantiles=(quantiles, Field(description=description)))
         case CategoricalQuestion(categories=categories):
-            return {
-                "type": "object",
-                "properties": {
-                    "probabilities": {
-                        "type": "object",
-                        "description": "Your probability for each listed category; the values must sum to 1.",
-                        "properties": {category: {"type": "number", "minimum": 0} for category in categories},
-                        "required": list(categories),
-                        "additionalProperties": False,
-                    }
+            probabilities = _model(
+                "ProbabilitiesInput",
+                **{
+                    f"c{index}": (float, Field(alias=category, ge=0, description=f"probability of {category!r}"))
+                    for index, category in enumerate(categories)
                 },
-                "required": ["probabilities"],
-                "additionalProperties": False,
-            }
+            )
+            description = "probability for each category; values must sum to 1"
+            return _model("CategoricalAnswerInput", probabilities=(probabilities, Field(description=description)))
+
+
+def _inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline Pydantic's `$defs`/`$ref` into one self-contained schema (merging
+    sibling keys like a field description over the referenced def). inspect's
+    JSONSchema and a plain Anthropic `input_schema` don't resolve `$ref`, so a
+    nested model would otherwise lose its structure."""
+    defs = schema.pop("$defs", {})
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                target = defs[node["$ref"].rsplit("/", 1)[-1]]
+                return walk({**target, **{key: value for key, value in node.items() if key != "$ref"}})
+            if "allOf" in node and len(node["allOf"]) == 1:
+                merged = node["allOf"][0] | {key: value for key, value in node.items() if key != "allOf"}
+                return walk(merged)
+            return {key: walk(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [walk(item) for item in node]
+        return node
+
+    return cast("dict[str, Any]", walk(schema))
+
+
+def question_schema(question: Question) -> dict[str, object]:
+    """JSON schema for the answer to `question`, derived from its input model."""
+    return _inline_refs(_answer_input_model(question).model_json_schema())
 
 
 def answer_instruction(question: Question) -> str:
@@ -121,13 +148,17 @@ def answer_instruction(question: Question) -> str:
 
 
 def parse_answer(task: Task, tool_input: dict[str, object]) -> Answer:
+    # Validate the strict per-question shape via the same model the schema came
+    # from, then build the scoring Answer (which adds the semantic checks).
+    # by_alias dumps back to the wire keys (quantile levels / category names).
+    data = _answer_input_model(task.question).model_validate(tool_input).model_dump(by_alias=True)
     match task.question:
         case BinaryQuestion():
-            return BinaryAnswer.model_validate(tool_input)
+            return BinaryAnswer.model_validate(data)
         case ScalarQuestion():
-            return QuantileAnswer.model_validate(tool_input)
+            return QuantileAnswer.model_validate(data)
         case CategoricalQuestion():
-            return CategoricalAnswer.model_validate(tool_input)
+            return CategoricalAnswer.model_validate(data)
 
 
 def _as_of_header(task: Task, dossier: dict[str, str] | None) -> str:
