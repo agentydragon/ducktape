@@ -31,12 +31,8 @@ background_commands:
     command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
     timeout: 30
     after_env: true
-  - name: authentik api banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/authentik_banner.sh"
-    timeout: 10
-    after_env: true
-  - name: forgejo banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/forgejo_banner.sh"
+  - name: creds banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
     timeout: 10
     after_env: true
   - name: nix nixpkgs check

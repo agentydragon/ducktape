@@ -5,7 +5,7 @@
 # pull (e.g. gaffer-private tf/thrive-scrape adds it as reader on
 # thrive-scrape). The HTTP Basic credentials land in the `claude-sandbox`
 # namespace, where agent sessions fetch them on demand — announced by
-# devinfra/claude/claude_hook/forgejo_banner.sh. Provider wiring mirrors
+# devinfra/claude/claude_hook/creds_banner.sh. Provider wiring mirrors
 # tf/gitops/augur-evidence.
 
 data "kubernetes_secret" "forgejo_admin" {

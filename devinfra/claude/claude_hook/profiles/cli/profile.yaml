@@ -25,12 +25,8 @@ env_exports: |
   # next command. The `which` guard avoids errors when direnv isn't installed.
   if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
 background_commands:
-  - name: authentik api banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/authentik_banner.sh"
-    timeout: 10
-    after_env: true
-  - name: forgejo banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/forgejo_banner.sh"
+  - name: creds banner
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/creds_banner.sh"
     timeout: 10
     after_env: true
   - name: bazelisk warmup (query //...)
