@@ -3,6 +3,23 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
+LITELLM_PROXY_RUNTIME_DEPS = [
+    "@pypi//aiohttp",
+    "@pypi//apscheduler",
+    "@pypi//backoff",
+    "@pypi//fastapi",
+    "@pypi//opentelemetry_api",
+    "@pypi//opentelemetry_exporter_otlp_proto_http",
+    "@pypi//opentelemetry_sdk",
+    "@pypi//orjson",
+    "@pypi//prometheus_client",
+    "@pypi//pydantic_settings",
+    "@pypi//python_multipart",
+    "@pypi//pyyaml",
+    "@pypi//uvicorn",
+    "@pypi//websockets",
+]
+
 py_library(
     name = "provider",
     srcs = [
@@ -56,6 +73,15 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_proxy_runtime",
+    srcs = ["test_proxy_runtime.py"],
+    deps = [
+        ":provider",
+        "@pypi//litellm",
+    ] + LITELLM_PROXY_RUNTIME_DEPS,
+)
+
 aspect_py_binary(
     name = "server_bin",
     srcs = ["@@rules_python++pip+pypi_313_litellm//:rules_python_wheel_entry_point_litellm.py"],
@@ -63,7 +89,7 @@ aspect_py_binary(
     deps = [
         ":provider",
         "@pypi//litellm",
-    ],
+    ] + LITELLM_PROXY_RUNTIME_DEPS,
 )
 
 py_image_layer(

@@ -33,6 +33,7 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
     "websockets>=15.0",
+    "apscheduler>=3.10.0",
     # CRDT for the Study Casino multi-device sync (also indirectly pulled in
     # by datalayer-pycrdt; pinned here as a direct dep so the casino doesn't
     # depend on that transitive edge).

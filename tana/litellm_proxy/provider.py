@@ -420,10 +420,7 @@ class TanaLiteLLM(CustomLLM):
     ) -> AsyncIterator[GenericStreamingChunk]:
         del api_base, custom_prompt_dict, model_response, print_verbose, encoding, api_key
         del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
-        async for chunk in self._client.astream_completion(
-            model, cast(Sequence[Mapping[str, Any]], messages), optional_params
-        ):
-            yield chunk
+        return self._client.astream_completion(model, cast(Sequence[Mapping[str, Any]], messages), optional_params)
 
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:

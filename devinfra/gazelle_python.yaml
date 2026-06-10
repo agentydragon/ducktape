@@ -40,6 +40,7 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     appdirs: appdirs
+    apscheduler: apscheduler
     arch: arch
     argon2: argon2_cffi
     arrow: arrow
@@ -545,7 +546,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -616,6 +617,7 @@ manifest:
     typing_extensions: typing_extensions
     typing_inspection: typing_inspection
     tzdata: tzdata
+    tzlocal: tzlocal
     uc_micro: uc_micro_py
     uncalled_for: uncalled_for
     unidiff: unidiff
@@ -652,4 +654,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 19fb9142f8b4e2a03ee8819690ce3154b14e1ab97674f3ecb6b43e096630176f
+integrity: ac3939c106bacca4bbb962ff3b327225cb158fe4cf0fb35f5fe92cd3886c2d7e

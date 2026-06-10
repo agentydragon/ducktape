@@ -588,21 +588,19 @@ def test_litellm_handler_astreaming_yields_chunks() -> None:
 
     async def collect_chunks() -> list[GenericStreamingChunk]:
         handler = TanaLiteLLM(FakeClient())
-        return [
-            chunk
-            async for chunk in handler.astreaming(
-                model="claude-test",
-                messages=[{"role": "user", "content": "hi"}],
-                api_base="",
-                custom_prompt_dict={},
-                model_response=cast(ModelResponse, None),
-                print_verbose=lambda *args, **kwargs: None,
-                encoding=None,
-                api_key=None,
-                logging_obj=None,
-                optional_params={"stream": True},
-            )
-        ]
+        stream = await handler.astreaming(
+            model="claude-test",
+            messages=[{"role": "user", "content": "hi"}],
+            api_base="",
+            custom_prompt_dict={},
+            model_response=cast(ModelResponse, None),
+            print_verbose=lambda *args, **kwargs: None,
+            encoding=None,
+            api_key=None,
+            logging_obj=None,
+            optional_params={"stream": True},
+        )
+        return [chunk async for chunk in stream]
 
     chunks = asyncio.run(collect_chunks())
 

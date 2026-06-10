@@ -91,7 +91,7 @@ jobs:
           - {
               image: "//tana/litellm_proxy:image",
               image_name: tana-litellm-proxy,
-              test_target: "//tana/litellm_proxy:test_provider",
+              test_target: "//tana/litellm_proxy/...",
             }
           - {
               image: "//x/mcp_oauth_facade:image",
