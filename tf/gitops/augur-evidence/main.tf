@@ -70,6 +70,15 @@ resource "forgejo_collaborator" "reader" {
   permission    = "read"
 }
 
+# Read-only access for the claude agent account (user provisioned by
+# tf/gitops/forgejo-claude; until it exists this resource fails and the
+# Terraform CR retries on its interval).
+resource "forgejo_collaborator" "claude" {
+  repository_id = forgejo_repository.evidence.id
+  user          = "claude"
+  permission    = "read"
+}
+
 # Write credentials for the scraper CronJob, in the budget namespace, reflected
 # into augur (where the CronJob runs alongside the augur app).
 resource "kubernetes_secret" "augur_evidence_git_write" {

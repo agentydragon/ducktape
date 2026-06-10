@@ -37,5 +37,5 @@ P=$(kubectl get secret -n claude-sandbox claude-forgejo-credentials -o jsonpath=
 git clone "https://$U:$P@git.allegedly.works/<owner>/<repo>.git"
 curl -su "$U:$P" https://git.allegedly.works/api/v1/user/repos   # list repos the account can read
 ```
-In-cluster URL: `http://forgejo-http.forgejo:3000`. The account holds read-only collaborations on private data repos, e.g. `thrive-scrape/thrive-scrape` (weekly Thrive Market catalog scrapes: per-page raw API responses + `products.json`; history via `git log`).
+In-cluster URL: `http://forgejo-http.forgejo:3000`. The account holds read-only collaborations on private data repos: `thrive-scrape/thrive-scrape` (weekly Thrive Market catalog scrapes: per-page raw API responses + `products.json`) and `augur-evidence/augur-evidence` (daily FRED/Yahoo/Zillow evidence scrapes). History via `git log`.
 EOF
