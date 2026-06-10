@@ -3,10 +3,11 @@
 The augur-evidence scraper maintains raw upstream data files in a private
 Forgejo repo. `AUGUR_EVIDENCE_DIR` (the same variable augur's fit pipeline
 uses) points at an existing checkout and wins; otherwise a shallow clone is
-kept under `~/.cache/loom/augur-evidence` using HTTP Basic creds from
-`AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD`. In a Claude agent
-session those come from the `claude` Forgejo service account (which has
-read-only collaboration on the repo) — k8s Secret
+made once under `~/.cache/loom/augur-evidence` and reused as-is afterwards.
+HTTP Basic creds (`AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD`)
+are needed only for that first clone — not when the cache already exists. In a
+Claude agent session they come from the `claude` Forgejo service account (which
+has read-only collaboration on the repo) — k8s Secret
 `claude-sandbox/claude-forgejo-credentials`.
 """
 
@@ -38,6 +39,11 @@ def _git_with_auth(arguments: list[str], username: str, password: str) -> None:
 def ensure_checkout() -> Path:
     if (configured := os.environ.get("AUGUR_EVIDENCE_DIR")) is not None:
         return Path(configured)
+    checkout = Path.home() / ".cache" / "loom" / "augur-evidence"
+    # A cached clone is reused as-is — no credentials needed once it exists.
+    if (checkout / ".git").exists():
+        return checkout
+    # Cloning needs read credentials; they're required only on this first-time path.
     username = os.environ.get("AUGUR_EVIDENCE_GIT_USERNAME")
     password = os.environ.get("AUGUR_EVIDENCE_GIT_PASSWORD")
     if username is None or password is None:
@@ -49,12 +55,7 @@ def ensure_checkout() -> Path:
             "  P=$(kubectl get secret -n claude-sandbox claude-forgejo-credentials -o jsonpath='{.data.password}' | base64 -d)\n"
             "  export AUGUR_EVIDENCE_GIT_USERNAME=$U AUGUR_EVIDENCE_GIT_PASSWORD=$P"
         )
-    checkout = Path.home() / ".cache" / "loom" / "augur-evidence"
-    if (checkout / ".git").exists():
-        logger.info("updating evidence checkout at %s", checkout)
-        _git_with_auth(["-C", str(checkout), "pull", "--ff-only"], username, password)
-    else:
-        logger.info("cloning evidence repo to %s", checkout)
-        checkout.parent.mkdir(parents=True, exist_ok=True)
-        _git_with_auth(["clone", "--depth", "1", EVIDENCE_REPO_URL, str(checkout)], username, password)
+    logger.info("cloning evidence repo to %s", checkout)
+    checkout.parent.mkdir(parents=True, exist_ok=True)
+    _git_with_auth(["clone", "--depth", "1", EVIDENCE_REPO_URL, str(checkout)], username, password)
     return checkout
