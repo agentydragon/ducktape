@@ -115,7 +115,9 @@ services:
         - CMD
         - python3
         - -c
-        - import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({{"http": "http://127.0.0.1:8080"}})).open("http://wayback-proxy.local/healthz", timeout=3)
+        # Single-quoted YAML scalar: the inline dict's ": " would otherwise make
+        # YAML parse this block-sequence item as a mapping (yaml: did not find expected key).
+        - 'import urllib.request; urllib.request.build_opener(urllib.request.ProxyHandler({{"http": "http://127.0.0.1:8080"}})).open("http://wayback-proxy.local/healthz", timeout=3)'
       interval: 2s
       timeout: 5s
       retries: 15
