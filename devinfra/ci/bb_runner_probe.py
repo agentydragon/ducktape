@@ -13,6 +13,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -39,6 +40,7 @@ PROC_GLOBAL_FILES = (
     (Path("/proc/self/mountinfo"), "global/self_mountinfo"),
 )
 PROC_PROCESS_FILES = ("cmdline", "stat", "status", "statm", "io", "cgroup", "limits", "schedstat")
+DIGEST_RE = re.compile(r"(?P<digest>(?:/compressed-blobs/[^\s]+|/blobs/[^\s]+|[a-f0-9]{64}/\d+))", re.IGNORECASE)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -489,7 +491,20 @@ def upload_archive(archive: Path) -> dict[str, Any]:
     if bb is None:
         return {"attempted": False, "reason": "bb not found on PATH"}
     result = run_command([bb, "upload", str(archive)], timeout=30.0)
-    return {"attempted": True, "result": command_json(result)}
+    return {
+        "attempted": True,
+        "digest": extract_digest(result.stdout) or extract_digest(result.stderr),
+        "result": command_json(result),
+    }
+
+
+def extract_digest(text: str) -> str:
+    match = DIGEST_RE.search(text)
+    return match.group("digest") if match else ""
+
+
+def output_tail(text: str, *, max_bytes: int = 500) -> str:
+    return text[-max_bytes:]
 
 
 def cmd_finalize(args: argparse.Namespace) -> int:
@@ -501,9 +516,24 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     )
     if args.upload:
         upload = upload_archive(paths.archive)
-        if upload.get("attempted") and upload["result"]["returncode"] == 0:
-            digest = upload["result"]["stdout"].splitlines()[-1] if upload["result"]["stdout"] else ""
+        if upload.get("attempted") and upload["result"]["returncode"] == 0 and upload.get("digest"):
+            digest = upload["digest"]
             print(f"CI_VM_PROBE_CAS digest={digest}")
+        elif upload.get("attempted") and upload["result"]["returncode"] == 0:
+            result = upload["result"]
+            print(
+                "CI_VM_PROBE_CAS "
+                "missing_digest="
+                + json.dumps(
+                    {
+                        "stdout_len": len(result["stdout"]),
+                        "stderr_len": len(result["stderr"]),
+                        "stdout_tail": output_tail(result["stdout"]),
+                        "stderr_tail": output_tail(result["stderr"]),
+                    },
+                    sort_keys=True,
+                )
+            )
         else:
             print(f"CI_VM_PROBE_CAS unavailable={json.dumps(upload, sort_keys=True)}")
     return 0

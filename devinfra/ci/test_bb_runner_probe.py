@@ -83,6 +83,20 @@ def test_capture_bytes_records_truncation_without_stat_size(tmp_path: Path) -> N
     assert dest.read_bytes() == b"abc"
 
 
+def test_extract_digest() -> None:
+    assert (
+        bb_runner_probe.extract_digest(
+            "uploaded /compressed-blobs/zstd/2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881/1"
+        )
+        == "/compressed-blobs/zstd/2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881/1"
+    )
+    assert (
+        bb_runner_probe.extract_digest("2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881/1\n")
+        == "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881/1"
+    )
+    assert bb_runner_probe.extract_digest("") == ""
+
+
 def test_persist_latest(tmp_path: Path) -> None:
     paths = bb_runner_probe.probe_paths(tmp_path / "probe")
     paths.current.mkdir(parents=True)
