@@ -7,13 +7,37 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    deps = ["@pypi//aiohttp"],
+    deps = [
+        "@pypi//aiohttp",
+        "@pypi//yarl",
+    ],
+)
+
+py_library(
+    name = "addon",
+    srcs = ["addon.py"],
+    deps = [
+        ":proxy",
+        "@pypi//mitmproxy",
+        "@pypi//yarl",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = [
+        ":addon",
+        ":proxy",
+        "@pypi//aiohttp",
+        "@pypi//mitmproxy",
+    ],
 )
 
 py_binary(
     name = "wayback_proxy",
-    main_module = "loom.wayback_proxy.proxy",
-    deps = [":proxy"],
+    main_module = "loom.wayback_proxy.server",
+    deps = [":server"],
 )
 
 py_library(
@@ -28,13 +52,16 @@ py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
     deps = [
+        ":addon",
         ":fake_ia",
         ":proxy",
         "//:conftest",
         "@pypi//aiohttp",
+        "@pypi//mitmproxy",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
+        "@pypi//yarl",
     ],
 )
 
@@ -54,6 +81,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # runtime dep: conftest sets asyncio_mode="auto"
         "@pypi//pytest_bazel",
+        "@pypi//yarl",
     ],
 )
 
@@ -61,8 +89,8 @@ py_test(
 
 aspect_py_binary(
     name = "proxy_bin",
-    main = "proxy.py",
-    deps = [":proxy"],
+    main = "server.py",
+    deps = [":server"],
 )
 
 py_image_layer(

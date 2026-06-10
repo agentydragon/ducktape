@@ -75,13 +75,18 @@ Three layers: `agent → per-agent proxy → shared cache → web.archive.org`.
    spin-up" is the natural compose shape: one sidecar per task container; the
    cluster cache is shared by all agents plus harvest tooling.
 
-## HTTPS (open decision; default = http-only)
+## HTTPS (resolved: MITM)
 
-CONNECT tunneling would bypass the proxy's rewriting. Default: only plain
-HTTP egress to the proxy; agent tooling is told to use `http://` URLs
-(`https://` fails fast, agent retries as http; IA serves the same snapshot
-regardless of the original scheme). If that proves high-friction, the
-alternative is a MITM CA baked into the sandbox image (mitmproxy pattern).
+Resolved in favor of the MITM CA approach so agents never rewrite URLs. The
+proxy runs as an embedded mitmproxy (`loom/wayback_proxy/{server,addon}.py`); a
+`WaybackAddon` sets `flow.response` from the clamped archive for every flow, so
+both `http://` and `https://` reach the same resolver and the agent never
+touches the live web. mitmproxy MITMs TLS with its own CA; the sandbox trusts
+it via the standard `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE` /
+`NODE_EXTRA_CA_CERTS` contract — the same contract the in-cluster
+`agents-mitmproxy` already injects and that the scraper's `http_fetch` honors.
+IA serves the same snapshot regardless of the original scheme, so clamping is
+scheme-agnostic.
 
 ## Reproducibility and pinning
 
@@ -108,8 +113,11 @@ fetch them — and browse outward from them — rather than only reading titles.
 - **W3** ✅ (sandbox side): the proxy writes its served-evidence manifest to
   `WAYBACK_MANIFEST_PATH`; the gym scorer reads it back from the proxy
   sandbox per sample into `Score.metadata["served_evidence"]`. Evidence
-  leads land as `/data/evidence.jsonl` in the agent container — files the
+  leads land as `/data/sources.txt` in the agent container — files the
   agent chooses to read, never prompt content. Remaining: surfacing the
   manifests in uploaded run payloads.
-- **W4** (optional): HTTPS MITM; text-extraction convenience endpoint for
-  dossier-style consumption.
+- **W4** ✅: HTTPS MITM — the proxy is an embedded mitmproxy; agents use
+  `https://` (and `http://`) URLs unmodified, trusting the proxy CA via
+  `SSL_CERT_FILE` & friends (the gym sandbox mounts the CA and drops the
+  "rewrite to http" instruction). Remaining (optional): text-extraction
+  convenience endpoint for dossier-style consumption.

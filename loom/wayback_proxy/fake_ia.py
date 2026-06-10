@@ -97,12 +97,25 @@ REPLAYS: dict[tuple[str, str], Replay] = {
 }
 
 
+def _scheme_insensitive_key(url: str) -> str:
+    """Drop the scheme, mirroring IA's scheme-insensitive CDX urlkey matching."""
+    return url.split("://", 1)[-1]
+
+
+def _captures_for(url: str) -> list[tuple[str, str]]:
+    """CDX captures for `url`, matched scheme-insensitively like real IA."""
+    if (exact := CDX_CAPTURES.get(url)) is not None:
+        return exact
+    wanted = _scheme_insensitive_key(url)
+    return next((v for k, v in CDX_CAPTURES.items() if _scheme_insensitive_key(k) == wanted), [])
+
+
 def _cdx_response(request: web.BaseRequest) -> web.Response:
     url = request.query["url"]
     if url == CDX_BROKEN_URL:
         return web.Response(status=503, text="CDX is having a bad day\n")
     to_ts = request.query.get("to", "99999999999999").ljust(14, "9")
-    matching = [capture for capture in CDX_CAPTURES.get(url, []) if capture[0] <= to_ts]
+    matching = [capture for capture in _captures_for(url) if capture[0] <= to_ts]
     if request.query.get("limit") == "-1":
         matching = matching[-1:]
     if not matching:

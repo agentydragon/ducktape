@@ -1,19 +1,27 @@
 # Wayback proxy — date-clamped web access for sandboxed agents
 
 The per-agent "time machine" from the [wayback proxy plan](../plans/wayback_proxy.md):
-a plain-HTTP forward proxy that answers every URL with the newest Internet
-Archive capture at-or-before `WAYBACK_AS_OF`, served as raw `id_` bytes. No
-capture at or before the cutoff → 404. Explicit `web.archive.org/web/<ts>/…`
-requests are clamped (`ts ≤ as_of`), CDX queries get their `to=` bound
-clamped, redirect hops are re-clamped (IA canonicalizes toward the _closest_
-capture, which can walk forward in time), and CONNECT is refused — agents use
-`http://` URLs (IA serves the same snapshot regardless of the original
-scheme). Every served response is logged as a JSONL evidence line
+a forward proxy that answers every URL with the newest Internet Archive
+capture at-or-before `WAYBACK_AS_OF`, served as raw `id_` bytes. No capture at
+or before the cutoff → 404. Explicit `web.archive.org/web/<ts>/…` requests are
+clamped (`ts ≤ as_of`), CDX queries get their `to=` bound clamped, and redirect
+hops are re-clamped (IA canonicalizes toward the _closest_ capture, which can
+walk forward in time). Every served response is logged as a JSONL evidence line
 `{url, capture_ts, sha256, size}` on stdout.
+
+It runs as an embedded [mitmproxy](https://mitmproxy.org/) (a
+[`WaybackAddon`](addon.py) answers every flow from the archive), so **agents
+use their natural `http://` and `https://` URLs** — mitmproxy intercepts the
+TLS with its own CA and the request reaches the same clamping resolver either
+way. No URL rewriting, no `http://` downgrade. The agent trusts the proxy's CA
+through the standard `SSL_CERT_FILE` / `CURL_CA_BUNDLE` / `REQUESTS_CA_BUNDLE` /
+`NODE_EXTRA_CA_CERTS` contract; the CA cert is generated on first run at
+`<WAYBACK_CONFDIR>/mitmproxy-ca-cert.pem`.
 
 `compose.yaml` is the demo the gym sandbox builds on: the `agent` container
 sits on an `internal: true` network with **no internet route** — its only
-reachable peer is the proxy sidecar.
+reachable peer is the proxy sidecar — and the proxy is the only thing that ever
+speaks to the (archived) web.
 
 ## Demo
 
@@ -22,18 +30,19 @@ bazelisk run //loom/wayback_proxy:load   # build + docker-load wayback-proxy:lat
 cd loom/wayback_proxy
 docker compose up -d --wait
 
-# Browse the web as of 2020-06-01 (the default WAYBACK_AS_OF):
+# Browse the web as of 2020-06-01 (the default WAYBACK_AS_OF), over https:
 docker compose exec agent python -c '
 import urllib.request
-with urllib.request.urlopen("http://example.com/") as r:
+with urllib.request.urlopen("https://example.com/") as r:
     print(r.status, r.headers["X-Wayback-Timestamp"])
     print(r.read()[:200])
 '
 
-# https fails fast by design (501 from the proxy; retry as http://):
+# Plain http works identically (IA serves the same snapshot either way):
 docker compose exec agent python -c '
 import urllib.request
-urllib.request.urlopen("https://example.com/")
+with urllib.request.urlopen("http://example.com/") as r:
+    print(r.status, r.headers["X-Wayback-Timestamp"])
 '
 
 # Direct egress is physically blocked (no route off the internal network):
@@ -47,6 +56,8 @@ docker compose down -v
 
 Knobs (compose env interpolation): `WAYBACK_AS_OF` (ISO date, default
 `2020-06-01`), `WAYBACK_UPSTREAM` (default `https://web.archive.org`).
+`WAYBACK_CONFDIR` (default `~/.mitmproxy`) is where the CA is generated; the
+demo points it at a volume shared read-only with the agent.
 
 ## Using the shared cluster cache
 
@@ -62,14 +73,19 @@ WAYBACK_UPSTREAM=http://host.docker.internal:8080 docker compose up -d --wait
 ```
 
 In-cluster consumers use `http://wayback-cache.wayback-cache.svc.cluster.local:8080`.
+For a stable CA across pod restarts, mount a CA into `WAYBACK_CONFDIR` from a
+Secret (`mitmproxy-ca.pem` = cert+key) rather than letting each pod generate
+its own ephemeral CA.
 
 ## Tests
 
 ```bash
-bbr test //loom/wayback_proxy:test_proxy        # proxy semantics vs canned fake IA
+bbr test //loom/wayback_proxy:test_proxy        # addon semantics vs canned fake IA
 bbr test //loom/wayback_proxy:test_compose_e2e  # the compose demo, end to end (Docker)
 ```
 
 `fake_ia.py` pins the IA contract the proxy relies on (CDX header-row JSON,
-empty body on no matches, `Memento-Datetime` on replays, 302 timestamp
-canonicalization, captured live-web redirects).
+scheme-insensitive urlkey matching, empty body on no matches, `Memento-Datetime`
+on replays, 302 timestamp canonicalization, captured live-web redirects).
+`test_compose_e2e.py` proves both http and https fetches resolve to the clamped
+capture while direct egress stays physically blocked.

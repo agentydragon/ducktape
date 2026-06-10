@@ -97,6 +97,22 @@ async def test_agent_browses_only_the_clamped_archive(compose_stack: ComposeStac
     assert f"200 {fake_ia.GOOD_TS}" in output
     assert fake_ia.EXAMPLE_BODY.decode() in output
 
+    # The same page over https, unmodified — the headline of W4. The proxy
+    # MITMs TLS with its CA, which the agent trusts via SSL_CERT_FILE; no
+    # rewriting to http:// required.
+    output = await compose_stack.exec_agent_python(
+        dedent(
+            """
+            import urllib.request
+            with urllib.request.urlopen("https://example.com/", timeout=30) as response:
+                print(response.status, response.headers["X-Wayback-Timestamp"])
+                print(response.read().decode())
+            """
+        )
+    )
+    assert f"200 {fake_ia.GOOD_TS}" in output
+    assert fake_ia.EXAMPLE_BODY.decode() in output
+
     # A page that only exists after as_of is a 404.
     output = await compose_stack.exec_agent_python(
         dedent(
