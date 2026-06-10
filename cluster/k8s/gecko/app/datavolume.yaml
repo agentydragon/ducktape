@@ -10,7 +10,7 @@ metadata:
 spec:
   source:
     s3:
-      url: "https://s3.allegedly.works/vm-images/bootstrap/3b9e37c50911c40c11a51903de961c2db0f50f59.qcow2"
+      url: "https://s3.allegedly.works/vm-images/bootstrap/da37375538eb7da442add719d65dce838df2603b.qcow2"
       secretRef: gecko-vm-images-s3-reader
   pvc:
     accessModes:
