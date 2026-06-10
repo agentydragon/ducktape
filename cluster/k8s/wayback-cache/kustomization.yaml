@@ -9,6 +9,27 @@ resources:
   - httproute.yaml
   - token.sops.yaml
 
+# Mirror the cache bearer token into claude-sandbox via the emberstack
+# reflector, so agent sessions (which already read secrets in their own
+# sandbox namespace) can use the authed gateway route without cross-namespace
+# RBAC. Patching metadata here keeps the SOPS-encrypted token.sops.yaml (whose
+# MAC covers all values) untouched. Same mechanism as litellm-master-key.
+patches:
+  - target:
+      kind: Secret
+      name: wayback-cache-token
+    patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: wayback-cache-token
+        namespace: wayback-cache
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox"
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox"
+
 configMapGenerator:
   - name: wayback-cache-config
     namespace: wayback-cache
