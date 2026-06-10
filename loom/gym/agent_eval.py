@@ -1,0 +1,92 @@
+"""Run gym tasks as a live containerized agent eval: Inspect react agent in the wayback sandbox.
+
+The model client runs host-side against the cluster LiteLLM (Anthropic-shaped
+endpoint); the agent's tools execute in the Docker sandbox whose only network
+route is the date-clamped wayback proxy. Point `--wayback-upstream` at the
+in-cluster pull-through cache when the Docker daemon runs in-cluster
+(docker-ci), e.g. `http://wayback-cache.wayback-cache.svc.cluster.local:8080`.
+
+Requires two images in the local Docker daemon: the wayback proxy
+(`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
+(`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`).
+
+    LITELLM_API_KEY=... bazelisk run //loom/gym:agent_eval -- \\
+        --model-id glm-4.5 --task-filter manifold-bitcoin-100k-2024
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+from pathlib import Path
+
+from inspect_ai import eval as inspect_eval
+from inspect_ai.model import get_model
+
+from finance.evidence.checkout import ensure_checkout
+from loom.gym.baseline_llm import LITELLM_BASE_URL
+from loom.gym.inspect_harness import DEFAULT_WAYBACK_UPSTREAM, agent_eval_task
+from loom.gym.monthly_series import load_series
+from loom.gym.panel import build_panel
+from loom.gym.run_eval import admissible_tasks
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model-id", required=True, help="Must be present in KNOWN_MODEL_CUTOFFS.")
+    parser.add_argument("--base-url", default=LITELLM_BASE_URL)
+    parser.add_argument(
+        "--endpoint-model", default=None, help="Model name the endpoint serves; default <model-id>-anthropic."
+    )
+    parser.add_argument("--api-key-env", default="LITELLM_API_KEY", help="Env var holding the API key.")
+    parser.add_argument("--task-filter", default=None, help="Only run tasks whose id contains this substring.")
+    parser.add_argument(
+        "--panel", action="store_true", help="Run the curated non-redundant panel instead of the full grid."
+    )
+    parser.add_argument("--max-tasks", type=int, default=None, help="Cap the number of tasks (after filtering).")
+    parser.add_argument("--wayback-upstream", default=DEFAULT_WAYBACK_UPSTREAM)
+    parser.add_argument("--log-dir", type=Path, required=True, help="Inspect eval log directory.")
+    parser.add_argument("--message-limit", type=int, default=80, help="Max conversation turns per sample.")
+    args = parser.parse_args()
+    api_key = os.environ.get(args.api_key_env) or Path("/tmp/litellm_key").read_text().strip()
+
+    series = list(load_series(ensure_checkout()))
+    tasks = admissible_tasks(series, model_id=args.model_id, task_filter=args.task_filter, strict=False)
+    if args.panel:
+        tasks = list(build_panel(tasks))
+    if args.max_tasks is not None:
+        tasks = tasks[: args.max_tasks]
+    if not tasks:
+        raise SystemExit(f"no admissible tasks ({args.model_id=}, {args.task_filter=}, {args.panel=})")
+    print(f"{len(tasks)} tasks for {args.model_id} via {args.base_url} (upstream {args.wayback_upstream})")
+
+    model = get_model(
+        f"anthropic/{args.endpoint_model or f'{args.model_id}-anthropic'}", base_url=args.base_url, api_key=api_key
+    )
+    logs = inspect_eval(
+        agent_eval_task(tasks, series, wayback_upstream=args.wayback_upstream),
+        model=model,
+        log_dir=str(args.log_dir),
+        display="plain",
+        message_limit=args.message_limit,
+    )
+    for log in logs:
+        print(f"eval status={log.status}" + (f" error={log.error}" if log.error else ""))
+        for sample in log.samples or []:
+            score = (sample.scores or {}).get("gym_proper_loss")
+            if score is None:
+                print(f"{sample.id}: no score")
+                continue
+            meta = score.metadata or {}
+            served = meta.get("served_evidence", [])
+            fetched = " ".join(record["url"] for record in served) or "-"
+            note = f" submission_error={meta['submission_error']}" if "submission_error" in meta else ""
+            print(f"{sample.id}: value={score.value} answer={score.answer!r}{note} fetched=[{fetched}]")
+
+
+if __name__ == "__main__":
+    main()

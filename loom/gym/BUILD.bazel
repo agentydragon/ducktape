@@ -14,6 +14,28 @@ py_binary(
     deps = [":compare_runs"],
 )
 
+# keep
+py_binary(
+    name = "agent_eval_bin",
+    main_module = "loom.gym.agent_eval",
+    deps = [":agent_eval"],
+)
+
+py_library(
+    name = "agent_eval",
+    srcs = ["agent_eval.py"],
+    deps = [
+        ":baseline_llm",
+        ":inspect_harness",
+        ":monthly_series",
+        ":panel",
+        ":run_eval",
+        "//finance/evidence:checkout",
+        "@pypi//anthropic",  # inspect_ai's anthropic provider imports it lazily
+        "@pypi//inspect_ai",
+    ],
+)
+
 py_library(
     name = "compare_runs",
     srcs = ["compare_runs.py"],

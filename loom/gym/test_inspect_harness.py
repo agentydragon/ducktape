@@ -195,20 +195,26 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # and the gym's proper loss (outcome YES → -ln(0.8)).
     load_oci_image(WAYBACK_PROXY_IMAGE)
     load_oci_image(PYTHON_3_13_SLIM)
-    fetch_code = dedent(
+    # Bash-only tool: the agent runs python via the shell. Fetch the evidence
+    # lead through the clamped proxy (urllib honors http_proxy). The harness's
+    # rich sandbox image is for real runs; the mechanics test uses the
+    # lightweight bazel-loaded python:3.13-slim (also has bash + urllib).
+    fetch_cmd = dedent(
         """
+        python3 - <<'PY'
         import json, urllib.request
         lead = json.loads(open("/data/evidence.jsonl").readline())
         print("lead:", lead["url"], lead["date"])
         with urllib.request.urlopen(lead["url"], timeout=30) as response:
             print(response.status, response.headers["X-Wayback-Timestamp"])
             print(response.read().decode())
+        PY
         """
     )
     model = get_model(
         "mockllm/model",
         custom_outputs=[
-            ModelOutput.for_tool_call("mockllm/model", "python", {"code": fetch_code}),
+            ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": fetch_cmd}),
             ModelOutput.for_tool_call("mockllm/model", "bash", {"cmd": "head -3 /data/ramp_monthly.csv"}),
             ModelOutput.for_tool_call("mockllm/model", "submit", {"answer": json.dumps({"p": 0.8})}),
         ],
@@ -219,6 +225,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
                 [EVIDENCE_TASK],
                 [RAMP],
                 wayback_upstream=f"http://host.docker.internal:{fake_upstream_port}",
+                agent_image="python:3.13-slim",
                 compose_dir=tmp_path,
             ),
             model=model,

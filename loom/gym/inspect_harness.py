@@ -6,13 +6,15 @@ as-of-truncated dossier under `/data`. The sandbox compose is generated per
 sidecar (`loom/wayback_proxy`), which answers every URL with the newest
 Internet Archive capture at-or-before the task's `as_of` — the as-of
 discipline stays physical (no direct egress) while the agent can research the
-pre-cutoff web. The react agent explores with bash/python tools and must call
+pre-cutoff web. The react agent explores with a single bash tool (python3 +
+a data toolkit are in the sandbox image, run via the shell) and must call
 `submit` with the bare answer JSON; the scorer applies the gym's proper
 losses (full metric set in `Score.metadata`, headline metric as the value).
 
-Runs need the proxy image on the local Docker daemon
-(`bazelisk run //loom/wayback_proxy:load`); for real evals point
-`wayback_upstream` at the shared cluster pull-through cache
+Runs need two images on the local Docker daemon: the proxy
+(`bazelisk run //loom/wayback_proxy:load`) and the agent sandbox
+(`docker build -t loom-gym-sandbox:latest loom/gym/sandbox/`). For real evals
+point `wayback_upstream` at the shared cluster pull-through cache
 (`cluster/k8s/wayback-cache/`, e.g. via kubectl port-forward) so IA is never
 hammered directly.
 """
@@ -32,7 +34,7 @@ from inspect_ai.agent import AgentSubmit, react
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.scorer import Score, Target, mean, scorer
 from inspect_ai.solver import TaskState
-from inspect_ai.tool import bash, python
+from inspect_ai.tool import bash
 from inspect_ai.util import sandbox
 
 from loom.gym import scoring
@@ -44,6 +46,9 @@ from loom.gym.task import Task
 logger = logging.getLogger(__name__)
 
 WAYBACK_PROXY_IMAGE_TAG = "wayback-proxy:latest"
+# Built from loom/gym/sandbox/Dockerfile: python:3.13-slim + pandas, numpy,
+# scipy, statsmodels, python-dateutil, requests, bash, curl.
+SANDBOX_IMAGE_TAG = "loom-gym-sandbox:latest"
 DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
 
 # Generated per as_of: WAYBACK_AS_OF is a baked literal, not compose env
@@ -52,12 +57,12 @@ DEFAULT_WAYBACK_UPSTREAM = "https://web.archive.org"
 _COMPOSE_TEMPLATE = """\
 services:
   default:
-    image: python:3.13-slim
+    image: {agent_image}
     x-local: true
     init: true
     command: tail -f /dev/null
     cpus: 1.0
-    mem_limit: 1gb
+    mem_limit: 2gb
     # The internal network's only other member is the proxy: every web
     # request goes through the date clamp; nothing else is routable.
     networks: [sandbox]
@@ -101,12 +106,17 @@ networks:
 """
 
 AGENT_PROMPT = (
-    "You are a careful forecaster. Data files are available under /data (start with /data/README.txt); "
-    "inspect them with the bash and python tools. If /data/evidence.jsonl exists, it lists dated leads "
-    "(url, date, title) published on or before your information cutoff. You can fetch those urls — and "
-    "browse the web as it existed at the cutoff generally — through a preconfigured HTTP proxy: use "
-    "plain http:// URLs (urllib and requests honor http_proxy automatically; https and the live web "
-    "are unreachable). When confident, call submit with ONLY the JSON answer object, no prose."
+    "You are a careful forecaster. You have one tool: bash. Data files are under /data (start with "
+    "/data/README.txt). Each bash call runs in a FRESH shell — variables and working state do NOT "
+    "persist between calls, so make every command self-contained. python3 is available; the image "
+    "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
+    "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
+    "If /data/evidence.jsonl exists, it lists dated starting points (url, date, title) you might want "
+    "to begin your research from — follow links outward from them as you see fit. You can browse the "
+    "web as it existed at your information cutoff through a preconfigured HTTP proxy. IMPORTANT: only "
+    "plain http:// URLs work — there is no https; rewrite any https:// link to http:// before fetching "
+    "(curl, urllib, and requests honor http_proxy automatically). When confident, call submit with "
+    "ONLY the JSON answer object, no prose."
 )
 
 # Container path the proxy sidecar writes its served-evidence manifest to;
@@ -114,12 +124,16 @@ AGENT_PROMPT = (
 MANIFEST_PATH = "/tmp/wayback-manifest.jsonl"
 
 
-def write_sandbox_compose(directory: Path, as_of: date, upstream: str) -> Path:
+def write_sandbox_compose(directory: Path, as_of: date, upstream: str, agent_image: str = SANDBOX_IMAGE_TAG) -> Path:
     """The sandbox compose for one as_of: agent's only route is the clamped proxy."""
     path = directory / f"sandbox-{as_of}.yaml"
     path.write_text(
         _COMPOSE_TEMPLATE.format(
-            image=WAYBACK_PROXY_IMAGE_TAG, as_of=as_of, upstream=upstream, manifest_path=MANIFEST_PATH
+            agent_image=agent_image,
+            image=WAYBACK_PROXY_IMAGE_TAG,
+            as_of=as_of,
+            upstream=upstream,
+            manifest_path=MANIFEST_PATH,
         )
     )
     return path
@@ -162,19 +176,33 @@ def headline_metric(metrics: dict[str, float], kind: str) -> str:
     return "mean_pinball_log" if "mean_pinball_log" in metrics else "mean_pinball"
 
 
+async def _served_evidence() -> list[dict[str, object]]:
+    try:
+        manifest_text = await sandbox("proxy").read_file(MANIFEST_PATH)
+    except FileNotFoundError:
+        # The proxy creates the manifest lazily on its first served response;
+        # absence just means this sample fetched nothing.
+        return []
+    return [json.loads(line) for line in manifest_text.splitlines() if line]
+
+
 @scorer(metrics=[mean()])
 def gym_proper_loss():
     async def score_fn(state: TaskState, target: Target) -> Score:
         gym_task = Task.model_validate(state.metadata["gym_task"])
-        answer = parse_answer(gym_task, json.loads(state.output.completion))
-        task_score = scoring.score(gym_task, answer)
+        served = await _served_evidence()
+        # A contestant that emits no parseable answer (ran out of turns, wrote
+        # prose) is a non-submission, not a crash: record it as NaN with the
+        # reason so the run can report a submission rate separately from loss.
         try:
-            manifest_text = await sandbox("proxy").read_file(MANIFEST_PATH)
-        except FileNotFoundError:
-            # The proxy creates the manifest lazily on its first served
-            # response; absence just means this sample fetched nothing.
-            manifest_text = ""
-        served = [json.loads(line) for line in manifest_text.splitlines() if line]
+            answer = parse_answer(gym_task, json.loads(state.output.completion))
+        except (json.JSONDecodeError, ValueError, KeyError) as error:
+            return Score(
+                value=float("nan"),
+                answer=state.output.completion,
+                metadata={"submission_error": f"{type(error).__name__}: {error}", "served_evidence": served},
+            )
+        task_score = scoring.score(gym_task, answer)
         return Score(
             value=task_score.metrics[headline_metric(task_score.metrics, gym_task.question.kind)],
             answer=state.output.completion,
@@ -189,6 +217,7 @@ def agent_eval_task(
     series: Sequence[MonthlySeries],
     *,
     wayback_upstream: str = DEFAULT_WAYBACK_UPSTREAM,
+    agent_image: str = SANDBOX_IMAGE_TAG,
     compose_dir: Path | None = None,
 ) -> InspectTask:
     """Inspect task over gym tasks; one sandbox compose is generated per distinct as_of."""
@@ -196,11 +225,9 @@ def agent_eval_task(
         compose_dir = Path(tempfile.mkdtemp(prefix="gym-sandbox-"))
     as_ofs = {task.as_of for task in tasks}
     dossiers = {as_of: series_dossier(series, as_of) for as_of in as_ofs}
-    composes = {as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream) for as_of in as_ofs}
+    composes = {as_of: write_sandbox_compose(compose_dir, as_of, wayback_upstream, agent_image) for as_of in as_ofs}
     return InspectTask(
         dataset=MemoryDataset([sample_for_task(task, dossiers[task.as_of], composes[task.as_of]) for task in tasks]),
-        solver=react(
-            prompt=AGENT_PROMPT, tools=[bash(timeout=120), python(timeout=120)], submit=AgentSubmit(answer_only=True)
-        ),
+        solver=react(prompt=AGENT_PROMPT, tools=[bash(timeout=180)], submit=AgentSubmit(answer_only=True)),
         scorer=gym_proper_loss(),
     )
