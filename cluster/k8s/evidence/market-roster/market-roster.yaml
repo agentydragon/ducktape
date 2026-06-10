@@ -6,138 +6,104 @@
 # market stays rostered. Deep capture: market.json + bets.jsonl + comments.jsonl.
 markets:
   - platform: manifold
-    market_id: hKB9iD8knG4R2RuSyyCu
+    market_id: hKB9iD8knG4R2RuSyyCu # manifold-bitcoin-100k-2024
     deep: true
-    note: manifold-bitcoin-100k-2024
   - platform: manifold
-    market_id: k4XTBQLFuDvBljexbalv
+    market_id: k4XTBQLFuDvBljexbalv # manifold-china-invades-taiwan-2024
     deep: true
-    note: manifold-china-invades-taiwan-2024
   - platform: manifold
-    market_id: 9ln3uPEbleLkjwQ5HR4b
+    market_id: 9ln3uPEbleLkjwQ5HR4b # manifold-biden-pardons-hunter
     deep: true
-    note: manifold-biden-pardons-hunter
   - platform: manifold
-    market_id: M5HyCkqDZ3CdIRLa7fKp
+    market_id: M5HyCkqDZ3CdIRLa7fKp # manifold-verstappen-2024-f1-title
     deep: true
-    note: manifold-verstappen-2024-f1-title
   - platform: manifold
-    market_id: d1t4k3nz3t
+    market_id: d1t4k3nz3t # manifold-trump-wins-2024-election
     deep: true
-    note: manifold-trump-wins-2024-election
   - platform: manifold
-    market_id: ha8siwsis8
+    market_id: ha8siwsis8 # manifold-barnier-pm-on-2025-01-01
     deep: true
-    note: manifold-barnier-pm-on-2025-01-01
   - platform: manifold
-    market_id: W6sxwGRpBmQOiooR560w
+    market_id: W6sxwGRpBmQOiooR560w # manifold-assad-in-power-end-2024
     deep: true
-    note: manifold-assad-in-power-end-2024
   - platform: manifold
-    market_id: tSmI97iXzTCHLh61JPTs
+    market_id: tSmI97iXzTCHLh61JPTs # manifold-ulbricht-clemency-before-march-2025
     deep: true
-    note: manifold-ulbricht-clemency-before-march-2025
   - platform: manifold
-    market_id: aRIE73wma9FTmrEL1tEs
+    market_id: aRIE73wma9FTmrEL1tEs # manifold-canada-conservative-majority
     deep: true
-    note: manifold-canada-conservative-majority
   - platform: manifold
-    market_id: O8HQvFthF03qYOSaUo9R
+    market_id: O8HQvFthF03qYOSaUo9R # manifold-new-glenn-orbit-first-launch
     deep: true
-    note: manifold-new-glenn-orbit-first-launch
   - platform: manifold
-    market_id: 02n9uqqCSl
+    market_id: 02n9uqqCSl # manifold-gabbard-confirmed-dni
     deep: true
-    note: manifold-gabbard-confirmed-dni
   - platform: manifold
-    market_id: ti5toE64slB9MgfzSDBR
+    market_id: ti5toE64slB9MgfzSDBR # manifold-afd-beats-spd-2025
     deep: true
-    note: manifold-afd-beats-spd-2025
   - platform: manifold
-    market_id: CkcepPGTqdaOmeYWcWgj
+    market_id: CkcepPGTqdaOmeYWcWgj # manifold-h5n1-100-us-cases-by-2026
     deep: true
-    note: manifold-h5n1-100-us-cases-by-2026
   - platform: manifold
-    market_id: r7CIGIOnWlD8OTe0XPHZ
+    market_id: r7CIGIOnWlD8OTe0XPHZ # manifold-capital-one-discover-merger
     deep: true
-    note: manifold-capital-one-discover-merger
   - platform: manifold
-    market_id: glI2NUEE2A
+    market_id: glI2NUEE2A # manifold-labor-wins-2025-australian-election
     deep: true
-    note: manifold-labor-wins-2025-australian-election
   - platform: manifold
-    market_id: gk05ncy0lw
+    market_id: gk05ncy0lw # manifold-minecraft-outgrosses-sonic-3
     deep: true
-    note: manifold-minecraft-outgrosses-sonic-3
   - platform: manifold
-    market_id: 4gdkzbfvtt
+    market_id: 4gdkzbfvtt # manifold-russia-ukraine-ceasefire-aug-2025
     deep: true
-    note: manifold-russia-ukraine-ceasefire-aug-2025
   - platform: manifold
-    market_id: yZpALnnSSy
+    market_id: yZpALnnSSy # manifold-celtics-win-2025-nba-finals
     deep: true
-    note: manifold-celtics-win-2025-nba-finals
   - platform: manifold
-    market_id: 2SA2SUCPI2
+    market_id: 2SA2SUCPI2 # manifold-us-strikes-iran-2025
     deep: true
-    note: manifold-us-strikes-iran-2025
   - platform: manifold
-    market_id: LZlomZnzAVwVvaPmWUy5
+    market_id: LZlomZnzAVwVvaPmWUy5 # manifold-gpt5-before-aug-2025
     deep: true
-    note: manifold-gpt5-before-aug-2025
   - platform: manifold
-    market_id: D5o5fIGpQnjANdl2DxdU
+    market_id: D5o5fIGpQnjANdl2DxdU # manifold-us-recession-in-2025
     deep: true
-    note: manifold-us-recession-in-2025
   - platform: manifold
-    market_id: 3ns0hmvp6i
+    market_id: 3ns0hmvp6i # manifold-sweden-wins-eurovision-2025
     deep: true
-    note: manifold-sweden-wins-eurovision-2025
   - platform: manifold
-    market_id: tu2ouer9zq
+    market_id: tu2ouer9zq # manifold-ai-imo-gold-2025
     deep: true
-    note: manifold-ai-imo-gold-2025
   - platform: manifold
-    market_id: q59su0Cs5l
+    market_id: q59su0Cs5l # manifold-mangione-murder-conviction-2025
     deep: true
-    note: manifold-mangione-murder-conviction-2025
   - platform: manifold
-    market_id: s5sgqZ9qQ5
+    market_id: s5sgqZ9qQ5 # manifold-powell-out-before-2026
     deep: true
-    note: manifold-powell-out-before-2026
   - platform: manifold
-    market_id: 2z2Q9zdN60
+    market_id: 2z2Q9zdN60 # manifold-fed-cuts-september-2025
     deep: true
-    note: manifold-fed-cuts-september-2025
   - platform: manifold
-    market_id: sPqzu6CUPZ
+    market_id: sPqzu6CUPZ # manifold-trump-2025-nobel-peace-prize
     deep: true
-    note: manifold-trump-2025-nobel-peace-prize
   - platform: manifold
-    market_id: kt6f2t09kv
+    market_id: kt6f2t09kv # manifold-us-govt-shutdown-2025
     deep: true
-    note: manifold-us-govt-shutdown-2025
   - platform: manifold
-    market_id: n6llpZNcUU
+    market_id: n6llpZNcUU # manifold-uk-wealth-tax-2025
     deep: true
-    note: manifold-uk-wealth-tax-2025
   - platform: manifold
-    market_id: NscOsEu2qs
+    market_id: NscOsEu2qs # manifold-yoon-insurrection-conviction
     deep: true
-    note: manifold-yoon-insurrection-conviction
   - platform: manifold
-    market_id: lqsLQ9NPnC
+    market_id: lqsLQ9NPnC # manifold-scotus-upholds-trump-tariffs
     deep: true
-    note: manifold-scotus-upholds-trump-tariffs
   - platform: manifold
-    market_id: LfRsm10GqnSzXQVeAon3
+    market_id: LfRsm10GqnSzXQVeAon3 # manifold-artemis-2-crew-returns-alive
     deep: true
-    note: manifold-artemis-2-crew-returns-alive
   - platform: manifold
-    market_id: ZJ9LlySKX4dldqcpdQ4G
+    market_id: ZJ9LlySKX4dldqcpdQ4G # manifold-orban-stays-pm-2026
     deep: true
-    note: manifold-orban-stays-pm-2026
   - platform: manifold
-    market_id: mIQ8YdCJlAcMz9fFmIUX
+    market_id: mIQ8YdCJlAcMz9fFmIUX # manifold-italy-2026-world-cup
     deep: true
-    note: manifold-italy-2026-world-cup

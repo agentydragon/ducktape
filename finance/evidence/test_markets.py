@@ -28,17 +28,17 @@ def test_load_roster(tmp_path: Path) -> None:
     roster.write_text(
         dedent("""
             markets:
+              # provenance lives in comments; the schema carries only what the sync uses
               - platform: manifold
                 market_id: abc123
                 deep: true
-                note: a binary
               - platform: kalshi
                 market_id: KXTEST-26
         """)
     )
     entries = load_roster(roster)
     assert entries == (
-        MarketEntry(platform=Platform.MANIFOLD, market_id="abc123", deep=True, note="a binary"),
+        MarketEntry(platform=Platform.MANIFOLD, market_id="abc123", deep=True),
         MarketEntry(platform=Platform.KALSHI, market_id="KXTEST-26"),
     )
 
@@ -73,13 +73,11 @@ def test_layout_paths(tmp_path: Path) -> None:
 
 
 def test_merged_roster_dedupes_deep_wins() -> None:
-    deep = MarketEntry(platform=Platform.MANIFOLD, market_id="m1", deep=True, note="curated")
+    deep = MarketEntry(platform=Platform.MANIFOLD, market_id="m1", deep=True)
     shallow_dupe = MarketEntry(platform=Platform.MANIFOLD, market_id="m1")
-    merged = merged_roster([deep, shallow_dupe])
-    assert merged == (deep,)
-    # Deep wins in either order, and the first entry's note survives.
-    merged = merged_roster([shallow_dupe, deep])
-    assert merged == (MarketEntry(platform=Platform.MANIFOLD, market_id="m1", deep=True),)
+    # Deep wins in either order.
+    assert merged_roster([deep, shallow_dupe]) == (deep,)
+    assert merged_roster([shallow_dupe, deep]) == (deep,)
 
 
 def test_merged_roster_catalog_refs_use_default_depth() -> None:
@@ -91,10 +89,9 @@ def test_merged_roster_catalog_refs_use_default_depth() -> None:
 
 
 def test_merged_roster_catalog_ref_deepens_existing_entry() -> None:
-    shallow = MarketEntry(platform=Platform.MANIFOLD, market_id="m1", note="from roster")
+    shallow = MarketEntry(platform=Platform.MANIFOLD, market_id="m1")
     (merged,) = merged_roster([shallow], [(Platform.MANIFOLD, "m1")])
     assert merged.deep
-    assert merged.note == "from roster"
 
 
 if __name__ == "__main__":

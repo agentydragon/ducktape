@@ -8,15 +8,15 @@
 # The three markets below were verified end-to-end in loom/plans/market_harvest.md
 # and double as the loader test fixtures' provenance.
 markets:
+  # January 2024: Will Bitcoin hit $50,000? — resolved NO; harvest-verified binary
   - platform: manifold
     market_id: a3k1RgxAVYiAU1qeA5Su
     deep: true
-    note: "January 2024: Will Bitcoin hit $50,000? — resolved NO; harvest-verified binary"
+  # top-liquidity resolved-binary sample from the harvest survey
   - platform: manifold
     market_id: 3xXvCL8aKO0n4ms5KEZq
     deep: true
-    note: top-liquidity resolved-binary sample from the harvest survey
+  # 2024 presidential election — MULTIPLE_CHOICE shape exercised by the loaders
   - platform: manifold
     market_id: ikSUiiNS8MwAI75RwEJf
     deep: true
-    note: 2024 presidential election — MULTIPLE_CHOICE shape exercised by the loaders

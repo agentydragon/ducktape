@@ -20,7 +20,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class Platform(StrEnum):
@@ -46,7 +46,6 @@ class MarketEntry(BaseModel):
     platform: Platform
     market_id: str
     deep: bool = False
-    note: str | None = Field(default=None, description="Free-text provenance for roster readers.")
 
     @model_validator(mode="after")
     def _validate(self) -> MarketEntry:
@@ -104,8 +103,8 @@ def merged_roster(
     """Union of roster entries and catalog-referenced markets, deduped.
 
     Catalog refs become entries with the platform's default capture depth. On a
-    collision the entry stays deep if either side is deep (deep wins), and the roster
-    entry's note is preserved. Sorted for a deterministic sync order.
+    collision the entry stays deep if either side is deep (deep wins). Sorted for a
+    deterministic sync order.
     """
     by_key: dict[tuple[Platform, str], MarketEntry] = {}
     for entry in entries:
