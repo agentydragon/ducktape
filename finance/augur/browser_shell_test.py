@@ -93,6 +93,9 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
         ],
         env={
             **os.environ,
+            # An (empty) evidence checkout: the price readers boot against it and
+            # would report any market as not-mirrored; this smoke test never reads one.
+            "AUGUR_EVIDENCE_DIR": str(tmp_path / "evidence"),
             "HOME": str(tmp_path / "home"),
             "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
             "PYTHONUNBUFFERED": "1",
