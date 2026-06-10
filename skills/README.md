@@ -20,3 +20,7 @@ Skills are built by Bazel (`skill_package` macro in `defs.bzl`) and packaged int
 2. Create `skills/<name>/BUILD.bazel` using `skill_package(name, srcs)`
 3. Add `//skills/<name>:<name>_tar` to `all_skills_tar` deps in `skills/BUILD.bazel`
 4. After CI builds a new release, update the `skills-tar` flake input and run `home-manager switch`
+
+Skills tied to one component may live next to it instead of under `skills/`
+(e.g. `cpap/skill/`, `cluster/skills/`, the debundle skills) — same
+`skill_package` macro and `all_skills_tar` registration.

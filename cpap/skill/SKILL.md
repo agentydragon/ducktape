@@ -3,29 +3,44 @@ name: cpap
 description: >
   Analyze CPAP sleep therapy data from the user's ResMed AirSense 11.
   Read daily summaries (AHI, leak, pressure, compliance) and per-session
-  waveforms from EDF files served via WebDAV. Use when user asks about
-  sleep quality, CPAP data, AHI, therapy compliance, or sleep analysis.
+  waveforms from EDF files in the private cpap-data Forgejo git repo. Use
+  when user asks about sleep quality, CPAP data, AHI, therapy compliance,
+  or sleep analysis.
 ---
 
 # CPAP Data Analysis
 
 Analyze ResMed AirSense 11 AutoSet CPAP data synced daily from an ez Share
-WiFi SD card to a cluster PVC, served read-only via WebDAV.
+WiFi SD card into the private Forgejo repo `cpap-data/cpap-data`.
 
 ## Data access
 
-CPAP data is served via WebDAV at `https://cpap.allegedly.works/` with HTTP
-Basic Auth. Credentials are in the SOPS-encrypted secret at
-`cluster/k8s/cpap-sync/webdav-auth.sops.yaml` (keys: `username`, `password`).
+Clone the repo with the read-only `cpap-data-reader` credentials from the
+`cpap-data-git-read` Kubernetes secret (keys: `username`, `password`,
+`repo_url`):
 
-To get credentials:
+- **Claude Code web / in-cluster**: read the reflected copy in `claude-sandbox`
+  (via kubectl-local MCP): `kubectl -n claude-sandbox get secret cpap-data-git-read`.
+  The secret's `repo_url` key holds the in-cluster URL
+  (`http://forgejo-http.forgejo:3000/cpap-data/cpap-data.git`), usable from pods.
+- **Laptops** (admin kubeconfig): `kubectl -n cpap-sync get secret cpap-data-git-read`,
+  then clone via the external URL `https://git.allegedly.works/cpap-data/cpap-data.git`.
 
 ```bash
-sops -d cluster/k8s/cpap-sync/webdav-auth.sops.yaml
+USERNAME=$(kubectl -n claude-sandbox get secret cpap-data-git-read -o jsonpath='{.data.username}' | base64 -d)
+PASSWORD=$(kubectl -n claude-sandbox get secret cpap-data-git-read -o jsonpath='{.data.password}' | base64 -d)
+
+# Credentials via env config, not argv/URL (no leak into process listings):
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+export GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "$USERNAME" "$PASSWORD" | base64 -w0)"
+
+# Full archive is multi-GB; for just the daily summary, partial-clone + checkout one file:
+git clone --filter=blob:none --no-checkout https://git.allegedly.works/cpap-data/cpap-data.git /tmp/cpap-data
+git -C /tmp/cpap-data checkout main -- STR.EDF
 ```
 
-From a pod in `claude-sandbox`, the internal URL is
-`http://cpap-webdav.cpap-sync.svc.cluster.local:8080/`.
+Checking out `DATALOG/<date>/` directories the same way fetches only those
+nights' blobs.
 
 ### Directory structure on the card
 
@@ -129,9 +144,9 @@ respiratory rate, and compliance stats.
 Usage:
 
 ```bash
-# Download STR.EDF from WebDAV and analyze last 14 days
-curl -s -u "$USER:$PASS" https://cpap.allegedly.works/STR.EDF -o /tmp/STR.EDF
-python3 examples/parse_str_edf.py /tmp/STR.EDF --days 14
+# Grab STR.EDF from the partial clone (see "Data access") and analyze last 14 days
+git -C /tmp/cpap-data checkout main -- STR.EDF
+python3 examples/parse_str_edf.py /tmp/cpap-data/STR.EDF --days 14
 ```
 
 ### Read DATALOG waveforms with pyedflib
@@ -145,7 +160,7 @@ All recipes assume:
 
 - Python 3.11+
 - `pyedflib` available (for waveform recipes only; STR.EDF parsing is stdlib-only)
-- EDF files accessible locally (downloaded from WebDAV or passed as arguments)
+- EDF files accessible locally (checked out from the cpap-data repo or passed as arguments)
 
 Test fixtures use the public EDF test file from
 https://www.teuniz.net/edf_bdf_testfiles/test_generator_2_edfplus.zip (2.7 MB,

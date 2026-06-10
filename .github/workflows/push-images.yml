@@ -149,7 +149,7 @@ jobs:
           - { image: "//inventree_utils/rai_plugin:image", image_name: inventree, test_target: "" }
           - { image: "//openclaw/exec:image", image_name: openclaw-exec, test_target: "" }
           - { image: "//third_party/activitywatch:image", image_name: aw-server, test_target: "" }
-          - { image: "//x/cpap_sync:image", image_name: cpap-sync, test_target: "" }
+          - { image: "//cpap:image", image_name: cpap-sync, test_target: "" }
     steps:
       - uses: actions/checkout@v6
         with:

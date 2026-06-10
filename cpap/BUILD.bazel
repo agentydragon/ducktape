@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
@@ -12,22 +12,44 @@ exports_files([
 py_library(
     name = "card",
     srcs = ["card.py"],
-    imports = ["../.."],
+    imports = [".."],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "gitstore",
+    srcs = ["gitstore.py"],
+    imports = [".."],
 )
 
 py_library(
     name = "sync_lib",
     srcs = ["sync.py"],
-    imports = ["../.."],
-    deps = [":card"],
+    imports = [".."],
+    deps = [
+        ":card",
+        ":gitstore",
+        "@pypi//pydantic",
+    ],
 )
 
 py_binary(
     name = "sync",
-    imports = ["../.."],
-    main_module = "x.cpap_sync.sync",
+    imports = [".."],
+    main_module = "cpap.sync",
     deps = [":sync_lib"],
+)
+
+py_test(
+    name = "test_sync",
+    srcs = ["test_sync.py"],
+    deps = [
+        ":card",
+        ":sync_lib",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 # ── OCI Image ────────────────────────────────────────────────────────────────

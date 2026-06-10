@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from skills.cpap.examples.generate_test_edf import generate_str_edf
-from skills.cpap.examples.parse_str_edf import read_str_edf, report
+from cpap.skill.examples.generate_test_edf import generate_str_edf
+from cpap.skill.examples.parse_str_edf import read_str_edf, report
 
 START = datetime(2026, 4, 10)
 

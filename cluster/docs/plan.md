@@ -51,8 +51,9 @@ returns (not independently parked):
 
 - **proxmox-proxy** — the Proxmox API proxy; needs `atlas`.
 - **sdr**, **scanner** — waiting on `atlas` (sdr also needs the radio re-set-up post-relocation).
-- **cpap-sync** (CronJob `suspend`) — waiting on `wyrm2`. TODO: generalize it to also cover
-  roaming devices so it doesn't depend on `wyrm2`.
+- **cpap-sync** (CronJob `suspend`) — waiting on `wyrm2`. Now pushes to the `cpap-data`
+  Forgejo repo (no PVC), so generalizing it to roaming devices near the CPAP is feasible —
+  any machine with the write creds can run the sync.
 - Not suspended in git, but non-functional while `wyrm2` (GPU) is down: **ollama**,
   **nvidia-device-plugin**.
 
@@ -220,7 +221,10 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] **Restore SDR kustomization** — unsuspend `cluster/k8s/sdr/flux-kustomization.yaml`
       (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Resume CPAP sync CronJob** — unsuspend `cluster/k8s/cpap-sync/cronjob.yaml`
-      (remove `suspend: true`) once wyrm2 is back online after relocation.
+      (remove `suspend: true`) once wyrm2 is back online after relocation. First run
+      re-seeds the fresh `cpap-data` Forgejo repo with the card's full history (~17+ min);
+      verify the commit lands. Also check the orphaned PVC-era `cpap-data` PV finally
+      deletes once wyrm2's CSI plugin is back.
 - [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
       wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure

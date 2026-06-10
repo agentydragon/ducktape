@@ -5,7 +5,8 @@ metadata:
   namespace: cpap-sync
   annotations:
     description: >-
-      Connects to the ez Share WiFi SD card in the ResMed CPAP and syncs all EDF data files to the cpap-data PVC.
+      Connects to the ez Share WiFi SD card in the ResMed CPAP and syncs all EDF data files into the cpap-data
+      Forgejo repo (partial clone + commit + push; credentials from the cpap-data-git-write secret).
 spec:
   schedule: "0 10 * * *"
   # Temporarily disabled — wyrm2 will be offline during relocation.
@@ -19,14 +20,16 @@ spec:
         spec:
           restartPolicy: OnFailure
           hostNetwork: true
+          # hostNetwork pods don't use cluster DNS by default; the sync must
+          # resolve forgejo-http.forgejo to push.
+          dnsPolicy: ClusterFirstWithHostNet
           nodeSelector:
             kubernetes.io/hostname: wyrm2
           securityContext:
             runAsUser: 0
           volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: cpap-data
+            - name: workdir
+              emptyDir: {}
             - name: dbus
               hostPath:
                 path: /run/dbus
@@ -36,12 +39,33 @@ spec:
           containers:
             - name: sync
               image: ghcr.io/agentydragon/cpap-sync:devel-20260505014412-1e78e52 # {"$imagepolicy": "flux-system:cpap-sync"}
+              args: ["--git-url", "$(GIT_REPO_URL)"]
+              env:
+                # The clone (initial re-seed: the card's full history) lands in
+                # TMPDIR — keep it on the emptyDir, not the container layer.
+                - name: TMPDIR
+                  value: /workdir
+                - name: GIT_REPO_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: cpap-data-git-write
+                      key: repo_url
+                - name: GIT_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: cpap-data-git-write
+                      key: username
+                - name: GIT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: cpap-data-git-write
+                      key: password
               securityContext:
                 capabilities:
                   add: ["NET_ADMIN"]
               volumeMounts:
-                - name: data
-                  mountPath: /data/cpap
+                - name: workdir
+                  mountPath: /workdir
                 - name: dbus
                   mountPath: /run/dbus
                 - name: network-manager
@@ -51,4 +75,5 @@ spec:
                   cpu: 100m
                   memory: 128Mi
                 limits:
-                  memory: 256Mi
+                  # git pack-objects on the initial ~0.5-1GB seed push.
+                  memory: 512Mi

@@ -31,7 +31,7 @@ Machine will be physically relocated and offline for ~2 weeks.
 - **monitoring** (grafana, grafana-operator, node-exporter) — most stack already on VPS (mimir, tempo, alloy); grafana/operator will reschedule; node-exporter DaemonSet stops on wyrm2
 - **csi-proxmox** — controller Deployment will reschedule; node plugin DaemonSet stops on wyrm2
 - **kvm-device-plugin** — DaemonSet, stops when wyrm2 goes down, irrelevant on VPS (no KVM)
-- **cpap-sync** — CronJob already paused; webdav pod will be offline (PVC data on wyrm2)
+- **cpap-sync** — CronJob already paused (now pushes to the `cpap-data` Forgejo repo; the wyrm2-pinned webdav/PVC setup was removed)
 
 ## Decide What To Do
 

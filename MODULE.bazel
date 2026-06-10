@@ -294,11 +294,12 @@ apt.install(
     manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
 )
 
-# CPAP sync: nmcli (talks to host NetworkManager over dbus) on debian:bookworm-slim.
+# CPAP sync: nmcli (talks to host NetworkManager over dbus) + git (pushes to
+# the cpap-data Forgejo repo) on debian:bookworm-slim.
 apt.install(
     name = "bookworm_cpap_sync",
-    lock = "//x/cpap_sync:bookworm_cpap_sync.lock.json",
-    manifest = "//x/cpap_sync:bookworm_cpap_sync.yaml",
+    lock = "//cpap:bookworm_cpap_sync.lock.json",
+    manifest = "//cpap:bookworm_cpap_sync.yaml",
 )
 
 # JWT rotation image: curl + jq + git + bash on debian:trixie-slim for the

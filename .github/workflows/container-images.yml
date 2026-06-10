@@ -6,7 +6,7 @@
 #   rtl-tcp       — RTL-SDR Blog V4 rtl_tcp server (x/rtl_tcp/Dockerfile); Flux ImagePolicy,
 #                   no digest pin needed. Uses rtl-sdr-blog fork for V4 R828D support.
 #
-# (cpap-sync is built via Bazel — see //x/cpap_sync:image and the
+# (cpap-sync is built via Bazel — see //cpap:image and the
 # push-images.yml matrix.)
 #
 # Independent of CI — bazel-ci uses the pinned image from image_pins.json.

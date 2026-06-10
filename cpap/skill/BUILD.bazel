@@ -10,8 +10,8 @@ skill_package(
         ),
         skill_mapping(
             srcs = [
-                "//skills/cpap/examples:parse_str_edf.py",
-                "//skills/cpap/examples:read_waveforms.py",
+                "//cpap/skill/examples:parse_str_edf.py",
+                "//cpap/skill/examples:read_waveforms.py",
             ],
             prefix = "examples",
         ),
@@ -22,8 +22,8 @@ py_test(
     name = "test_parse_str_edf",
     srcs = ["test_parse_str_edf.py"],
     deps = [
-        "//skills/cpap/examples:generate_test_edf",
-        "//skills/cpap/examples:parse_str_edf",
+        "//cpap/skill/examples:generate_test_edf",
+        "//cpap/skill/examples:parse_str_edf",
         "@pypi//pytest_bazel",
     ],
 )
