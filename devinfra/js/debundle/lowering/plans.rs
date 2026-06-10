@@ -23,7 +23,7 @@ pub(super) struct LogicalRequest {
 
 #[derive(Debug, Clone)]
 pub(super) struct AnonymousStatementRequest {
-    pub(super) match_source: String,
+    pub(super) selector: spec::AnonymousStatementSelector,
     /// Optional `comment:` text from the anonymous statement spec
     /// entry. `note:` is not emitted; it remains YAML scratch
     /// metadata.
@@ -34,6 +34,7 @@ pub(super) struct AnonymousStatementRequest {
 pub(super) struct MemberRequest {
     pub(super) binding: String,
     pub(super) export_name: String,
+    pub(super) source_match: Option<spec::AnonymousStatementSelector>,
     /// When `true`, the member's source is an import specifier in the
     /// source chunk (not a top-level decl). The materializer looks up
     /// the import statement by `binding` in the chunk body and rewrites
@@ -65,6 +66,26 @@ pub(super) struct MemberRequest {
 }
 
 impl MemberRequest {
+    pub(super) fn resolve_source_match(
+        &mut self,
+        runtime_module: &Module,
+        request_id: &str,
+    ) -> Result<()> {
+        let Some(selector) = self.source_match.take() else {
+            return Ok(());
+        };
+        let resolved = source_match::resolve_member_binding(
+            runtime_module,
+            request_id,
+            &self.export_name,
+            &selector,
+        )?;
+        self.binding = resolved.binding_name;
+        self.is_import_specifier =
+            matches!(resolved.kind, Some(BindingSourceKind::ImportSpecifier));
+        Ok(())
+    }
+
     /// Extend `hints` with this member's spec-level trust assertions
     /// (purity, pure_members, effect). Spec annotations carried on any
     /// member form (logical-module member, chunk_renames member)
@@ -146,17 +167,19 @@ pub(super) fn logical_requests_for_chunk(
     if let Some(by_target_path) = chunk_logical_modules {
         for (target_path, module) in by_target_path {
             let id = format!("{chunk_id}::{target_path}");
-            let members = build_members(&module.members);
+            let members = build_members(&module.members, &module.binding_groups, &id)?;
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
             let anonymous_statements = module
                 .anonymous_statements
                 .iter()
-                .map(|stmt| AnonymousStatementRequest {
-                    match_source: stmt.match_source.clone(),
-                    comment: stmt.comment.clone(),
+                .map(|stmt| {
+                    Ok(AnonymousStatementRequest {
+                        selector: stmt.selector()?,
+                        comment: stmt.comment.clone(),
+                    })
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             if catchall_target.as_deref() == Some(target_path.as_str()) {
                 explicit_module_at_catchall = true;
             }
@@ -215,26 +238,76 @@ pub(super) fn logical_requests_for_chunk(
     Ok(requests)
 }
 
-pub(super) fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
-    members
+pub(super) fn build_members(
+    members: &[spec::Member],
+    binding_groups: &[spec::BindingGroup],
+    request_id: &str,
+) -> Result<Vec<MemberRequest>> {
+    let mut requests = members
         .iter()
         .map(|m| {
-            let binding = m.selector.binding.name.clone();
-            let export_name = m.name.clone().unwrap_or_else(|| binding.clone());
-            MemberRequest {
-                is_import_specifier: matches!(
-                    m.selector.binding.kind,
-                    Some(BindingSourceKind::ImportSpecifier)
-                ),
+            let selected = m.selector.selected()?;
+            let (binding, export_name, source_match, is_import_specifier) = match selected {
+                spec::MemberSelectorSpec::Binding(binding) => {
+                    let export_name = m.name.clone().unwrap_or_else(|| binding.name.clone());
+                    (
+                        binding.name,
+                        export_name,
+                        None,
+                        matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)),
+                    )
+                }
+                spec::MemberSelectorSpec::SourceMatch(selector) => {
+                    let export_name = m.name.clone().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "logical_module {request_id}: members[].selector.source_match \
+                             requires `name:` because the public export name cannot default \
+                             to a binding name until the selector is resolved"
+                        )
+                    })?;
+                    (String::new(), export_name, Some(selector), false)
+                }
+            };
+            Ok(MemberRequest {
                 binding,
                 export_name,
+                source_match,
+                is_import_specifier,
                 purity: m.purity,
                 effect: m.effect,
                 pure_members: m.pure_members.clone(),
                 comment: m.comment.clone(),
-            }
+            })
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+
+    for group in binding_groups {
+        if group.exports.is_empty() {
+            bail!("logical_module {request_id}: binding_groups[].exports must not be empty");
+        }
+        if group.source_match.target_binding.is_some() {
+            bail!(
+                "logical_module {request_id}: binding_groups[].source_match must not include \
+                 `target_binding`; use the `exports` keys to choose selector-local bindings"
+            );
+        }
+        for (target_binding, export_name) in &group.exports {
+            let mut selector = group.source_match.selector();
+            selector.target_binding = Some(target_binding.clone());
+            requests.push(MemberRequest {
+                binding: String::new(),
+                export_name: export_name.clone(),
+                source_match: Some(selector),
+                is_import_specifier: false,
+                purity: MemberPurity::Default,
+                effect: MemberEffect::Default,
+                pure_members: Vec::new(),
+                comment: None,
+            });
+        }
+    }
+
+    Ok(requests)
 }
 
 pub(super) fn known_effect_from_member_effect(effect: MemberEffect) -> Option<KnownEffect> {

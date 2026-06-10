@@ -217,8 +217,11 @@ pub fn run_bindings_list(
         let module = spec_modules::read_module_file(&file)?;
         per_module_counts.insert(module_path.clone(), module.members.len());
         for member in module.members {
+            let Some(binding) = member.selector.binding else {
+                continue;
+            };
             let entry = BindingEntry {
-                name: BindingName::new(member.selector.binding.name, member.name.clone()),
+                name: BindingName::new(binding.name, member.name.clone()),
                 module: module_path.clone(),
                 orphan: false,
             };

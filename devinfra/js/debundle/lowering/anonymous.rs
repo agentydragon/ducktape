@@ -23,11 +23,10 @@ pub(super) fn resolve_anonymous_statement_ordinals(
 ) -> Result<Vec<ResolvedAnonymousStatement>> {
     let mut resolved = Vec::with_capacity(request.anonymous_statements.len());
     for statement in &request.anonymous_statements {
-        let match_source = &statement.match_source;
-        let ordinal = js_ast::resolve_anonymous_statement_body_index(
+        let ordinal = source_match::resolve_anonymous_statement_body_index(
             runtime_module,
             &request.id,
-            match_source,
+            &statement.selector,
         )?;
         resolved.push(ResolvedAnonymousStatement {
             ordinal,

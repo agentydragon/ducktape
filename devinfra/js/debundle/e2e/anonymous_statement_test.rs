@@ -452,3 +452,486 @@ export { a, b, X, Existing };
     // End-to-end: prints "between" then "existing".
     assert_entry_output(&fixture, "between\nexisting\n");
 }
+
+#[test]
+fn alpha_anonymous_statement_selector_survives_identifier_drift() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function applyMetadata(args, target, prop) {
+  console.log(`${prop}:${target.constructor.name}:${args.length}`);
+}
+const RuntimeToken = Symbol("runtime-token");
+class RuntimeSubject {}
+applyMetadata([RuntimeToken], RuntimeSubject.prototype, "statusFlag");
+const Existing = "existing";
+console.log(Existing);
+export { RuntimeSubject, Existing };
+"#,
+        vec![logical_module_with_anon_alpha(
+            "decorated_runtime",
+            &[
+                Member::new("applyMetadata"),
+                Member::new("RuntimeToken"),
+                Member::new("RuntimeSubject"),
+            ],
+            r#"decorate([token], Subject.prototype, "statusFlag");"#,
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/decorated_runtime.js",
+        &[
+            "function applyMetadata",
+            "const RuntimeToken",
+            "class RuntimeSubject",
+            "applyMetadata([",
+            "RuntimeToken",
+            "RuntimeSubject.prototype",
+            r#""statusFlag""#,
+        ],
+        &["const Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["const Existing"],
+        &["RuntimeSubject.prototype", r#""statusFlag""#],
+    );
+    assert_entry_output(&fixture, "statusFlag:RuntimeSubject:1\nexisting\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_selector_keeps_member_properties_significant() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const selectedValue = "selected";
+const existingValue = "existing";
+console.log(globalThis.primaryService?.enabled ? selectedValue : "off");
+console.log(globalThis.secondaryService?.enabled ? existingValue : "off");
+export { selectedValue, existingValue };
+"#,
+        vec![
+            logical_module_with_anon_alpha(
+                "primary_probe",
+                &[Member::new("selectedValue")],
+                r#"console.log(globalThis.primaryService?.enabled ? replacementValue : "off");"#,
+            ),
+            logical_module_with_anon_alpha(
+                "secondary_probe",
+                &[Member::new("existingValue")],
+                r#"console.log(globalThis.secondaryService?.enabled ? replacementValue : "off");"#,
+            ),
+        ],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/primary_probe.js",
+        &["selectedValue", "primaryService"],
+        &["secondaryService", "existingValue"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/secondary_probe.js",
+        &["secondaryService", "existingValue"],
+        &["primaryService", "selectedValue"],
+    );
+    assert_entry_output(&fixture, "off\noff\n");
+}
+
+#[test]
+fn alpha_anonymous_statement_selector_supports_explicit_string_literal_wildcards() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const selectedValue = 1;
+const existingValue = 2;
+(function () {
+  const target = globalThis;
+  target.auditMarkers = target.auditMarkers || {};
+  target.auditMarkers["primary-slot"] = "runtime-generated-primary";
+})();
+(function () {
+  const target = globalThis;
+  target.auditMarkers = target.auditMarkers || {};
+  target.auditMarkers["secondary-slot"] = "runtime-generated-secondary";
+})();
+export { selectedValue, existingValue };
+"#,
+        vec![logical_module_with_anon_alpha_string_wildcards(
+            "primary_marker",
+            &[Member::new("selectedValue")],
+            r#"(function () {
+  const target = globalThis;
+  target.auditMarkers = target.auditMarkers || {};
+  target.auditMarkers["primary-slot"] = "<generated-id>";
+})();"#,
+            &["<generated-id>"],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/primary_marker.js",
+        &["selectedValue", "primary-slot", "runtime-generated-primary"],
+        &[
+            "<generated-id>",
+            "secondary-slot",
+            "runtime-generated-secondary",
+        ],
+    );
+    assert_entry_output(&fixture, "");
+}
+
+#[test]
+fn member_source_match_variable_declarator_survives_binding_name_drift() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeBinding = { kind: "selected", enabled: true },
+  siblingBinding = { kind: "other", enabled: false };
+const Existing = "existing";
+console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
+export { runtimeBinding, siblingBinding, Existing };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha(
+                "selectedConfig",
+                r#"const oldBinding = { kind: "selected", enabled: true };"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_config.js",
+        &["const selectedConfig", r#""selected""#],
+        &["siblingBinding", "const Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["siblingBinding", "const Existing"],
+        &["const runtimeBinding"],
+    );
+    assert_entry_output(&fixture, "selected other existing\n");
+}
+
+#[test]
+fn member_source_match_target_binding_uses_multideclarator_context() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const runtimeLocalPart = "primary",
+  runtimeDomain = "example.test",
+  runtimeAddress = `${runtimeLocalPart}@${runtimeDomain}`;
+const duplicateLocalPart = "primary";
+console.log(runtimeLocalPart, duplicateLocalPart, runtimeAddress);
+export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha_target(
+                "selectedLocalPart",
+                "localPart",
+                r#"const localPart = "primary",
+  domain = "example.test",
+  address = `${localPart}@${domain}`;"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_config.js",
+        &["const selectedLocalPart", r#""primary""#],
+        &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["runtimeDomain", "runtimeAddress", "duplicateLocalPart"],
+        &["runtimeLocalPart"],
+    );
+    assert_entry_output(&fixture, "primary primary primary@example.test\n");
+}
+
+#[test]
+fn binding_group_source_match_extracts_multiple_bindings_from_multideclarator() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let runtimeA = 100,
+  runtimeB = null,
+  runtimeC = `${runtimeA}:${runtimeB === null}:bar`;
+const Existing = "existing";
+console.log(runtimeA, runtimeB === null, runtimeC, Existing);
+export { runtimeA, runtimeB, runtimeC, Existing };
+"#,
+        vec![logical_module_with_binding_groups(
+            "selected_values",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let a = 100,
+  b = null,
+  c = `${a}:${b === null}:bar`;"#,
+                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+            )],
+        )],
+    ));
+
+    let mut exports =
+        list_module_exports(&fixture.out_root, "static/app/modules/selected_values.js");
+    exports.sort();
+    assert_eq!(exports, vec!["NameA", "NameB", "NameC"]);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_values.js",
+        &["NameA", "NameB", "NameC", "100", "bar"],
+        &[
+            "let runtimeA",
+            "let runtimeB",
+            "let runtimeC",
+            "const Existing",
+        ],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["Existing"],
+        &["runtimeA = 100", "runtimeB = null", "runtimeC ="],
+    );
+    assert_entry_output(&fixture, "100 true 100:true:bar existing\n");
+}
+
+#[test]
+fn member_source_match_target_binding_can_select_single_declarator_from_comma_list() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const siblingBinding = { kind: "other", enabled: false },
+  runtimeBinding = { kind: "selected", enabled: true };
+const Existing = "existing";
+console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
+export { siblingBinding, runtimeBinding, Existing };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha_target(
+                "selectedConfig",
+                "config",
+                r#"const config = { kind: "selected", enabled: true };"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_config.js",
+        &["const selectedConfig", r#""selected""#],
+        &["siblingBinding", "const Existing"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["siblingBinding", "const Existing"],
+        &["runtimeBinding"],
+    );
+    assert_entry_output(&fixture, "selected other existing\n");
+}
+
+#[test]
+fn binding_group_source_match_still_rejects_ambiguous_multideclarator_matches() {
+    let opts = FixtureOpts::new(
+        r#"let firstA = 100,
+  firstB = null,
+  firstC = `${firstA}:${firstB === null}:bar`;
+let secondA = 100,
+  secondB = null,
+  secondC = `${secondA}:${secondB === null}:bar`;
+export { firstA, firstB, firstC, secondA, secondB, secondC };
+"#,
+        vec![logical_module_with_binding_groups(
+            "selected_values",
+            &[],
+            &[BindingGroup::source_alpha(
+                r#"let a = 100,
+  b = null,
+  c = `${a}:${b === null}:bar`;"#,
+                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::selected_values",
+            "NameA",
+            "ambiguous",
+            "target_binding",
+            "a",
+        ],
+    );
+}
+
+#[test]
+fn member_source_match_target_binding_uses_following_statement_context() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const traceContexts = ["load"];
+const selectedRegistry = {};
+for (const context of traceContexts)
+  selectedRegistry[context] = () => context;
+const duplicateRegistry = {};
+console.log(selectedRegistry !== duplicateRegistry, Object.keys(duplicateRegistry).length);
+export { traceContexts, selectedRegistry, duplicateRegistry };
+"#,
+        vec![logical_module(
+            "selected_registry",
+            &[Member::source_alpha_target(
+                "traceCommandRegistry",
+                "registry",
+                r#"const registry = {};
+for (const context of traceContexts)
+  registry[context] = () => context;"#,
+            )],
+        )],
+    ));
+
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/selected_registry.js",
+        &["const traceCommandRegistry = {}"],
+        &["duplicateRegistry"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/residual/unhandled.js",
+        &["duplicateRegistry"],
+        &["const selectedRegistry"],
+    );
+    assert_entry_output(&fixture, "true 0\n");
+}
+
+#[test]
+fn member_source_match_variable_declarator_still_rejects_ambiguous_matches() {
+    let opts = FixtureOpts::new(
+        r#"const firstRuntime = { kind: "selected", enabled: true },
+  secondRuntime = { kind: "selected", enabled: true };
+export { firstRuntime, secondRuntime };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha(
+                "selectedConfig",
+                r#"const oldBinding = { kind: "selected", enabled: true };"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::selected_config",
+            "selectedConfig",
+            "ambiguous",
+            r#"const oldBinding = { kind: "selected", enabled: true }"#,
+        ],
+    );
+}
+
+#[test]
+fn member_source_match_target_binding_still_rejects_ambiguous_matches() {
+    let opts = FixtureOpts::new(
+        r#"const firstLocalPart = "primary",
+  firstDomain = "example.test",
+  firstAddress = `${firstLocalPart}@${firstDomain}`;
+const secondLocalPart = "primary",
+  secondDomain = "example.test",
+  secondAddress = `${secondLocalPart}@${secondDomain}`;
+export { firstLocalPart, firstDomain, firstAddress, secondLocalPart, secondDomain, secondAddress };
+"#,
+        vec![logical_module(
+            "selected_config",
+            &[Member::source_alpha_target(
+                "selectedLocalPart",
+                "localPart",
+                r#"const localPart = "primary",
+  domain = "example.test",
+  address = `${localPart}@${domain}`;"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::selected_config",
+            "selectedLocalPart",
+            "ambiguous",
+            "target_binding",
+            "localPart",
+        ],
+    );
+}
+
+#[test]
+fn member_source_match_target_binding_context_still_rejects_ambiguous_matches() {
+    let opts = FixtureOpts::new(
+        r#"const traceContexts = ["load"];
+const firstRegistry = {};
+for (const context of traceContexts)
+  firstRegistry[context] = () => context;
+const secondRegistry = {};
+for (const context of traceContexts)
+  secondRegistry[context] = () => context;
+export { firstRegistry, secondRegistry };
+"#,
+        vec![logical_module(
+            "selected_registry",
+            &[Member::source_alpha_target(
+                "traceCommandRegistry",
+                "registry",
+                r#"const registry = {};
+for (const context of traceContexts)
+  registry[context] = () => context;"#,
+            )],
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::selected_registry",
+            "traceCommandRegistry",
+            "ambiguous",
+            "target_binding",
+            "registry",
+        ],
+    );
+}
+
+#[test]
+fn alpha_anonymous_statement_selector_still_rejects_ambiguous_matches() {
+    let opts = FixtureOpts::new(
+        r#"function decorate(args, target, prop) {
+  console.log(`${prop}:${target.constructor.name}:${args.length}`);
+}
+const FirstToken = Symbol("first");
+const SecondToken = Symbol("second");
+class FirstSubject {}
+class SecondSubject {}
+decorate([FirstToken], FirstSubject.prototype, "statusFlag");
+decorate([SecondToken], SecondSubject.prototype, "statusFlag");
+export { FirstSubject, SecondSubject };
+"#,
+        vec![logical_module_with_anon_alpha(
+            "first_subject",
+            &[
+                Member::new("decorate"),
+                Member::new("FirstToken"),
+                Member::new("FirstSubject"),
+            ],
+            r#"applyMetadata([token], Subject.prototype, "statusFlag");"#,
+        )],
+    );
+
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "static/app::first_subject",
+            "ambiguous",
+            r#"applyMetadata([token], Subject.prototype, "statusFlag")"#,
+        ],
+    );
+}

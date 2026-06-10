@@ -36,7 +36,33 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
+    source_match: Option<FixtureSourceMatch>,
     pub comment: Option<String>,
+}
+
+pub struct BindingGroup {
+    source_match: FixtureSourceMatch,
+    exports: BTreeMap<&'static str, &'static str>,
+}
+
+impl BindingGroup {
+    /// Extract several bindings from one matched source context, typically a
+    /// multi-declarator `var`/`let`/`const` statement. `exports` maps the
+    /// selector-local binding name to the public export name.
+    pub fn source_alpha(
+        match_source: impl Into<String>,
+        exports: &[(&'static str, &'static str)],
+    ) -> Self {
+        Self {
+            source_match: FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            },
+            exports: exports.iter().copied().collect(),
+        }
+    }
 }
 
 impl Member {
@@ -45,6 +71,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            source_match: None,
             comment: None,
         }
     }
@@ -54,6 +81,43 @@ impl Member {
         Self {
             name,
             binding: Some(binding),
+            source_match: None,
+            comment: None,
+        }
+    }
+
+    /// Extract a top-level single-binding declaration selected by source shape
+    /// rather than by its current minified binding name.
+    pub fn source_alpha(name: &'static str, match_source: impl Into<String>) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            }),
+            comment: None,
+        }
+    }
+
+    /// Extract one binding from a matched declaration by naming that binding
+    /// as it appears in the selector source.
+    pub fn source_alpha_target(
+        name: &'static str,
+        target_binding: impl Into<String>,
+        match_source: impl Into<String>,
+    ) -> Self {
+        Self {
+            name,
+            binding: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: Some(target_binding.into()),
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            }),
             comment: None,
         }
     }
@@ -76,7 +140,10 @@ struct FixtureMember {
 
 #[derive(Serialize)]
 struct FixtureMemberSelector {
-    binding: FixtureBindingSelector,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binding: Option<FixtureBindingSelector>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_match: Option<FixtureSourceMatch>,
 }
 
 #[derive(Serialize)]
@@ -90,17 +157,89 @@ struct LogicalModuleBody {
     comment: Option<String>,
     members: Vec<FixtureMember>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    binding_groups: Vec<FixtureBindingGroup>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     anonymous_statements: Vec<FixtureAnonymousStatement>,
+}
+
+#[derive(Serialize)]
+struct FixtureBindingGroup {
+    source_match: FixtureSourceMatch,
+    exports: BTreeMap<&'static str, &'static str>,
 }
 
 #[derive(Serialize)]
 struct FixtureAnonymousStatement {
     #[serde(rename = "match")]
-    match_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    match_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_match: Option<FixtureSourceMatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct FixtureSourceMatch {
+    identifiers: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_binding: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    wildcard_string_literals: Vec<String>,
+    #[serde(rename = "match")]
+    match_source: String,
+}
+
+impl FixtureAnonymousStatement {
+    fn exact(match_source: impl Into<String>) -> Self {
+        Self {
+            match_source: Some(match_source.into()),
+            source_match: None,
+            comment: None,
+            note: None,
+        }
+    }
+
+    fn alpha_all(match_source: impl Into<String>) -> Self {
+        Self {
+            match_source: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: Vec::new(),
+                match_source: match_source.into(),
+            }),
+            comment: None,
+            note: None,
+        }
+    }
+
+    fn alpha_all_with_wildcard_strings(
+        match_source: impl Into<String>,
+        wildcard_string_literals: &[&str],
+    ) -> Self {
+        Self {
+            match_source: None,
+            source_match: Some(FixtureSourceMatch {
+                identifiers: "alpha_all",
+                target_binding: None,
+                wildcard_string_literals: wildcard_string_literals
+                    .iter()
+                    .map(|literal| (*literal).to_string())
+                    .collect(),
+                match_source: match_source.into(),
+            }),
+            comment: None,
+            note: None,
+        }
+    }
+
+    fn with_comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = Some(comment.into());
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -146,11 +285,23 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
         .map(|m| FixtureMember {
             name: m.name,
             selector: FixtureMemberSelector {
-                binding: FixtureBindingSelector {
-                    name: m.binding.unwrap_or(m.name),
-                },
+                binding: m
+                    .binding
+                    .or_else(|| m.source_match.is_none().then_some(m.name))
+                    .map(|name| FixtureBindingSelector { name }),
+                source_match: m.source_match.clone(),
             },
             comment: m.comment.clone(),
+        })
+        .collect()
+}
+
+fn fixture_binding_groups(binding_groups: &[BindingGroup]) -> Vec<FixtureBindingGroup> {
+    binding_groups
+        .iter()
+        .map(|group| FixtureBindingGroup {
+            source_match: group.source_match.clone(),
+            exports: group.exports.clone(),
         })
         .collect()
 }
@@ -165,6 +316,24 @@ pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
         serde_json::to_value(LogicalModuleBody {
             comment: None,
             members: fixture_members(members),
+            binding_groups: Vec::new(),
+            anonymous_statements: Vec::new(),
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+pub fn logical_module_with_binding_groups(
+    path: &str,
+    members: &[Member],
+    binding_groups: &[BindingGroup],
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            binding_groups: fixture_binding_groups(binding_groups),
             anonymous_statements: Vec::new(),
         })
         .expect("logical module fixture must serialize"),
@@ -184,6 +353,7 @@ pub fn logical_module_with_comment(
         serde_json::to_value(LogicalModuleBody {
             comment: Some(comment.into()),
             members: fixture_members(members),
+            binding_groups: Vec::new(),
             anonymous_statements: Vec::new(),
         })
         .expect("logical module fixture must serialize"),
@@ -207,14 +377,49 @@ pub fn logical_module_with_anon(
         serde_json::to_value(LogicalModuleBody {
             comment: None,
             members: fixture_members(members),
+            binding_groups: Vec::new(),
             anonymous_statements: anon_matches
                 .iter()
-                .map(|m| FixtureAnonymousStatement {
-                    match_source: (*m).to_string(),
-                    comment: None,
-                    note: None,
-                })
+                .map(|m| FixtureAnonymousStatement::exact(*m))
                 .collect(),
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+pub fn logical_module_with_anon_alpha(
+    path: &str,
+    members: &[Member],
+    anon_match: &str,
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            binding_groups: Vec::new(),
+            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all(anon_match)],
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+pub fn logical_module_with_anon_alpha_string_wildcards(
+    path: &str,
+    members: &[Member],
+    anon_match: &str,
+    wildcard_string_literals: &[&str],
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            binding_groups: Vec::new(),
+            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_with_wildcard_strings(
+                anon_match,
+                wildcard_string_literals,
+            )],
         })
         .expect("logical module fixture must serialize"),
     )
@@ -231,11 +436,10 @@ pub fn logical_module_with_anon_comment(
         serde_json::to_value(LogicalModuleBody {
             comment: None,
             members: fixture_members(members),
-            anonymous_statements: vec![FixtureAnonymousStatement {
-                match_source: anon_match.to_string(),
-                comment: Some(comment.into()),
-                note: None,
-            }],
+            binding_groups: Vec::new(),
+            anonymous_statements: vec![
+                FixtureAnonymousStatement::exact(anon_match).with_comment(comment),
+            ],
         })
         .expect("logical module fixture must serialize"),
     )

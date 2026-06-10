@@ -203,6 +203,9 @@ fn reject_duplicate_field(
     let mut seen = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
     for member in members {
+        if member.source_match.is_some() {
+            continue;
+        }
         let value = extract(member);
         if !seen.insert(value.to_string()) {
             duplicates.insert(value.to_string());

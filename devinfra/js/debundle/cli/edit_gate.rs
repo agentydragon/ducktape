@@ -257,7 +257,7 @@ pub fn gate_post_edit_partition(
         .iter()
         .map(|module| AnonymousStatementClaimSet {
             module_path: &module.path,
-            match_sources: &module.claims.anonymous_match_sources,
+            selectors: &module.claims.anonymous_selectors,
         })
         .collect();
     let anonymous_owners_by_module = resolve_anonymous_statement_claims(

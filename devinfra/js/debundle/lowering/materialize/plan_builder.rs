@@ -113,6 +113,10 @@ impl ChunkPlanBuilder {
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
+        for member in &mut request.members {
+            member.resolve_source_match(ctx.runtime_module, &request.id)?;
+        }
+        reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_claims =
             resolve_anonymous_statement_ordinals(request, ctx.runtime_module)?;

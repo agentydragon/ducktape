@@ -4,7 +4,7 @@
 //! snippets (`anonymous_statements[].match`). Graph-backed CLI paths
 //! that need owner ids use this module as the single implementation
 //! for mapping matched selectors back to owner-graph nodes. The
-//! selector parser and AST equality live in `js_ast`.
+//! selector parser and AST equality live in `source_match`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -13,12 +13,13 @@ use std::path::{Path, PathBuf};
 
 use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
+use spec::AnonymousStatementSelector;
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AnonymousStatementClaimSet<'a> {
     pub module_path: &'a Path,
-    pub match_sources: &'a BTreeSet<String>,
+    pub selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
 pub fn resolve_anonymous_statement_claims(
@@ -130,7 +131,7 @@ fn resolve_anonymous_statement_claims_in_globals(
     let mut out = vec![BTreeSet::<OwnerId>::new(); claims_by_module.len()];
     if claims_by_module
         .iter()
-        .all(|claims| claims.match_sources.is_empty())
+        .all(|claims| claims.selectors.is_empty())
     {
         return Ok(out);
     }
@@ -173,13 +174,13 @@ fn resolve_anonymous_statement_claims_in_globals(
     }
 
     for (module_idx, claims) in claims_by_module.iter().enumerate() {
-        for match_source in claims.match_sources {
+        for selector in claims.selectors {
             let mut matches = Vec::<(String, OwnerId)>::new();
             for (source_path, parsed) in &parsed_by_source {
-                let body_indices = js_ast::find_anonymous_statement_body_indices(
+                let body_indices = source_match::find_anonymous_statement_body_indices(
                     &parsed.module,
                     &claims.module_path.to_string_lossy(),
-                    match_source,
+                    selector,
                 )?;
                 for body_idx in body_indices {
                     let statement_ordinal =
@@ -207,14 +208,14 @@ fn resolve_anonymous_statement_claims_in_globals(
                 [] => bail!(
                     "module {} anonymous statement selector did not match any source statement:\n{}",
                     claims.module_path.display(),
-                    match_source,
+                    selector.match_source,
                 ),
                 multiple => bail!(
                     "module {} anonymous statement selector matched {} source statements; refine \
                      the selector:\n{}",
                     claims.module_path.display(),
                     multiple.len(),
-                    match_source,
+                    selector.match_source,
                 ),
             }
         }

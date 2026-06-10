@@ -31,6 +31,23 @@ rust_test(
 )
 
 rust_library(
+    name = "source_match",
+    srcs = ["source_match.rs"],
+    crate_root = "source_match.rs",
+    edition = "2024",
+    deps = [
+        ":binding_targets",
+        ":js_ast",
+        ":spec",
+        "@crates//:anyhow",
+        "@crates//:swc_atoms",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_library(
     name = "anonymous_resolution",
     srcs = ["anonymous_resolution.rs"],
     crate_root = "anonymous_resolution.rs",
@@ -38,6 +55,8 @@ rust_library(
     deps = [
         ":analysis",
         ":js_ast",
+        ":source_match",
+        ":spec",
         "@crates//:anyhow",
         "@crates//:swc_common",
     ],
@@ -477,6 +496,7 @@ rust_library(
         ":binding_targets",
         ":js_ast",
         ":output_layout",
+        ":source_match",
         ":spec",
         ":write_tree",
         "@crates//:anyhow",

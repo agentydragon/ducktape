@@ -288,7 +288,9 @@ pub fn find_anonymous_statement_body_indices(
         match_source,
     )
     .with_context(|| {
-        format!("logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{match_source}")
+        format!(
+            "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{match_source}"
+        )
     })?;
     let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
     let needle = match parsed_items.as_slice() {

@@ -20,7 +20,8 @@
 //! All consumers see typed structs; nothing here returns
 //! `serde_json::Value` for a known field.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -470,6 +471,15 @@ pub enum WrapperShape {
 pub struct LogicalModule {
     #[serde(default)]
     pub members: Vec<Member>,
+    /// Compact form for several bindings selected from the same source
+    /// context, usually one multi-declarator statement. Each `exports` key is
+    /// a selector-local binding name inside `source_match.match`; each value
+    /// is the public export name to give the matched runtime binding.
+    ///
+    /// This is sugar for several `members[].selector.source_match` entries
+    /// with identical `match` and different `target_binding` values.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binding_groups: Vec<BindingGroup>,
     /// Anonymous (empty-`declared_bindings`) top-level statements
     /// the materializer must co-move into this module's body.
     /// Required when a peel proposal's closure includes side-effect
@@ -498,8 +508,14 @@ pub struct AnonymousStatement {
     /// (modulo spans) against the chunk's top-level statements.
     /// Must match exactly one — zero matches and ambiguous matches
     /// are spec errors.
-    #[serde(rename = "match")]
-    pub match_source: String,
+    #[serde(rename = "match", default, skip_serializing_if = "Option::is_none")]
+    pub match_source: Option<String>,
+    /// Readable structural selector for the target top-level statement.
+    /// `identifiers: alpha_all` treats binding/value identifiers in `match`
+    /// as alpha-renamable placeholders while keeping literals, operators,
+    /// member property names, and overall AST structure significant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_match: Option<SourceMatch>,
     /// Optional YAML-only note. Use this for provenance,
     /// uncertainty, and other scratch reverse-engineering notes that
     /// should survive spec edits without appearing in generated JS.
@@ -513,6 +529,123 @@ pub struct AnonymousStatement {
     /// Prefer `note:` for scratch text that should stay YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindingGroup {
+    pub source_match: SourceMatch,
+    pub exports: BTreeMap<String, String>,
+}
+
+impl AnonymousStatement {
+    pub fn selector(
+        &self,
+    ) -> std::result::Result<AnonymousStatementSelector, AnonymousStatementSelectorError> {
+        match (&self.match_source, &self.source_match) {
+            (Some(match_source), None) => Ok(AnonymousStatementSelector {
+                match_source: match_source.clone(),
+                identifiers: SourceMatchIdentifierMode::Exact,
+                target_binding: None,
+                wildcard_string_literals: BTreeSet::new(),
+            }),
+            (None, Some(source_match)) if source_match.target_binding.is_some() => {
+                Err(AnonymousStatementSelectorError {
+                    message: "anonymous_statements source_match cannot include `target_binding`",
+                })
+            }
+            (None, Some(source_match)) => Ok(source_match.selector()),
+            (Some(_), Some(_)) => Err(AnonymousStatementSelectorError {
+                message: "anonymous_statements entry must use either `match` or `source_match`, not both",
+            }),
+            (None, None) => Err(AnonymousStatementSelectorError {
+                message: "anonymous_statements entry must include either `match` or `source_match.match`",
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct AnonymousStatementSelectorError {
+    message: &'static str,
+}
+
+impl fmt::Display for AnonymousStatementSelectorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.message)
+    }
+}
+
+impl std::error::Error for AnonymousStatementSelectorError {}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(deny_unknown_fields)]
+pub struct SourceMatch {
+    /// Optional documentary kind for future selector families. Anonymous
+    /// statement resolution currently always parses `match` as exactly one
+    /// top-level statement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "is_default_source_match_identifier_mode"
+    )]
+    pub identifiers: SourceMatchIdentifierMode,
+    /// Selector-local binding name to export when this source match is used as
+    /// a `members[].selector.source_match`. This lets a selector use a whole
+    /// multi-declarator statement as readable context while choosing one
+    /// binding from it. Invalid on `anonymous_statements[].source_match`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_binding: Option<String>,
+    /// String-literal placeholder values in `match` that should match any
+    /// candidate string literal at the same AST position. Use this for
+    /// volatile generated literals while keeping all other strings exact.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub wildcard_string_literals: BTreeSet<String>,
+    #[serde(rename = "match")]
+    pub match_source: String,
+}
+
+impl SourceMatch {
+    pub fn selector(&self) -> AnonymousStatementSelector {
+        AnonymousStatementSelector {
+            match_source: self.match_source.clone(),
+            identifiers: self.identifiers,
+            target_binding: self.target_binding.clone(),
+            wildcard_string_literals: self.wildcard_string_literals.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct AnonymousStatementSelector {
+    pub match_source: String,
+    pub identifiers: SourceMatchIdentifierMode,
+    pub target_binding: Option<String>,
+    pub wildcard_string_literals: BTreeSet<String>,
+}
+
+impl AnonymousStatementSelector {
+    pub fn exact(match_source: impl Into<String>) -> Self {
+        Self {
+            match_source: match_source.into(),
+            identifiers: SourceMatchIdentifierMode::Exact,
+            target_binding: None,
+            wildcard_string_literals: BTreeSet::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceMatchIdentifierMode {
+    #[default]
+    Exact,
+    AlphaAll,
+}
+
+fn is_default_source_match_identifier_mode(mode: &SourceMatchIdentifierMode) -> bool {
+    *mode == SourceMatchIdentifierMode::Exact
 }
 
 /// Default value the [`UnassignedMode::CatchallFile`] target path
@@ -684,10 +817,13 @@ pub struct Member {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemberSelector {
-    pub binding: BindingSelector,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<BindingSelector>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_match: Option<SourceMatch>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct BindingSelector {
     pub name: String,
@@ -696,7 +832,43 @@ pub struct BindingSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+impl MemberSelector {
+    pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
+        match (&self.binding, &self.source_match) {
+            (Some(binding), None) => Ok(MemberSelectorSpec::Binding(binding.clone())),
+            (None, Some(source_match)) => {
+                Ok(MemberSelectorSpec::SourceMatch(source_match.selector()))
+            }
+            (Some(_), Some(_)) => Err(MemberSelectorError {
+                message: "members[].selector must use either `binding` or `source_match`, not both",
+            }),
+            (None, None) => Err(MemberSelectorError {
+                message: "members[].selector must include either `binding` or `source_match`",
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum MemberSelectorSpec {
+    Binding(BindingSelector),
+    SourceMatch(AnonymousStatementSelector),
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MemberSelectorError {
+    message: &'static str,
+}
+
+impl fmt::Display for MemberSelectorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.message)
+    }
+}
+
+impl std::error::Error for MemberSelectorError {}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum BindingSourceKind {
     /// The bound name comes from an `import` specifier in the source

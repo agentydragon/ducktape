@@ -467,7 +467,9 @@ fn collect_analysis_hints(
         }
     }
     if let Some(cr) = chunk_renames {
-        for m in super::plans::build_members(&cr.members) {
+        for m in super::plans::build_members(&cr.members, &[], "<chunk_renames>")
+            .expect("chunk_renames members must use binding selectors")
+        {
             m.collect_hints(&mut hints);
         }
     }

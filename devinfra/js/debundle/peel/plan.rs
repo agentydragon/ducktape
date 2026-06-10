@@ -1090,7 +1090,7 @@ fn patch_plan_rows(
             }
             let claim_sets = [AnonymousStatementClaimSet {
                 module_path: &patch_set.file,
-                match_sources: &patch_set.anonymous_match_sources,
+                selectors: &patch_set.anonymous_selectors,
             }];
             let anonymous_owners = resolve_anonymous_statement_claims(
                 graph,
@@ -1184,7 +1184,7 @@ struct PatchSet {
     path: String,
     file: PathBuf,
     bindings: BTreeSet<String>,
-    anonymous_match_sources: BTreeSet<String>,
+    anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1192,14 +1192,14 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     let binding_patches_path = default_binding_patches_path(modules_root);
     let patch_bindings: BTreeSet<String> = load_binding_patch_members(modules_root)?
         .into_iter()
-        .map(|member| member.selector.binding.name)
+        .filter_map(|member| member.selector.binding.map(|binding| binding.name))
         .collect();
     if !patch_bindings.is_empty() {
         sets.push(PatchSet {
             path: "binding_patches".to_string(),
             file: binding_patches_path,
             bindings: patch_bindings,
-            anonymous_match_sources: BTreeSet::new(),
+            anonymous_selectors: BTreeSet::new(),
         });
     }
     for file in collect_module_files(modules_root)? {
@@ -1211,7 +1211,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             path: module_path_from_file(&file, modules_root),
             file,
             bindings: claims.bindings,
-            anonymous_match_sources: claims.anonymous_match_sources,
+            anonymous_selectors: claims.anonymous_selectors,
         });
     }
     Ok(sets)
@@ -1467,7 +1467,7 @@ fn resolve_module_path_owner_ids(
 
     let claim_sets = [AnonymousStatementClaimSet {
         module_path: &yaml_path,
-        match_sources: &claims.anonymous_match_sources,
+        selectors: &claims.anonymous_selectors,
     }];
     let anonymous_owners = resolve_anonymous_statement_claims(
         graph,
@@ -1521,7 +1521,10 @@ fn binding_homes(
     for path in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&path, modules_root);
         for member in read_module_file(&path)?.members {
-            let binding = member.selector.binding.name;
+            let Some(binding_selector) = member.selector.binding else {
+                continue;
+            };
+            let binding = binding_selector.name;
             if binding_ids.contains(&binding) {
                 homes.insert(BindingHomeReport {
                     binding,
@@ -1534,7 +1537,10 @@ fn binding_homes(
     }
     let patches_path = default_binding_patches_path(modules_root);
     for member in load_binding_patch_members(modules_root)? {
-        let binding = member.selector.binding.name;
+        let Some(binding_selector) = member.selector.binding else {
+            continue;
+        };
+        let binding = binding_selector.name;
         if binding_ids.contains(&binding) {
             homes.insert(BindingHomeReport {
                 binding,

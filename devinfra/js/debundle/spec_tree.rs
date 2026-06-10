@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    AnonymousStatement, BundledPartialSwapBundle, BundledPartialSwapMark,
+    AnonymousStatement, BindingGroup, BundledPartialSwapBundle, BundledPartialSwapMark,
     BundledPartialSwapPackage, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs,
     LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity,
     OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
@@ -125,6 +125,8 @@ struct ModuleSource {
     #[serde(default)]
     members: Vec<Member>,
     #[serde(default)]
+    binding_groups: Vec<BindingGroup>,
+    #[serde(default)]
     anonymous_statements: Vec<AnonymousStatement>,
     #[serde(default)]
     comment: Option<String>,
@@ -222,6 +224,7 @@ fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<V
             chunk_id: main_chunk_id.to_string(),
             path: module_path,
             members: data.members,
+            binding_groups: data.binding_groups,
             anonymous_statements: data.anonymous_statements,
             comment: data.comment,
         });
@@ -231,7 +234,10 @@ fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<V
 }
 
 fn is_trivial_binding_patch(member: &Member) -> bool {
-    let binding_name = &member.selector.binding.name;
+    let Some(binding) = &member.selector.binding else {
+        return false;
+    };
+    let binding_name = &binding.name;
     let name_is_noop = member
         .name
         .as_ref()
@@ -459,6 +465,7 @@ fn logical_modules_map(
                 source.path.clone(),
                 LogicalModule {
                     members: source.members,
+                    binding_groups: source.binding_groups,
                     anonymous_statements: source.anonymous_statements,
                     comment: source.comment,
                 },

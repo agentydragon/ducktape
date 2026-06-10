@@ -22,7 +22,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-use spec::{AnonymousStatement, BindingSourceKind, Member, ModulePath};
+use spec::{
+    AnonymousStatement, AnonymousStatementSelector, BindingGroup, BindingSourceKind, Member,
+    ModulePath,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +37,8 @@ pub struct ModuleFile {
     pub comment: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
+    #[serde(default)]
+    pub binding_groups: Vec<BindingGroup>,
     #[serde(default)]
     pub anonymous_statements: Vec<AnonymousStatement>,
 }
@@ -48,22 +53,21 @@ pub struct BindingPatchesFile {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleClaims {
     pub bindings: BTreeSet<String>,
-    pub anonymous_match_sources: BTreeSet<String>,
+    pub anonymous_selectors: BTreeSet<AnonymousStatementSelector>,
 }
 
 impl ModuleClaims {
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty() && self.anonymous_match_sources.is_empty()
+        self.bindings.is_empty() && self.anonymous_selectors.is_empty()
     }
 
     pub fn has_claims(&self) -> bool {
-        !self.bindings.is_empty() || !self.anonymous_match_sources.is_empty()
+        !self.bindings.is_empty() || !self.anonymous_selectors.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
         self.bindings.extend(other.bindings);
-        self.anonymous_match_sources
-            .extend(other.anonymous_match_sources);
+        self.anonymous_selectors.extend(other.anonymous_selectors);
     }
 }
 
@@ -127,24 +131,24 @@ pub fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
     .with_context(|| format!("parsing {}", path.display()))
 }
 
-pub fn module_claims(module: ModuleFile) -> ModuleClaims {
+pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
     let mut claims = ModuleClaims::default();
     for member in module.members {
-        claims.bindings.insert(member.selector.binding.name);
+        if let Some(binding) = member.selector.binding {
+            claims.bindings.insert(binding.name);
+        }
     }
     for statement in module.anonymous_statements {
-        claims
-            .anonymous_match_sources
-            .insert(statement.match_source);
+        claims.anonymous_selectors.insert(statement.selector()?);
     }
-    claims
+    Ok(claims)
 }
 
 pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
     if !is_module_yaml(path) {
         return Ok(ModuleClaims::default());
     }
-    Ok(module_claims(read_module_file(path)?))
+    module_claims(read_module_file(path)?)
 }
 
 pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
@@ -158,7 +162,9 @@ pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
 pub fn load_binding_patch_bindings(modules_root: &Path) -> Result<BTreeSet<String>> {
     let mut bindings = BTreeSet::new();
     for member in load_binding_patch_members(modules_root)? {
-        let binding = member.selector.binding;
+        let Some(binding) = member.selector.binding else {
+            continue;
+        };
         if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
             continue;
         }
@@ -204,7 +210,9 @@ pub fn load_active_claims(modules_root: &Path) -> Result<BTreeMap<String, Module
         let module_path = ModulePath::parse(&raw_path, "")
             .with_context(|| format!("module path from {}", path.display()))?;
         for member in read_module_file(&path)?.members {
-            let binding = member.selector.binding;
+            let Some(binding) = member.selector.binding else {
+                continue;
+            };
             if matches!(binding.kind, Some(BindingSourceKind::ImportSpecifier)) {
                 continue;
             }
@@ -264,11 +272,14 @@ anonymous_statements: []
         .unwrap();
         let module = read_module_file(&path).unwrap();
         assert_eq!(module.members.len(), 1);
-        assert_eq!(module.members[0].selector.binding.name, "a");
+        assert_eq!(
+            module.members[0].selector.binding.as_ref().unwrap().name,
+            "a"
+        );
     }
 
     #[test]
-    fn read_module_claims_includes_anonymous_match_sources() {
+    fn read_module_claims_includes_anonymous_selectors() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
@@ -278,7 +289,9 @@ anonymous_statements: []
 anonymous_statements:
   - match: 'decorate(Co);'
     note: "decorator on Co"
-  - match: 'register(Co);'
+  - source_match:
+      identifiers: alpha_all
+      match: 'register(Co);'
     comment: |
       Registers Co before registry consumers run.
 "#,
@@ -288,8 +301,16 @@ anonymous_statements:
         let claims = read_module_claims(&path).unwrap();
         assert_eq!(claims.bindings, BTreeSet::from(["Co".to_string()]));
         assert_eq!(
-            claims.anonymous_match_sources,
-            BTreeSet::from(["decorate(Co);".to_string(), "register(Co);".to_string()])
+            claims.anonymous_selectors,
+            BTreeSet::from([
+                AnonymousStatementSelector::exact("decorate(Co);"),
+                AnonymousStatementSelector {
+                    match_source: "register(Co);".to_string(),
+                    identifiers: spec::SourceMatchIdentifierMode::AlphaAll,
+                    target_binding: None,
+                    wildcard_string_literals: BTreeSet::new(),
+                },
+            ])
         );
     }
 
