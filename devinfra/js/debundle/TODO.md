@@ -90,6 +90,10 @@ private corpus details in Ducktape.
   anchors for cases where the selected statement or declaration is
   helper-boilerplate that appears multiple times. This should replace
   copied overlapping selector bodies and still reject ambiguous windows.
+  Decorator-helper neighborhoods are the motivating generic shape: a
+  helper declaration may be syntactically identical across many classes,
+  but it becomes unambiguous when selected near the class or decorator
+  calls whose property strings identify the target.
 - **AST wildcard holes.** Evaluate typed wildcard holes for expression,
   statement, and declaration subtrees. Example:
   `var x = foo(EXPR1, EXPR2, x);` should be able to match
@@ -105,6 +109,11 @@ private corpus details in Ducktape.
   requiring the selected class and member names to be unambiguous. Likewise,
   class element holes should allow "class with these fields/methods, plus any
   other members" without forcing an exact whole-class source copy.
+- **Constrained hole matching.** Multi-hole selectors need cheap local
+  constraints so authors can say that a hole appears only as a specific
+  argument, callback body, object property value, or statement-list slot. This
+  should avoid scanning unrelated subtrees while preserving the current rule
+  that ambiguous matches are hard errors.
 - **Cross-module binding groups.** Current `binding_groups` export
   multiple bindings into one logical module. Add or design a form for
   one matched declaration context whose bindings should land in
