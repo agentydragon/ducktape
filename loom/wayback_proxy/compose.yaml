@@ -1,0 +1,45 @@
+# Demo: a container with NO internet route ("agent") that can still browse
+# the archived web as of a fixed date, through the wayback proxy sidecar.
+# loom's gym sandbox builds on this shape. See README.md.
+services:
+  agent:
+    image: python:3.13-slim
+    init: true
+    command: tail -f /dev/null
+    networks: [sandbox]
+    environment:
+      http_proxy: http://proxy:8080
+      HTTP_PROXY: http://proxy:8080
+    depends_on:
+      proxy:
+        condition: service_healthy
+
+  proxy:
+    image: wayback-proxy:latest
+    init: true
+    networks: [sandbox, egress]
+    environment:
+      WAYBACK_AS_OF: ${WAYBACK_AS_OF:-2020-06-01}
+      WAYBACK_UPSTREAM: ${WAYBACK_UPSTREAM:-https://web.archive.org}
+    extra_hosts:
+      # Lets WAYBACK_UPSTREAM point at a port on the host: a kubectl
+      # port-forward of the wayback-cache cluster service, or the e2e test's
+      # in-process fake IA. Maps to the docker bridge gateway IP on Linux.
+      - host.docker.internal:host-gateway
+    healthcheck:
+      # python3 resolves via the image's venv PATH; start_period covers the
+      # launcher materializing the venv on first run.
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+networks:
+  sandbox:
+    internal: true # no gateway out: the agent's only reachable peer is the proxy
+  egress: {}

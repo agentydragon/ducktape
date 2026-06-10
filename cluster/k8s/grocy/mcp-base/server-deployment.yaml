@@ -23,7 +23,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/grocy-mcp:devel-20260601212810-287c475 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
+          image: ghcr.io/agentydragon/grocy-mcp:devel-20260610075216-2c51610 # {"$imagepolicy": "flux-system:grocy-mcp-oidc-server"}
           imagePullPolicy: Always
           ports:
             - name: http

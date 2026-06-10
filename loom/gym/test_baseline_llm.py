@@ -24,6 +24,7 @@ from loom.gym.task import (
     BinaryQuestion,
     CategoricalOutcome,
     CategoricalQuestion,
+    EvidenceItem,
     ScalarOutcome,
     ScalarQuestion,
     Task,
@@ -84,6 +85,34 @@ def test_bundle_prompt_lists_every_sub_question() -> None:
     assert "[binary-task]" in prompt
     assert "[categorical-task]" in prompt
     assert "submit_answers" in prompt
+
+
+EVIDENCE_TASK = BINARY_TASK.model_copy(
+    update={
+        "evidence": (
+            EvidenceItem(
+                url="https://example.com/forecast",
+                archived_url="https://web.archive.org/web/20240619000000/https://example.com/forecast",
+                date=date(2024, 6, 19),
+                title="Index forecast roundup",
+            ),
+        )
+    }
+)
+
+
+def test_prompts_render_evidence_only_when_present() -> None:
+    prompt = build_prompt(EVIDENCE_TASK)
+    assert "Dated evidence available to you" in prompt
+    # Prompts show the original URL — the form contestants will fetch through
+    # the wayback proxy — never the pinned archive capture.
+    assert "- 2024-06-19: Index forecast roundup (https://example.com/forecast)" in prompt
+    assert "web.archive.org" not in prompt
+    assert "Dated evidence" not in build_prompt(BINARY_TASK)
+
+    bundle_prompt = build_bundle_prompt([EVIDENCE_TASK, CATEGORICAL_TASK])
+    assert "  - 2024-06-19: Index forecast roundup" in bundle_prompt
+    assert bundle_prompt.count("Dated evidence") == 1
 
 
 def test_question_schema_shapes() -> None:

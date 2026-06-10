@@ -194,16 +194,16 @@ shared _data_, not shared code); a real public catalog (S&P / BTC / CPI
 thresholds across Manifold / Polymarket / Kalshi); time-zero anchoring to live
 spots (concept from `calibration/macro_anchors.py`); isotonic repair of
 threshold/time ladders; market-quality weights; near-duplicate-market dedup
-(many markets are functions of one latent — don't double-count). Migrate the
-platform clients
-(`finance/augur/calibration/{platform,manifold,polymarket,kalshi,quote,redis_cache,warm_cache,transient_retry}.py`)
-augur → loom in one atomic PR. Gate: residuals within tolerance on the coherent
+(many markets are functions of one latent — don't double-count). Market records and
+the mirror live in the shared floor already (`finance/evidence/{markets,manifold,
+kalshi,polymarket}.py` + the `finance/scraper` sync libs — the 2026-06 mirror work
+deleted augur's live clients/valkey cache); `quote.py` is the remaining
+augur-side candidate to migrate when loom needs quote semantics. Gate: residuals within tolerance on the coherent
 subset; ESS above threshold; held-out historical-tail PIT for base vs
 reweighted.
 
 **M2 — market snapshot + resolution store (parallel to M1).** The one piece the
-position doc calls the valuable long-term investment and augur explicitly does
-not do (prices are always fetched live): capture
+position doc calls the valuable long-term investment: capture
 `(market, price, liquidity, as-of)` snapshots and resolutions on a schedule,
 accumulating the only dataset that can ever measure **skill** rather than
 mimicry. Default: extend the augur-evidence scraper pattern (same git/S3

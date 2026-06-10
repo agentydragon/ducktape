@@ -30,7 +30,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: server
-          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260609182829-b23cf2b # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
+          image: ghcr.io/agentydragon/mcp-oauth-facade:devel-20260610075322-2c51610 # {"$imagepolicy": "flux-system:mcp-oauth-facade"}
           imagePullPolicy: Always
           ports:
             - name: http

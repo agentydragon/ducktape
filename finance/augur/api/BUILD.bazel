@@ -8,9 +8,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "schemas",
     srcs = ["schemas.py"],
-    deps = [
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -25,9 +23,7 @@ py_library(
 py_library(
     name = "casing",
     srcs = ["casing.py"],
-    deps = [
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -45,10 +41,7 @@ py_library(
 py_library(
     name = "finance",
     srcs = ["finance.py"],
-    deps = [
-        ":schemas",
-        "@pypi//pydantic",
-    ],
+    deps = [":schemas"],
 )
 
 py_library(
@@ -75,12 +68,14 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":local_regulation",
-        ":portfolio",
         ":portfolio_source_config",
         ":schemas",
         ":wire",
         "//finance/augur/budget:schema",
         "//finance/augur/model:provider_config",
+        "//finance/augur/model:state_space",
+        "//finance/augur/model:trained_private_equity",
+        "//finance/augur/model:vecm",
         "//finance/augur/product:wire",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -125,6 +120,8 @@ py_test(
         ":portfolio",
         ":portfolio_source_config",
         ":wire",
+        "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:independent",
         "//finance/augur/model:private_equity_risk",
         "//finance/augur/model:provider_config",
@@ -146,6 +143,8 @@ py_test(
         ":portfolio",
         ":portfolio_source_config",
         ":portfolio_sources",
+        "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/product:asset_key",
         "//finance/plaid/db:read_model",
         "@pypi//pydantic",
@@ -160,8 +159,8 @@ py_test(
     deps = [
         ":conftest",
         ":local_regulation",
-        "@pypi//pydantic",
-        "@pypi//pytest",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -181,7 +180,12 @@ py_test(
     name = "portfolio_test",
     srcs = ["portfolio_test.py"],
     deps = [
+        ":conftest",
         ":portfolio",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/augur/model:series",
+        "//finance/augur/product:asset_key",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -193,13 +197,11 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":config",
-        ":local_regulation",
         ":wire",
         "//finance/augur/calibration:catalog",
-        "//finance/augur/product:wire",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -220,6 +222,8 @@ py_test(
         ":config",
         ":conftest",
         ":local_regulation",
+        "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -237,11 +241,11 @@ py_library(
         ":portfolio_source_config",
         ":server_lib",
         ":wire",
-        "//finance/augur:conftest",
         "//finance/augur/model:independent",
         "//finance/augur/model:provider_config",
         "//finance/augur/model:testing",
         "@pypi//fastapi",
+        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
         "@pypi//pytest",
     ],
 )
@@ -258,12 +262,12 @@ py_test(
     ],
     deps = [
         ":conftest",
-        "//finance/augur/model:series",
+        "//:conftest",
+        "//finance/augur:conftest",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//fastapi",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -278,13 +282,17 @@ py_test(
         ":public_fixture_properties",
     ],
     deps = [
+        ":config",
         ":conftest",
+        ":server_lib",
+        "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/calibration:catalog",
         "//finance/augur/calibration:testing",
         "//finance/augur/model:sample_sanity",
         "//finance/augur/model:series",
+        "//finance/evidence:markets",
         "@pypi//fastapi",
-        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -456,4 +464,16 @@ filegroup(
 filegroup(
     name = "public_fixture_calibration_catalog",
     srcs = ["//finance/augur/calibration:example_openai_catalog"],
+)
+
+py_test(
+    name = "test_export_schema",
+    srcs = ["test_export_schema.py"],
+    deps = [
+        ":conftest",
+        ":export_schema",
+        "//:conftest",
+        "//finance/augur:conftest",
+        "@pypi//pytest_bazel",
+    ],
 )

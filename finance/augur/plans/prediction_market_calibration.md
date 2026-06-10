@@ -18,12 +18,13 @@ read-only with respect to the model; model changes are deliberate and land in
     the opt-in M2 valuation channel, `valuation_by_date` ("valuation ≥ $X by date") is also
     scoreable for issuers carrying `company_valuation_usd` (UNRESOLVED otherwise). Revenue
     remains unmodeled.
-  - `manifold.py` — an injectable `ManifoldClient` (httpx) fetching live YES
-    probabilities per market; tests inject a hermetic stub.
+  - `evidence_clients.py` — `EvidenceMarketReader` reading mirrored market snapshots
+    from the augur-evidence checkout (2026-06: replaced the live `manifold.py` /
+    `polymarket.py` / `kalshi.py` clients + valkey cache); tests inject a hermetic stub.
   - `calibration.py` — `run_calibration(...) -> CalibrationResult` (p_model + Wilson CI +
     unresolved share vs the live p_market for scored markets; price + reason + an optional
     related augur signal for surfaced ones) plus a `mark_fan` percentile helper.
-  - `ipo_prior.py` — `derive_public_market_anchors(catalog, price_client)` turns the live
+  - `ipo_prior.py` — `derive_public_market_anchors(catalog, price_client)` turns the
     `ipo_by_date` markets into a monotone `public_market_cdf_anchors` vector for the model
     (the end-to-end "markets feed the model" path); a `derive_ipo_prior` binary prints a
     paste-ready config block.
@@ -37,7 +38,9 @@ read-only with respect to the model; model changes are deliberate and land in
   (`gaffer_augur/openai_stock/markets/`), registers it under `calibration_catalog`, and
   wires `MANIFOLD_API_KEY`.
 
-Prices are ALWAYS fetched live (no stored snapshots).
+Prices come from the git-mirrored snapshots in the augur-evidence repo (2026-06; the
+scraper refreshes every catalog-referenced market each run — before that they were
+fetched live per request through a valkey read-through cache).
 
 ## Findings — live `structured` model vs Manifold (~6k rollouts, pre-M1)
 

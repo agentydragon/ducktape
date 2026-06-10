@@ -19,6 +19,7 @@ from datetime import date
 
 from loom.gym.bundle_tasks import bundle_tasks
 from loom.gym.comparison_tasks import comparison_tasks
+from loom.gym.market_seed_tasks import MARKET_SEED_TASKS
 from loom.gym.monthly_series import MonthlySeries, add_months, month_end
 from loom.gym.path_tasks import path_tasks
 from loom.gym.seed_tasks import SEED_TASKS
@@ -158,4 +159,11 @@ def series_tasks(
 
 
 def all_tasks(series: Sequence[MonthlySeries]) -> tuple[Task, ...]:
-    return SEED_TASKS + series_tasks(series) + bundle_tasks(series) + path_tasks(series) + comparison_tasks(series)
+    return (
+        SEED_TASKS
+        + MARKET_SEED_TASKS
+        + series_tasks(series)
+        + bundle_tasks(series)
+        + path_tasks(series)
+        + comparison_tasks(series)
+    )

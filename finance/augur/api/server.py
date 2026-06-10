@@ -42,7 +42,7 @@ from finance.augur.calibration.calibration import build_anchored_level_paths, ma
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.default_clients import default_price_clients
 from finance.augur.calibration.macro_anchors import resolve_anchors
-from finance.augur.calibration.platform import Platform, PriceClient
+from finance.augur.calibration.platform import PriceClient
 from finance.augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
@@ -58,6 +58,7 @@ from finance.augur.product.wire import (
     TerminalDistributionRequest,
     TerminalDistributionResponse,
 )
+from finance.evidence.markets import Platform
 from finance.plaid.db.schema import async_session_factory
 
 

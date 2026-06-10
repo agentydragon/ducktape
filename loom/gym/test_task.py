@@ -12,6 +12,7 @@ from loom.gym.task import (
     BinaryQuestion,
     CategoricalOutcome,
     CategoricalQuestion,
+    EvidenceItem,
     ScalarOutcome,
     ScalarQuestion,
     Task,
@@ -49,6 +50,48 @@ def test_categorical_outcome_must_be_a_category() -> None:
 def test_resolution_before_cutoff_rejected() -> None:
     with pytest.raises(ValidationError, match="resolution must be after the cutoff"):
         _binary_task(resolution_date=date(2024, 7, 1))
+
+
+def _evidence(capture_date: date) -> EvidenceItem:
+    return EvidenceItem(
+        url="https://example.com/article",
+        archived_url=f"https://web.archive.org/web/{capture_date:%Y%m%d}000000/https://example.com/article",
+        date=capture_date,
+        title="An article",
+    )
+
+
+def test_evidence_after_cutoff_rejected() -> None:
+    # Capture on as_of itself is fine; one day later leaks.
+    task = _binary_task(evidence=(_evidence(date(2024, 6, 1)), _evidence(date(2024, 7, 1))))
+    assert len(task.evidence) == 2
+    with pytest.raises(ValidationError, match="evidence dated after the cutoff"):
+        _binary_task(evidence=(_evidence(date(2024, 7, 2)),))
+
+
+def test_evidence_capture_pin_must_match_url_and_date() -> None:
+    # The archived_url must be a Wayback capture of exactly `url`, taken on `date`.
+    with pytest.raises(ValidationError, match="capture timestamp disagrees"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://web.archive.org/web/20240601000000/https://example.com/article",
+            date=date(2024, 6, 2),
+            title="An article",
+        )
+    with pytest.raises(ValidationError, match="archived capture is not of"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://web.archive.org/web/20240601000000/https://example.com/other",
+            date=date(2024, 6, 1),
+            title="An article",
+        )
+    with pytest.raises(ValidationError, match="not a Wayback capture URL"):
+        EvidenceItem(
+            url="https://example.com/article",
+            archived_url="https://example.com/article",
+            date=date(2024, 6, 1),
+            title="An article",
+        )
 
 
 def test_task_json_round_trip() -> None:

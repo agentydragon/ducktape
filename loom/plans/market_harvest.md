@@ -412,14 +412,17 @@ from the live API, which we mirror ourselves:
   under the ~500 req/min limit, pulling per market: `/v0/market/{id}` (full
   detail), `/v0/bets?contractId=` (append-only → incremental fetch after the
   newest stored bet), `/v0/comments?contractId=`. The curated panel's market
-  ids (`loom/gym/market_seed_tasks.py`) are the initial roster entries, so
-  panel data becomes reproducible from the mirror rather than ad-hoc fetches.
-- **Reuse augur's market-client infra**: `finance/augur/calibration/` already
-  has per-platform clients (`manifold.py`, `polymarket.py`, `kalshi.py`
-  behind the `PriceClient` protocol, with `transient_retry.py`) and a
-  read-through valkey cache (`redis_cache.py`). Per the shared-code floor,
-  promote the platform clients to a shared package (e.g. `finance/markets/`)
-  when loom starts consuming them — same move as `finance/evidence`.
+  ids become roster entries when the panel materializes, so panel data becomes
+  reproducible from the mirror rather than ad-hoc fetches. The roster is
+  deployment config (a ConfigMap-mounted YAML, schema
+  `finance.evidence.markets.MarketRoster`), unioned with every market the
+  calibration catalogs reference (`--catalog`).
+- **Shared floor (implemented 2026-06)**: the scraper lives in
+  `finance/scraper/` (mirror sync in `market_mirror.py`), the platform record
+  models + loaders in `finance/evidence/{markets,manifold,kalshi,polymarket}.py`
+  — both importable by loom without touching augur. Augur's live per-platform
+  clients and the read-through valkey cache were deleted: calibration reads the
+  mirror via `finance/augur/calibration/evidence_clients.py`.
 - **Storage split** (canonical vs bulk vs cache):
   - **augur-evidence git = the canonical mirror.** Same pattern as the
     FRED/Yahoo scrapes: the scraper CronJob (which already has per-source
@@ -431,9 +434,9 @@ from the live API, which we mirror ourselves:
   - **Bucket (`s3://loom-gym/harvest/raw/`)** = bulk one-shot archives (the
     2024 dump lives there) and the overflow home if per-market mirrors
     outgrow git comfort (hundreds of MB).
-  - **Valkey** = the volatile read-through cache for live interactive use
-    (augur calibration server). TTL'd and best-effort — never the canonical
-    store.
+  - ~~Valkey~~ (removed 2026-06): the calibration server now reads the git
+    mirror directly (git-sync sidecar keeps the checkout ≤1m behind), so the
+    volatile cache layer is gone.
 
 ### Phasing
 

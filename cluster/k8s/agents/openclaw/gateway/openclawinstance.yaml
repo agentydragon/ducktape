@@ -291,7 +291,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock-auth-proxy
-      image: ghcr.io/agentydragon/auth-proxy:devel-20260601212231-287c475 # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: ghcr.io/agentydragon/auth-proxy:devel-20260610075119-2c51610 # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
@@ -319,7 +319,7 @@ spec:
           cpu: 200m
           memory: 128Mi
     - name: exec-server
-      image: ghcr.io/agentydragon/openclaw-exec:devel-20260608212308-4a15484 # {"$imagepolicy": "flux-system:openclaw-exec"}
+      image: ghcr.io/agentydragon/openclaw-exec:devel-20260610075033-2c51610 # {"$imagepolicy": "flux-system:openclaw-exec"}
       # DirectExecServer entrypoint is baked into the base image.
       # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
       args: ["--host", "127.0.0.1", "--port", "8766"]

@@ -61,7 +61,6 @@ manifest:
     bcrypt: bcrypt
     beancount: beancount
     beartype: beartype
-    bitarray: bitarray
     bleach: bleach
     blinker: blinker
     boto3: boto3
@@ -80,7 +79,6 @@ manifest:
     charset_normalizer: charset_normalizer
     chromadb: chromadb
     chromadb_rust_bindings: chromadb
-    ckzg: ckzg
     claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
@@ -94,7 +92,6 @@ manifest:
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
-    cytoolz: cytoolz
     dateutil: python_dateutil
     dbus_fast: dbus_fast
     debugpy: debugpy
@@ -116,14 +113,6 @@ manifest:
     email_reply_parser: email_reply_parser
     email_validator: email_validator
     et_xmlfile: et_xmlfile
-    eth_abi: eth_abi
-    eth_account: eth_account
-    eth_hash: eth_hash
-    eth_keyfile: eth_keyfile
-    eth_keys: eth_keys
-    eth_rlp: eth_rlp
-    eth_typing: eth_typing
-    eth_utils: eth_utils
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
@@ -235,7 +224,6 @@ manifest:
     hamcrest: pyhamcrest
     hass_client: hass_client
     hcloud: hcloud
-    hexbytes: hexbytes
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
@@ -428,7 +416,6 @@ manifest:
     pandas: pandas
     pandocfilters: pandocfilters
     paramiko: paramiko
-    parsimonious: parsimonious
     parso: parso
     passlib: passlib
     pathable: pathable
@@ -448,7 +435,6 @@ manifest:
     plotnine: plotnine
     pluggy: pluggy
     polars: polars
-    polymarket: polymarket_client
     port_for: port_for
     portalocker: portalocker
     posthog: posthog
@@ -525,7 +511,6 @@ manifest:
     rfc3987_syntax: rfc3987_syntax
     rich: rich
     rich_rst: rich_rst
-    rlp: rlp
     rpds: rpds_py
     rsa: rsa
     ruamel.yaml: ruamel_yaml
@@ -619,12 +604,10 @@ manifest:
     tiktoken_ext.openai_public: tiktoken
     timeslot: timeslot
     tinycss2: tinycss2
-    tlz: toolz
     tokenizers: tokenizers
     tomli: tomli
     tomli_w: tomli_w
     tomlkit: tomlkit
-    toolz: toolz
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
@@ -669,4 +652,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: e9a97bcea22046189af4d96f218a3725f49373dbbc01430c14e9c4ed41d6bfcb
+integrity: 19fb9142f8b4e2a03ee8819690ce3154b14e1ab97674f3ecb6b43e096630176f

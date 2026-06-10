@@ -20,10 +20,10 @@ from fastapi.testclient import TestClient
 from finance.augur.api.config import Config
 from finance.augur.api.server import create_app_from_augur_config, static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
-from finance.augur.calibration.platform import Platform
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from finance.augur.model.series import IssuerId, SP500Key
+from finance.evidence.markets import Platform
 
 
 def _client_for(config: Config) -> TestClient:

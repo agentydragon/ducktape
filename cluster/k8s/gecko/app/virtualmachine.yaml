@@ -7,6 +7,34 @@ metadata:
     app.kubernetes.io/name: gecko
 spec:
   runStrategy: Always
+  # Own the root-disk DataVolume so KubeVirt drives the WaitForFirstConsumer
+  # bind: on local-path-ovh (a WFFC storageclass) CDI stays off the PVC, and
+  # KubeVirt schedules a short-lived pod with the VMI's requirements as the
+  # PVC's first consumer to bind it on the target node; CDI imports only after
+  # the PVC is Bound, then the VM boots — one consumer per phase, no race.
+  #
+  # Do NOT add cdi.kubevirt.io/storage.bind.immediate.requested here. CDI's
+  # ImmediateBindingRequested() is PRESENCE-based — ANY value (even "false")
+  # forces immediate binding, so CDI would start its own importer pod that
+  # races KubeVirt's bind pod for the same PVC, producing the "object has been
+  # modified" provisioning livelock. See
+  # https://github.com/kubevirt/containerized-data-importer/blob/main/doc/waitforfirstconsumer-storage-handling.md
+  dataVolumeTemplates:
+    - metadata:
+        name: gecko-root
+      spec:
+        source:
+          s3:
+            url: "https://s3.allegedly.works/vm-images/bootstrap/da37375538eb7da442add719d65dce838df2603b.qcow2"
+            secretRef: gecko-vm-images-s3-reader
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+          storageClassName: local-path-ovh
+          volumeMode: Filesystem
   template:
     metadata:
       labels:

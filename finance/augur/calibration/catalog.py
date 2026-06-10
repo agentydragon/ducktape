@@ -29,7 +29,8 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from finance.augur.calibration.platform import Direction, Platform
+from finance.augur.calibration.platform import Direction
+from finance.evidence.markets import Platform
 
 
 class Mappability(StrEnum):

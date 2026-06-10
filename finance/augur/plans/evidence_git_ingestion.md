@@ -22,9 +22,11 @@ No object store, no per-series pointer protocol, no boto3.
 
 ## Shape (where it lives)
 
-- **ducktape** `finance/augur/ingest/`: the `augur-evidence` image — `evidence`
-  (the git scraper CronJob entrypoint) — plus the static source spec (`evidence_sources`)
-  and the HTTPS fetcher (`http_fetch`). `tf/gitops/augur-evidence/`: the Forgejo repo +
+- **ducktape** `finance/scraper/` (moved out of `finance/augur/ingest/` 2026-06; the
+  scraper is shared infra): the `augur-evidence` image — `evidence` (the git scraper
+  CronJob entrypoint, `scrape.py`, which also mirrors prediction markets — see
+  `market_mirror.py`) — plus the HTTPS fetcher (`http_fetch`). The static source spec
+  stays in `finance/evidence/sources.py`. `tf/gitops/augur-evidence/`: the Forgejo repo +
   write creds (scraper) + read creds (git-sync), mirroring `tf/gitops/budget-ledger/`.
 - **gaffer** `k8s/augur/`: the daily scrape CronJob (`evidence-ingest-cronjob.yaml`) and a
   `git-sync` sidecar on the augur Deployment, plus the `augur-evidence` image automation in

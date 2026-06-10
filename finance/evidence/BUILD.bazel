@@ -2,10 +2,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-py_library(
-    name = "sources",
-    srcs = ["sources.py"],
-)
+exports_files(["example_market_roster.yaml"])
 
 py_library(
     name = "loading",
@@ -14,11 +11,6 @@ py_library(
         ":sources",
         "@pypi//polars",
     ],
-)
-
-py_library(
-    name = "checkout",
-    srcs = ["checkout.py"],
 )
 
 py_test(
@@ -38,7 +30,6 @@ py_test(
         ":loading",
         ":sources",
         "//:conftest",
-        "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -49,6 +40,98 @@ py_test(
     srcs = ["test_checkout.py"],
     deps = [
         ":checkout",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "checkout",
+    srcs = ["checkout.py"],
+)
+
+py_library(
+    name = "kalshi",
+    srcs = ["kalshi.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "manifold",
+    srcs = ["manifold.py"],
+    deps = [
+        "@pypi//polars",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "markets",
+    srcs = ["markets.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "polymarket",
+    srcs = ["polymarket.py"],
+    deps = [
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sources",
+    srcs = ["sources.py"],
+)
+
+py_test(
+    name = "test_kalshi",
+    srcs = ["test_kalshi.py"],
+    deps = [
+        ":kalshi",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_manifold",
+    srcs = ["test_manifold.py"],
+    deps = [
+        ":manifold",
+        "//:conftest",
+        "@pypi//polars",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_markets",
+    srcs = ["test_markets.py"],
+    data = ["example_market_roster.yaml"],
+    deps = [
+        ":markets",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_polymarket",
+    srcs = ["test_polymarket.py"],
+    deps = [
+        ":polymarket",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

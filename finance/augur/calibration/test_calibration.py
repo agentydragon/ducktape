@@ -43,13 +43,14 @@ from finance.augur.calibration.catalog import (
     ThresholdLadderFamily,
     ThresholdLadderMember,
 )
-from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
+from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import BookQuote, PoolQuote
 from finance.augur.calibration.testing import KalshiRungQuote, mock_price_clients
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from finance.augur.model.series import InflationKey, IssuerId, PrivateEquityEventKindCode, SP500Key
 from finance.augur.model.testing import ConstantFrameModel, PrivateEquityChannels
+from finance.evidence.markets import Platform
 
 _ISSUER = "issuer_x"
 _HORIZON = 120
@@ -109,6 +110,15 @@ async def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients:
     return await run_calibration(
         catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
+
+
+async def test_unmirrored_market_drops_its_row_only(model: ConstantFrameModel, catalog: MarketCatalog) -> None:
+    """A catalog market the mirror has no snapshot for (e.g. an entry newer than the last
+    scraper run) drops just that row; the rest of the run scores normally."""
+    clients = mock_price_clients({Platform.MANIFOLD: {"BBB": 0.10, "CCC": 0.66}})  # no "AAA"
+    result = await _run(model, catalog, clients)
+    assert sorted(row.market_id for row in result.clean) == ["BBB"]
+    assert sorted(row.market_id for row in result.surfaced) == ["CCC"]
 
 
 async def test_clean_rows_score_events(

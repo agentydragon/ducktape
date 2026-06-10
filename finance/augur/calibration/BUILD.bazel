@@ -1,19 +1,10 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "example_openai_catalog",
     srcs = ["example_openai_catalog.yaml"],
-)
-
-py_library(
-    name = "quote",
-    srcs = ["quote.py"],
-    deps = [],
 )
 
 py_library(
@@ -39,53 +30,9 @@ py_library(
     srcs = ["catalog.py"],
     deps = [
         ":platform",
+        "//finance/evidence:markets",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
-)
-
-py_library(
-    name = "transient_retry",
-    srcs = ["transient_retry.py"],
-    deps = [
-        "@pypi//httpx",
-        "@pypi//tenacity",
-    ],
-)
-
-py_library(
-    name = "manifold",
-    srcs = ["manifold.py"],
-    deps = [
-        ":platform",
-        ":quote",
-        ":transient_retry",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "polymarket",
-    srcs = ["polymarket.py"],
-    deps = [
-        ":platform",
-        ":quote",
-        ":transient_retry",
-        "@pypi//polymarket_client",
-    ],
-)
-
-py_library(
-    name = "kalshi",
-    srcs = ["kalshi.py"],
-    deps = [
-        ":platform",
-        ":quote",
-        ":transient_retry",
-        "@pypi//httpx",
-        "@pypi//pydantic",
     ],
 )
 
@@ -93,23 +40,10 @@ py_library(
     name = "default_clients",
     srcs = ["default_clients.py"],
     deps = [
-        ":kalshi",
-        ":manifold",
+        ":evidence_clients",
         ":platform",
-        ":polymarket",
-        ":redis_cache",
-    ],
-)
-
-py_library(
-    name = "redis_cache",
-    srcs = ["redis_cache.py"],
-    deps = [
-        ":platform",
-        ":quote",
-        "@pypi//py_key_value_aio",
-        "@pypi//pydantic",
-        "@pypi//valkey_glide",
+        "//finance/evidence:checkout",
+        "//finance/evidence:markets",
     ],
 )
 
@@ -118,11 +52,10 @@ py_library(
     testonly = True,
     srcs = ["testing.py"],
     deps = [
-        ":kalshi",
-        ":manifold",
+        ":evidence_clients",
         ":platform",
         ":quote",
-        "@pypi//httpx",
+        "//finance/evidence:markets",
     ],
 )
 
@@ -131,31 +64,17 @@ py_library(
     srcs = ["calibration.py"],
     deps = [
         ":catalog",
-        ":manifold",
+        ":evidence_clients",
         ":platform",
         ":quote",
         ":resolvers",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
-        "@pypi//httpx",
+        "//finance/evidence:markets",
         "@pypi//numpy",
-        "@pypi//polymarket_client",
         "@pypi//pydantic",
         "@pypi//statsmodels",
-    ],
-)
-
-py_library(
-    name = "warm_cache",
-    srcs = ["warm_cache.py"],
-    deps = [
-        ":catalog",
-        ":default_clients",
-        ":platform",
-        ":redis_cache",
-        "@pypi//httpx",
-        "@pypi//polymarket_client",
     ],
 )
 
@@ -174,12 +93,13 @@ py_library(
     srcs = ["ipo_prior.py"],
     deps = [
         ":catalog",
-        ":manifold",
+        ":evidence_clients",
+        ":platform",
         ":resolvers",
         "//finance/augur/model:private_equity_risk",
-        "@pypi//pydantic",
+        "//finance/evidence:checkout",
+        "//finance/evidence:markets",
         "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
     ],
 )
 
@@ -205,52 +125,14 @@ py_binary(
     ],
 )
 
-py_binary(
-    name = "warm_market_cache",
-    main_module = "finance.augur.calibration.warm_cache",
-    deps = [":warm_cache"],
-)
-
-# Lean warmer image for the eager-prefetch CronJob: only the catalog + price clients (httpx /
-# valkey / polymarket SDK), none of the serving image's JAX / simulator / FastAPI stack.
-aspect_py_binary(
-    name = "warm_market_cache_image_bin",
-    main = "warm_cache.py",
-    deps = [":warm_cache"],
-)
-
-py_image_layer(
-    name = "warm_market_cache_layers",
-    binary = ":warm_market_cache_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "warm_market_cache_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("warm_market_cache_image_bin"),
-    env = py_image_env(binary_name = "warm_market_cache_image_bin"),
-    labels = {
-        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
-        "org.opencontainers.image.title": "augur-market-warmer",
-    },
-    tars = [":warm_market_cache_layers"],
-    user = "1000:1000",
-)
-
-oci_load(
-    name = "warm_market_cache_image_load",
-    image = ":warm_market_cache_image",
-    repo_tags = ["augur-market-warmer:dev"],
-)
-
 py_test(
     name = "test_quote",
     srcs = ["test_quote.py"],
     deps = [
+        ":conftest",
         ":quote",
         "//:conftest",
+        "//finance/augur:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -260,9 +142,11 @@ py_test(
     name = "test_resolvers",
     srcs = ["test_resolvers.py"],
     deps = [
+        ":conftest",
         ":platform",
         ":resolvers",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
@@ -275,8 +159,10 @@ py_test(
     data = ["example_openai_catalog.yaml"],
     deps = [
         ":catalog",
-        ":platform",
+        ":conftest",
         "//:conftest",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -290,12 +176,17 @@ py_test(
     deps = [
         ":calibration",
         ":catalog",
+        ":conftest",
+        ":platform",
         ":quote",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
+        "//finance/augur/model:private_equity_bundle",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
+        "//finance/evidence:markets",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -319,51 +210,8 @@ py_test(
         ":macro_anchors",
         ":platform",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/fit:evidence_data",
-        "//finance/evidence:loading",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_manifold",
-    srcs = ["test_manifold.py"],
-    deps = [
-        ":manifold",
-        ":quote",
-        ":testing",
-        "//:conftest",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_redis_cache",
-    srcs = ["test_redis_cache.py"],
-    deps = [
-        ":platform",
-        ":quote",
-        ":redis_cache",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_transient_retry",
-    srcs = ["test_transient_retry.py"],
-    deps = [
-        ":kalshi",
-        ":transient_retry",
-        "//:conftest",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -373,27 +221,48 @@ py_test(
     srcs = ["test_ipo_prior.py"],
     deps = [
         ":catalog",
+        ":conftest",
         ":ipo_prior",
-        ":manifold",
+        ":platform",
         ":testing",
         "//:conftest",
+        "//finance/augur:conftest",
         "//finance/augur/model:private_equity_risk",
+        "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )
 
-py_test(
-    name = "test_warm_cache",
-    srcs = ["test_warm_cache.py"],
+py_library(
+    name = "evidence_clients",
+    srcs = ["evidence_clients.py"],
     deps = [
-        ":catalog",
         ":platform",
         ":quote",
-        ":warm_cache",
+        "//finance/evidence:kalshi",
+        "//finance/evidence:manifold",
+        "//finance/evidence:markets",
+        "//finance/evidence:polymarket",
+    ],
+)
+
+py_library(
+    name = "quote",
+    srcs = ["quote.py"],
+)
+
+py_test(
+    name = "test_evidence_clients",
+    srcs = ["test_evidence_clients.py"],
+    deps = [
+        ":conftest",
+        ":evidence_clients",
+        ":quote",
         "//:conftest",
-        "@pypi//httpx",
+        "//finance/augur:conftest",
+        "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

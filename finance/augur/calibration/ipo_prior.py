@@ -1,9 +1,9 @@
-"""Derive empirical going-public CDF anchors from live prediction-market prices.
+"""Derive empirical going-public CDF anchors from mirrored prediction-market prices.
 
 The PE realization-risk model (`augur.model.private_equity_risk`) accepts a
 ``public_market_cdf_anchors`` vector: (month-from-sim-start, P(public by month)) pairs
 that pin down a front-loaded, saturating IPO-prior CDF. This module turns a curated
-catalog's ``ipo_by_date`` markets into exactly that vector, so the live market term
+catalog's ``ipo_by_date`` markets into exactly that vector, so the market term
 structure can feed the model end-to-end.
 
 Markets are noisy and not internally consistent (a "by 2030" market can sit BELOW a
@@ -11,8 +11,8 @@ Markets are noisy and not internally consistent (a "by 2030" market can sit BELO
 non-decreasing CDF. `derive_public_market_anchors` therefore sorts, de-dups, and drops
 non-monotone points (logging each drop) before constructing the typed anchors.
 
-The ``main()`` entry point fetches live Manifold prices for a catalog YAML and prints a
-ready-to-paste ``public_market_cdf_anchors:`` block.
+The ``main()`` entry point reads the catalog's Manifold prices from the mirrored
+evidence checkout and prints a ready-to-paste ``public_market_cdf_anchors:`` block.
 """
 
 from __future__ import annotations
@@ -25,9 +25,12 @@ from pathlib import Path
 import yaml
 
 from finance.augur.calibration.catalog import IpoByDateMapping, MarketCatalog
-from finance.augur.calibration.manifold import ManifoldClient
+from finance.augur.calibration.evidence_clients import EvidenceMarketReader
+from finance.augur.calibration.platform import PriceClient
 from finance.augur.calibration.resolvers import months_after
 from finance.augur.model.private_equity_risk import PublicMarketCdfAnchor
+from finance.evidence.checkout import ensure_checkout
+from finance.evidence.markets import Platform
 
 logger = logging.getLogger(__name__)
 
@@ -37,19 +40,19 @@ _MAX_CUMULATIVE_PROBABILITY = 0.999
 
 
 async def derive_public_market_anchors(
-    catalog: MarketCatalog, *, price_client: ManifoldClient
+    catalog: MarketCatalog, *, price_client: PriceClient
 ) -> tuple[PublicMarketCdfAnchor, ...]:
-    """Build a monotone going-public CDF from the catalog's live ``ipo_by_date`` markets.
+    """Build a monotone going-public CDF from the catalog's ``ipo_by_date`` markets.
 
     Each `ipo_by_date` market's deadline becomes a month offset from the catalog's model
-    anchor date and its live YES probability becomes the cumulative probability. Markets at
+    anchor date and its current YES probability becomes the cumulative probability. Markets at
     month < 1 are dropped (the model requires `month >= 1`), duplicate months collapse to the
     higher probability, and points that would make the CDF decrease are dropped as market
     noise (each drop is logged).
     """
     anchor_date = catalog.metadata.model_anchor_date
 
-    # month -> highest live prob seen at that month (de-dups duplicate deadlines).
+    # month -> highest current prob seen at that month (de-dups duplicate deadlines).
     prob_by_month: dict[int, float] = {}
     for market in catalog.exact_markets():
         if not isinstance(market.mapping, IpoByDateMapping):
@@ -61,7 +64,8 @@ async def derive_public_market_anchors(
                 "dropping %s: deadline %s is at month %d < 1 (before sim start)", market.market_id, by_date, month
             )
             continue
-        prob = min(max(await price_client.fetch_yes_probability(market.market_id), 0.0), _MAX_CUMULATIVE_PROBABILITY)
+        market_state = await price_client.get_market(market.market_id)
+        prob = min(max(market_state.require_implied_probability(), 0.0), _MAX_CUMULATIVE_PROBABILITY)
         if month in prob_by_month and prob <= prob_by_month[month]:
             logger.info(
                 "collapsing duplicate month %d for %s: keeping higher prob %.4f",
@@ -93,7 +97,7 @@ def _render_anchors_yaml(anchors: tuple[PublicMarketCdfAnchor, ...]) -> str:
         default_flow_style=False,
     )
     return (
-        "# Empirical going-public CDF anchors derived from live Manifold prices.\n"
+        "# Empirical going-public CDF anchors derived from mirrored Manifold prices.\n"
         "# Remember to set `annual_public_market_probability` to the desired flat TAIL\n"
         "# hazard applied past the last anchor month.\n"
         f"{body}"
@@ -107,11 +111,8 @@ async def _run(argv: list[str] | None) -> int:
     args = parser.parse_args(argv)
 
     catalog = MarketCatalog.from_yaml(args.catalog)
-    client = ManifoldClient()
-    try:
-        anchors = await derive_public_market_anchors(catalog, price_client=client)
-    finally:
-        await client.aclose()
+    client = EvidenceMarketReader(platform=Platform.MANIFOLD, evidence_dir=ensure_checkout())
+    anchors = await derive_public_market_anchors(catalog, price_client=client)
     print(_render_anchors_yaml(anchors))
     return 0
 

@@ -123,6 +123,7 @@ py_test(
         "//finance/augur/api:config",
         "//finance/augur/calibration:catalog",
         "//finance/augur/calibration:testing",
+        "//finance/evidence:markets",
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",

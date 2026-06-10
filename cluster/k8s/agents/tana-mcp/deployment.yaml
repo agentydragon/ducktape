@@ -113,7 +113,7 @@ spec:
         # receiver as a tana://auth deep-link. See
         # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: firebase-resigner
-          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260609182717-b23cf2b # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260610075236-2c51610 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
           env:
             - name: FIREBASE_API_KEY
               # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project

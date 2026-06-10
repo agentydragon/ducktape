@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: homeassistant-proxy
-          image: ghcr.io/agentydragon/homeassistant-proxy:devel-20260601212403-287c475 # {"$imagepolicy": "flux-system:homeassistant-proxy"}
+          image: ghcr.io/agentydragon/homeassistant-proxy:devel-20260610075153-2c51610 # {"$imagepolicy": "flux-system:homeassistant-proxy"}
           ports:
             - name: http
               containerPort: 8080

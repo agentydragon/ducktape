@@ -27,10 +27,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
-import httpx
 import numpy as np
 import numpy.typing as npt
-from polymarket.errors import PolymarketError
 from pydantic import BaseModel, Field
 from statsmodels.stats.proportion import proportion_confint
 
@@ -49,7 +47,8 @@ from finance.augur.calibration.catalog import (
     SurfacedMarket,
     ThresholdLadderFamily,
 )
-from finance.augur.calibration.platform import Direction, Market, Platform, PriceClient
+from finance.augur.calibration.evidence_clients import MarketNotMirroredError
+from finance.augur.calibration.platform import Direction, Market, PriceClient
 from finance.augur.calibration.quote import implied_probability, quote_confidence
 from finance.augur.calibration.resolvers import (
     Resolution,
@@ -76,18 +75,9 @@ from finance.augur.model.exogenous import (
 )
 from finance.augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
 from finance.augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
+from finance.evidence.markets import Platform
 
 logger = logging.getLogger(__name__)
-
-# Per-market network failures we tolerate by dropping the affected row instead of failing the
-# whole calibration run: httpx for the manifold + kalshi clients, PolymarketError for the
-# polymarket SDK (covers "id is invalid", rate limits, transport errors, timeouts).
-_LIVE_FETCH_ERRORS: tuple[type[BaseException], ...] = (httpx.HTTPError, PolymarketError)
-
-# Cap concurrent live market fetches so a large catalog can't open hundreds of simultaneous
-# upstream connections (and trip rate limits) on a cold cache. Warm-cache reads hit the shared
-# Valkey store and rarely reach the upstreams at all.
-_MAX_CONCURRENT_MARKET_FETCHES = 16
 
 
 def wilson_interval(yes: int, n: int) -> tuple[float, float]:
@@ -929,22 +919,19 @@ async def run_calibration(
         for issuer in sorted(catalog.referenced_issuers() & emitted_issuers)
     }
 
-    fetch_slots = asyncio.Semaphore(_MAX_CONCURRENT_MARKET_FETCHES)
-
     async def _live(market_id: str, platform: Platform) -> Market | None:
-        # A single broken catalog row (bad market_id), a transient API hiccup, or a market whose
-        # quote carries no information (untraded / one-sided book, no usable last trade) must not
-        # 500 the whole calibration endpoint -- log + drop just that row instead. Dropping markets
-        # with no implied probability here keeps every downstream `require_implied_probability()`
-        # call safe; ladder families tolerate dropped rungs by interpolating across them.
-        async with fetch_slots:
-            try:
-                market = await price_clients[platform].get_market(market_id)
-            except _LIVE_FETCH_ERRORS:
-                logger.warning(
-                    "dropping calibration row: %s market %r failed to fetch", platform, market_id, exc_info=True
-                )
-                return None
+        # A single broken catalog row (bad market_id), a market the mirror hasn't synced yet
+        # (e.g. a catalog entry newer than the last scraper run), or a market whose quote
+        # carries no information (untraded / one-sided book, no usable last trade) must not
+        # 500 the whole calibration endpoint -- log + drop just that row instead. Dropping
+        # markets with no implied probability here keeps every downstream
+        # `require_implied_probability()` call safe; ladder families tolerate dropped rungs
+        # by interpolating across them.
+        try:
+            market = await price_clients[platform].get_market(market_id)
+        except MarketNotMirroredError:
+            logger.warning("dropping calibration row: %s market %r not mirrored", platform, market_id, exc_info=True)
+            return None
         if implied_probability(market.quote, volume=market.volume) is None:
             logger.warning("dropping calibration row: %s market %r carried no informative quote", platform, market_id)
             return None

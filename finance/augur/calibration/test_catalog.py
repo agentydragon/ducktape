@@ -19,7 +19,7 @@ from finance.augur.calibration.catalog import (
     PolymarketRef,
     UnmappableMarket,
 )
-from finance.augur.calibration.platform import Platform
+from finance.evidence.markets import Platform
 from util.bazel.runfiles import get_required_path
 
 

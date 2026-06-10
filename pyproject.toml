@@ -198,8 +198,6 @@ dependencies = [
 
     # augur (financial-futures simulator) — DCC-GARCH market model uses arch
     "arch>=7",
-    # augur/calibration — Polymarket price fetching
-    "polymarket-client>=0.1.0b3",
     # augur — NumPyro PPL spike (a JAX-backed probabilistic programming
     # library); evaluating whether to fold the augur PredictiveSeriesModel /
     # ExogenousPathModel protocols behind a single generative-model API.

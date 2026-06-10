@@ -1,10 +1,9 @@
-"""Platform-agnostic types for prediction-market price fetching.
+"""Platform-agnostic types for prediction-market price reads.
 
 The calibration core (``calibration.py``) consumes only the :class:`Market`
 dataclass and the :class:`PriceClient` protocol — it never touches a
-platform-specific API directly. Each platform client (``manifold.py``,
-``polymarket.py``, ``kalshi.py``) implements :class:`PriceClient` and
-translates its native response into a :class:`Market`.
+platform-specific payload directly. The platform identity enum lives in
+``finance.evidence.markets`` (shared with the mirror roster and the scraper).
 """
 
 from __future__ import annotations
@@ -14,12 +13,6 @@ from enum import StrEnum
 from typing import Protocol
 
 from finance.augur.calibration.quote import Quote, implied_probability
-
-
-class Platform(StrEnum):
-    MANIFOLD = "manifold"
-    POLYMARKET = "polymarket"
-    KALSHI = "kalshi"
 
 
 class Direction(StrEnum):
