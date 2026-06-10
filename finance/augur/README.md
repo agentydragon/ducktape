@@ -73,14 +73,14 @@ contents or defeat digest-based release deduping.
 Downstream deployments should serve the React bundle and private property
 assets separately, e.g. from an nginx sidecar.
 
-Prediction-market calibration can use a shared Redis/Valkey read-through cache
-by setting `AUGUR_MARKET_CACHE_URL` to a `redis://` or `valkey://` URL. The
-generic `AUGUR_CACHE_URL` is also accepted for deployments that share one cache
-for multiple Augur data classes. Market snapshots are fresh for
-`AUGUR_MARKET_CACHE_TTL_SECONDS` seconds (default 12h) and retained for
-`AUGUR_MARKET_CACHE_RETENTION_SECONDS` seconds (default 48h) so stale snapshots
-can be served if an upstream market API is temporarily unavailable. If no cache
-URL is configured, Augur keeps the previous process-local TTL cache behavior.
+Prediction-market calibration reads market quotes from the augur-evidence
+checkout (`AUGUR_EVIDENCE_DIR`, the same git-sync'd checkout the macro anchors
+use), mirrored there by the `finance/scraper` CronJob for every market the
+calibration catalogs reference — no market-API network I/O at request time.
+Quote staleness is bounded by the scraper cadence, and the last synced state
+survives upstream outages. Workstation runs (dev server, `calibration_report`)
+auto-clone the checkout via `ensure_checkout()` with the
+`AUGUR_EVIDENCE_GIT_USERNAME`/`AUGUR_EVIDENCE_GIT_PASSWORD` read credentials.
 
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable

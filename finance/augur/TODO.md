@@ -48,9 +48,15 @@ PE events + macro channels like S&P / inflation) as marginals, per market. Desig
 gotchas: <augur/plans/whole_model_calibration.md>. Landed: typed `MarketMapping`,
 vectorized macro/inflation resolvers, multinomial bucket families, anchoring, the
 issuer-agnostic run (catalog self-describes issuers/series), the frontend, and
-the shared Redis/Valkey read-through market cache with stale fallback.
+git-mirrored market snapshots in augur-evidence (the scraper mirrors every
+catalog-referenced market; the valkey read-through cache + live per-platform
+clients were deleted in favor of checkout reads).
 Remaining:
 
+- [ ] **Surface market-quote fetched-at in the UI.** The scrape manifest
+      (`evidence_meta.json`) records each market's last successful sync; plumb it
+      through so the calibration page can show quote age (today staleness is only
+      bounded by the scraper cadence, invisibly).
 - [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
       (today's `mark_fan` is PE-only).
 - [ ] **Prediction-market quote quality.** _Mostly landed:_ `Market` now carries a structured

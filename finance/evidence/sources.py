@@ -3,8 +3,8 @@
 Single source of truth shared by the git scraper (`fetch`) and the runtime
 loader (`fit/evidence_data`): which public series exist, where each is fetched
 from, and the local filename `augur/fit/evidence_data.py` reads it back as.
-Deliberately free of numpy/pandas/JAX so the ingest image stays slim and
-decoupled from the simulator (mirrors `calibration/warm_cache`).
+Deliberately free of numpy/pandas/JAX so the scraper image stays slim and
+decoupled from the simulator.
 """
 
 from __future__ import annotations

@@ -245,6 +245,7 @@ py_library(
         "//finance/augur/model:provider_config",
         "//finance/augur/model:testing",
         "@pypi//fastapi",
+        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
         "@pypi//pytest",
     ],
 )

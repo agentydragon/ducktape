@@ -112,6 +112,15 @@ async def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients:
     )
 
 
+async def test_unmirrored_market_drops_its_row_only(model: ConstantFrameModel, catalog: MarketCatalog) -> None:
+    """A catalog market the mirror has no snapshot for (e.g. an entry newer than the last
+    scraper run) drops just that row; the rest of the run scores normally."""
+    clients = mock_price_clients({Platform.MANIFOLD: {"BBB": 0.10, "CCC": 0.66}})  # no "AAA"
+    result = await _run(model, catalog, clients)
+    assert sorted(row.market_id for row in result.clean) == ["BBB"]
+    assert sorted(row.market_id for row in result.surfaced) == ["CCC"]
+
+
 async def test_clean_rows_score_events(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:

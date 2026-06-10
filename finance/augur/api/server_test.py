@@ -40,6 +40,9 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         env={
             **os.environ,
             "AUGUR_API_IMAGE_TAG": "devel-20260527220657-b86700d",
+            # An (empty) evidence checkout: the price readers boot against it and
+            # would report any market as not-mirrored; these tests never read one.
+            "AUGUR_EVIDENCE_DIR": str(tmp_path / "evidence"),
             "HOME": str(tmp_path / "home"),
             "AUGUR_FRONTEND_IMAGE_TAG": "devel-20260527194755-6ec68c0",
             "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
