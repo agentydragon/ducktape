@@ -124,4 +124,4 @@ def prob_at(bets: pl.DataFrame, when: datetime) -> float | None:
     if eligible.is_empty():
         return None
     # Stable sort keeps file order (the API's tie order) for equal timestamps.
-    return eligible.sort("created_time", maintain_order=True)[-1, "prob_after"]
+    return float(eligible.sort("created_time", maintain_order=True)[-1, "prob_after"])
