@@ -172,9 +172,12 @@ Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 
 ## Known Limitations
 
-### 9p filesystem doesn't support Unix socket hard links
+### Historical (gVisor era): 9p filesystem doesn't support Unix socket hard links
 
-**Affects**: Claude Code web gVisor sandbox (root `/` is 9p)
+**Affected**: gVisor-era Claude Code web sandbox, where root `/` was 9p.
+Current sessions run on Firecracker microVMs with an ext4 root, so the
+trigger no longer exists — kept because the TCP-socket configuration below is
+still what ships.
 
 **Root cause**: Supervisord uses hard links for atomic Unix socket creation (`link()` syscall). The 9p filesystem doesn't support hard linking Unix domain sockets, returning `EOPNOTSUPP` (errno 95). When the hard link fails, supervisord misinterprets this as a stale socket and enters an infinite retry loop.
 

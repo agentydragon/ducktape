@@ -60,6 +60,16 @@ automatic compatibility requirement.
   unhandled exception tracebacks as JSON 500 responses. Rust currently reports
   most daemon failures through stderr logs and `{}` fallback from the client.
 
+## Session banner warning when `is_gvisor()` is true
+
+Sessions moved from gVisor to Firecracker microVMs (pre-2026-06 → now); the
+hook's `is_gvisor()` detection survives only for JVM heap sizing. A gVisor
+sighting today means the execution platform changed unexpectedly, so the hook
+should surface a loud warning in the SessionStart banner ("running under
+gVisor — not expected, tell the user") instead of silently picking the
+smaller heap. See `docs/docker_evaluation_results.md` and the platform note
+in `AGENTS.md`.
+
 ## Statusline: deduplicate usage display with GNOME extension
 
 The statusline's subscription quota display (`7d:8%`) duplicates a GNOME
@@ -113,7 +123,7 @@ on the wheel + Nix package.
 
 ## Auto-install Terraform Tools in Session Start Hook
 
-**Problem**: The `terraform_tflint` and `terraform_validate` pre-commit hooks (via `antonbabenko/pre-commit-terraform`) require tflint and opentofu on PATH. On Claude Code web (gVisor sandbox), these may not be available.
+**Problem**: The `terraform_tflint` and `terraform_validate` pre-commit hooks (via `antonbabenko/pre-commit-terraform`) require tflint and opentofu on PATH. On Claude Code web sessions, these may not be available.
 
 **Solution**: Consider auto-installing tflint and opentofu in the session start hook, so `pre-commit run` works out of the box for terraform changes.
 

@@ -3,6 +3,14 @@
 Reproducible reconstruction of the Claude Code web container, verified by
 full-filesystem manifest diffing.
 
+> **Platform note (2026-06-10)**: sessions now run on Firecracker microVMs
+> (real kernel, ext4 root) — see the platform note in `../AGENTS.md`. The
+> gVisor constraints referenced throughout this directory (9p root, no bridge
+> networking, buildah SIGPIPE, UID mapping) describe the environment the
+> captures and workarounds were built under; re-verify before relying on any
+> of them, and **notify the user if a session actually reports gVisor** —
+> that platform is not expected anymore.
+
 **Goal**: Zero diff exclusions that aren't session-start-hook artifacts or
 unavoidable runtime differences (`/proc`, `/sys`, caches). Any difference
 fixable by updating the Dockerfile should be fixed there, not excluded.
