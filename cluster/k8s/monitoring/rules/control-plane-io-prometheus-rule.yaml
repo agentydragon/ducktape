@@ -1,0 +1,69 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: control-plane-io-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: control-plane-io
+      rules:
+        - alert: ControlPlaneSystemDiskBusy
+          expr: |
+            (
+              rate(node_disk_io_time_seconds_total{device="sda"}[10m])
+              * on(namespace, pod) group_left(node)
+                kube_pod_info{namespace="monitoring", pod=~"prometheus-node-exporter-.+"}
+              * on(node) group_left()
+                kube_node_role{role="control-plane"}
+            ) > 0.50
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Control-plane system disk is busy on {{ $labels.node }}"
+            description: "/dev/sda on control-plane node {{ $labels.node }} has been busy for more than 50% of wall time over 15 minutes. This disk also carries Talos EPHEMERAL and etcd."
+        - alert: ControlPlanePodSystemDiskWriterHigh
+          expr: |
+            (
+              sum by (namespace, pod, node) (
+                rate(container_fs_writes_bytes_total{device="/dev/sda", container!="", pod!="", namespace!="kube-system"}[10m])
+              )
+              * on(node) group_left()
+                kube_node_role{role="control-plane"}
+            ) > 1048576
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is writing heavily to control-plane /dev/sda"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} on {{ $labels.node }} is writing {{ $value | humanize1024 }}B/s to /dev/sda for more than 10 minutes, which can contend with etcd."
+        - alert: ControlPlaneLeasePutLatencyHigh
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (instance, le) (
+                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
+              )
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Apiserver lease PUT latency is high on {{ $labels.instance }}"
+            description: "p99 apiserver lease PUT latency on {{ $labels.instance }} has exceeded 500ms for 10 minutes. This is an early signal for leader-election and node-lease write path contention."
+        - alert: ControlPlaneLeasePutLatencyCritical
+          expr: |
+            histogram_quantile(
+              0.99,
+              sum by (instance, le) (
+                rate(apiserver_request_duration_seconds_bucket{resource="leases", verb="PUT", scope="resource"}[10m])
+              )
+            ) > 2
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Apiserver lease PUT latency is critical on {{ $labels.instance }}"
+            description: "p99 apiserver lease PUT latency on {{ $labels.instance }} has exceeded 2s for 5 minutes. Leader election and node heartbeats may time out."

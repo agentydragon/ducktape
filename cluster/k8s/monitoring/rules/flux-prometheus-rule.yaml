@@ -9,11 +9,35 @@ spec:
   groups:
     - name: flux
       rules:
-        - alert: FluxReconciliationFailure
-          expr: gotk_reconcile_condition{status="False",type="Ready"} == 1
+        - alert: FluxKustomizationNotReady
+          expr: kube_customresource_flux_kustomization_ready{status!="True"} == 1
           for: 15m
           labels:
             severity: warning
           annotations:
-            summary: "Flux resource {{ $labels.kind }}/{{ $labels.name }} failed to reconcile"
-            description: "{{ $labels.kind }} {{ $labels.namespace }}/{{ $labels.name }} has been failing to reconcile for more than 15 minutes."
+            summary: "Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
+            description: "Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes."
+        - alert: FluxHelmReleaseNotReady
+          expr: kube_customresource_flux_helmrelease_ready{status!="True"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
+            description: "Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes."
+        - alert: FluxGitRepositoryNotReady
+          expr: kube_customresource_flux_gitrepository_ready{status!="True"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
+            description: "Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for more than 15 minutes."
+        - alert: FluxMainGitRepositoryArtifactLarge
+          expr: kube_customresource_flux_gitrepository_artifact_size_bytes{namespace="flux-system",name="flux-system"} > 16777216
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Flux main GitRepository artifact is large"
+            description: "GitRepository flux-system/flux-system artifact is {{ $value | humanize1024 }}B, increasing source unpack/write pressure for every dependent Kustomization."

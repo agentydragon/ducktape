@@ -65,10 +65,60 @@ spec:
     # Alertmanager configuration
     alertmanager:
       enabled: true
+      config:
+        global:
+          resolve_timeout: 5m
+        inhibit_rules:
+          - source_matchers:
+              - severity = critical
+            target_matchers:
+              - severity =~ warning|info
+            equal:
+              - namespace
+              - alertname
+          - source_matchers:
+              - severity = warning
+            target_matchers:
+              - severity = info
+            equal:
+              - namespace
+              - alertname
+          - source_matchers:
+              - alertname = InfoInhibitor
+            target_matchers:
+              - severity = info
+            equal:
+              - namespace
+          - target_matchers:
+              - alertname = InfoInhibitor
+        route:
+          group_by: ["namespace"]
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          receiver: "null"
+          routes:
+            - receiver: "null"
+              matchers:
+                - alertname = "Watchdog"
+            - receiver: ntfy
+              matchers:
+                - alertname =~ "FluxKustomizationNotReady|FluxHelmReleaseNotReady|FluxGitRepositoryNotReady|FluxMainGitRepositoryArtifactLarge|ControlPlaneSystemDiskBusy|ControlPlanePodSystemDiskWriterHigh|ControlPlaneLeasePutLatencyHigh|ControlPlaneLeasePutLatencyCritical"
+              repeat_interval: 2h
+        receivers:
+          - name: "null"
+          - name: ntfy
+            webhook_configs:
+              - send_resolved: true
+                url_file: /etc/alertmanager/secrets/alertmanager-ntfy-webhook/address
+        templates:
+          - /etc/alertmanager/config/*.tmpl
       ingress:
         enabled: false
       alertmanagerSpec:
         replicas: 2
+        secrets:
+          - alertmanager-ntfy-webhook
         storage:
           volumeClaimTemplate:
             metadata:
@@ -141,6 +191,81 @@ spec:
     # Kube-state-metrics configuration
     kube-state-metrics:
       fullnameOverride: kube-state-metrics
+      rbac:
+        extraRules:
+          - apiGroups: ["apiextensions.k8s.io"]
+            resources: ["customresourcedefinitions"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+            resources: ["kustomizations"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["helm.toolkit.fluxcd.io"]
+            resources: ["helmreleases"]
+            verbs: ["list", "watch"]
+          - apiGroups: ["source.toolkit.fluxcd.io"]
+            resources: ["gitrepositories"]
+            verbs: ["list", "watch"]
+      customResourceState:
+        enabled: true
+        config:
+          kind: CustomResourceStateMetrics
+          spec:
+            resources:
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_kustomization_ready
+                    help: Flux Kustomization Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_helmrelease_ready
+                    help: Flux HelmRelease Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: GitRepository
+                labelsFromPath:
+                  namespace: [metadata, namespace]
+                  name: [metadata, name]
+                metrics:
+                  - name: flux_gitrepository_ready
+                    help: Flux GitRepository Ready condition status.
+                    each:
+                      type: StateSet
+                      stateSet:
+                        labelName: status
+                        path: [status, conditions, "[type=Ready]", status]
+                        list: ["True", "False", "Unknown"]
+                  - name: flux_gitrepository_artifact_size_bytes
+                    help: Flux GitRepository artifact size in bytes.
+                    each:
+                      type: Gauge
+                      gauge:
+                        path: [status, artifact]
+                        valueFrom: [size]
       resources:
         requests:
           cpu: 10m

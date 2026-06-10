@@ -4,10 +4,10 @@
 # the shared label `app.kubernetes.io/part-of: flux` (per gotk-components.yaml)
 # and exposes /metrics on the `http-prom` named port (8080).
 #
-# Without this PodMonitor the gotk_reconcile_duration_seconds /
-# gotk_reconcile_condition / gotk_suspend_status series are not ingested,
-# which leaves the flux_reconcile_audit skill blind. See
-# <skills/flux_reconcile_audit/SKILL.md>.
+# Without this PodMonitor the gotk_reconcile_duration_seconds series is not
+# ingested, which leaves the flux_reconcile_audit skill partly blind. Flux CR
+# Ready-condition metrics come from kube-state-metrics customResourceState in
+# cluster/k8s/monitoring/stack/helmrelease.yaml.
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
