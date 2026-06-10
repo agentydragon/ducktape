@@ -21,13 +21,14 @@ patches:
         value:
           - cluster/
           - tf/
-  # Reconcile faster. With 244 Kustomizations and dependsOn chains up to 9
-  # deep, the upstream defaults serialise propagation:
+  # Reconcile with moderate fan-out. With 244 Kustomizations and dependsOn
+  # chains up to 9 deep, the upstream defaults serialise propagation:
   #   --concurrent=4          — at most 4 Kustomizations in flight at a time
   #   --requeue-dependency=30s — wait 30s before re-checking a not-yet-ready dep
-  # Fan-out goes to 16 so the chain doesn't bottleneck on the worker pool, and
-  # the per-level requeue drops to 5s so deep dependsOn chains settle in
-  # tens of seconds instead of minutes.
+  # Keep some extra fan-out so healthy pushes still settle promptly, but keep
+  # dependency retries at the upstream interval. A 5s retry loop amplified
+  # unhealthy dependency chains into persistent kustomize-controller churn and
+  # control-plane disk writes.
   - target:
       kind: Deployment
       name: kustomize-controller
@@ -35,7 +36,7 @@ patches:
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/args/-
-        value: --concurrent=16
+        value: --concurrent=8
       - op: add
         path: /spec/template/spec/containers/0/args/-
-        value: --requeue-dependency=5s
+        value: --requeue-dependency=30s

@@ -1,6 +1,7 @@
 # Root cause: Kimsufi node NotReady flaps — promtail page-cache thrash starving etcd
 
-**First captured:** 2026-05-31 (this dir — symptom only).
+**First captured:** 2026-05-31 in
+`cluster/debug/2026-05-31-kimsufi-worker-1-notready/` (symptom capture only).
 **Root-caused:** 2026-06-08, recurring on `ovh-ns103656` + `ovh-ns104963`.
 
 ## Symptom

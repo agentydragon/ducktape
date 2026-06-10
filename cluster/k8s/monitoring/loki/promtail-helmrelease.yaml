@@ -40,7 +40,7 @@ spec:
         # node's system disk at 94% util and starving co-located etcd's WAL
         # fsync -> apiserver<->etcd latency -> NodeReady flaps). Keep the limit
         # well above the tail working set. See
-        # cluster/debug/2026-05-31-kimsufi-worker-1-notready/.
+        # cluster/debug/2026-06-10-etcd-io-contention/promtail-page-cache-etcd-starvation.md.
         memory: 256Mi
       limits:
         cpu: 500m
