@@ -49,6 +49,7 @@ py_test(
 py_library(
     name = "checkout",
     srcs = ["checkout.py"],
+    deps = ["@pypi//pygit2"],
 )
 
 py_library(

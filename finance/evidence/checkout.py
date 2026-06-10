@@ -13,27 +13,15 @@ has read-only collaboration on the repo) — k8s Secret
 
 from __future__ import annotations
 
-import base64
 import logging
 import os
-import subprocess
 from pathlib import Path
+
+import pygit2
 
 logger = logging.getLogger(__name__)
 
 EVIDENCE_REPO_URL = "https://git.allegedly.works/augur-evidence/augur-evidence.git"
-
-
-def _git_with_auth(arguments: list[str], username: str, password: str) -> None:
-    # Credentials travel via git's environment-config mechanism, not argv, so
-    # they don't leak into process listings or subprocess error messages.
-    token = base64.b64encode(f"{username}:{password}".encode()).decode()
-    environment = os.environ | {
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": "http.extraHeader",
-        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {token}",
-    }
-    subprocess.run(["git", *arguments], check=True, env=environment)
 
 
 def ensure_checkout() -> Path:
@@ -57,5 +45,6 @@ def ensure_checkout() -> Path:
         )
     logger.info("cloning evidence repo to %s", checkout)
     checkout.parent.mkdir(parents=True, exist_ok=True)
-    _git_with_auth(["clone", "--depth", "1", EVIDENCE_REPO_URL, str(checkout)], username, password)
+    callbacks = pygit2.RemoteCallbacks(credentials=pygit2.UserPass(username, password))
+    pygit2.clone_repository(EVIDENCE_REPO_URL, str(checkout), depth=1, callbacks=callbacks)
     return checkout
