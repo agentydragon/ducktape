@@ -336,5 +336,8 @@ resources:
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml
 
+  # --- loom forecasting gym (dataset mirror into loom-gym bucket) ---
+  - loom-harvest/flux-kustomization.yaml
+
   # --- VM image publisher (in-cluster builder + S3 uploader) ---
   - vm-images-publisher/flux-kustomization.yaml

@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - job.yaml
+configMapGenerator:
+  - name: manifold-dump-mirror-config
+    namespace: loom-harvest
+    files:
+      - mirror-manifold.sh
+      - manifold-20240706.sha256
+      - manifold-20240706-readme.md

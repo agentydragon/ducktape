@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: loom-harvest
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 2m
+  path: ./cluster/k8s/loom-harvest
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: seaweedfs-loom-gym-bucket
+      namespace: flux-system
+    - name: seaweedfs-secrets
+      namespace: flux-system
+  # wait covers Job completion: ~1.2 GB Firebase download on a fresh mirror.
+  wait: true
+  timeout: 15m

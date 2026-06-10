@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: manifold-dump-mirror
+  namespace: loom-harvest
+  annotations:
+    # Script changes roll the hashed ConfigMap name into the (immutable) pod
+    # template; force lets Flux recreate the Job so the new script actually runs.
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: manifold-dump-mirror
+    spec:
+      restartPolicy: OnFailure
+      # Run next to the SeaweedFS volume servers (OVH).
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      containers:
+        - name: mirror
+          image: curlimages/curl:8.10.1
+          command: [sh, /config/mirror-manifold.sh]
+          env:
+            - name: S3_ENDPOINT
+              value: http://seaweedfs-s3.seaweedfs.svc:8333
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-loom-harvest
+                  key: accessKey
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: s3-identity-loom-harvest
+                  key: secretKey
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: config
+          configMap:
+            name: manifold-dump-mirror-config
+        - name: work
+          emptyDir:
+            sizeLimit: 2Gi
