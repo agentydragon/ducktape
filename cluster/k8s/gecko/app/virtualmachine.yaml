@@ -7,6 +7,30 @@ metadata:
     app.kubernetes.io/name: gecko
 spec:
   runStrategy: Always
+  # Own the root-disk DataVolume so KubeVirt sequences import -> boot (it won't
+  # start virt-launcher until the import Succeeds, so the importer is the sole
+  # consumer during import). immediate.requested:true makes CDI provision the
+  # PVC up front rather than playing the WaitForFirstConsumer consumer-wait,
+  # which deadlocks/races against the scheduler on local-path-ovh (a WFFC
+  # storageclass) — see cluster/docs/lessons_learned and plan.md Next Actions.
+  dataVolumeTemplates:
+    - metadata:
+        name: gecko-root
+        annotations:
+          cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+      spec:
+        source:
+          s3:
+            url: "https://s3.allegedly.works/vm-images/bootstrap/da37375538eb7da442add719d65dce838df2603b.qcow2"
+            secretRef: gecko-vm-images-s3-reader
+        pvc:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+          storageClassName: local-path-ovh
+          volumeMode: Filesystem
   template:
     metadata:
       labels:
