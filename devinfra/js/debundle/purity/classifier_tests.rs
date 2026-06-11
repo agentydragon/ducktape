@@ -117,6 +117,7 @@ fn classify_with_declared_pure_members(
         &BTreeSet::new(),
         &BTreeSet::new(),
         &declared_pure_members,
+        &BTreeMap::new(),
     );
     let var = match module.body.last().expect("non-empty body") {
         ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
@@ -1058,4 +1059,69 @@ fn coercion_of_non_primitive_const_stays_unknown() {
     // A const whose init is not statically result-primitive (a bare
     // import/member read) is not admitted either.
     assert!(!classify_built("const o = globalThis.x;", "`${o}`").is_pure());
+}
+
+/// Classify `expr_src` with a populated cross-module imported-purity
+/// map (as the program-level oracle would supply). Each `(name,
+/// purity)` records the verdict for an imported function binding.
+fn classify_with_imported_purities(
+    prefix: &str,
+    expr_src: &str,
+    imports: &[(&str, Purity)],
+) -> Purity {
+    let module = parse(&format!("{prefix}\nconst _ = {expr_src};"));
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let imported_purities: BTreeMap<String, Purity> = imports
+        .iter()
+        .map(|(name, purity)| ((*name).to_string(), purity.clone()))
+        .collect();
+    let graph = ChunkCodeGraph::build_full(
+        &body,
+        &shadowed,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &BTreeMap::new(),
+        &imported_purities,
+    );
+    let var = match module.body.last().expect("non-empty body") {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => var,
+        other => panic!("expected last stmt to be `const _ = …;`, got {other:?}"),
+    };
+    let init = var.decls[0].init.as_deref().expect("init expected");
+    classify_expr_purity(init, &shadowed, &BTreeSet::new(), &BTreeSet::new(), &graph)
+}
+
+fn impure_verdict() -> Purity {
+    Purity::from_reason(PurityRule::UnknownCall, swc_common::DUMMY_SP)
+}
+
+#[test]
+fn imported_pure_callee_makes_call_pure() {
+    // The oracle resolved `memo` (an imported function) as pure, so
+    // `memo(arg)` classifies pure when the args are pure.
+    assert!(classify_with_imported_purities("", "memo(x)", &[("memo", Purity::Pure)]).is_pure());
+    assert!(
+        classify_with_imported_purities("", "memo(() => {})", &[("memo", Purity::Pure)]).is_pure()
+    );
+}
+
+#[test]
+fn imported_impure_callee_keeps_call_impure() {
+    assert!(!classify_with_imported_purities("", "run(x)", &[("run", impure_verdict())]).is_pure());
+}
+
+#[test]
+fn imported_callee_without_verdict_stays_unknown() {
+    // No oracle entry → the call stays `unknown_call`, today's behavior.
+    assert!(!classify_with_imported_purities("", "f(x)", &[]).is_pure());
+}
+
+#[test]
+fn imported_pure_callee_still_classifies_arguments() {
+    // `memo` is pure, but a possibly-object operand coerced in the arg
+    // keeps the whole call impure — args are classified independently.
+    assert!(
+        !classify_with_imported_purities("", "memo(A + 1)", &[("memo", Purity::Pure)]).is_pure()
+    );
 }

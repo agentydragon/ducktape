@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::facts::{compute_shadowed_globals, top_level_item_views};
@@ -1300,6 +1300,7 @@ fn body_shadowed_pure_member_binding_is_not_pure() {
         &BTreeSet::new(),
         &BTreeSet::new(),
         &declared_pure_members,
+        &BTreeMap::new(),
     );
     assert_eq!(graph.function_purity("f").map(|p| p.is_pure()), Some(false));
     assert_eq!(graph.function_purity("g").map(|p| p.is_pure()), Some(true));

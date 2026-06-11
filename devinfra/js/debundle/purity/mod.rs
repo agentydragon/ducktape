@@ -49,6 +49,13 @@ pub struct ChunkCodeGraph {
     /// classified separately at its declaration site; only the
     /// *value* class matters here. See `collect_primitive_const_bindings`.
     primitive_const_bindings: BTreeSet<String>,
+    /// Purity verdict for chunk-top bindings that are imports of a
+    /// function from another module, keyed by local binding name.
+    /// Populated by the program-level cross-module purity oracle;
+    /// empty in the strictly per-chunk path, so an imported callee with
+    /// no entry stays `unknown_call` as before. A body-local binding
+    /// that shadows the import is not resolved through this map.
+    imported_purities: BTreeMap<String, Purity>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +116,7 @@ impl ChunkCodeGraph {
             declared_pure,
             declared_pure_new,
             &BTreeMap::new(),
+            &BTreeMap::new(),
         )
     }
 
@@ -118,6 +126,7 @@ impl ChunkCodeGraph {
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Purity>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
@@ -171,6 +180,7 @@ impl ChunkCodeGraph {
             pure_new_constructors: declared_pure_new.clone(),
             declared_pure_members: declared_pure_members.clone(),
             primitive_const_bindings: collect_primitive_const_bindings(body),
+            imported_purities: imported_purities.clone(),
         };
         // tarjan_scc emits SCCs in reverse topological order: leaves
         // (sinks — functions that don't call any chunk-top
@@ -249,6 +259,12 @@ impl ChunkCodeGraph {
 
     pub(crate) fn is_declared_pure_new(&self, name: &str) -> bool {
         self.pure_new_constructors.contains(name)
+    }
+
+    /// Cross-module purity verdict for an imported function binding,
+    /// when the program-level oracle resolved one.
+    pub(crate) fn imported_purity(&self, name: &str) -> Option<Purity> {
+        self.imported_purities.get(name).cloned()
     }
 
     /// Whether `<recv>.<prop>(args)` is admitted as pure by an author
@@ -2651,6 +2667,23 @@ fn classify_callee_call(
     if let Expr::Ident(ident) = callee_expr
         && !local_shadowed.contains(ident.sym.as_ref())
         && let Some(callee_purity) = graph.function_purity(ident.sym.as_ref())
+    {
+        return callee_purity.worst(all_args_pure(
+            args,
+            shadowed,
+            local_shadowed,
+            declared_pure,
+            graph,
+        ));
+    }
+    // Imported function with a cross-module purity verdict from the
+    // program-level oracle (`imported_purities`). Same shape as the
+    // chunk-local arm: a `Pure` import + Pure args → Pure; an impure
+    // import inherits its reasons. A body-local binding of the same name
+    // shadows the import, so the called value is unknown then.
+    if let Expr::Ident(ident) = callee_expr
+        && !local_shadowed.contains(ident.sym.as_ref())
+        && let Some(callee_purity) = graph.imported_purity(ident.sym.as_ref())
     {
         return callee_purity.worst(all_args_pure(
             args,
