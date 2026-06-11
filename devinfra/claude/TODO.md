@@ -148,3 +148,23 @@ real CLI session starts.
 shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the
 same way Claude Code does), using the Nix devShell environment. This verifies
 that all runtime imports resolve end-to-end — not just a subset.
+
+## Container E2E Image From The Repo DevShell
+
+**Problem**: The Claude hook container E2E image is a hand-assembled approximation
+of the runtime environment. It currently bakes the specific test tools it needs
+(`bazelisk`, `sops`, PyYAML, and a prepopulated Bazelisk Bazel binary cache), then
+copies the `claude-hook` binary into the container at test time. That makes the
+test cacheable and avoids network fetches, but it is not as faithful as testing in
+a container with Nix installed and this repo's devShell realized.
+
+**Solution**: Build a test image that has Nix plus the repo devShell installed, but
+does **not** install or run the Claude hooks during image construction. The test
+should still install/copy the hook under test at runtime, so it validates the
+current build output rather than a preinstalled hook. This would naturally provide
+`bazelisk` and Python runtime dependencies from the same toolchain live sessions
+use.
+
+Once that exists, remove the current ad hoc Bazelisk cache prepopulation from the
+container E2E image. The nested `bazelisk build //:hello` should get Bazel from the
+devShell/toolchain path, not from a manually maintained Bazelisk cache layout.

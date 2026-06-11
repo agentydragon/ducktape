@@ -32,12 +32,28 @@ class E2EContainer:
     _session_id: str = field(repr=False)
     _extra_session_files: Sequence[str] = field(default=(), repr=False)
     _extra_rust_files: Sequence[str] = field(default=(), repr=False)
+    _exec_timings: list[dict[str, object]] = field(default_factory=list, repr=False)
+
+    def _record_timing(
+        self, operation: str, duration_s: float, *, exit_code: int | None = None, detail: object | None = None
+    ) -> None:
+        record: dict[str, object] = {"duration_s": round(duration_s, 3), "operation": operation}
+        if exit_code is not None:
+            record["exit_code"] = exit_code
+        if detail is not None:
+            record["detail"] = detail
+        self._exec_timings.append(record)
 
     def exec(self, cmd: list[str], *, workdir: str | None = None, check: bool = True) -> tuple[int, bytes, bytes]:
+        started = time.monotonic()
         result = self._container.exec_run(cmd, demux=True, workdir=workdir)
+        duration_s = time.monotonic() - started
         stdout, stderr = result.output
         stdout = stdout or b""
         stderr = stderr or b""
+        self._record_timing(
+            "container.exec", duration_s, detail={"cmd": cmd, "workdir": workdir}, exit_code=result.exit_code
+        )
         if check:
             assert result.exit_code == 0, (
                 f"Command failed: {cmd!r}\nexit_code={result.exit_code}\n"
@@ -47,6 +63,7 @@ class E2EContainer:
 
     def cp(self, src_path: str, dest_path: str, *, mode: int = 0o755) -> None:
         """Copy a local file into the container via put_archive."""
+        started = time.monotonic()
         dest = Path(dest_path)
         with Path(src_path).open("rb") as f:
             data = f.read()
@@ -58,6 +75,11 @@ class E2EContainer:
             tar.addfile(info, io.BytesIO(data))
         buf.seek(0)
         self._container.put_archive(str(dest.parent), buf)
+        self._record_timing(
+            "container.cp",
+            time.monotonic() - started,
+            detail={"dest": dest_path, "size_bytes": len(data), "src": src_path},
+        )
 
     def install_rust(self) -> None:
         rust_binary = get_required_path(_RUST_BINARY_RLOC)
@@ -98,6 +120,7 @@ class E2EContainer:
             rc, content, _ = self.exec(["cat", f"/tmp/claude-hd/{self._session_id}/{log_file}"], check=False)
             if rc == 0:
                 _save_output(self._log_prefix, f"rust-{log_file}", content.decode(errors="replace"))
+        _save_output(self._log_prefix, "exec-timings.json", json.dumps(self._exec_timings, indent=2, sort_keys=True))
 
 
 def _save_output(prefix: str, name: str, content: str) -> None:
@@ -107,7 +130,16 @@ def _save_output(prefix: str, name: str, content: str) -> None:
 
 
 def load_e2e_image() -> str:
-    return load_oci_image(E2E_IMAGE)
+    started = time.monotonic()
+    image = load_oci_image(E2E_IMAGE)
+    _save_output(
+        "container-e2e-image",
+        "load-timing.json",
+        json.dumps(
+            {"duration_s": round(time.monotonic() - started, 3), "image": E2E_IMAGE.tag}, indent=2, sort_keys=True
+        ),
+    )
+    return image
 
 
 @pytest.fixture
@@ -127,6 +159,7 @@ def run_e2e_container(
     extra_session_files: Sequence[str] = (),
     extra_rust_files: Sequence[str] = (),
 ) -> Iterator[E2EContainer]:
+    started = time.monotonic()
     raw = docker.from_env().containers.run(
         image,
         command=["sleep", "infinity"],
@@ -135,6 +168,7 @@ def run_e2e_container(
         volumes={str(staged_project): {"bind": "/project", "mode": "ro"}},
         detach=True,
     )
+    start_duration_s = time.monotonic() - started
     c = E2EContainer(
         _container=raw,
         _log_prefix=log_prefix,
@@ -142,6 +176,7 @@ def run_e2e_container(
         _extra_session_files=extra_session_files,
         _extra_rust_files=extra_rust_files,
     )
+    c._record_timing("container.start", start_duration_s, detail={"image": image, "name": raw.name})
     try:
         yield c
     finally:

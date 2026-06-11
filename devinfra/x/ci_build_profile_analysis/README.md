@@ -109,6 +109,20 @@ cover an image-roll relineage.
   - `snapshot-read-policy=newest`
 - Opened PR #2013 from this branch to run instrumented CI against the real GitHub Actions
   -> BuildBuddy path.
+- 2026-06-11 follow-up: investigated the two always-executed Claude hook Docker E2Es
+  that dominated warm CI critical paths. `test_container_e2e` intentionally exercises
+  Bazelisk through the generated session shim, but its staged workspace is a tiny local
+  `genrule`; `--config=rbe` is a no-op in that fixture. The real non-hermetic runtime
+  fetches were runtime `pip install pyyaml` and Bazelisk's first-run Bazel binary download.
+  An experiment baked PyYAML and Bazel 8.6.0 into the test image, removed `external` from
+  both Claude hook container E2Es, and verified cacheability:
+  - first patched `test_container_e2e`: BuildBuddy child `94928cc9-e40b-43b7-b443-e40f73dfb9f1`,
+    passed in `45.8s`; artifacts showed image load `27.260s`, container start `1.031s`,
+    nested `bazelisk build //:hello` `8.656s`.
+  - repeated `test_container_e2e`: child `3a19b351-cf78-4041-affa-486bea2e93d6`, `(cached)`
+    with `Executed 0 out of 1 test`.
+  - repeated combined run for `test_container_e2e` plus `test_mailbox_delivery_e2e`: child
+    `929a9097-9e06-4920-9946-52e5c53c75ae`, both `(cached)` with `Executed 0 out of 2 tests`.
 
 ## Evidence Tables
 

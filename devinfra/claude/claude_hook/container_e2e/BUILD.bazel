@@ -1,4 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -25,6 +26,48 @@ pkg_tar(
     },
 )
 
+pkg_files(
+    name = "pyyaml_site_packages_files",
+    testonly = True,
+    srcs = ["@pypi//pyyaml:pkg"],
+    prefix = "/usr/local/lib/python3.13",
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+pkg_tar(
+    name = "pyyaml_site_packages",
+    testonly = True,
+    srcs = [":pyyaml_site_packages_files"],
+)
+
+pkg_files(
+    name = "bazelisk_bazel_8_6_0_binary",
+    testonly = True,
+    srcs = ["@bazel_8_6_0_linux_amd64//file"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/root/.cache/bazelisk/downloads/sha256/9860da9c9386bbc023feed8f43af3105d338727d77b644fa6aeca45a4a11957c/bin",
+    renames = {"@bazel_8_6_0_linux_amd64//file": "bazel"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "bazelisk_bazel_8_6_0_metadata",
+    testonly = True,
+    srcs = ["bazelisk-bazel-8.6.0-linux-x86_64.metadata"],
+    prefix = "/root/.cache/bazelisk/downloads/metadata/bazelbuild",
+    renames = {"bazelisk-bazel-8.6.0-linux-x86_64.metadata": "bazel-8.6.0-linux-x86_64"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "bazelisk_cache",
+    testonly = True,
+    srcs = [
+        ":bazelisk_bazel_8_6_0_binary",
+        ":bazelisk_bazel_8_6_0_metadata",
+    ],
+)
+
 # E2E test container: python:3.13-slim base + curl + git + JDK from trixie,
 # bazelisk + sops as static binaries. See trixie_e2e.yaml.
 oci_image(
@@ -32,11 +75,14 @@ oci_image(
     testonly = True,
     base = "@python_3_13_slim_linux_amd64",
     env = {
+        "BAZELISK_HOME": "/root/.cache/bazelisk",
         "PATH": "/tools:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin",
     },
     tars = [
         "@trixie_e2e//:flat",
         ":e2e_tools",
+        ":pyyaml_site_packages",
+        ":bazelisk_cache",
     ],
 )
 
@@ -71,7 +117,6 @@ py_test(
     requires_docker = True,
     tags = [
         "e2e",
-        "external",
     ],
     deps = [
         ":conftest",

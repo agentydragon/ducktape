@@ -146,7 +146,6 @@ py_test(
     requires_docker = True,
     tags = [
         "e2e",
-        "external",
     ],
     deps = [
         ":conftest",

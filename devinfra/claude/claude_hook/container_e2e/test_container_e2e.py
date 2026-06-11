@@ -57,9 +57,6 @@ def _exec_under_env(
 
 def _install_rust(c: container_e2e.E2EContainer) -> None:
     c.install_rust()
-    # kubeconfig.py (bg command) imports yaml; the Rust impl has no
-    # Python runtime deps, so install PyYAML explicitly.
-    c.exec(["pip", "install", "--break-system-packages", "pyyaml"])
 
 
 _IMPLS = {"rust": _install_rust}

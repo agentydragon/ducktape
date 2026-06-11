@@ -893,6 +893,17 @@ http_file(
     urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
 )
 
+# Bazel 8.6.0 linux-amd64 — prepopulates Bazelisk's cache in the claude-hook
+# container E2E image so the nested `bazelisk build //:hello` does not fetch
+# from releases.bazel.build at test runtime.
+http_file(
+    name = "bazel_8_6_0_linux_amd64",
+    downloaded_file_path = "bazel",
+    executable = True,
+    sha256 = "9860da9c9386bbc023feed8f43af3105d338727d77b644fa6aeca45a4a11957c",
+    urls = ["https://releases.bazel.build/8.6.0/release/bazel-8.6.0-linux-x86_64"],
+)
+
 # Firecracker v1.12.1 — microVM VMM binary for Firecracker dev VMs on wyrm2.
 # The tarball contains the firecracker binary + jailer + tools. We extract
 # just the firecracker binary in devinfra/firecracker/BUILD.bazel.
