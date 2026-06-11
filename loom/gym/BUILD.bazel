@@ -7,6 +7,23 @@ py_binary(
     deps = [":compare_runs"],
 )
 
+py_library(
+    name = "analyze_baselines",
+    srcs = ["analyze_baselines.py"],
+    deps = [
+        ":market_seed_tasks",
+        ":scoring",
+        "@pypi//inspect_ai",
+        "@pypi//matplotlib",
+    ],
+)
+
+py_binary(
+    name = "analyze_baselines_bin",
+    main_module = "loom.gym.analyze_baselines",
+    deps = [":analyze_baselines"],
+)
+
 # keep
 py_binary(
     name = "agent_eval_bin",
