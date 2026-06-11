@@ -17,8 +17,10 @@ spec:
       labels:
         app.kubernetes.io/name: docker-ci
     spec:
+      # OVH workers (Proxmox is the cold-spare region; this daemon's image cache
+      # is disposable so it lives wherever it can schedule).
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/region: hil
       containers:
         - name: dind
           image: docker:27-dind
@@ -54,9 +56,12 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+            # Sandbox containers run *inside* this daemon, so their cpu/mem count
+            # against this cgroup — these limits bound eval concurrency (each agent
+            # is 1 cpu / 2Gi + its proxy). Keep eval-side concurrency in step.
             limits:
-              cpu: "2"
-              memory: 4Gi
+              cpu: "4"
+              memory: 8Gi
           readinessProbe:
             exec:
               command:
@@ -72,9 +77,13 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
       volumes:
+        # Disposable overlay2 layer cache. emptyDir (not a PVC) keeps the daemon
+        # reschedulable onto any OVH worker on node failure — no node-pinned PV to
+        # strand it; the cost is a cold re-pull after a restart. overlay2 needs a
+        # local fs, so a networked backend (SeaweedFS) is not an option here anyway.
         - name: docker-data
-          persistentVolumeClaim:
-            claimName: docker-ci-data
+          emptyDir:
+            sizeLimit: 30Gi
         - name: server-tls
           secret:
             secretName: docker-ci-server-tls

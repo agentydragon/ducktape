@@ -4,7 +4,6 @@ metadata:
   name: docker-ci
   namespace: flux-system
 spec:
-  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -24,6 +23,5 @@ spec:
       name: docker-ci
       namespace: docker-ci
   dependsOn:
-    - name: local-path-provisioner
-    - name: openebs-lvm
+    # No storage dep now (emptyDir, not a CSI PVC) — only the Gateway for the TLSRoute.
     - name: gateway
