@@ -15,7 +15,13 @@
   <../../cluster/k8s/docker-ci/README.md>), anything else with the mTLS client key —
   or a contestant that escapes its container onto the daemon's host network / the
   shared `egress` bridge — can start an unclamped container with full egress,
-  bypassing the proxy entirely. It would be nice to close this: give the eval its
-  own throwaway DinD (per-run, torn down after) rather than a shared persistent one,
-  or enforce daemon-side egress restrictions (no container may reach anything but the
-  in-cluster cache), so the archive clamp can't be sidestepped through the daemon.
+  bypassing the proxy entirely. It would be nice to close this with a **dedicated
+  "docker-for-agents" daemon**, separate from the general `docker-ci` one: the latter
+  also serves ordinary CI Docker tests that legitimately need broad egress (registry
+  / testcontainer pulls), so its internet can't simply be cut. The agents daemon, by
+  contrast, can be locked down hard — a `CiliumNetworkPolicy` on the daemon pod that
+  permits egress only to the in-cluster wayback-cache ClusterIP (plus cluster DNS and
+  the image registry), so even a container that escapes the per-sandbox compose
+  network still can't reach the live internet. The per-sandbox MITM clamp then becomes
+  defense-in-depth rather than the sole barrier. A per-run throwaway daemon (torn down
+  after each eval) is an alternative that also bounds blast radius.
