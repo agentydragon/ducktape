@@ -88,6 +88,15 @@ py_library(
 )
 
 py_library(
+    name = "terraform_backends",
+    srcs = ["terraform_backends.py"],
+    deps = [
+        ":cluster",
+        ":k8s",
+    ],
+)
+
+py_library(
     name = "crd_layering",
     srcs = ["crd_layering.py"],
     deps = [":kustomize"],
@@ -139,6 +148,7 @@ py_library(
         ":helm_templates",
         ":image_automation",
         ":kustomize",
+        ":terraform_backends",
     ],
 )
 
@@ -214,6 +224,18 @@ py_test(
         ":k8s",
         ":kustomize",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_terraform_backends",
+    srcs = ["test_terraform_backends.py"],
+    deps = [
+        ":cluster",
+        ":k8s",
+        ":kustomize",
+        ":terraform_backends",
         "@pypi//pytest_bazel",
     ],
 )

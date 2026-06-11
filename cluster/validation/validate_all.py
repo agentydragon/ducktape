@@ -18,6 +18,7 @@ Checks:
 11. Image automation <-> webhook: every ImageRepository is listed in the GitHub webhook
     receiver (so pushes reconcile immediately, not just on the 5m poll), and every ImagePolicy
     references a defined ImageRepository
+12. Terraform backends: tofu-controller Terraform CRs must not store state in Kubernetes Secrets
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 """
@@ -44,6 +45,7 @@ from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.helm_templates import validate_helm_templates
 from cluster.validation.image_automation import check_image_automation_webhook
 from cluster.validation.kustomize import KustomizeBuildError, run_kustomize_build
+from cluster.validation.terraform_backends import check_terraform_backends
 
 
 async def validate(
@@ -88,6 +90,7 @@ async def validate(
     errors.extend(check_controller_health_checks(cluster, root))
     errors.extend(check_image_automation_webhook(cluster))
     errors.extend(check_flux_bootstrap_auth(cluster, root))
+    errors.extend(check_terraform_backends(cluster))
 
     if not skip_flux_build:
         errors.extend(await validate_flux_build(root))

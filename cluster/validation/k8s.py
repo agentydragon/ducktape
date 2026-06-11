@@ -89,6 +89,20 @@ class ImageRepositoryResource(K8sResource):
     """Flux `ImageRepository` — only its name is needed."""
 
 
+class TerraformBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    custom_configuration: str = ""
+
+
+class TerraformSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    backend_config: TerraformBackendConfig | None = None
+
+
+class TerraformResource(K8sResource):
+    spec: TerraformSpec = Field(default_factory=TerraformSpec)
+
+
 class SecretRef(BaseModel):
     model_config = ConfigDict(extra="ignore")
     name: str = ""
@@ -154,6 +168,7 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "GitRepository": GitRepositoryResource,
     "ImageUpdateAutomation": ImageUpdateAutomationResource,
     "HelmRelease": HelmReleaseResource,
+    "Terraform": TerraformResource,
     "ImageRepository": ImageRepositoryResource,
     "ImagePolicy": ImagePolicyResource,
     "Receiver": ReceiverResource,
