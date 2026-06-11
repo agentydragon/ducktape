@@ -203,13 +203,16 @@ export { tagA, boxedB };
 }
 
 #[test]
-fn s_chain_skips_independent_cross_module_constructor_calls() {
-    // Two modules each call a constructor whose only effect is
-    // writing to its own freshly-allocated `this`. The
-    // constructors touch no shared cell. Today's S-chain links
-    // them; with dataflow, the write sets are each
-    // `{instance_X}` and the read sets are each `{ClassX}` —
-    // disjoint pairwise.
+fn unproven_constructor_calls_keep_conservative_s_edge() {
+    // Two modules each call a constructor the purity classifier
+    // can't prove pure (`new <chunk class>` is `UnknownNew` without
+    // a `pure_new` annotation). An unproven call/new may touch any
+    // cell — the opaque-call rule keeps the conservative S edge
+    // between the two statements even though their syntactic cell
+    // sets are disjoint. This deliberately pins the conservative
+    // behavior: relaxing it requires proving the constructor
+    // cell-confined (e.g. a `pure_new` spec annotation), not
+    // assuming it.
     let fixture = run_fixture(dataflow_opts(
         r#"class Holder1 { constructor() { this.kind = "h1"; } }
 class Holder2 { constructor() { this.kind = "h2"; } }
@@ -229,15 +232,7 @@ export { Holder1, Holder2, instA, instB };
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
     let owner_a = owner_for_binding(&graph, "instA");
     let owner_b = owner_for_binding(&graph, "instB");
-    let offending = sequenced_edges_between(&graph, owner_a, owner_b);
-    assert!(
-        offending.is_empty(),
-        "no Sequenced edge should link `instA`'s owner to \
-         `instB`'s owner: each `new HolderN()` only mutates its \
-         own `this`, so their cross-module init order is \
-         unobservable. Offending edges: {offending:#?}\n\nFull \
-         graph: {graph:#?}",
-    );
+    assert_kept_sequenced_between(&graph, owner_a, owner_b);
 }
 
 #[test]

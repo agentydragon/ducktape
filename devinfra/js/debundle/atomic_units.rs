@@ -12,8 +12,10 @@
 //!
 //! * `EagerUse`: add `u → v` (u depends on v at init time).
 //! * `LazyUse`: skip (call-time read).
-//! * `EagerRebind` / `LazyRebind`: add both directions (declarer
-//!   and assigner of a mutable binding must co-locate).
+//! * `EagerRebind` / `LazyRebind` / `DeferredRebind`: add both
+//!   directions (declarer and assigner of a mutable binding must
+//!   co-locate — ESM imports are read-only whenever the write
+//!   fires, init-time or later).
 //! * `LocalEffect`: add both directions (target-local mutation must
 //!   co-locate with its target owner).
 //! * `Sequenced`: add `u → v`. Co-location is only forced when
@@ -95,7 +97,10 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
                 g_atomic.add_edge(edge.from, edge.to, ());
             }
             DepKind::LazyUse => {}
-            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::LocalEffect => {
+            DepKind::EagerRebind
+            | DepKind::LazyRebind
+            | DepKind::DeferredRebind
+            | DepKind::LocalEffect => {
                 g_atomic.add_edge(edge.from, edge.to, ());
                 g_atomic.add_edge(edge.to, edge.from, ());
             }

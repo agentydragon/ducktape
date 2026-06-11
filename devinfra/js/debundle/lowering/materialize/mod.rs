@@ -169,6 +169,7 @@ pub(super) fn materialize_logical_chunk(
     drop(imported_binding_resolver);
     builder.drop_explicit_request_scratch();
     builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
+    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     builder.add_residual_sweep(
         residual_request.as_ref(),
         chunk_unassigned_mode.catchall_file_target(),

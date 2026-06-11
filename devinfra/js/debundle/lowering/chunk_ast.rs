@@ -186,6 +186,17 @@ pub(super) fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bo
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
             (declaration_names(&export_decl.decl), true)
         }
+        // `var`s hoist to module scope out of `try`/`if`/loop blocks;
+        // the enclosing statement is the declarer. Keeps
+        // `declaration_by_name` in sync with the analyzer's
+        // `collect_declared_names`.
+        ModuleItem::Stmt(stmt) => (
+            binding_targets::hoisted_var_ids(stmt)
+                .iter()
+                .map(|(atom, _)| atom.to_string())
+                .collect(),
+            false,
+        ),
         _ => (Vec::new(), false),
     }
 }
@@ -196,6 +207,7 @@ pub(super) fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
             declaration_ids(&export_decl.decl)
         }
+        ModuleItem::Stmt(stmt) => binding_targets::hoisted_var_ids(stmt),
         _ => Vec::new(),
     }
 }

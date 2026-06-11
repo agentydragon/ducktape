@@ -691,9 +691,12 @@ sideEffect(C, E);
         assert_eq!(af.first_order_body_calls, bf.first_order_body_calls);
         assert_eq!(af.effects.reads, bf.effects.reads);
         assert_eq!(af.effects.writes, bf.effects.writes);
-        assert_eq!(
-            af.effects.dataflow_summarizable,
-            bf.effects.dataflow_summarizable
-        );
+        // `effects.dataflow_summarizable` is deliberately NOT
+        // compared: the opaque-at-init-call bail consults the purity
+        // classifier (declared-pure hints exempt a call from the
+        // bail), so the bit is policy-DEPENDENT by design. The
+        // structural bail shapes (`with`, dynamic global keys,
+        // member writes, global-object escape taint) remain
+        // policy-independent.
     }
 }

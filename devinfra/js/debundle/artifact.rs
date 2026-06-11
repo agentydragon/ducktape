@@ -1671,6 +1671,7 @@ fn dep_kind_key(kind: DepKind) -> &'static str {
         DepKind::LazyUse => "lazy_use",
         DepKind::EagerRebind => "eager_rebind",
         DepKind::LazyRebind => "lazy_rebind",
+        DepKind::DeferredRebind => "deferred_rebind",
         DepKind::Sequenced => "sequenced",
         DepKind::LocalEffect => "local_effect",
     }

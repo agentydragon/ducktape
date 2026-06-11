@@ -1107,6 +1107,10 @@ struct ItemAnalysis {
     /// Outer-observable storage cells this statement writes at-init
     /// (binding rebinds and static-key `globalThis.<prop>` writes).
     /// Empty/incomplete unless `effects_summarizable` is true.
+    /// Carries the WRITE-cell view (`cell_writes_summarizable`):
+    /// the strip's call side effects are covered by its own
+    /// island-reachability analysis, so the S-chain's stronger
+    /// opaque-call bail does not apply here.
     observable_writes: BTreeSet<EffectCell>,
     /// False when the statement contains a shape the analyzer cannot
     /// statically summarize (dynamic `globalThis[expr]`, `with`,
@@ -1172,7 +1176,7 @@ fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnal
         side_effect,
         shareable_helper: item_is_shareable_helper(item),
         observable_writes: fact.effects.writes.clone(),
-        effects_summarizable: fact.effects.dataflow_summarizable,
+        effects_summarizable: fact.effects.cell_writes_summarizable,
     }
 }
 

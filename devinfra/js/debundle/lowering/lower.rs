@@ -395,6 +395,10 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         // by construction (see docs/design.md "Valid peels and atomic
         // modules", importability clause). The grow set excludes
         // names already in entry's source-level exports.
+        let entry_declared_names: HashSet<String> = entry_body
+            .iter()
+            .flat_map(|item| top_level_declaration_names(item).0)
+            .collect();
         let auto_grow = auto_grown_residual_exports(
             &body_facts_by_module,
             declaration_by_name,
@@ -402,6 +406,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             pre_existing_entry_exports,
             pre_existing_public_export_names,
             &entry_binding_renames,
+            &entry_declared_names,
         );
         if !auto_grow.is_empty() {
             entry_body.push(export_named_for_bindings(&auto_grow));

@@ -153,7 +153,7 @@ pub(super) fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]
                 "EagerUse cycle: a top-level statement reads a binding at-init; \
                  splitting reader and declarer across modules forms an evaluation-order cycle. "
             }
-            DepKind::EagerRebind | DepKind::LazyRebind => {
+            DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
                 "Rebind: a function or top-level statement performs an assignment \
                  to a mutable binding owned by a different module — the resulting ESM \
                  import would be read-only, so this cross-destination assignment is invalid. \

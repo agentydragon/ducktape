@@ -96,10 +96,12 @@ pub fn compute_rebind_folds(
         if unit.causes.is_empty() {
             continue;
         }
-        let rebind_only = unit
-            .causes
-            .iter()
-            .all(|cause| matches!(cause, DepKind::LazyRebind | DepKind::EagerRebind));
+        let rebind_only = unit.causes.iter().all(|cause| {
+            matches!(
+                cause,
+                DepKind::LazyRebind | DepKind::EagerRebind | DepKind::DeferredRebind
+            )
+        });
         if !rebind_only {
             continue;
         }

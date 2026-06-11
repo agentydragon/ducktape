@@ -55,7 +55,7 @@ use anonymous::resolve_anonymous_statement_ordinals;
 use body_facts::{ModuleBodyFacts, collect_module_body_facts};
 use chunk_ast::{
     ChunkAstAnalysis, TopLevelDecl, analyze_chunk_ast, binding_ids, binding_names, declaration_ids,
-    declaration_names, top_level_declaration_ids,
+    declaration_names, top_level_declaration_ids, top_level_declaration_names,
 };
 use chunk_renames::collect_chunk_renames;
 use exports::{

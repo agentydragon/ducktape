@@ -307,6 +307,7 @@ pub(super) fn auto_grown_residual_exports(
     pre_existing_entry_exports: &HashSet<Id>,
     pre_existing_public_export_names: &HashSet<String>,
     entry_renames: &BTreeMap<String, String>,
+    entry_declared_names: &HashSet<String>,
 ) -> BTreeMap<String, String> {
     let mut needed = BTreeSet::<String>::new();
     // `body_facts_by_module` is precomputed once upstream (see
@@ -345,14 +346,28 @@ pub(super) fn auto_grown_residual_exports(
     let mut taken_public_names = pre_existing_public_export_names.clone();
     needed
         .into_iter()
-        .map(|name| {
+        .filter_map(|name| {
             let final_local = entry_renames
                 .get(&name)
                 .cloned()
                 .unwrap_or_else(|| name.clone());
+            // Only grow exports for bindings the final entry body
+            // actually declares. A chunk-declared binding whose
+            // declaring statement was claimed into a non-entry
+            // module (e.g. a block-hoisted `var` inside an
+            // anonymously-claimed `try` statement) can't be
+            // mediated through entry — growing `export { name }`
+            // here would emit a SyntaxError-at-load entry module.
+            // Skipping leaves the reference in
+            // `missing_residual_exports`, which
+            // `residual_entry_imports_for_moved_body` rejects
+            // loudly instead of emitting broken JS.
+            if !entry_declared_names.contains(&final_local) {
+                return None;
+            }
             let public_name =
                 import_emit::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
-            (final_local, public_name)
+            Some((final_local, public_name))
         })
         .collect()
 }

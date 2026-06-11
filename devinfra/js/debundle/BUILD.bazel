@@ -249,6 +249,7 @@ rust_library(
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_utils",
+        "@crates//:swc_ecma_visit",
     ],
 )
 

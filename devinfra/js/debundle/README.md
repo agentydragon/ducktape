@@ -180,23 +180,45 @@ optimizations" for the soundness rule.
 The first such pass is the dataflow-aware S-chain in `graph.rs`, opted
 into per chunk via
 `chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` in the spec.
-It is sound when no top-level statement contains:
+Each impure top-level statement carries a `dataflow_summarizable` bit
+(`facts/wire.rs`); a statement keeps the relaxed per-cell emission only
+when it contains **none** of the following (all checked per statement,
+at-init positions only):
 
-- direct `eval(...)` / `(0, eval)(...)`
+- a call, `new`, optional call (`f?.()`), or tagged template the purity
+  classifier does not prove `Pure` — this covers `console.log(...)`
+  and other I/O, calls into chunk functions whose bodies write global
+  props, direct `eval(...)`, **and** indirect `(0, eval)(...)`
+- a member write through a binding: `obj.x = 1`, `obj.x++`,
+  destructuring assignment targets containing member expressions
+  (`[obj.x] = arr`)
 - `with (obj) { ... }`
 - `new Function(...)` / `Function(...)`
-- computed-key `globalThis[<expr>]` / `window[<expr>]` / `self[<expr>]`
-- `Object.defineProperty` / `Reflect.defineProperty` on a global
+- a computed-key access on an unshadowed global-object alias:
+  `globalThis[<expr>]` / `window[<expr>]` / `self[<expr>]` /
+  `frames[<expr>]` / `top[<expr>]`
+- `Object.defineProperty` / `Reflect.defineProperty` with a
+  global-object alias as the target
 - `new Proxy(<global>, ...)`
-- dynamic member-key reads/writes on outer-scope bindings the pass
-  would otherwise track
+- a read of a binding the global object may have escaped into:
+  `const g = globalThis; ... g.tag` taints `g` (transitively, through
+  bindings derived from it), and every statement reading a tainted
+  binding falls back
 
-Each impure top-level statement carries a `dataflow_summarizable` bit
-(`facts/wire.rs`). Statements that fail the check fall back to a
-strict S-edge against every prior impure owner and act as an opaque
-barrier for later statements, so the optimization is safe to enable
-even on bundles that mix audited and unaudited code — only the
-unsummarizable statements pay the conservative cost.
+Statements that fail the check fall back to the strictly-conservative
+S-chain (an edge to every prior impure owner; later statements treat
+them as opaque barriers), so the optimization is safe to enable even
+on bundles that mix audited and unaudited code — only the
+unsummarizable statements pay the conservative cost. Call-heavy
+top-level code therefore sees little benefit from the relaxation:
+every statement containing an unproven call is conservatively
+chained. That is the intended trade — the relaxation only fires where
+the analyzer can actually prove non-interference.
+
+Unshadowed `window` / `self` / `frames` / `top` are treated as the
+same object as `globalThis` for cell tracking: `window.tag = 1` and
+`globalThis.tag` are the same cell. A chunk-top-level declaration or
+import of one of these names disables its global treatment chunk-wide.
 
 See `docs/design.md` → "Emission modes" for the precise dataflow-aware
-emission rule.
+emission rule (including the write-after-read edges).

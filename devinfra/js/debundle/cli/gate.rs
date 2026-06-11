@@ -368,6 +368,7 @@ fn dep_kind_short(kind: DepKind) -> &'static str {
         DepKind::LazyUse => "lazy",
         DepKind::EagerRebind => "at-init rebind",
         DepKind::LazyRebind => "lazy rebind",
+        DepKind::DeferredRebind => "deferred rebind",
         DepKind::Sequenced => "side-effect",
         DepKind::LocalEffect => "local-effect",
     }

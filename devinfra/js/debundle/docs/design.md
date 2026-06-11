@@ -365,26 +365,50 @@ the chunk spec picks one of two modes via
   every realizable schedule satisfies it.
 
 - **Dataflow-aware** (opt-in): per-statement `(writes, reads)`
-  effect summaries (`StatementEffectSummary` in `facts/mod.rs`) drive a
-  last-writer-precedes-reader-or-writer emission. For each impure
-  statement `curr`, emit `Sequenced(curr → prev)` only when `prev`
-  is the most recent prior writer of a cell in `curr.reads ∪
-curr.writes`. Soundness follows because any swap of two
-  consecutive impure statements with disjoint cells is unobservable
-  to any third party.
+  effect summaries (`StatementEffectSummary` in `facts/mod.rs`)
+  drive the emission. For each impure statement `curr`, emit
+  `Sequenced(curr → prev)` when `prev` is the most recent prior
+  writer of a cell in `curr.reads ∪ curr.writes`
+  (read-after-write / write-after-write), and when `prev` read a
+  cell `curr` writes since that cell's last write
+  (write-after-read — without it a later writer could be
+  scheduled before an earlier reader). Soundness follows because
+  any swap of two consecutive impure statements with disjoint
+  cells is unobservable to any third party.
 
   Effect cells are binding-storage cells (rebinds + identifier
-  reads) and static-key `globalThis.<prop>` cells. The mode is
-  **conditionally correct** (see AGENTS.md → "Conditionally-correct
-  optimizations"): statements containing constructs that defeat
-  static cell tracking — direct `eval(...)`, `with`,
-  `Function(...)` / `new Function(...)`, computed-key
-  `globalThis[<expr>]`, `defineProperty` on globals, `Proxy` on
-  globals — flip `dataflow_summarizable=false` and fall back to a
-  strict S-edge against every prior impure owner (also acting as
-  an opaque barrier for later statements). Auditing the input
-  bundle for these shapes is the precondition (see
-  `README.md` → "Conditionally-correct optimizations").
+  reads) and static-key `<global>.<prop>` cells, where `<global>`
+  is any unshadowed global-object alias (`globalThis`, `window`,
+  `self`, `frames`, `top`). The mode is **conditionally correct**
+  (see AGENTS.md → "Conditionally-correct optimizations"):
+  statements containing a shape that defeats static cell tracking
+  flip `dataflow_summarizable=false` and fall back to a strict
+  S-edge against every prior impure owner (also acting as an
+  opaque barrier for later statements). The bail shapes are:
+  - any at-init call, `new`, optional call, or tagged template the
+    purity classifier does not prove `Pure` — I/O (`console.log`)
+    is not a cell, callee bodies may write global props the
+    depth-0 cell recorder can't see, and indirect `eval`
+    (`(0, eval)(...)`) executes arbitrary writes. Classifier-Pure
+    calls are exempt: `Pure` guarantees no observable writes and
+    no global-prop reads, and binding-cell ordering is enforced by
+    binding edges + rebind co-location rather than the S-chain;
+  - member writes through a tracked binding (`obj.x = 1`,
+    `obj.x++`, destructuring targets containing member
+    expressions) — aliasing makes the written heap cell
+    unattributable;
+  - `with`, `Function(...)` / `new Function(...)`, computed-key
+    `<global>[<expr>]`, `defineProperty` on the global object,
+    `new Proxy(<global>, ...)`;
+  - statements tainted by a global-object alias escape: a bare
+    `globalThis`/`window`/... used as a _value_ (`const g =
+globalThis`) marks the bindings it flows into (transitively,
+    to a fixpoint) as suspects, and every statement reading a
+    suspect bails — `g.tag` touches the same cells as
+    `globalThis.tag` but the summary only sees `Binding(g)`.
+
+  See `README.md` → "Conditionally-correct optimizations" for the
+  user-facing precondition list.
 
 ### Relationship
 
@@ -655,13 +679,52 @@ multiply that. The promotion pass dedupes per `(caller, target-owner)`
 pair per kind, keeping the per-statement cost bounded by the
 transitive closure size rather than (closure × call-sites).
 
-**Limitations.** Indirect calls (`const g = f; g()`), method calls
-(`obj.method()`), and dynamic dispatch produce no promoted edges —
-the callee isn't statically a known chunk binding. These are
-conservatively unmodelled. A spec accepted by the relaxed predicate
-but unrealizable at runtime due to one of these uncaught
-interprocedural patterns is currently caught by the validator's
-strict rule (see below).
+**Resolvable callees.** A callee is precisely resolvable iff its
+binding is declared _directly as a function value_ (`function f`,
+single-declarator `const f = () => ...`, exported forms) and is
+never rebound anywhere in the chunk. Only resolvable callees feed
+the precise first-order closure above.
+
+**Unresolved-callee fallback.** Every other at-init call shape —
+member calls (`api.read()`), aliases (`const g = readB; g()`),
+IIFEs, optional-chain calls, tagged templates, conditional or
+rebound function bindings, and calls into resolvable functions
+whose own first-order bodies contain such calls — takes a
+conservative fallback (`graph.rs::UnresolvedCallFallback`). The
+fallback's premise: whatever function value the call invokes must
+have reached the call site through a binding the call expression
+mentions (callee root, arguments, computed keys) or through an
+inline function expression at the call. Each such root owner is
+expanded to the **full lazy closure** of every owner reachable from
+it through the chunk's read graph (eager + lazy reads), and the
+calling statement gets promoted `EagerUse` edges to every collected
+target — rebind targets included (order-only: write legality is
+separately enforced by the direct `LazyRebind`/`DeferredRebind`
+edge from the statement lexically containing the write).
+Fallback edges sourced in residual are dropped at partition
+projection: residual is the ESM DFS root and evaluates last, so an
+at-init call from residual code cannot observe a TDZ, and the
+emitter emits no entry-side phantom imports the gate could
+otherwise assume.
+
+**Residual limitations.** The fallback (and promotion generally)
+does not model function values that reach a call site through:
+
+- global/object property stashes (`globalThis.f = readB;` …
+  `globalThis.f()`),
+- rebound bindings (`let g; g = readB; g();` — the rebind forces
+  co-location of the rebinder with `g`'s declarer, but the flowed
+  value's closure is not followed),
+- parameters of chunk-declared functions
+  (`function h(cb) { cb(); } h(readB);`),
+- `new` expressions (constructor bodies are not promoted), or
+- other chunks (imports are outside single-chunk analysis).
+
+These are documented preconditions on the input bundle, not
+checked invariants — a bundle using one of these shapes to fire a
+TDZ-able cross-module read at init can be accepted and break at
+runtime. There is no separate validator safety net behind the
+promotion pass.
 
 ## Lemma 2: entry-side import ordering
 
@@ -1301,8 +1364,13 @@ of bindings is forced to co-locate, and the spec splits them."
 original output: bundlers can't emit JavaScript that TDZs at runtime
 (the bundle ran for someone). So every owner-level SCC of
 constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
-`LazyRebind`, `LocalEffect`) reflects a _colocation invariant the
-bundler relied on_. Any spec assignment that routes the unit's
+`LazyRebind`, `DeferredRebind`, `LocalEffect`) reflects a
+_colocation invariant the bundler relied on_. (`DeferredRebind` —
+a rebind nested ≥2 closures deep or past an `await` — joins
+`G_atomic` bidirectionally like the other rebinds because ESM
+imports are read-only whenever the write fires, but it does NOT
+constrain init order: it is excluded from the constraining-edge
+subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the unit's
 owners to different modules is invalid — `assemble_partition`
 detects this before the materializer touches the quotient. **No
 information about the spec is required to identify a structural
@@ -1386,8 +1454,9 @@ Five layers, bottom-up:
 
 1. **Owner graph** — fine-grained program facts (`graph.rs`).
    One vertex per top-level owner; edges record `EagerUse`,
-   `LazyUse`, `EagerRebind`, `LazyRebind`, `Sequenced`, and the
-   local-effect edges that target-local mutation produces. Each
+   `LazyUse`, `EagerRebind`, `LazyRebind`, `DeferredRebind`,
+   `Sequenced`, and the local-effect edges that target-local
+   mutation produces. Each
    edge records whether it constrains init/materialization order.
 2. **Atomic graph** — SCC condensation of the constraining-edge
    subgraph of the owner graph; a DAG of atomic units

@@ -333,6 +333,39 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
+    /// Bindings declared by an anonymously-claimed statement (e.g. a
+    /// block-hoisted `var` inside a claimed `try` statement) belong
+    /// to the module that claims the statement: the declaration is
+    /// emitted there, so binding ownership, exports, and
+    /// cross-module import wiring must follow it. Runs before the
+    /// residual sweep so the sweep doesn't route these bindings to
+    /// the catchall while their declaring statement lives elsewhere
+    /// (which emitted an `export { name }` whose declaration is in a
+    /// different file — a SyntaxError at load).
+    pub(super) fn adopt_bindings_of_claimed_anonymous_statements(
+        &mut self,
+        declarations: &[TopLevelDecl],
+    ) {
+        for decl in declarations {
+            let Some(&plan_index) = self.anonymous_ordinal_assignment.get(&decl.ordinal) else {
+                continue;
+            };
+            let module = ModuleId(LogicalModuleIndex(plan_index));
+            for (name, id) in &decl.bindings {
+                if self.binding_assignment.contains_key(id) {
+                    continue;
+                }
+                self.binding_assignment.insert(id.clone(), plan_index);
+                self.module_plans[plan_index]
+                    .bindings
+                    .entry(name.clone())
+                    .or_insert_with(|| name.clone());
+                self.bindings_catalogue
+                    .insert(id.clone(), BindingKind::Owned { module });
+            }
+        }
+    }
+
     /// Residual sweep: route every chunk top-level binding the spec
     /// did not claim to the chunk's catchall destination.
     ///

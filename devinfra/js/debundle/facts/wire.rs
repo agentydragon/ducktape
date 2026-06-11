@@ -87,6 +87,7 @@ impl EffectCellReport {
 pub struct StatementEffectSummaryReport {
     pub writes: Vec<EffectCellReport>,
     pub reads: Vec<EffectCellReport>,
+    pub cell_writes_summarizable: bool,
     pub dataflow_summarizable: bool,
 }
 
@@ -103,6 +104,7 @@ impl StatementEffectSummaryReport {
                 .iter()
                 .map(EffectCellReport::from_cell)
                 .collect(),
+            cell_writes_summarizable: summary.cell_writes_summarizable,
             dataflow_summarizable: summary.dataflow_summarizable,
         }
     }
@@ -111,6 +113,7 @@ impl StatementEffectSummaryReport {
         StatementEffectSummary {
             writes: self.writes.iter().map(EffectCellReport::to_cell).collect(),
             reads: self.reads.iter().map(EffectCellReport::to_cell).collect(),
+            cell_writes_summarizable: self.cell_writes_summarizable,
             dataflow_summarizable: self.dataflow_summarizable,
         }
     }
@@ -137,6 +140,11 @@ pub struct StatementFactsReport {
     pub at_init_calls: Vec<IdReport>,
     pub body_calls: Vec<IdReport>,
     pub first_order_body_calls: Vec<IdReport>,
+    pub at_init_unresolved_sources: Vec<IdReport>,
+    pub at_init_unresolved_inline_fn: bool,
+    pub first_order_unresolved_sources: Vec<IdReport>,
+    pub first_order_unresolved_inline_fn: bool,
+    pub declares_direct_function: bool,
     pub effects: StatementEffectSummaryReport,
     pub purity: Purity,
     pub kind: StatementKind,
@@ -158,6 +166,11 @@ impl StatementFactsReport {
             at_init_calls: ids_to_wire(&facts.at_init_calls),
             body_calls: ids_to_wire(&facts.body_calls),
             first_order_body_calls: ids_to_wire(&facts.first_order_body_calls),
+            at_init_unresolved_sources: ids_to_wire(&facts.at_init_unresolved_sources),
+            at_init_unresolved_inline_fn: facts.at_init_unresolved_inline_fn,
+            first_order_unresolved_sources: ids_to_wire(&facts.first_order_unresolved_sources),
+            first_order_unresolved_inline_fn: facts.first_order_unresolved_inline_fn,
+            declares_direct_function: facts.declares_direct_function,
             effects: StatementEffectSummaryReport::from_summary(&facts.effects),
             purity: facts.purity.clone(),
             kind: facts.kind,
@@ -179,6 +192,11 @@ impl StatementFactsReport {
             at_init_calls: ids_from_wire(&self.at_init_calls),
             body_calls: ids_from_wire(&self.body_calls),
             first_order_body_calls: ids_from_wire(&self.first_order_body_calls),
+            at_init_unresolved_sources: ids_from_wire(&self.at_init_unresolved_sources),
+            at_init_unresolved_inline_fn: self.at_init_unresolved_inline_fn,
+            first_order_unresolved_sources: ids_from_wire(&self.first_order_unresolved_sources),
+            first_order_unresolved_inline_fn: self.first_order_unresolved_inline_fn,
+            declares_direct_function: self.declares_direct_function,
             effects: self.effects.to_summary(),
             purity: self.purity.clone(),
             kind: self.kind,

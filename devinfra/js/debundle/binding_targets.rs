@@ -1,6 +1,7 @@
 use swc_atoms::Atom;
 use swc_ecma_ast::*;
 use swc_ecma_utils::find_pat_ids;
+use swc_ecma_visit::{Visit, VisitWith};
 
 pub trait TargetAccessRecorder {
     /// Called for update expressions like `a++`, where the target binding is
@@ -33,6 +34,38 @@ pub fn binding_name_strings(pattern: &Pat) -> Vec<String> {
     binding_names(pattern)
         .map(|(atom, _)| atom.to_string())
         .collect()
+}
+
+/// `var` declarations hoist to the enclosing function/module scope
+/// out of blocks (`try { var impl = ...; } catch { var impl = ...; }`,
+/// `if`, loop bodies and heads). Collect the hoisted-`var` ids
+/// declared anywhere inside a statement. Function / arrow / accessor
+/// bodies are boundaries (`var` is function-scoped) and class bodies
+/// are their own scope (static blocks, field initializers).
+pub fn hoisted_var_ids(stmt: &Stmt) -> Vec<Id> {
+    let mut collector = HoistedVarCollector { names: Vec::new() };
+    stmt.visit_with(&mut collector);
+    collector.names
+}
+
+struct HoistedVarCollector {
+    names: Vec<Id>,
+}
+
+impl Visit for HoistedVarCollector {
+    fn visit_var_decl(&mut self, node: &VarDecl) {
+        if node.kind == VarDeclKind::Var {
+            for decl in &node.decls {
+                self.names.extend(binding_names(&decl.name));
+            }
+        }
+        node.visit_children_with(self);
+    }
+    fn visit_function(&mut self, _node: &Function) {}
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {}
+    fn visit_getter_prop(&mut self, _node: &GetterProp) {}
+    fn visit_setter_prop(&mut self, _node: &SetterProp) {}
+    fn visit_class(&mut self, _node: &Class) {}
 }
 
 /// Collect all `Id`s bound by a declaration. Covers `Fn`, `Class`,

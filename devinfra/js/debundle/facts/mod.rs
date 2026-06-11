@@ -10,7 +10,7 @@ pub use wire::{
 };
 
 use binding_targets::{
-    TargetAccessRecorder, declaration_ids, record_assign_target, record_pat_write,
+    TargetAccessRecorder, declaration_ids, hoisted_var_ids, record_assign_target, record_pat_write,
     record_update_target, strip_parens,
 };
 use serde::{Deserialize, Serialize};
@@ -73,6 +73,35 @@ pub struct StatementFacts {
     /// (e.g. `function f() { g(); } f();` at top level promotes
     /// through `g`'s body too).
     pub body_calls: BTreeSet<Id>,
+    /// Bindings referenced in the callee or arguments of at-init
+    /// calls promotion can't follow (member calls `api.read()`,
+    /// optional-chain calls, tagged templates). A function value
+    /// invoked by such a call must have flowed through one of these
+    /// bindings — or through an inline function expression (see
+    /// `at_init_unresolved_inline_fn`) — so `promote_at_init_calls`
+    /// makes the statement eagerly depend on the transitive lazy
+    /// closures of the chunk-declared subset.
+    pub at_init_unresolved_sources: BTreeSet<Id>,
+    /// `true` when an unresolved at-init call carries an inline
+    /// function/arrow/class expression: the statement's own lazy
+    /// closures may fire synchronously (IIFE,
+    /// `arr.forEach(x => ...)`).
+    pub at_init_unresolved_inline_fn: bool,
+    /// First-order pre-await body counterpart of
+    /// `at_init_unresolved_sources`; propagated to at-init callers
+    /// through the promotion call graph.
+    pub first_order_unresolved_sources: BTreeSet<Id>,
+    /// First-order pre-await body counterpart of
+    /// `at_init_unresolved_inline_fn`.
+    pub first_order_unresolved_inline_fn: bool,
+    /// `true` when the statement's declared binding is directly a
+    /// function value: a `function` declaration (incl. exported and
+    /// `export default` forms) or a single-declarator
+    /// `var/let/const` whose initializer is a function/arrow
+    /// expression. Promotion treats only at-init calls to such
+    /// bindings (when never rebound) as precisely resolvable;
+    /// everything else takes the conservative fallback.
+    pub declares_direct_function: bool,
     /// Subset of `body_calls` whose call sites sit in a function's
     /// **first-order** body. The promotion call graph uses this so
     /// that calls lexically nested inside a closure of the body
@@ -113,6 +142,21 @@ pub enum EffectCell {
 pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
+    /// `false` when the statement contains a shape that defeats any
+    /// static reasoning about which cells it WRITES (`with`, direct
+    /// or indirect `eval`, `Function(...)`, dynamic-key
+    /// `globalThis[expr]`, `defineProperty`/`Proxy` on the global).
+    /// Consumed by the vendor strip's swap-privacy gate, whose call
+    /// side effects are covered by its own island-reachability
+    /// analysis.
+    pub cell_writes_summarizable: bool,
+    /// `false` whenever `cell_writes_summarizable` is `false`, and
+    /// additionally for shapes that defeat the dataflow-aware
+    /// S-chain's stronger "which cells does this statement TOUCH"
+    /// question: opaque (not classifier-Pure) at-init calls/news
+    /// (I/O is not a cell; callee bodies may touch globals), member
+    /// writes through bindings (aliasing), and statements tainted by
+    /// a global-object alias escape.
     pub dataflow_summarizable: bool,
 }
 
@@ -235,8 +279,14 @@ pub(crate) struct StructuralStatementFacts {
     at_init_calls: BTreeSet<Id>,
     lazy_calls: BTreeSet<Id>,
     first_order_lazy_calls: BTreeSet<Id>,
+    at_init_unresolved_sources: BTreeSet<Id>,
+    at_init_unresolved_inline_fn: bool,
+    first_order_unresolved_sources: BTreeSet<Id>,
+    first_order_unresolved_inline_fn: bool,
+    declares_direct_function: bool,
     global_writes: BTreeSet<String>,
     global_reads: BTreeSet<String>,
+    cell_writes_summarizable: bool,
     dataflow_summarizable: bool,
 }
 
@@ -285,8 +335,9 @@ where
 {
     let body = top_level_item_views(&module.body);
     let shadowed = compute_shadowed_globals(&body);
+    let global_object_names = unshadowed_global_object_aliases(&body);
     let mut top_level_await = None;
-    let per_statement = body
+    let mut per_statement: Vec<StructuralStatementFacts> = body
         .iter()
         .enumerate()
         .map(|(ordinal, item)| {
@@ -300,7 +351,7 @@ where
             }
             let kind = classify_item(item);
             let declared = collect_declared_names(item);
-            let mut collector = StatementFactsCollector::new();
+            let mut collector = StatementFactsCollector::new(global_object_names.clone());
             item.visit_with(&mut collector);
             let source_location = source_path.and_then(|source_path| {
                 line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
@@ -323,17 +374,155 @@ where
                 at_init_calls: collector.at_init_calls,
                 lazy_calls: collector.lazy_calls,
                 first_order_lazy_calls: collector.first_order_lazy_calls,
+                at_init_unresolved_sources: collector.at_init_unresolved_sources,
+                at_init_unresolved_inline_fn: collector.at_init_unresolved_inline_fn,
+                first_order_unresolved_sources: collector.first_order_unresolved_sources,
+                first_order_unresolved_inline_fn: collector.first_order_unresolved_inline_fn,
+                declares_direct_function: declares_direct_function(item),
                 global_writes: collector.global_writes,
                 global_reads: collector.global_reads,
+                cell_writes_summarizable: collector.cell_writes_summarizable,
                 dataflow_summarizable: collector.dataflow_summarizable,
             }
         })
         .collect();
+    apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
     StructuralChunkAnalysis {
         body,
         shadowed,
         per_statement,
         top_level_await,
+    }
+}
+
+/// Identifier names that, when not shadowed by a chunk-top-level
+/// declaration or import, evaluate to the global object in the
+/// runtimes the debundler targets (browsers: `window` / `self` /
+/// `frames` / `top`; Node and workers: `globalThis` / `self`).
+const GLOBAL_OBJECT_ALIASES: [&str; 5] = ["globalThis", "window", "self", "frames", "top"];
+
+/// The subset of [`GLOBAL_OBJECT_ALIASES`] no chunk-top-level
+/// declaration (incl. block-hoisted `var`s) or import shadows.
+/// Block-scoped `let`/`const` redeclarations of an alias *inside* a
+/// top-level statement are not detected; treating such an access as
+/// global only over-approximates the cell sets (extra `Sequenced`
+/// edges), which is sound.
+fn unshadowed_global_object_aliases(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
+    let mut declared: BTreeSet<String> = BTreeSet::new();
+    for item in body {
+        let item = item.as_module_item();
+        for id in collect_declared_names(item) {
+            declared.insert(id.0.to_string());
+        }
+        if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
+            for spec in &import.specifiers {
+                let local = match spec {
+                    ImportSpecifier::Named(named) => named.local.sym.as_ref(),
+                    ImportSpecifier::Default(default) => default.local.sym.as_ref(),
+                    ImportSpecifier::Namespace(namespace) => namespace.local.sym.as_ref(),
+                };
+                declared.insert(local.to_string());
+            }
+        }
+    }
+    GLOBAL_OBJECT_ALIASES
+        .iter()
+        .copied()
+        .filter(|alias| !declared.contains(*alias))
+        .collect()
+}
+
+/// Global-object aliasing taint. A statement that lets the global
+/// object escape as a *value* (`const g = globalThis;`,
+/// `register(window)`, a function body returning `self`) defeats
+/// per-cell tracking for every binding the value flows into:
+/// `g.tag` reads/writes the same cells as `globalThis.tag` but the
+/// per-statement summary only sees `Binding(g)`. Conservative rule:
+///
+/// 1. A statement containing a bare global-object alias outside
+///    member-base position is tainted.
+/// 2. Bindings written (declared/rebound) by tainted statements are
+///    suspects.
+/// 3. Any statement reading a suspect is tainted (fixpoint).
+///
+/// Tainted statements get `dataflow_summarizable = false` — the
+/// dataflow-aware S-chain falls back to the strict adjacent-impure
+/// edge for them.
+fn apply_global_escape_taint(
+    body: &[TopLevelItemView<'_>],
+    global_object_names: &BTreeSet<&'static str>,
+    per_statement: &mut [StructuralStatementFacts],
+) {
+    let mut tainted: Vec<bool> = body
+        .iter()
+        .map(|item| {
+            let mut finder = GlobalObjectEscapeFinder {
+                names: global_object_names,
+                escaped: false,
+            };
+            item.as_module_item().visit_with(&mut finder);
+            finder.escaped
+        })
+        .collect();
+    let mut suspects: BTreeSet<Id> = BTreeSet::new();
+    loop {
+        let mut changed = false;
+        for (idx, facts) in per_statement.iter().enumerate() {
+            if !tainted[idx]
+                && facts
+                    .at_init_reads
+                    .iter()
+                    .chain(facts.lazy_reads.iter())
+                    .any(|id| suspects.contains(id))
+            {
+                tainted[idx] = true;
+                changed = true;
+            }
+            if tainted[idx] {
+                for id in facts
+                    .declared
+                    .iter()
+                    .chain(facts.at_init_writes.iter())
+                    .chain(facts.lazy_writes.iter())
+                {
+                    changed |= suspects.insert(id.clone());
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (idx, facts) in per_statement.iter_mut().enumerate() {
+        if tainted[idx] {
+            facts.dataflow_summarizable = false;
+        }
+    }
+}
+
+/// Detects a global-object alias used as a value. `globalThis.x` /
+/// `window[k]` use the alias as a property base — not an escape —
+/// so member-base positions are skipped; any other occurrence
+/// (initializer, argument, return value, array/object element)
+/// counts.
+struct GlobalObjectEscapeFinder<'a> {
+    names: &'a BTreeSet<&'static str>,
+    escaped: bool,
+}
+
+impl Visit for GlobalObjectEscapeFinder<'_> {
+    fn visit_ident(&mut self, node: &Ident) {
+        if self.names.contains(node.sym.as_ref()) {
+            self.escaped = true;
+        }
+    }
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        match strip_parens(&node.obj) {
+            Expr::Ident(ident) if self.names.contains(ident.sym.as_ref()) => {}
+            other => other.visit_with(self),
+        }
+        node.prop.visit_with(self);
     }
 }
 
@@ -557,8 +746,14 @@ fn assemble_statement_facts(
         at_init_calls,
         lazy_calls,
         first_order_lazy_calls,
+        at_init_unresolved_sources,
+        at_init_unresolved_inline_fn,
+        first_order_unresolved_sources,
+        first_order_unresolved_inline_fn,
+        declares_direct_function,
         global_writes,
         global_reads,
+        cell_writes_summarizable,
         dataflow_summarizable,
     } = structural;
     let local_effects = collect_local_effects(
@@ -575,6 +770,15 @@ fn assemble_statement_facts(
         graph,
         !local_effects.is_empty(),
     );
+    // Opaque at-init calls: a call/new the purity classifier can't
+    // prove Pure may touch any cell (I/O like `console.log`, global
+    // props written inside callee bodies, indirect eval) — the
+    // statement must fall back to the strict S-chain. Classifier-Pure
+    // calls are exempt: Pure guarantees no observable writes and no
+    // global-prop reads, and binding-cell ordering is enforced by
+    // binding edges + rebind co-location rather than the S-chain.
+    let dataflow_summarizable =
+        dataflow_summarizable && !has_opaque_at_init_call(item, shadowed, hints, graph);
     let mut effects_writes = BTreeSet::<EffectCell>::new();
     for name in declared.iter().chain(at_init_writes.iter()) {
         effects_writes.insert(EffectCell::Binding(name.clone()));
@@ -592,6 +796,7 @@ fn assemble_statement_facts(
     let effects = StatementEffectSummary {
         writes: effects_writes,
         reads: effects_reads,
+        cell_writes_summarizable,
         dataflow_summarizable,
     };
     StatementFacts {
@@ -608,10 +813,106 @@ fn assemble_statement_facts(
         at_init_calls,
         body_calls: lazy_calls,
         first_order_body_calls: first_order_lazy_calls,
+        at_init_unresolved_sources,
+        at_init_unresolved_inline_fn,
+        first_order_unresolved_sources,
+        first_order_unresolved_inline_fn,
+        declares_direct_function,
         effects,
         purity,
         kind,
     }
+}
+
+/// Walks a statement looking for an at-init (lazy-depth-0) call/new
+/// expression the purity classifier does not prove `Pure`. See the
+/// call site in [`assemble_statement_facts`] for the soundness
+/// rationale.
+struct OpaqueAtInitCallFinder<'a> {
+    shadowed: &'a BTreeSet<&'static str>,
+    hints: &'a AnalysisHints,
+    graph: &'a ChunkCodeGraph,
+    found: bool,
+    lazy_depth: u32,
+    past_await: bool,
+}
+
+impl LazyBoundary for OpaqueAtInitCallFinder<'_> {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.lazy_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+}
+
+impl Visit for OpaqueAtInitCallFinder<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.found {
+            return;
+        }
+        if self.lazy_depth == 0 {
+            let opaque = match expr {
+                Expr::Call(_) | Expr::New(_) => !classify_expr_purity(
+                    expr,
+                    self.shadowed,
+                    &BTreeSet::new(),
+                    &self.hints.declared_pure,
+                    self.graph,
+                )
+                .is_pure(),
+                // Tagged templates invoke the tag function; the
+                // classifier has no pure tag whitelist.
+                Expr::TaggedTpl(_) => true,
+                Expr::OptChain(opt) => matches!(&*opt.base, OptChainBase::Call(_)),
+                _ => false,
+            };
+            if opaque {
+                self.found = true;
+                return;
+            }
+        }
+        expr.visit_children_with(self);
+    }
+    fn visit_function(&mut self, node: &Function) {
+        lazy_visit_function(self, node);
+    }
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        lazy_visit_arrow_expr(self, node);
+    }
+    fn visit_method_prop(&mut self, node: &MethodProp) {
+        lazy_visit_method_prop(self, node);
+    }
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        lazy_visit_getter_prop(self, node);
+    }
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        lazy_visit_setter_prop(self, node);
+    }
+    fn visit_class(&mut self, node: &Class) {
+        lazy_visit_class(self, node);
+    }
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        lazy_visit_class_member(self, member);
+    }
+}
+
+fn has_opaque_at_init_call(
+    item: &ModuleItem,
+    shadowed: &BTreeSet<&'static str>,
+    hints: &AnalysisHints,
+    graph: &ChunkCodeGraph,
+) -> bool {
+    let mut finder = OpaqueAtInitCallFinder {
+        shadowed,
+        hints,
+        graph,
+        found: false,
+        lazy_depth: 0,
+        past_await: false,
+    };
+    item.visit_with(&mut finder);
+    finder.found
 }
 
 fn item_purity(
@@ -623,7 +924,45 @@ fn item_purity(
     has_local_effect: bool,
 ) -> Purity {
     match kind {
-        StatementKind::Import | StatementKind::Export | StatementKind::FnDecl => Purity::Pure,
+        StatementKind::Import | StatementKind::FnDecl => Purity::Pure,
+        // `export { ... }` / `export * from ...` / `export default
+        // function` run no code at init — but `export default <expr>`
+        // evaluates the expression and `export default class` runs
+        // observable static parts (extends, static blocks, computed
+        // keys), so those route through the regular classifiers.
+        StatementKind::Export => match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(default_expr)) => {
+                classify_expr_purity(
+                    &default_expr.expr,
+                    shadowed,
+                    &BTreeSet::new(),
+                    &hints.declared_pure,
+                    graph,
+                )
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_)) => match class_of_item(item) {
+                Some(c)
+                    if class_has_static_observable(
+                        c,
+                        shadowed,
+                        &BTreeSet::new(),
+                        &hints.declared_pure,
+                        graph,
+                    ) =>
+                {
+                    Purity::NotPure {
+                        reasons: vec![PurityReason {
+                            rule: PurityRule::ClassStaticObservable,
+                            span: c.span,
+                            source_location: None,
+                            detail: None,
+                        }],
+                    }
+                }
+                _ => Purity::Pure,
+            },
+            _ => Purity::Pure,
+        },
         StatementKind::VarDecl if has_local_effect => Purity::Pure,
         // Top-level (non-function-body) scope: a chunk-top read of a
         // PlainData const is legitimately pure, so no PlainData name is
@@ -861,12 +1200,44 @@ pub(crate) fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
                 .unwrap_or_default(),
             _ => BTreeSet::new(),
         },
+        // `var` declarations hoist to module scope out of blocks
+        // (`try { var impl = ...; } catch { var impl = ...; }`,
+        // `if`, loop bodies). The enclosing top-level statement is
+        // the binding's owner.
+        ModuleItem::Stmt(stmt) => hoisted_var_ids(stmt).into_iter().collect(),
         _ => BTreeSet::new(),
     }
 }
 
 fn declaration_names(decl: &Decl) -> BTreeSet<Id> {
     declaration_ids(decl).into_iter().collect()
+}
+
+/// `true` when the statement's declared binding is directly a
+/// function value. See [`StatementFacts::declares_direct_function`].
+fn declares_direct_function(item: &ModuleItem) -> bool {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_))) => true,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(decl))
+            if matches!(decl.decl, Decl::Fn(_)) =>
+        {
+            true
+        }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(decl))
+            if matches!(decl.decl, DefaultDecl::Fn(_)) =>
+        {
+            true
+        }
+        _ => var_decl_of_item(item).is_some_and(|var| {
+            var.decls.len() == 1
+                && matches!(&var.decls[0].name, Pat::Ident(_))
+                && var.decls[0]
+                    .init
+                    .as_deref()
+                    .map(strip_parens)
+                    .is_some_and(|init| matches!(init, Expr::Fn(_) | Expr::Arrow(_)))
+        }),
+    }
 }
 
 /// Shared trait for visitors that track lazy nesting depth and the
@@ -946,17 +1317,28 @@ struct StatementFactsCollector {
     at_init_calls: BTreeSet<Id>,
     lazy_calls: BTreeSet<Id>,
     first_order_lazy_calls: BTreeSet<Id>,
+    at_init_unresolved_sources: BTreeSet<Id>,
+    at_init_unresolved_inline_fn: bool,
+    first_order_unresolved_sources: BTreeSet<Id>,
+    first_order_unresolved_inline_fn: bool,
     global_writes: BTreeSet<String>,
     global_reads: BTreeSet<String>,
+    cell_writes_summarizable: bool,
     dataflow_summarizable: bool,
+    /// Unshadowed global-object alias names for this chunk
+    /// (`globalThis`, `window`, ...). See
+    /// [`unshadowed_global_object_aliases`].
+    global_object_names: BTreeSet<&'static str>,
     lazy_depth: u32,
     past_await: bool,
 }
 
 impl StatementFactsCollector {
-    fn new() -> Self {
+    fn new(global_object_names: BTreeSet<&'static str>) -> Self {
         Self {
+            cell_writes_summarizable: true,
             dataflow_summarizable: true,
+            global_object_names,
             ..Self::default()
         }
     }
@@ -994,12 +1376,51 @@ impl StatementFactsCollector {
         }
     }
 
+    /// A call whose callee promotion can never resolve syntactically
+    /// (member call, IIFE, optional-chain call, tagged template).
+    /// Record the bindings the call mentions (callee root, argument
+    /// idents, computed keys) — the only channels through which a
+    /// chunk function value can reach the call — plus whether the
+    /// call carries an inline function expression. At-init the
+    /// statement takes the read-closure fallback over those sources;
+    /// in a first-order body they propagate to at-init callers
+    /// through the promotion call graph.
+    fn record_unresolved_call<N: VisitWith<UnresolvedCallSourceCollector>>(&mut self, node: &N) {
+        if self.lazy_depth > 1 || (self.lazy_depth == 1 && self.past_await) {
+            return;
+        }
+        let mut sources = UnresolvedCallSourceCollector::default();
+        node.visit_with(&mut sources);
+        if self.lazy_depth == 0 {
+            self.at_init_unresolved_sources.extend(sources.idents);
+            self.at_init_unresolved_inline_fn |= sources.inline_fn;
+        } else {
+            self.first_order_unresolved_sources.extend(sources.idents);
+            self.first_order_unresolved_inline_fn |= sources.inline_fn;
+        }
+    }
+
+    /// Bail only the S-chain's "which cells does this touch"
+    /// question (member writes, alias shapes). The vendor strip's
+    /// write-cell view stays summarizable.
     fn bail_summarizable(&mut self) {
         self.dataflow_summarizable = false;
     }
 
+    /// Bail every consumer: the statement may WRITE arbitrary cells
+    /// (`with`, eval, `Function(...)`, dynamic global keys,
+    /// `defineProperty`/`Proxy` on the global object).
+    fn bail_cell_writes(&mut self) {
+        self.cell_writes_summarizable = false;
+        self.dataflow_summarizable = false;
+    }
+
+    fn is_global_object_expr(&self, expr: &Expr) -> bool {
+        matches!(strip_parens(expr), Expr::Ident(i) if self.global_object_names.contains(i.sym.as_ref()))
+    }
+
     fn record_global_prop(&mut self, member: &MemberExpr, is_write: bool) {
-        if !is_global_this_expr(&member.obj) {
+        if !self.is_global_object_expr(&member.obj) {
             return;
         }
         let key = match &member.prop {
@@ -1007,7 +1428,7 @@ impl StatementFactsCollector {
             MemberProp::Computed(ComputedPropName { expr, .. }) => match strip_parens(expr) {
                 Expr::Lit(Lit::Str(s)) => Some(s.value.to_string_lossy().into_owned()),
                 _ => {
-                    self.bail_summarizable();
+                    self.bail_cell_writes();
                     return;
                 }
             },
@@ -1023,6 +1444,40 @@ impl StatementFactsCollector {
     }
 }
 
+/// Collects the ident reads and inline-function presence inside an
+/// unresolved call expression. Static member prop names are
+/// `IdentName`s (not `Ident`s) and are not collected; function /
+/// arrow / class / accessor interiors are skipped — their contents
+/// are already covered by the owner's lazy sets, which the
+/// `inline_fn` flag pulls into the fallback closure.
+#[derive(Default)]
+struct UnresolvedCallSourceCollector {
+    idents: BTreeSet<Id>,
+    inline_fn: bool,
+}
+
+impl Visit for UnresolvedCallSourceCollector {
+    fn visit_ident(&mut self, node: &Ident) {
+        self.idents.insert(node.to_id());
+    }
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+    fn visit_function(&mut self, _node: &Function) {
+        self.inline_fn = true;
+    }
+    fn visit_arrow_expr(&mut self, _node: &ArrowExpr) {
+        self.inline_fn = true;
+    }
+    fn visit_class(&mut self, _node: &Class) {
+        self.inline_fn = true;
+    }
+    fn visit_getter_prop(&mut self, _node: &GetterProp) {
+        self.inline_fn = true;
+    }
+    fn visit_setter_prop(&mut self, _node: &SetterProp) {
+        self.inline_fn = true;
+    }
+}
+
 impl LazyBoundary for StatementFactsCollector {
     fn lazy_depth_mut(&mut self) -> &mut u32 {
         &mut self.lazy_depth
@@ -1035,6 +1490,19 @@ impl LazyBoundary for StatementFactsCollector {
 impl TargetAccessRecorder for StatementFactsCollector {
     fn record_binding_write(&mut self, id: &Id) {
         self.record_write(id);
+    }
+
+    fn record_member_write(&mut self, id: &Id) {
+        // Property writes through a tracked binding (`obj.x = 1`,
+        // `obj.x++`, `(a?.b).c = 1`) mutate heap state the cell
+        // summary can't attribute: aliasing makes the write
+        // invisible to readers going through a different binding.
+        // Global-object roots are handled precisely (static key) or
+        // bailed (dynamic key / deep chain) at the assign/update
+        // visitors.
+        if self.lazy_depth == 0 && !self.global_object_names.contains(id.0.as_ref()) {
+            self.bail_summarizable();
+        }
     }
 }
 
@@ -1094,10 +1562,31 @@ impl Visit for StatementFactsCollector {
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         record_assign_target(&node.left, self);
-        if self.lazy_depth == 0
-            && let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &node.left
-        {
-            self.record_global_prop(member, /*is_write=*/ true);
+        if self.lazy_depth == 0 {
+            match &node.left {
+                AssignTarget::Simple(_) => {
+                    if let Some(member) = simple_assign_member_target(&node.left) {
+                        if self.is_global_object_expr(&member.obj) {
+                            // `globalThis.tag = ...`: a precisely
+                            // tracked cell (dynamic keys bail inside
+                            // `record_global_prop`).
+                            self.record_global_prop(member, /*is_write=*/ true);
+                        } else {
+                            // Member write through a binding or a
+                            // deeper global chain (`globalThis.a.b`):
+                            // not attributable to a static cell.
+                            self.bail_summarizable();
+                        }
+                    }
+                }
+                AssignTarget::Pat(pat) => {
+                    // Destructuring targets may smuggle member
+                    // writes: `[obj.x] = arr`.
+                    if assign_target_pat_has_member_target(pat) {
+                        self.bail_summarizable();
+                    }
+                }
+            }
         }
         node.left.visit_with(self);
         node.right.visit_with(self);
@@ -1105,6 +1594,19 @@ impl Visit for StatementFactsCollector {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
+        if self.lazy_depth == 0 {
+            match strip_parens(&node.arg) {
+                // `count++`: binding read+write, handled by
+                // `record_update_target` + the child visit.
+                Expr::Ident(_) => {}
+                Expr::Member(member) if self.is_global_object_expr(&member.obj) => {
+                    // `globalThis.count++` reads and writes the cell.
+                    self.record_global_prop(member, /*is_write=*/ true);
+                    self.record_global_prop(member, /*is_write=*/ false);
+                }
+                _ => self.bail_summarizable(),
+            }
+        }
         node.arg.visit_with(self);
     }
 
@@ -1126,18 +1628,32 @@ impl Visit for StatementFactsCollector {
         node.body.visit_with(self);
     }
 
+    // The S-chain's dataflow-summarizability of calls/news is
+    // decided in the policy phase (`has_opaque_at_init_call`): any
+    // at-init call or `new` the purity classifier can't prove Pure
+    // bails `dataflow_summarizable`. The structural checks below
+    // additionally flip `cell_writes_summarizable` for the shapes
+    // that defeat WRITE-cell reasoning outright: direct and indirect
+    // `eval`, `Function(...)`, `Object.defineProperty(globalThis,
+    // ...)` / `Reflect.defineProperty(globalThis, ...)`, and
+    // `new Proxy(globalThis, ...)`.
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        if let Some(callee) = call_callee_ident(node) {
-            self.record_call(&callee.to_id());
+        match &node.callee {
+            Callee::Expr(callee) => match strip_parens(callee) {
+                Expr::Ident(ident) => self.record_call(&ident.to_id()),
+                _ => self.record_unresolved_call(node),
+            },
+            // `import(...)` evaluates another chunk asynchronously —
+            // it never synchronously runs this chunk's functions.
+            // `super(...)` can't appear at chunk top level.
+            Callee::Import(_) | Callee::Super(_) => {}
         }
         if self.lazy_depth == 0 {
             if let Callee::Expr(expr) = &node.callee
-                && let Expr::Ident(ident) = strip_parens(expr)
+                && let Expr::Ident(ident) = callee_base_expr(expr)
+                && matches!(ident.sym.as_ref(), "eval" | "Function")
             {
-                match ident.sym.as_ref() {
-                    "eval" | "Function" => self.bail_summarizable(),
-                    _ => {}
-                }
+                self.bail_cell_writes();
             }
             if let Callee::Expr(expr) = &node.callee
                 && let Expr::Member(member) = strip_parens(expr)
@@ -1150,9 +1666,9 @@ impl Visit for StatementFactsCollector {
                 && node
                     .args
                     .first()
-                    .is_some_and(|a| is_global_this_expr(&a.expr))
+                    .is_some_and(|a| self.is_global_object_expr(&a.expr))
             {
-                self.bail_summarizable();
+                self.bail_cell_writes();
             }
         }
         node.visit_children_with(self);
@@ -1163,20 +1679,33 @@ impl Visit for StatementFactsCollector {
             && let Expr::Ident(ident) = strip_parens(&node.callee)
         {
             match ident.sym.as_ref() {
-                "Function" => self.bail_summarizable(),
+                "Function" => self.bail_cell_writes(),
                 "Proxy" => {
                     let proxies_global = node
                         .args
                         .as_ref()
                         .and_then(|args| args.first())
-                        .is_some_and(|a| is_global_this_expr(&a.expr));
+                        .is_some_and(|a| self.is_global_object_expr(&a.expr));
                     if proxies_global {
-                        self.bail_summarizable();
+                        self.bail_cell_writes();
                     }
                 }
                 _ => {}
             }
         }
+        node.visit_children_with(self);
+    }
+
+    fn visit_opt_call(&mut self, node: &OptCall) {
+        // `f?.()` / `obj?.m()`: the callee is never a resolvable
+        // bare-Ident shape for promotion.
+        self.record_unresolved_call(node);
+        node.visit_children_with(self);
+    }
+
+    fn visit_tagged_tpl(&mut self, node: &TaggedTpl) {
+        // `` tag`...` `` invokes the tag function.
+        self.record_unresolved_call(node);
         node.visit_children_with(self);
     }
 
@@ -1189,7 +1718,7 @@ impl Visit for StatementFactsCollector {
 
     fn visit_with_stmt(&mut self, node: &WithStmt) {
         if self.lazy_depth == 0 {
-            self.bail_summarizable();
+            self.bail_cell_writes();
         }
         node.visit_children_with(self);
     }
@@ -1217,8 +1746,61 @@ impl Visit for StatementFactsCollector {
     }
 }
 
-fn is_global_this_expr(expr: &Expr) -> bool {
-    matches!(strip_parens(expr), Expr::Ident(i) if i.sym.as_ref() == "globalThis")
+/// Look through parens and comma sequences to a callee's final
+/// operand: `(0, eval)(...)` is an indirect eval call with the same
+/// arbitrary-cell-write power as a direct one.
+fn callee_base_expr(expr: &Expr) -> &Expr {
+    let mut cur = strip_parens(expr);
+    while let Expr::Seq(seq) = cur {
+        cur = strip_parens(seq.exprs.last().expect("SeqExpr is non-empty"));
+    }
+    cur
+}
+
+/// The member expression a simple assignment target writes through,
+/// unwrapping parens (`(globalThis.x) = 1`). `None` for ident,
+/// opt-chain, and pattern targets.
+fn simple_assign_member_target(target: &AssignTarget) -> Option<&MemberExpr> {
+    let AssignTarget::Simple(simple) = target else {
+        return None;
+    };
+    match simple {
+        SimpleAssignTarget::Member(member) => Some(member),
+        SimpleAssignTarget::Paren(paren) => match strip_parens(&paren.expr) {
+            Expr::Member(member) => Some(member),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// `true` if a destructuring assignment target contains a member
+/// expression (`[obj.x] = arr`, `({ k: obj.x } = o)`) — a property
+/// write the binding-pattern walker doesn't record.
+fn assign_target_pat_has_member_target(pat: &AssignTargetPat) -> bool {
+    fn pat_has_expr(pat: &Pat) -> bool {
+        match pat {
+            Pat::Ident(_) | Pat::Invalid(_) => false,
+            Pat::Expr(_) => true,
+            Pat::Array(array) => array.elems.iter().flatten().any(pat_has_expr),
+            Pat::Object(object) => object.props.iter().any(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => pat_has_expr(&kv.value),
+                ObjectPatProp::Assign(_) => false,
+                ObjectPatProp::Rest(rest) => pat_has_expr(&rest.arg),
+            }),
+            Pat::Assign(assign) => pat_has_expr(&assign.left),
+            Pat::Rest(rest) => pat_has_expr(&rest.arg),
+        }
+    }
+    match pat {
+        AssignTargetPat::Array(array) => array.elems.iter().flatten().any(pat_has_expr),
+        AssignTargetPat::Object(object) => object.props.iter().any(|prop| match prop {
+            ObjectPatProp::KeyValue(kv) => pat_has_expr(&kv.value),
+            ObjectPatProp::Assign(_) => false,
+            ObjectPatProp::Rest(rest) => pat_has_expr(&rest.arg),
+        }),
+        AssignTargetPat::Invalid(_) => false,
+    }
 }
 
 fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {
