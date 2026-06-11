@@ -120,18 +120,14 @@ def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
             return await client.chat_completion(
                 "claude-test",
                 [
-                    {
-                        "role": "system",
-                        "content": "You are concise.",
-                        "provider_options": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
-                    },
+                    {"role": "system", "content": "You are concise.", "cache_control": {"type": "ephemeral"}},
                     {
                         "role": "user",
                         "content": [
                             {
                                 "type": "input_text",
                                 "text": "call the tool later",
-                                "provider_options": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
+                                "cache_control": {"type": "ephemeral"},
                             },
                             {"type": "reasoning", "text": "prior scratchpad"},
                         ],
@@ -196,7 +192,7 @@ def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
                             "type": "tool-result",
                             "toolCallId": "call-1",
                             "toolName": "lookup_demo_fact",
-                            "output": '{"ok":true}',
+                            "output": {"type": "text", "value": '{"ok":true}'},
                         }
                     ],
                 },
@@ -291,6 +287,141 @@ def test_client_maps_tool_request_to_llm_proxy_next() -> None:
     ]
 
 
+def test_client_maps_claude_code_style_tool_request_to_llm_proxy_next() -> None:
+    seen_bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
+        seen_bodies.append(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+
+    async def run() -> TanaChatResult:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            return await client.chat_completion(
+                "claude-sonnet-4-20250514",
+                [
+                    {
+                        "role": "system",
+                        "content": [
+                            {"type": "text", "text": "You are Claude Code.", "cache_control": {"type": "ephemeral"}}
+                        ],
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {"role": "user", "content": "Summarize this repository."},
+                ],
+                {
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "LSP__getDiagnostics",
+                                "description": "Get language-server diagnostics.",
+                                "parameters": {"type": "object", "properties": {}},
+                            },
+                        }
+                    ],
+                    "max_tokens": 32000,
+                },
+            )
+
+    result = asyncio.run(run())
+
+    assert result.text == "ok"
+    body = seen_bodies[0]
+    assert body["isStreaming"] is False
+    assert body["args"]["userContext"] == "Ask Tana"
+    assert body["args"]["options"]["maxOutputTokens"] == 32000
+    assert body["dynamicTools"] == [
+        {
+            "name": "LSP__getDiagnostics",
+            "description": "Get language-server diagnostics.",
+            "kind": "mcpTool",
+            "runtime": "client",
+            "schema": {"type": "object", "properties": {}},
+        }
+    ]
+    assert body["args"]["messages"][0] == {
+        "role": "system",
+        "content": "You are Claude Code.",
+        "providerOptions": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
+    }
+    assert "cache_control" not in json.dumps(body)
+
+
+def test_client_maps_anthropic_tool_transcript_to_tana_messages() -> None:
+    seen_bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
+        seen_bodies.append(json.loads(request.content.decode("utf-8")))
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+
+    async def run() -> TanaChatResult:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            return await client.chat_completion(
+                "claude-sonnet-4-20250514",
+                [
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "Let me inspect that."},
+                            {"type": "tool_use", "id": "toolu_1", "name": "LSP", "input": {}},
+                        ],
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "toolu_1",
+                                "content": "InputValidationError",
+                                "is_error": True,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ],
+                    },
+                ],
+                {"tools": [{"type": "function", "function": {"name": "LSP"}}]},
+            )
+
+    result = asyncio.run(run())
+
+    assert result.text == "ok"
+    assert seen_bodies[0]["args"]["messages"] == [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Let me inspect that."},
+                {"type": "tool-call", "toolCallId": "toolu_1", "toolName": "LSP", "input": {}},
+            ],
+        },
+        {
+            "role": "tool",
+            "content": [
+                {
+                    "type": "tool-result",
+                    "toolCallId": "toolu_1",
+                    "toolName": "LSP",
+                    "output": {"type": "error-text", "value": "InputValidationError"},
+                    "providerOptions": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
+                }
+            ],
+        },
+    ]
+    assert "tool_use" not in json.dumps(seen_bodies[0])
+    assert "tool_result" not in json.dumps(seen_bodies[0])
+
+
 def test_client_streams_text_chunks_from_llm_proxy() -> None:
     seen_bodies: list[dict[str, Any]] = []
 
@@ -371,7 +502,15 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
         chunks = list(
             client.stream_completion(
                 "claude-test",
-                [{"role": "user", "content": "call the tool"}],
+                [
+                    {
+                        "role": "system",
+                        "content": [
+                            {"type": "text", "text": "You are Claude Code.", "cache_control": {"type": "ephemeral"}}
+                        ],
+                    },
+                    {"role": "user", "content": "call the tool"},
+                ],
                 {"tools": [{"type": "function", "function": {"name": "lookup_demo_fact"}}]},
             )
         )
@@ -390,6 +529,15 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
     assert chunks[-1]["usage"] == {"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9}
     assert seen_bodies[0]["isStreaming"] is True
     assert seen_bodies[0]["args"]["userContext"] == "Ask Tana"
+    assert seen_bodies[0]["args"]["messages"][0] == {
+        "role": "system",
+        "content": "You are Claude Code.",
+        "providerOptions": {"anthropic": {"cacheControl": {"type": "ephemeral"}}},
+    }
+    assert seen_bodies[0]["args"]["messages"][0]["providerOptions"] == {
+        "anthropic": {"cacheControl": {"type": "ephemeral"}}
+    }
+    assert "cache_control" not in json.dumps(seen_bodies[0])
     assert seen_bodies[0]["dynamicTools"][0]["runtime"] == "client"
 
 
@@ -588,7 +736,7 @@ def test_litellm_handler_astreaming_yields_chunks() -> None:
 
     async def collect_chunks() -> list[GenericStreamingChunk]:
         handler = TanaLiteLLM(FakeClient())
-        stream = await handler.astreaming(
+        stream = handler.astreaming(
             model="claude-test",
             messages=[{"role": "user", "content": "hi"}],
             api_base="",
@@ -607,6 +755,37 @@ def test_litellm_handler_astreaming_yields_chunks() -> None:
     assert chunks[0]["text"] == "async-pong"
     assert chunks[-1]["is_finished"] is True
     assert chunks[-1]["finish_reason"] == "stop"
+
+
+def test_litellm_routes_async_streaming_to_custom_provider() -> None:
+    class FakeClient(_NoStreamingClient):
+        async def chat_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> TanaChatResult:
+            raise AssertionError("async streaming test should not call non-streaming chat_completion")
+
+        async def astream_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> AsyncIterator[GenericStreamingChunk]:
+            assert model == "claude-test"
+            assert messages == [{"role": "user", "content": "hi"}]
+            assert optional_params == {"stream": True}
+            yield GenericStreamingChunk(
+                text="async-route-pong", is_finished=False, finish_reason="", usage=None, index=0
+            )
+            yield GenericStreamingChunk(text="", is_finished=True, finish_reason="stop", usage=None, index=0)
+
+    async def collect_chunks() -> list[Any]:
+        register_litellm_provider(TanaLiteLLM(FakeClient()))
+        stream = await litellm.acompletion(
+            model="tana/claude-test", messages=[{"role": "user", "content": "hi"}], stream=True
+        )
+        return [chunk async for chunk in stream]
+
+    chunks = asyncio.run(collect_chunks())
+
+    assert chunks[0].choices[0].delta.content == "async-route-pong"
+    assert chunks[-1].choices[0].finish_reason == "stop"
 
 
 def test_registers_tana_as_litellm_custom_provider() -> None:

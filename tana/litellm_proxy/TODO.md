@@ -22,6 +22,8 @@ source-faithful to that evidence.
 - Add Anthropic-compatible smoke tests through LiteLLM Proxy:
   - `/v1/messages`
   - streaming `/v1/messages`
+  - Claude Code-shaped streaming `/v1/messages` with Anthropic system content
+    blocks, `cache_control`, `tool_use`, and `tool_result` transcript entries
   - `/v1/messages/count_tokens`
   - tool use and tool-result continuation
 - Make Tana auth deployment-safe:
@@ -68,7 +70,6 @@ source-faithful to that evidence.
     `gaffer-private/tana/re`
   - if moving the adapter implementation to `gaffer-private`, define how the
     Ducktape image build consumes it without ad-hoc cross-repo state
-- Fix and cover async streaming end to end through LiteLLM's custom handler.
 - Preserve richer finish reasons instead of returning only `stop` or
   `tool_calls`.
 - Preserve cache usage metadata:

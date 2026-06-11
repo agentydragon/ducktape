@@ -400,7 +400,9 @@ class TanaLiteLLM(CustomLLM):
         optional_params = kwargs.get("optional_params") or {}
         return self._client.stream_completion(model, messages, optional_params)
 
-    async def astreaming(
+    # LiteLLM's base type annotates this as a coroutine, but the streaming
+    # dispatcher consumes the returned object as an async iterator.
+    async def astreaming(  # type: ignore[override]
         self,
         model: str,
         messages: list[Any],
@@ -421,7 +423,10 @@ class TanaLiteLLM(CustomLLM):
     ) -> AsyncIterator[GenericStreamingChunk]:
         del api_base, custom_prompt_dict, model_response, print_verbose, encoding, api_key
         del logging_obj, acompletion, litellm_params, logger_fn, headers, timeout, client
-        return self._client.astream_completion(model, cast(Sequence[Mapping[str, Any]], messages), optional_params)
+        async for chunk in self._client.astream_completion(
+            model, cast(Sequence[Mapping[str, Any]], messages), optional_params
+        ):
+            yield chunk
 
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
@@ -530,6 +535,7 @@ def _dynamic_tool_from_function(function: Mapping[str, Any]) -> dict[str, Any]:
 
 def _normalize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
+    tool_names_by_id: dict[str, str] = {}
     for message in messages:
         if not isinstance(message, Mapping):
             raise TanaProxyError(f"expected LiteLLM message mappings, got {type(message).__name__}")
@@ -537,17 +543,51 @@ def _normalize_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict[str,
         if role is None:
             raise TanaProxyError(f"message is missing required role: {message!r}")
         content = _normalize_content(message.get("content", ""))
+        system_provider_options: dict[str, Any] | None = None
+        if role == "system":
+            content, system_provider_options = _normalize_system_content(content)
+        if role == "user" and _content_has_tool_result(content):
+            role = "tool"
+            content = _tool_result_parts(content)
         tool_calls = message.get("tool_calls")
         if tool_calls is None:
             tool_calls = message.get("toolCalls")
         if tool_calls is not None:
             content = _append_content_parts(content, _normalize_tool_call_parts(tool_calls))
         if role == "tool":
-            content = _normalize_tool_result_content(message, content)
+            content = _normalize_tool_result_content(message, content, tool_names_by_id)
         normalized_message = {"role": role, "content": content}
-        _copy_first_set(message, normalized_message, ("providerOptions", "provider_options"), "providerOptions")
+        if system_provider_options is not None:
+            _merge_provider_options(normalized_message, system_provider_options)
+        _merge_first_set_provider_options(message, normalized_message, ("providerOptions", "provider_options"))
+        _copy_first_set(message, normalized_message, ("cache_control", "cacheControl"), "cache_control")
+        _move_anthropic_cache_control(normalized_message)
         normalized.append(normalized_message)
+        _remember_tool_call_names(content, tool_names_by_id)
     return normalized
+
+
+def _normalize_system_content(content: Any) -> tuple[str, dict[str, Any] | None]:
+    if isinstance(content, str):
+        return content, None
+    if not isinstance(content, Sequence) or isinstance(content, (bytes, bytearray)):
+        return str(content or ""), None
+
+    text_blocks: list[str] = []
+    provider_options: dict[str, Any] = {}
+    for part in content:
+        if isinstance(part, str):
+            text_blocks.append(part)
+            continue
+        if not isinstance(part, Mapping):
+            continue
+        part_provider_options = part.get("providerOptions")
+        if isinstance(part_provider_options, Mapping):
+            _merge_provider_options_value(provider_options, part_provider_options)
+        part_text = part.get("text")
+        if isinstance(part_text, str):
+            text_blocks.append(part_text)
+    return "\n".join(text_blocks), provider_options or None
 
 
 def _normalize_content(content: Any) -> Any:
@@ -562,9 +602,17 @@ def _normalize_content_part(part: Any) -> Any:
     normalized = dict(part)
     if normalized.get("type") == "input_text":
         normalized["type"] = "text"
+    if normalized.get("type") == "tool_use":
+        normalized["type"] = "tool-call"
+        _move_alias(normalized, "id", "toolCallId")
+        _move_alias(normalized, "name", "toolName")
+    if normalized.get("type") == "tool_result":
+        normalized["type"] = "tool-result"
+        _move_alias(normalized, "tool_use_id", "toolCallId")
     _move_alias(normalized, "provider_options", "providerOptions")
     _move_alias(normalized, "tool_call_id", "toolCallId")
     _move_alias(normalized, "tool_name", "toolName")
+    _move_anthropic_cache_control(normalized)
     if normalized.get("type") == "tool-call":
         arguments = normalized.pop("arguments", None)
         if arguments is not None and normalized.get("input") is None:
@@ -572,7 +620,8 @@ def _normalize_content_part(part: Any) -> Any:
     if normalized.get("type") == "tool-result":
         result_content = normalized.pop("content", None)
         if result_content is not None and normalized.get("output") is None:
-            normalized["output"] = result_content
+            normalized["output"] = _normalize_tool_result_output(result_content, bool(normalized.get("is_error")))
+        normalized.pop("is_error", None)
     return normalized
 
 
@@ -631,7 +680,23 @@ def _append_content_parts(content: Any, parts: Sequence[dict[str, Any]]) -> Any:
     return [content, *parts]
 
 
-def _normalize_tool_result_content(message: Mapping[str, Any], content: Any) -> Any:
+def _content_has_tool_result(content: Any) -> bool:
+    return (
+        isinstance(content, Sequence)
+        and not isinstance(content, (bytes, bytearray, str))
+        and any(isinstance(part, Mapping) and part.get("type") == "tool-result" for part in content)
+    )
+
+
+def _tool_result_parts(content: Any) -> list[Any]:
+    if not isinstance(content, Sequence) or isinstance(content, (bytes, bytearray, str)):
+        return [content]
+    return [part for part in content if isinstance(part, Mapping) and part.get("type") == "tool-result"]
+
+
+def _normalize_tool_result_content(
+    message: Mapping[str, Any], content: Any, tool_names_by_id: Mapping[str, str]
+) -> Any:
     tool_call_id = message.get("toolCallId") or message.get("tool_call_id")
     tool_name = message.get("toolName") or message.get("name")
     if isinstance(content, Sequence) and not isinstance(content, (bytes, bytearray, str)):
@@ -644,17 +709,49 @@ def _normalize_tool_result_content(message: Mapping[str, Any], content: Any) -> 
                 normalized_part = dict(normalized_part)
                 if tool_call_id is not None and normalized_part.get("toolCallId") is None:
                     normalized_part["toolCallId"] = tool_call_id
-                if tool_name is not None and normalized_part.get("toolName") is None:
-                    normalized_part["toolName"] = tool_name
+                part_tool_call_id = normalized_part.get("toolCallId")
+                part_tool_name = tool_name
+                if not isinstance(part_tool_name, str) and isinstance(part_tool_call_id, str):
+                    part_tool_name = tool_names_by_id.get(part_tool_call_id)
+                if isinstance(part_tool_name, str) and normalized_part.get("toolName") is None:
+                    normalized_part["toolName"] = part_tool_name
             normalized_parts.append(normalized_part)
         if has_tool_result:
             return normalized_parts
     if not isinstance(tool_call_id, str) or not tool_call_id:
         raise TanaProxyError(f"tool message is missing tool_call_id/toolCallId: {message!r}")
-    result_part: dict[str, Any] = {"type": "tool-result", "toolCallId": tool_call_id, "output": content}
+    result_part: dict[str, Any] = {
+        "type": "tool-result",
+        "toolCallId": tool_call_id,
+        "output": _normalize_tool_result_output(content),
+    }
+    if not isinstance(tool_name, str):
+        tool_name = tool_names_by_id.get(tool_call_id)
     if isinstance(tool_name, str) and tool_name:
         result_part["toolName"] = tool_name
     return [result_part]
+
+
+def _normalize_tool_result_output(output: Any, is_error: bool = False) -> Any:
+    if isinstance(output, Mapping) and isinstance(output.get("type"), str):
+        return output
+    if isinstance(output, str):
+        return {"type": "error-text" if is_error else "text", "value": output}
+    if isinstance(output, Sequence) and not isinstance(output, (bytes, bytearray, str)):
+        return {"type": "content", "value": [_normalize_content_part(part) for part in output]}
+    return {"type": "error-json" if is_error else "json", "value": output}
+
+
+def _remember_tool_call_names(content: Any, tool_names_by_id: dict[str, str]) -> None:
+    if not isinstance(content, Sequence) or isinstance(content, (bytes, bytearray, str)):
+        return
+    for part in content:
+        if not isinstance(part, Mapping) or part.get("type") != "tool-call":
+            continue
+        tool_call_id = part.get("toolCallId")
+        tool_name = part.get("toolName")
+        if isinstance(tool_call_id, str) and isinstance(tool_name, str):
+            tool_names_by_id[tool_call_id] = tool_name
 
 
 def _parse_tool_arguments(arguments: Any) -> Any:
@@ -702,10 +799,57 @@ def _copy_first_set(source: Mapping[str, Any], dest: dict[str, Any], source_keys
             return
 
 
+def _merge_first_set_provider_options(
+    source: Mapping[str, Any], dest: dict[str, Any], source_keys: Sequence[str]
+) -> None:
+    for source_key in source_keys:
+        value = source.get(source_key)
+        if value is not None:
+            _merge_provider_options(dest, value)
+            return
+
+
+def _merge_provider_options(mapping: dict[str, Any], provider_options: Any) -> None:
+    if not isinstance(provider_options, Mapping):
+        mapping["providerOptions"] = provider_options
+        return
+
+    merged = dict(mapping["providerOptions"]) if isinstance(mapping.get("providerOptions"), dict) else {}
+    _merge_provider_options_value(merged, provider_options)
+    mapping["providerOptions"] = merged
+
+
+def _merge_provider_options_value(dest: dict[str, Any], provider_options: Mapping[str, Any]) -> None:
+    for provider, options in provider_options.items():
+        current = dest.get(provider)
+        if isinstance(current, Mapping) and isinstance(options, Mapping):
+            dest[provider] = {**current, **options}
+        else:
+            dest[provider] = options
+
+
 def _move_alias(mapping: dict[str, Any], source_key: str, dest_key: str) -> None:
     value = mapping.pop(source_key, None)
     if value is not None and mapping.get(dest_key) is None:
         mapping[dest_key] = value
+
+
+def _move_anthropic_cache_control(mapping: dict[str, Any]) -> None:
+    cache_control = mapping.pop("cache_control", None)
+    if cache_control is None:
+        cache_control = mapping.pop("cacheControl", None)
+    if cache_control is None:
+        return
+
+    provider_options = mapping.get("providerOptions")
+    if not isinstance(provider_options, dict):
+        provider_options = {}
+    anthropic_options = provider_options.get("anthropic")
+    if not isinstance(anthropic_options, dict):
+        anthropic_options = {}
+    anthropic_options["cacheControl"] = cache_control
+    provider_options["anthropic"] = anthropic_options
+    mapping["providerOptions"] = provider_options
 
 
 def _parse_tana_response(response: httpx.Response) -> TanaChatResult:
