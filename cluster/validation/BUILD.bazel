@@ -266,12 +266,17 @@ py_test(
 py_test(
     name = "test_nebula_mesh",
     srcs = ["test_nebula_mesh.py"],
-    data = ["//:nebula-mesh.json"],
+    data = [
+        "//:nebula-mesh.json",
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/terraform/main:ovh-nodes.tf",
+    ],
     deps = [
         "//cluster/scripts:nebula_mesh",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

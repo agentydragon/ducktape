@@ -132,6 +132,7 @@ resources:
   - monitoring/stack/flux-kustomization.yaml
   - monitoring/stack-secrets/flux-kustomization.yaml
   - monitoring/rules/flux-kustomization.yaml
+  - monitoring/etcd/flux-kustomization.yaml
   - monitoring/loki/flux-kustomization.yaml
   - monitoring/alloy/flux-kustomization.yaml
   - monitoring/alloy-otlp-bearer-token-tf/flux-kustomization.yaml

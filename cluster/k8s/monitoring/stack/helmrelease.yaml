@@ -39,7 +39,9 @@ spec:
       create: true
       rules:
         alertmanager: true
-        etcd: false # Talos doesn't expose etcd metrics
+        # Static Talos etcd endpoints are scraped by monitoring/etcd; keep the
+        # chart's stock etcd rule bundle disabled until the scrape is verified.
+        etcd: false
         configReloaders: true
         general: true
         k8s: true
@@ -284,7 +286,8 @@ spec:
     coreDns:
       enabled: true
     kubeEtcd:
-      enabled: false # Talos doesn't expose etcd metrics
+      # Static Talos etcd endpoints are managed in cluster/k8s/monitoring/etcd.
+      enabled: false
     kubeScheduler:
       enabled: true
     kubeProxy:

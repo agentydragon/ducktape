@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import ipaddress
+import re
+from pathlib import Path
 
 import pytest
 import pytest_bazel
+import yaml
 
 from cluster.scripts import nebula_mesh
 from util.bazel.runfiles import get_required_path
+
+_TERRAFORM_NODE_RE = re.compile(r"^    (?P<key>[A-Za-z0-9_]+)\s*=\s*\{(?P<body>.*?)^    \}", re.MULTILINE | re.DOTALL)
+_TERRAFORM_STRING_ATTR_RE = re.compile(r'^\s*(?P<name>[A-Za-z0-9_]+)\s*=\s*"(?P<value>[^"]*)"', re.MULTILINE)
 
 
 @pytest.fixture(scope="module")
@@ -63,6 +69,79 @@ def test_at_least_one_control_plane(mesh: nebula_mesh.Mesh) -> None:
     """k8s-worker.nix derives controlPlaneEndpoints from role=control-plane."""
     cps = [h for h in mesh.hosts.values() if h.role == "control-plane"]
     assert cps, "roster must contain at least one role=control-plane host"
+
+
+def _control_plane_nebula_ips(mesh: nebula_mesh.Mesh) -> dict[str, str]:
+    return {name: host.nebula_ip for name, host in mesh.hosts.items() if host.role == "control-plane"}
+
+
+def _string_attrs(terraform_block: str) -> dict[str, str]:
+    return {match.group("name"): match.group("value") for match in _TERRAFORM_STRING_ATTR_RE.finditer(terraform_block)}
+
+
+def _terraform_control_plane_nebula_ips(path: Path) -> dict[str, str]:
+    text = path.read_text()
+    control_planes: dict[str, str] = {}
+    for match in _TERRAFORM_NODE_RE.finditer(text):
+        attrs = _string_attrs(match.group("body"))
+        if attrs.get("role") != "controlplane":
+            continue
+        hostname = attrs.get("hostname")
+        nebula_ip = attrs.get("nebula_ip")
+        assert hostname, f"{match.group('key')}: control-plane node is missing hostname"
+        assert nebula_ip, f"{match.group('key')}: control-plane node is missing nebula_ip"
+        control_planes[hostname] = nebula_ip
+    assert control_planes, f"{path}: expected at least one control-plane node"
+    return control_planes
+
+
+def _static_etcd_endpoint_nebula_ips(path: Path) -> dict[str, str]:
+    docs = [doc for doc in yaml.safe_load_all(path.read_text()) if doc is not None]
+    endpoint_slices = [
+        doc
+        for doc in docs
+        if doc.get("apiVersion") == "discovery.k8s.io/v1"
+        and doc.get("kind") == "EndpointSlice"
+        and doc.get("metadata", {}).get("name") == "talos-etcd-metrics"
+    ]
+    assert len(endpoint_slices) == 1, f"{path}: expected exactly one talos-etcd-metrics EndpointSlice"
+
+    endpoint_slice = endpoint_slices[0]
+    assert endpoint_slice.get("addressType") == "IPv4"
+    assert (
+        endpoint_slice.get("metadata", {}).get("labels", {}).get("kubernetes.io/service-name") == "talos-etcd-metrics"
+    )
+    assert endpoint_slice.get("ports") == [{"name": "metrics", "protocol": "TCP", "port": 2381}]
+
+    endpoints: dict[str, str] = {}
+    for endpoint in endpoint_slice.get("endpoints", []):
+        hostname = endpoint.get("hostname")
+        assert hostname, f"{path}: EndpointSlice endpoint is missing hostname"
+        assert endpoint.get("nodeName") == hostname, f"{hostname}: endpoint nodeName should match hostname"
+        assert endpoint.get("conditions", {}).get("ready") is True, f"{hostname}: endpoint should be marked ready"
+
+        addresses = endpoint.get("addresses")
+        assert isinstance(addresses, list), f"{hostname}: endpoint addresses must be a list"
+        assert len(addresses) == 1, f"{hostname}: expected exactly one endpoint address, got {addresses!r}"
+        assert hostname not in endpoints, f"{path}: duplicate endpoint hostname {hostname}"
+        endpoints[hostname] = addresses[0]
+
+    assert endpoints, f"{path}: expected at least one endpoint"
+    return endpoints
+
+
+def test_etcd_metrics_static_endpoints_match_control_plane_rosters(mesh: nebula_mesh.Mesh) -> None:
+    """The static etcd scrape endpoints must follow the control-plane node inventories."""
+    mesh_control_planes = _control_plane_nebula_ips(mesh)
+    terraform_control_planes = _terraform_control_plane_nebula_ips(
+        get_required_path("_main/cluster/terraform/main/ovh-nodes.tf")
+    )
+    static_etcd_endpoints = _static_etcd_endpoint_nebula_ips(
+        get_required_path("_main/cluster/k8s/monitoring/etcd/endpoints.yaml")
+    )
+
+    assert terraform_control_planes == mesh_control_planes
+    assert static_etcd_endpoints == mesh_control_planes
 
 
 def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:

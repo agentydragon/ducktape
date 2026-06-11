@@ -1,0 +1,25 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: etcd-monitoring
+  namespace: flux-system
+spec:
+  suspend: false
+  interval: 10m
+  retryInterval: 1m
+  timeout: 2m
+  path: ./cluster/k8s/monitoring/etcd
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    # monitoring-stack installs the ServiceMonitor CRD via kube-prometheus-stack.
+    - name: monitoring-stack
+      namespace: flux-system
+  wait: true
+  healthChecks:
+    - apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      name: talos-etcd
+      namespace: monitoring

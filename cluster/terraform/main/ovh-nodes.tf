@@ -267,6 +267,18 @@ locals {
     allowSchedulingOnControlPlanes = true
   })
 
+  kimsufi_controlplane_cluster_config_by_node = {
+    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
+    k => merge(local.kimsufi_controlplane_cluster_config, {
+      etcd = merge(local.kimsufi_controlplane_cluster_config.etcd, {
+        extraArgs = {
+          "listen-metrics-urls" = "http://${v.nebula_ip}:2381"
+        }
+      })
+    })
+    if v.role == "controlplane"
+  }
+
   # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
   # expose a second NVMe. Both are mounted at the same path so local-path-ovh
   # can use OVH-local capacity uniformly.
@@ -307,7 +319,7 @@ locals {
           "topology.kubernetes.io/zone"   = v.zone
         }
       })
-      cluster = local.kimsufi_controlplane_cluster_config
+      cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
     })
     if v.role == "controlplane"
   }
@@ -449,7 +461,7 @@ locals {
           "topology.kubernetes.io/zone"   = v.zone
         }
       })
-      cluster = local.kimsufi_controlplane_cluster_config
+      cluster = local.kimsufi_controlplane_cluster_config_by_node[k]
     })
   }
 }
