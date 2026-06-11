@@ -3,7 +3,7 @@
 //! When `materialize_logical_modules` rejects a spec, it writes one
 //! entry per blocking SCC to `reports/tree/<chunk>/cycles.json` and
 //! exits with a stderr summary. The trimmed wire shape (see
-//! [`analysis::BlockingSccEntry`] and `WIRE_FORMAT.md`) carries
+//! [`analysis::BlockingSccEntry`] and `docs/wire_format.md`) carries
 //! `id` / `modules` / `cut` per SCC — enough to dispatch follow-up
 //! queries without storing the full evidence block on disk.
 //!

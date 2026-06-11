@@ -559,6 +559,25 @@ refactors where an intermediate state is intentionally invalid).
 
 ## Workflow: authoring `comment:` fields
 
+Module YAMLs and `members:` entries carry the same optional
+`comment:` field as `anonymous_statements:` entries (see above):
+
+```yaml
+# Module YAML
+comment: |
+  Coordinates foo registrations and lookup state.
+
+members:
+  - name: FooAccessor
+    selector:
+      binding: { name: a, kind: variable_declarator }
+    comment: |
+      Reads the active foo registry without mutating it.
+```
+
+Edit module and member comments via the CLI (assumes
+`DEBUNDLE_MODULES` is exported; pass `--modules <dir>` otherwise):
+
 ```bash
 # Set a member's comment from a positional arg.
 debundle bindings comment a "Accessor for foo state."

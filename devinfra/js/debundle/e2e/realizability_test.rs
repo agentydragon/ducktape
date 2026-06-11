@@ -608,7 +608,7 @@ export { a1, a2, b1 };
     // `BlockingSccEntry` array — each entry has `id`, `modules`, and
     // `cut` and **no `evidence` block** (recoverable on demand via
     // `debundle gate describe`). See `validation.rs::BlockingSccEntry`
-    // and `WIRE_FORMAT.md`.
+    // and `docs/wire_format.md`.
     let cycles: Vec<serde_json::Value> =
         read_json(&rejected.report_root.join("static/app/cycles.json"));
     assert!(!cycles.is_empty(), "at least one blocking SCC");

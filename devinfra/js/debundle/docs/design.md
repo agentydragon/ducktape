@@ -112,21 +112,19 @@ identifier for a binding.
 
 That pair is the conceptual _binding key_ at repo/tool boundaries.
 Inside a single chunk analysis, the chunk is already contextual, so
-the hot graph paths intern local names into compact typed ids:
+the in-memory representation keys bindings by SWC's
+`Id = (Atom, SyntaxContext)` — the hygiene-aware identity the
+resolver pass mints (`graph.rs`, `facts/`). Reports and specs spell
+bindings by name (`Atom`-only on the wire; see
+`docs/wire_format.md`); internal owner graph edges, owner
+declarations, and per-chunk indexes clone `Id`s into `BTreeMap` /
+`BTreeSet` keys.
 
-```rust
-pub struct BindingId(pub usize);
-
-pub struct BindingTable {
-    names: Vec<BindingName>,
-    ids_by_name: HashMap<BindingName, BindingId>,
-}
-```
-
-Reports and specs still spell bindings by `BindingName`; internal
-owner graph edges, owner declarations, and per-chunk indexes use
-`BindingId` so algorithms can use vector lookups instead of repeatedly
-keying hot paths by strings.
+A compact interned form (a `BindingId(usize)` newtype plus a
+`BindingTable` mapping names to dense indices, so hot paths do
+vector lookups instead of keying by cloned `Id`s) has been sketched
+but is **not implemented** — treat it as an aspirational
+optimization, not a description of the code.
 
 Names are stable across the readability rename pass. The rename
 pass changes the _emitted_ identifier in the destination module's
@@ -367,7 +365,7 @@ the chunk spec picks one of two modes via
   every realizable schedule satisfies it.
 
 - **Dataflow-aware** (opt-in): per-statement `(writes, reads)`
-  effect summaries (`StatementEffectSummary` in `facts.rs`) drive a
+  effect summaries (`StatementEffectSummary` in `facts/mod.rs`) drive a
   last-writer-precedes-reader-or-writer emission. For each impure
   statement `curr`, emit `Sequenced(curr → prev)` only when `prev`
   is the most recent prior writer of a cell in `curr.reads ∪
@@ -430,8 +428,10 @@ pure function:
   owner edges incident to moved owners. The verdict is always against the
   index's current state.
 - Each push records its inverse on a journal. Callers undo deltas in LIFO
-  order to back out of a hypothetical or failed exploration. Factorize uses
-  explicit push/undo to walk closure repair branches.
+  order to back out of a hypothetical or failed exploration. The peel
+  kernel (`peel/quotient.rs`) drives this push/undo machinery for its
+  speculative merge queries; `peel/factorize.rs` is a renderer over the
+  kernel's quotient and never touches the journal directly.
 - Candidate peel checks use the same push/read/undo API as other
   hypothetical questions, but read only SCCs and rebinds touching the fresh
   destination. A new directed edge `u -> v` can create a cycle exactly when
@@ -498,8 +498,8 @@ so a naive seeding pass would be `O(|V|² · |E|)`. For gaffer-scale
 inputs (`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable
 but within budget.
 
-The kernel uses the persistent `RealizabilityIndex` (DESIGN.md
-"Realizability primitive → Iterative, undo-aware shape") instead of
+The kernel uses the persistent `RealizabilityIndex`
+(§"Realizability primitive" → "Iterative, undo-aware shape") instead of
 rebuilding from scratch per query. `QuotientGraph::from_report`
 initializes the index from the singleton-class partition projection
 and stores it alongside the typed `OwnerGraph`. Every committed
@@ -512,17 +512,31 @@ the I-graph adjacency, the `EsmEvaluationSimulator` per-pair bucket,
 and the cross-rebind set incrementally, touching only quotient edge
 buckets incident to the moved owners.
 
-For speculative queries — `merge_preserves_invariants`,
-`would_be_cycles_after_contract` — the kernel computes the merge's
-post-state ModuleId via `projected_winner_module_after_merge`
-(mirroring the gate-residual override `project_partition` would
-apply), then routes through `verdict_after_moving_owners_touching`.
-That fast path applies a per-edge overlay on the maintained graphs
+Speculative queries split into two tiers. The hot boolean gate —
+`merge_preserves_invariants`, called once per candidate by the
+greedy's pop loop — does **not** touch the realizability index at
+all: it answers via `merge_creates_new_constraining_cycle`, a
+constraining-only Pearce–Kelly walk over the kernel-maintained
+`TopoOrder` and class adjacency (with a localized cone-DFS fallback
+when the class graph already contains cycles). Asymmetric I-cycles
+that the constraining-only walk cannot see are caught by
+`build_seed_quotient`'s post-seed `check_realizability` backstop
+over the final partition.
+
+The diagnostic tier — `would_be_cycles_after_contract`, when it
+needs owner-level cycle evidence — computes the merge's post-state
+ModuleId via `projected_winner_module_after_merge` (mirroring the
+gate-residual override `project_partition` would apply), then routes
+through the index's `verdict_after_moving_owners_touching`. That
+fast path applies a per-edge overlay on the maintained graphs
 without mutating them and reads only SCCs touching the hypothetical
-destination — `O(|cone|)` per query, not `O(|V| + |E|)`. The rare
-multi-target case (gate-residual promotion transitions during a
-contract) falls back to a scoped push/verdict/undo over the index
-journal.
+destination — `O(|cone|)` per query, not `O(|V| + |E|)`. A scoped
+push/verdict/undo fallback exists for multi-target moves, but it is
+currently unreachable: `compute_merge_deltas` only ever emits
+`MoveOwners` deltas targeting the single post-merge module, so every
+speculative query takes the single-target fast path. The fallback is
+stale pending a code decision (delete it, or keep it against future
+delta shapes).
 
 The kernel's `ClassId ↔ ModuleId` mapping (`class_module_id`) is
 maintained alongside the index. Initialization assigns each
@@ -580,11 +594,27 @@ single class). The persistent index instead maintains the maintained
 quotient adjacency directly via `IncrementalQuotient::add/remove_current_edge`,
 which is structurally closer to the bounded-cone local-search
 algorithms from pointer-analysis literature (Fähndrich–Foster–
-Su–Aiken; Hardekopf–Lin). The "no bespoke parallel walks"
-invariant elsewhere in DESIGN.md still holds: the one place the
-kernel maintains its own derived state is the advisory
-`cached_cycles` heuristic on `rank_candidate`, which is documented
-as cache-not-source-of-truth.
+Su–Aiken; Hardekopf–Lin).
+
+The kernel does maintain its own derived state alongside the index —
+this is a deliberate, documented trade-off, not an accident:
+
+- The Pearce–Kelly `TopoOrder` plus the class adjacency
+  (`out_edges`), which back the hot boolean merge gate
+  `merge_creates_new_constraining_cycle`. This is
+  **decision-making** derived state: the greedy accepts or rejects
+  merges on its answer, with the post-seed `check_realizability`
+  pass as the backstop for asymmetric I-cycles the constraining-only
+  walk cannot see.
+- The advisory `cached_cycles` heuristic on `rank_candidate`, which
+  is cache-not-source-of-truth.
+
+The "no bespoke parallel walks" invariant elsewhere in this document
+is therefore relaxed here for performance: routing the hot gate
+through the index would restore one source of truth at a per-query
+cost the greedy cannot currently afford. Whether to route through
+the index or keep the PK gate is an open question tracked in
+`ARCHITECTURE_BACKLOG.md`.
 
 ## At-init call promotion
 
@@ -820,14 +850,16 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
   argument doesn't apply unmodified — async modules form their own
   ordering hazards, and a cycle through two async modules has
-  semantics this design has not analyzed. **Enforced**:
-  `materialize_logical_modules` calls `find_top_level_await`
-  before fact analysis and `bail!`s with the offending statement
-  ordinal if any module-top `AwaitExpr` is found (excluding lazy
-  positions like function/arrow/method/getter/setter bodies and
-  instance class fields). Production chunks we target are TLA-free
-  in practice; the rejection turns the assumption into a verified
-  precondition.
+  semantics this design has not analyzed. **Enforced**: the TLA
+  scan runs inside fact analysis (`analyze_chunk` /
+  `facts::analyze_chunk_structural` records the first module-top
+  `AwaitExpr`, excluding lazy positions like
+  function/arrow/method/getter/setter bodies and instance class
+  fields), and `stage_one::compute_stage_one_analysis` `bail!`s
+  with the offending statement ordinal as soon as fact analysis
+  returns — before any quotient or lowering work. Production
+  chunks we target are TLA-free in practice; the rejection turns
+  the assumption into a verified precondition.
 - **A3. No `import()` of debundled internal modules.** Dynamic
   imports of vendor / route chunks are fine — the proof treats
   those as black-box leaves with their own evaluation. Internal
@@ -933,9 +965,10 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
 A1–A5 are statically checkable on each chunk: grep for top-level
 `await`, dynamic `import()` of internal paths, `eval`, and `with`.
-A2 in particular is enforced by `find_top_level_await` —
-materialization `bail!`s with the offending statement ordinal
-before fact analysis runs. A6 (no module-eval reentry) is relied
+A2 in particular is enforced by the TLA scan inside fact analysis —
+`stage_one::compute_stage_one_analysis` `bail!`s with the offending
+statement ordinal as soon as fact analysis returns, before any
+quotient or lowering work. A6 (no module-eval reentry) is relied
 on by observation: the unmodified bundle loads in the browser.
 A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
 chunking. A8 (whitelist receivers not shadowed) is dropped to
@@ -1217,7 +1250,7 @@ Stage A in-memory through one named call site. Keep that shape: it makes
 the boundary explicit without committing the pipeline to cross-process
 fact reuse. If future work tries to cache Stage A across processes, it
 must first solve SWC hygiene replay for pre-filter facts; see
-`WIRE_FORMAT.md` and `docs/lessons_learned/cross_process_stage_b.md`.
+`docs/wire_format.md` and `docs/lessons_learned/cross_process_stage_b.md`.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in Stage B (it depends on the spec's quotient), but its
@@ -2543,9 +2576,9 @@ YAML conventions.
 | `prepare_js_chunks`              | <prepare_chunks.rs>          | Always. In one parallel per-chunk pass, parses every chunk with SWC, computes shallow program facts, and canonicalizes entries.                                    |
 | `build_artifact_indexes`         | <artifact.rs>                | Always after preparation. Builds chunk id, source path, output path, and import-reference indexes for later stages.                                                |
 | `rewrite_chunk_entry_specifiers` | <rewrite_specifiers.rs>      | Always, after chunk preparation and before data-gated transforms.                                                                                                  |
-| `apply_vendor_annotations`       | <vendor.rs>                  | When the `vendor` map is non-empty.                                                                                                                                |
-| `rename_vendor_exports`          | <vendor.rs>                  | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                               |
-| `swap_vendor_chunks`             | <vendor.rs>                  | When a `vendor` entry has `level: swap`.                                                                                                                           |
+| `apply_vendor_annotations`       | <vendor/>                    | When the `vendor` map is non-empty.                                                                                                                                |
+| `rename_vendor_exports`          | <vendor/>                    | When a `vendor` entry has `level: boundary_rename` or `level: swap`.                                                                                               |
+| `swap_vendor_chunks`             | <vendor/>                    | When a `vendor` entry has `level: swap`.                                                                                                                           |
 | `materialize_logical_modules`    | <lowering/> + analysis files | When `logical_modules`, `unassigned_mode`, or `chunk_renames` is non-empty. Computes facts, quotients the owner graph into `I ∪ S`, validates, emits.              |
 | `write_js_tree`                  | <write_tree.rs>              | When `write_js_tree` output config is present; writes JS tree reports with exact `output_metrics` and directory reports when logical modules exist.                |
 | `emit_browser_harness`           | <emit_harness.rs>            | When `emit_browser_harness` output config is present; writes browser harness reports with exact `output_metrics` and directory reports when logical modules exist. |
@@ -2556,8 +2589,8 @@ Within `materialize_logical_modules`, the substages are:
 2. **Chunk AST analysis** (<lowering/chunk_ast.rs>:
    `analyze_chunk_ast`) → top-level declarations, declaration index,
    and runtime import facts in one top-level scan.
-3. **Statement-facts analysis** (<facts.rs>:
-   `analyze_chunk_facts`) → `Vec<StatementFacts>`.
+3. **Statement-facts analysis** (<facts/mod.rs>:
+   `analyze_chunk`) → `Vec<StatementFacts>`.
 4. **Owner graph construction** (<graph.rs>) → owner vertices plus read and
    side-effect-order evidence. This is a first-class intermediate
    and report side output.
@@ -2984,7 +3017,7 @@ Not yet pinned by tests (and at least some not implemented):
   if transform isn't applied, the JSX visitor needs explicit
   handling.
 
-Action: add a unit test per case to <facts.rs> / <purity.rs>;
+Action: add a unit test per case to <facts/mod.rs> / <purity/mod.rs>;
 fill the visitor's gaps. Aim for an exhaustive table.
 
 #### Side-effect classification is conservative
@@ -3140,8 +3173,8 @@ exploration before crossing the relevant phase.
 
 Primary:
 
-- <DESIGN.md> — this document.
-- <facts.rs> — `StatementFacts` analyzer.
+- <design.md> — this document.
+- <facts/mod.rs> — `StatementFacts` analyzer.
 - <graph.rs> — owner graph and `ModuleDepGraph` builders.
 - <validation.rs> — realizability checks.
 - <chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
@@ -3151,7 +3184,7 @@ Primary:
 - <peel/factorize.rs> — advisory factorization proposal construction
   and reporting.
 - <lowering/> — main splitting transform (`mod.rs` plus per-concern
-  sibling files: `chunk_ast.rs`, `lower.rs`, `materialize.rs`,
+  sibling files: `chunk_ast.rs`, `lower.rs`, `materialize/`,
   `plans.rs`, `naturalize.rs`, `imports_cross.rs`,
   `imports_runtime.rs`, `exports.rs`, `plan_references.rs`,
   `runtime_imports.rs`, `body_facts.rs`, `chunk_renames.rs`,
@@ -3162,7 +3195,7 @@ Primary:
 
 Secondary:
 
-- <vendor.rs>, <rewrite_specifiers.rs>, <emit_harness.rs>,
+- <vendor/>, <rewrite_specifiers.rs>, <emit_harness.rs>,
   <write_tree.rs>, <identifier_rename_queue.rs> — supporting
   transforms and side-output producers.
 

@@ -6,11 +6,20 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
+### `realizability.rs` (~3265 lines) — largest file in the crate
+
+Four separable concerns plus a large test module live in one file. Suggested split:
+
+- `gate_perf_counters` (~lines 1858–2343) → its own module.
+- `EsmEvaluationSimulator` + `EsmIGraph` → `esm_simulator.rs`.
+- `IncrementalQuotient` + the overlay machinery → its own file.
+- The `#[cfg(test)]` module (~920 lines, from line 2345) → a sibling test file.
+
 ### `vendor/mod.rs` further split
 
-Remaining: strip-specific helpers, annotation/identity logic, wrapper generation could each lift out into their own modules alongside the already-extracted `vendor/manifests.rs` and `vendor/strip.rs`.
+Remaining: strip-specific helpers and annotation/identity logic could each lift out into their own modules alongside the already-extracted `vendor/manifests.rs`, `vendor/strip.rs`, and `vendor/wrappers.rs`.
 
-### `purity/mod.rs` (~2300 lines) — remaining concerns
+### `purity/mod.rs` (~2570 lines) — remaining concerns
 
 Whitelist tables already in `purity/whitelists.rs`; long PlainData /
 `PURE_OBJECT_CALLS_ON_PLAIN_DATA` rustdocs already trimmed to
@@ -19,7 +28,7 @@ Whitelist tables already in `purity/whitelists.rs`; long PlainData /
 scanning, and TS enum IIFE recognition still live in `mod.rs` —
 could be sub-split further if it keeps growing.
 
-### `facts/mod.rs` (1213 lines, 2 concerns)
+### `facts/mod.rs` (1357 lines, 2 concerns)
 
 `StatementFacts` carries many derivable `BTreeSet<Id>` sets that every construction site must keep mutually consistent — see the canonical "### `StatementFacts`" item under P3.
 
@@ -39,7 +48,7 @@ could be sub-split further if it keeps growing.
 
 `lower_chunk` had 8 sequential phases inline. Four have been extracted into named functions (`compute_selected_ordinals`, `plan_selected_exports`, `split_entry_body`, `build_module_output`). Remaining inline phases (naturalization, disambiguation, import planning, the per-module loop) could be further extracted, though each requires substantial captured state from `LowerChunkInputs` (15–20 fields).
 
-### `lowering/mod.rs` — 266-line import block
+### `lowering/mod.rs` — ~95-line import block in a 295-line file
 
 Consequence of wildcard `use super::*` in every sub-module. A more targeted import strategy would reduce this.
 
@@ -130,34 +139,9 @@ The crate (at pinned 29.1.1) provides more than just `find_pat_ids`. Additional 
 | `replace_ident(node, from, to)`           | line 2070                    | Single-identifier replacement handling shorthand props. Lighter than full `IdentRenamer`                                                                                                                                                               |
 | `collect_decls_with_ctxt`                 | line 2256                    | Like `collect_decls` but filters to a specific `SyntaxContext`. Could be useful for scope-aware binding collection                                                                                                                                     |
 
-### `swc_ecma_transforms_optimization::simplify::dce` — Potential DCE replacement
+### `swc_ecma_transforms_optimization::simplify::dce` — evaluated and rejected
 
-The DCE pass that `swc_ecma_minifier` uses actually lives in `swc_ecma_transforms_optimization` (a separate, lighter crate). It is **public and standalone-usable**:
-
-```rust
-use swc_ecma_transforms_optimization::simplify::dce;
-
-let mut shaker = dce(
-    dce::Config {
-        module_mark: None,
-        top_level: true,
-        top_retain: vec!["keep_me".into()],
-        preserve_imports_with_side_effects: true,
-    },
-    unresolved_mark,
-);
-module.visit_mut_with(&mut shaker);
-```
-
-**Algorithm**: Two-phase fixed-point — `Analyzer` builds a `petgraph` dependency graph of variable references, tracks entry points, subtracts SCC-internal usage via Tarjan, then `TreeShaker` removes zero-usage bindings. Handles eval/arguments conservatively, self-references in fn/class bodies, IIFE unfolding.
-
-**Adaptation path for partial-swap**: The DCE removes what's _unreferenced_. For "strip these specific exports":
-
-1. Preparatory pass removes target export specifiers from the module
-2. Run DCE with `top_level = true` and `top_retain` listing the residual symbols to keep
-3. DCE transitively drops bindings that only the removed exports used
-
-This would replace the custom `sweep_unreachable_top_level` in `strip_swapped_vendor_exports.rs` (~300 lines). The debundle's split-brain detection (checking that dropped items aren't read by kept items) would still need a custom validation pass after DCE runs. Worth investigating whether the DCE's own `can_drop_binding` logic covers this or whether a post-DCE validation scan is sufficient.
+Replacing the vendor strip sweep (`sweep_unreachable_top_level` in `vendor/strip.rs`) with SWC's standalone DCE pass was evaluated and rejected as **unsound for this use case**. The strip sweep must delete _referenced, side-effectful_ swap-private statements — CJS module IIFEs, prototype wiring — that a conservative DCE retains precisely because they are referenced and side-effecting. Conversely, the sweep's split-brain and observable-effect gates (refusing to drop a statement still reachable from the residual chunk, or whose observable effect is not provably swap-private) are exactly the checks DCE lacks. Do not revisit without a design that covers both.
 
 ### `swc_ecma_usage_analyzer` — Dead end
 
@@ -178,11 +162,11 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 ---
 
-## Top 5 Highest-Impact Actions
+## Top Highest-Impact Actions
 
-1. **Continue splitting `vendor/mod.rs`** — manifests, strip, and partial-swap dispatchers extracted; remaining: strip-specific helpers, annotation/identity logic, wrapper generation.
+1. **Split `realizability.rs`** — see the P0 item; largest file in the crate at ~3265 lines.
 
-2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
+2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and partial-swap dispatchers extracted; remaining: strip-specific helpers, annotation/identity logic.
 
 3. **Simplify `StatementFacts`** (`facts/mod.rs`) — see the canonical "### `StatementFacts`" item under P3.
 

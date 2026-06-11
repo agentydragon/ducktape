@@ -112,18 +112,25 @@ into a tested invariant or delete the defensive branch.
 
 ### Keep the doc split crisp
 
-These files plus AGENTS.md plus RENAME.md document the same project from multiple perspectives. Skimming them, I find:
+These files document the same project from multiple perspectives. Skimming them, I find:
 
 - docs/design.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
+- docs/cli.md is the command reference; docs/guide.md is the worked
+  step-by-step workflow document (at 644 lines it is now larger than
+  README.md, not "shorter intro material").
+- docs/wire_format.md is the JSON sidecar reference.
 - CODE_REVIEW.md is the active code-quality backlog.
+- CLI_DOGFOOD.md is the open CLI usability/scripting-safety backlog.
 - README.md is a marketing-shaped pitch with usage.
-- guide.md is shorter intro material.
 - TODO.md is the broad active work backlog.
+- perf/proposer.md is the performance work log.
+- plans/ holds future-work design notes (including
+  plans/factor_vocabulary_rename.md, the terminology-rename plan
+  removing "factor" vocabulary in favor of precise graph-theoretic
+  names); x/ holds experimental/in-flux notes.
 - docs/lessons_learned/cross_process_stage_b.md is the historical
   exception: it records an abandoned design to prevent repeating it.
-- RENAME.md is the terminology-rename plan (removing "factor"
-  vocabulary in favor of precise graph-theoretic names).
 
 ## Quick wins (≤30 min each)
 
@@ -144,7 +151,11 @@ After the rename, `chunk_analysis::ChunkAnalysis` (IR) and `artifact::ChunkAnaly
 
 ### Should the gate and the materializer share `EsmEvaluationSimulator`?
 
-Today the simulator in `realizability.rs` is the gate's `cross-checks the materializer would have produced this evaluation order` mechanism. The materializer's own `lowering/imports_cross.rs::cross_module_imports_for_plan` actually produces the import order. If a future refactor moves the import-order computation into one place, the simulator's purpose changes: it stops being "predict what the materializer will do" and becomes "compute the post-order DFS the runtime will produce". Both consume `chunk_linker_order` / `chunk_source_import_order` from `graph.rs` (now the sole source of truth after `da7e928e2`), so today they cannot drift. If a future regression reintroduces a parallel ordering helper, the simulator breaks; the structural defense is keeping the canonical-edge-set API as the only entry point.
+Today the simulator in `realizability.rs` is the gate's `cross-checks the materializer would have produced this evaluation order` mechanism. The materializer's own `lowering/imports_cross.rs::cross_module_imports_for_plan` actually produces the import order. If a future refactor moves the import-order computation into one place, the simulator's purpose changes: it stops being "predict what the materializer will do" and becomes "compute the post-order DFS the runtime will produce". Both consume `chunk_linker_order` / `chunk_source_import_order` from `graph.rs` (now the sole source of truth after `da7e928e2`) — but they **can** drift: the emitter places phantom side-effect imports first in each emitted module (`lowering/lower.rs`, "Phantom side-effect imports go FIRST"), an ordering the simulator's per-module `linker_position` model does not reproduce. **Open soundness item**: either model the phantom-first placement in the simulator or derive both orders from one shared plan. If a future regression reintroduces a parallel ordering helper, the simulator breaks further; the structural defense is keeping the canonical-edge-set API as the only entry point.
+
+### Should the kernel's merge gate route through the realizability index?
+
+The peel kernel's hot boolean merge gate is `merge_creates_new_constraining_cycle` (a constraining-only Pearce–Kelly walk over the kernel-maintained `TopoOrder` + class adjacency in `peel/quotient.rs`), with `build_seed_quotient`'s post-seed `check_realizability` pass as the backstop for asymmetric I-cycles. docs/design.md §"Why not Pearce–Kelly verbatim" documents this as the current trade-off. The open question: route the hot gate through the `RealizabilityIndex` (one source of truth, slower per query) vs. keep the PK gate (fast, but a second decision-making derived structure the kernel must keep consistent).
 
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 

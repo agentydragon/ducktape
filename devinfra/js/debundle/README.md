@@ -28,8 +28,10 @@ Cheat sheet of the most-used commands:
 - `debundle bindings comment <sym>` / `debundle modules comment <module>` —
   edit `comment:` fields (see "Comments" below).
 
-Mutating commands (`bindings assign`, `bindings rename`, `modules
-merge`) run the realizability gate by default; `--dry-run` previews,
+Mutating commands validate by default: `bindings assign`, `bindings
+unassign`, `modules merge`, and `modules delete` (of non-empty
+modules, with `--force`) run the realizability gate; `bindings
+rename` runs name-collision detection. `--dry-run` previews,
 `--no-verify` skips. Read-only commands accept `--format
 text|json|ndjson` (default `text` on tty, `json` on pipe).
 
@@ -157,72 +159,14 @@ available.
 
 ## Comments
 
-Module YAMLs and `members:` entries may carry an optional
-`comment:` field for reverse-engineering annotations. These fields
-are authored once and emit into generated JS on every rebuild, so RE
-notes survive `debundle run` invocations.
-
-`anonymous_statements:` entries may also carry `comment:` or `note:`.
-Both fields are preserved on round-trip. `comment:` emits into
-generated JS immediately before the matched anonymous statement;
-`note:` remains YAML metadata.
-
-Debundle's output is meant to turn minified compiled chunks into nice
-human-readable code. Treat emitted `comment:` text as part of that
-readability surface: explain intent, invariants, and module
-relationships. Provenance, owner IDs, and source-call trivia belong in
-`note:` or should be omitted.
-
-Use `note:` for scratch reverse-engineering notes that should survive
-debundle edits but should not appear in generated JS, including
-uncertainty, provenance, and call-site observations.
-
-```yaml
-# Module YAML
-comment: |
-  Coordinates foo registrations and lookup state.
-
-members:
-  - name: FooAccessor
-    selector:
-      binding: { name: a, kind: variable_declarator }
-    comment: |
-      Reads the active foo registry without mutating it.
-
-anonymous_statements:
-  - match: "Foo.prototype.bar = true;"
-    comment: |
-      Enables Foo.bar before consumers import Foo.
-  - match: "registerFoo(foo);"
-    note: "uncertain: looks like a registration side effect"
-```
-
-Edit module and member comments via the CLI (assumes
-`DEBUNDLE_MODULES` is exported; pass `--modules <dir>` otherwise):
-
-```sh
-# Set a member's comment from a positional arg.
-debundle bindings comment a "Accessor for foo state."
-
-# Open $EDITOR pre-populated with the current comment.
-debundle bindings comment a --edit
-
-# Remove the comment entirely.
-debundle bindings comment a --clear
-
-# Read the current comment (plain text on tty, JSON on pipe).
-debundle bindings comment a
-
-# Same three modes for module-level comments.
-debundle modules comment runtime/foo --edit
-```
-
-`bindings comment` accepts minified (`a`) or readable (`FooAccessor`)
-names. `modules comment` takes the module path (`runtime/foo`)
-relative to `$DEBUNDLE_MODULES`. Anonymous-statement comments are
-authored directly in YAML.
-
-CLI editing is live for module and member comments.
+Module YAMLs, `members:` entries, and `anonymous_statements:` entries
+may carry an optional `comment:` field for reverse-engineering
+annotations; these emit into generated JS on every rebuild, so RE
+notes survive `debundle run` invocations. `note:` is YAML-only
+scratch metadata that never emits. Edit module and member comments
+via `debundle bindings comment` / `debundle modules comment`. See
+`docs/guide.md` → "Workflow: authoring `comment:` fields" for the
+YAML schema and worked CLI examples.
 
 ## Conditionally-correct optimizations
 
@@ -248,11 +192,11 @@ It is sound when no top-level statement contains:
   would otherwise track
 
 Each impure top-level statement carries a `dataflow_summarizable` bit
-(`facts/wire.rs`). Statements that fail the check fall back to the
-strictly-conservative S-chain (every adjacent impure pair gets an
-edge), so the optimization is safe to enable even on bundles that
-mix audited and unaudited code — only the unsummarizable statements
-pay the conservative cost.
+(`facts/wire.rs`). Statements that fail the check fall back to a
+strict S-edge against every prior impure owner and act as an opaque
+barrier for later statements, so the optimization is safe to enable
+even on bundles that mix audited and unaudited code — only the
+unsummarizable statements pay the conservative cost.
 
 See `docs/design.md` → "Emission modes" for the precise dataflow-aware
 emission rule.

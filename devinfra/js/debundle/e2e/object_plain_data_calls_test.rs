@@ -11,8 +11,8 @@
 //! case — an opaque ident or function-call argument — stays
 //! Unknown.
 //!
-//! Companion unit tests in `analysis_tests.rs` cover the bare
-//! classifier verdicts; these end-to-end tests pin the
+//! Companion unit tests in `purity/classifier_tests.rs` cover the
+//! bare classifier verdicts; these end-to-end tests pin the
 //! cycle-breaking behaviour the rule enables in real specs.
 
 use debundle_e2e_support::*;

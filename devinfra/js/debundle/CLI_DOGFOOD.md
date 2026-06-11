@@ -22,19 +22,17 @@ The actual path now has a `+_repo_rules+` prefix:
 Generic usability follow-ups for the top-level planner commands.
 Corpus-specific paths and owner ids belong in the consuming repo.
 
-- **Bounded planner output.** `debundle modules propose` is the main
-  dispatch surface for agents and humans; for fresh or sparse specs,
-  output can become hard to consume when proposal details and
-  diagnostics are both large. Keep proposal output bounded by default
-  when `--limit` is supplied, expose summary counts even when details
-  are truncated, consider an explicit diagnostics toggle for first-pass
-  planning, and keep sort keys documented and stable.
-- **Concise explain mode.** `debundle describe --owner-id ...` should
-  have a compact mode focused on: selected owner identity and source
-  span, atomic-unit membership, matching `plan-work` proposal (if any),
-  immediate constraining neighbors, and the exact reason the owner is
-  not landable today. Large proposal/diagnostic structures should be
-  opt-in when the caller is debugging the planner itself.
+- **Diagnostics toggle for `modules propose`.** `--limit` now bounds
+  proposals and diagnostics and the `limits` summary reports totals
+  when details are truncated, but there is still no explicit
+  diagnostics on/off toggle for first-pass planning, where proposal
+  rows are the only thing the caller wants.
+- **Concise explain mode.** Proposal/diagnostic structures on
+  `describe` are already opt-in (`--include-proposals`), but there is
+  still no compact mode focused on: selected owner identity and source
+  span, atomic-unit membership, matching proposal (if any), immediate
+  constraining neighbors, and the exact reason the owner is not
+  landable today.
 - **Source roots.** `source-slice --source-root ...` depends on the
   consuming target's source-tree layout. Runbooks and skills should make
   that target-specific root explicit instead of assuming repository root

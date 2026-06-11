@@ -339,8 +339,9 @@ as a structured object so machine readers can parse it.
 
 - **No cross-process materializer reader.** `debundle run` reads
   the spec and emits JS in one process. There is no
-  `materialize-from-cache` mode — see `WIRE_FORMAT.md`
-  §"Cross-process scope: not a goal" for the analysis.
+  `materialize-from-cache` mode — see `wire_format.md` §"Why
+  pre-filter facts (`StatementFacts`) aren't on the wire" and
+  `lessons_learned/cross_process_stage_b.md` for the analysis.
 - **`facts.json` is not a CLI input.** It's an in-process debug
   artifact at `reports/tree/<chunk>/chunk_analysis/facts.json`. See
   `facts/wire.rs` module docstring.
@@ -404,8 +405,8 @@ not separate features):
   target's module-level `comment:` (with a `--- from <source>:`
   divider) when sources have non-empty comments.
 
-See README.md → "Comments" for the YAML schema and worked CLI
-examples.
+See `guide.md` → "Workflow: authoring `comment:` fields" for the
+YAML schema and worked CLI examples.
 
 ## See also
 
@@ -413,7 +414,7 @@ examples.
   commands.
 - `design.md` — the realizability theorem the validation gate
   enforces.
-- `WIRE_FORMAT.md` — JSON sidecar conventions readers of these
+- `wire_format.md` — JSON sidecar conventions readers of these
   commands consume.
 - `lessons_learned/cross_process_stage_b.md` — why pre-filter
   analyzer facts are not a cross-process CLI input.

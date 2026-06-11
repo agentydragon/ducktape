@@ -117,7 +117,7 @@ caching.
 
 ## Pointers
 
-- `WIRE_FORMAT.md` — the live `Atom`-only convention.
+- `../wire_format.md` — the live `Atom`-only convention.
 - `stage_one/mod.rs` — the composer that survived.
 - Git history: the abandoned design lived in `PIPELINE_SPLIT.md`
   pre-deletion (`git log -- devinfra/js/debundle/PIPELINE_SPLIT.md`).

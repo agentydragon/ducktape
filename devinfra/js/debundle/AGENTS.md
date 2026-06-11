@@ -264,7 +264,7 @@ check lives, and (c) the fallback path.
 
 The purity classifier's `PURE_STATIC_PROPS`, `PURE_STATIC_CALLS`,
 and `PURE_GLOBAL_CALLS` whitelists in
-<purity.rs> directly drive S-edge construction. An
+<purity/whitelists.rs> directly drive S-edge construction. An
 over-approximating entry — a built-in flagged Pure that can in
 fact fire user code on some argument — drops S edges the
 realizability theorem needs, and can let a cyclic spec slip past
@@ -400,7 +400,7 @@ descriptor-mutation on an arbitrary receiver.
 
 New entries to `PURE_OBJECT_CALLS_ON_PLAIN_DATA` need the same
 per-entry ECMA-262 citation as `PURE_STATIC_CALLS`, plus paired
-positive and negative tests in `analysis_tests.rs`:
+positive and negative tests in `purity/classifier_tests.rs`:
 
 - a positive `object_<prop>_on_plain_<shape>_classifies_pure`
   test (`Object.<prop>({lit})` is Pure), and

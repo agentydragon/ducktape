@@ -66,6 +66,40 @@ upgrades. Stale picks become a self-test: if the materialiser fails
 to find them, that's a real signal (either the bundle moved or our
 matchers regressed).
 
+### Smoke target contract
+
+- runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
+  similar);
+- builds the Excalidraw bundle through the shared `debundle_pipeline`
+  rule (<pipeline.bzl>);
+- starts the live-proxy binary against the resulting harness;
+- drives a headless Chromium through the proxy, asserts:
+  - no failed asset requests,
+  - no console errors,
+  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
+    or whichever stable selector Excalidraw exposes),
+  - a small interaction works (click the rectangle tool, click on
+    the canvas, verify a shape was added — proves the React app is
+    reactive after debundle).
+
+### Hosting
+
+Self-hosted, no MITM. Private-corpus smokes generally have to MITM the
+live host because their auth/data is server-side; Excalidraw runs
+entirely in the browser, so a self-hosted bundle is a fully working
+app. Self-hosting removes the network dependency and CDN-rotation
+flakiness (the test stays green even when excalidraw.com is down) and
+matches the "reproduce against Excalidraw" workflow goal — a public,
+deterministic smoke that doesn't depend on third-party uptime.
+
+### Workflow rule
+
+When a private-corpus debundler issue is tractable on Excalidraw too,
+prefer landing the regression test on this Excalidraw target (or a
+smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
+only fixing it behind the private repo. The latter loses the
+public-CI signal and the public-bug-report leverage.
+
 ## Anonymous selector indexing in graph dumps
 
 Today `anonymous_statements:` selectors resolve purely by AST-shape match
@@ -125,40 +159,6 @@ private corpus details in Ducktape.
 - **Matcher core cleanup.** Factor anonymous-statement and member-binding
   `source_match` resolution through a shared parse/canonicalize/window
   matcher before adding more selector variants.
-
-### Smoke target contract
-
-- runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or
-  similar);
-- builds the Excalidraw bundle through the shared `debundle_pipeline`
-  rule (<pipeline.bzl>);
-- starts the live-proxy binary against the resulting harness;
-- drives a headless Chromium through the proxy, asserts:
-  - no failed asset requests,
-  - no console errors,
-  - the canvas toolbar is visible (e.g. `[data-testid="toolbar"]`
-    or whichever stable selector Excalidraw exposes),
-  - a small interaction works (click the rectangle tool, click on
-    the canvas, verify a shape was added — proves the React app is
-    reactive after debundle).
-
-### Hosting
-
-Self-hosted, no MITM. Private-corpus smokes generally have to MITM the
-live host because their auth/data is server-side; Excalidraw runs
-entirely in the browser, so a self-hosted bundle is a fully working
-app. Self-hosting removes the network dependency and CDN-rotation
-flakiness (the test stays green even when excalidraw.com is down) and
-matches the "reproduce against Excalidraw" workflow goal — a public,
-deterministic smoke that doesn't depend on third-party uptime.
-
-### Workflow rule
-
-When a private-corpus debundler issue is tractable on Excalidraw too,
-prefer landing the regression test on this Excalidraw target (or a
-smaller minimised e2e under `devinfra/js/debundle/e2e/`) rather than
-only fixing it behind the private repo. The latter loses the
-public-CI signal and the public-bug-report leverage.
 
 ## Logical materialization breadth
 
