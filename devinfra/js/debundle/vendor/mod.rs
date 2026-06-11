@@ -17,8 +17,9 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts, join_module_path,
-    list_chunk_file_paths, module_path_dirname, normalize_module_path, relative_module_specifier,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, JsFile, JsFileAstParts,
+    join_module_path, list_chunk_file_paths, module_path_dirname, normalize_module_path,
+    relative_module_specifier,
 };
 use binding_targets::{declaration_ids, declaration_name_strings, module_export_name};
 use js_ast::{ParsedJsModule, str_value};
@@ -26,7 +27,9 @@ use js_ast::{ParsedJsModule, str_value};
 use js_ast::{emit_js_module, parse_js_module};
 pub use manifests::*;
 use plan::{ChunkBundledPartialSwapPlan, ChunkPartialSwapPlan};
-pub use plan::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
+pub use plan::{
+    VendorImportAction, VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan,
+};
 use spec::PartialSwapKind;
 pub use strip::{
     ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
@@ -782,12 +785,20 @@ where
         let caller_chunk_id = chunk_artifact.chunk_id;
         let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
         for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let has_ast = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-                .is_some();
-            if !has_ast {
+            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
+                continue;
+            };
+            if file.ast().is_none() {
+                continue;
+            }
+            // File-class partition (plans/vendor_into_emission.md §8,
+            // PR 3): materialized module files' vendor-targeted
+            // references are planned during lowering's import
+            // construction from the vendor resolution plan, so the
+            // post-materialize wave only rewrites pass-through files
+            // (chunk entries and runtime files) until PR 4's unified
+            // emission rewriter takes those over too.
+            if file.metadata.role == FileRole::Module {
                 continue;
             }
             let (parts, ast) = chunk_artifact
@@ -865,10 +876,20 @@ where
 /// references against the upstream packages. Validation and resolution
 /// happened at plan time; the manifest is the plan's resolution
 /// projection plus application-time rewrite counts.
+///
+/// `lowering_rewrites` carries the per-symbol counts of vendor
+/// rewrites already applied at construction time in materialized
+/// module bodies (lowering's import construction consumes the same
+/// plan); they are folded into the same `references_rewritten` fields
+/// so the manifest keeps counting **emitted** references regardless of
+/// which application site produced them. Entries for chunks outside
+/// this wave's family (bundled vs partial) are skipped — the sibling
+/// wave folds them.
 pub fn apply_partial_vendor_swaps(
     mut artifact: ChunkBundle,
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
+    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
 ) -> Result<ApplyPartialVendorSwapsResult> {
     let chunk_table = artifact.chunk_table.clone();
     let mut resolutions: BTreeMap<String, ChunkPartialSwapResolution> = plan
@@ -891,6 +912,8 @@ pub fn apply_partial_vendor_swaps(
         });
     }
 
+    let lowering_references =
+        fold_lowering_rewrite_counts(&plan.partial_swaps, &mut resolutions, lowering_rewrites);
     let outcome = dispatch_partial_swap_jobs(
         &mut artifact,
         &chunk_table,
@@ -911,10 +934,34 @@ pub fn apply_partial_vendor_swaps(
             counts: PartialSwapResolutionCounts {
                 chunks: plan.partial_swaps.len(),
                 symbols: total_symbols,
-                references_rewritten: outcome.total_references,
+                references_rewritten: outcome.total_references + lowering_references,
             },
         },
     })
+}
+
+/// Fold lowering-applied per-symbol rewrite counts into the wave's
+/// resolutions; returns the total folded so the manifest counts stay
+/// consistent. Counts keyed by chunks outside `mappings` belong to the
+/// sibling wave family and are skipped.
+fn fold_lowering_rewrite_counts<M: PartialSwapMappingEntry, R: PartialSwapResolutionSymbols>(
+    mappings: &BTreeMap<ChunkId, M>,
+    resolutions: &mut BTreeMap<String, R>,
+    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
+) -> usize {
+    let mut total = 0usize;
+    for ((chunk_id, chunk_export), count) in lowering_rewrites {
+        let Some(mapping) = mappings.get(chunk_id) else {
+            continue;
+        };
+        if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
+            && let Some(symbol_resolution) = resolution.symbols_mut().get_mut(chunk_export)
+        {
+            symbol_resolution.references_rewritten += count;
+        }
+        total += count;
+    }
+    total
 }
 
 /// Apply the plan's bundled partial swaps: write the planned bundle
@@ -926,6 +973,7 @@ pub fn apply_bundled_partial_vendor_swaps(
     plan: &VendorResolutionPlan,
     references: &ArtifactIndexes,
     write: bool,
+    lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
 ) -> Result<ApplyBundledPartialVendorSwapsResult> {
     let chunk_table = artifact.chunk_table.clone();
     let mut resolutions: BTreeMap<String, ChunkBundledPartialSwapResolution> = plan
@@ -955,6 +1003,11 @@ pub fn apply_bundled_partial_vendor_swaps(
         }
     }
 
+    let lowering_references = fold_lowering_rewrite_counts(
+        &plan.bundled_partial_swaps,
+        &mut resolutions,
+        lowering_rewrites,
+    );
     let outcome = dispatch_partial_swap_jobs(
         &mut artifact,
         &chunk_table,
@@ -986,7 +1039,7 @@ pub fn apply_bundled_partial_vendor_swaps(
             counts: PartialSwapResolutionCounts {
                 chunks: plan.bundled_partial_swaps.len(),
                 symbols: total_symbols,
-                references_rewritten: outcome.total_references,
+                references_rewritten: outcome.total_references + lowering_references,
             },
         },
         self_rewrite_import_locals_by_chunk_path,
@@ -1599,7 +1652,12 @@ fn module_used_idents(module: &Module) -> BTreeSet<String> {
     collector.0
 }
 
-fn bundled_facade_import_source(
+/// Caller-relative module specifier for a generated bundled facade:
+/// `facade_app_path` rebased against the caller file's output-tree
+/// directory. Shared by the bundled wave and lowering's
+/// construction-time facade imports (where `caller_file_path` is the
+/// materialized module's target file).
+pub fn bundled_facade_import_source(
     chunk_table: &ChunkTable,
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
@@ -1610,7 +1668,13 @@ fn bundled_facade_import_source(
     relative_module_specifier(caller_output_dir, Path::new(facade_app_path))
 }
 
-fn resolve_partial_swap_import_target(
+/// Resolve a directive source to its target chunk for swap
+/// classification: artifact-index resolution first, then the
+/// materialized-output longest-prefix fallback. Shared by the wave
+/// dispatchers, the consumer gate, and lowering's construction-time
+/// vendor consultation (which resolves the source chunk's original
+/// directives from the same coordinate system).
+pub fn resolve_partial_swap_import_target(
     source: &str,
     caller_chunk_id: ChunkId,
     caller_file_path: &str,
@@ -1668,7 +1732,7 @@ fn resolve_materialized_output_import_target(
 /// ancestors longest-to-shortest against `by_dir_prefix`, then combines
 /// the two candidates with longest-match-wins / tie-breaks-as-`None`
 /// (same semantics as the prior linear scan, including `ambiguous`).
-struct MaterializedOutputChunkIndex {
+pub struct MaterializedOutputChunkIndex {
     by_exact: HashMap<String, ChunkEntry>,
     by_dir_prefix: HashMap<String, ChunkEntry>,
 }
@@ -1702,7 +1766,7 @@ impl ChunkEntry {
 }
 
 impl MaterializedOutputChunkIndex {
-    fn build(chunk_table: &ChunkTable) -> Self {
+    pub fn build(chunk_table: &ChunkTable) -> Self {
         let len = chunk_table.len();
         let mut by_exact: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
         let mut by_dir_prefix: HashMap<String, ChunkEntry> = HashMap::with_capacity(len * 2);
@@ -1785,7 +1849,10 @@ fn insert_candidate(
         .or_insert(ChunkEntry::Unique(chunk_id, match_len));
 }
 
-enum DeferredImport {
+/// Replacement import decl shapes shared by the wave dispatchers and
+/// lowering's construction-time vendor imports; one single-specifier
+/// `ImportDecl` per value so both application sites emit identical AST.
+pub enum DeferredImport {
     /// `import * as <local> from "<source>"`
     Namespace { source: String, local: String },
     /// `import <local> from "<source>"`
@@ -1800,7 +1867,7 @@ enum DeferredImport {
 }
 
 impl DeferredImport {
-    fn into_module_item(self) -> ModuleItem {
+    pub fn into_module_item(self) -> ModuleItem {
         match self {
             DeferredImport::Namespace { source, local } => make_namespace_import(&source, &local),
             DeferredImport::Default { source, local } => make_default_import(&source, &local),
@@ -1814,7 +1881,7 @@ impl DeferredImport {
 }
 
 #[derive(Debug, Clone)]
-enum IdentRewriteTarget {
+pub enum IdentRewriteTarget {
     /// kind=member: rewrite `<local>` references to `<namespace>.<upstream_export>`.
     Member {
         namespace: String,
@@ -1841,9 +1908,9 @@ enum IdentRewriteTarget {
 /// symbol) ensures a same-named binding in a nested scope — a function
 /// parameter, a shadowing `const`/`let`, a `catch` binding — is left
 /// untouched, since it carries a different `SyntaxContext`.
-struct PartialSwapIdentRewriter<'a> {
-    bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
-    references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
+pub struct PartialSwapIdentRewriter<'a> {
+    pub bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
+    pub references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
 }
 
 impl VisitMut for PartialSwapIdentRewriter<'_> {

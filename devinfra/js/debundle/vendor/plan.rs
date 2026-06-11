@@ -88,6 +88,113 @@ impl VendorResolutionPlan {
     pub fn has_bundled_partial_swaps(&self) -> bool {
         !self.bundled_partial_swaps.is_empty()
     }
+
+    /// Oracle answer for one named import of `imported_name` targeting
+    /// `chunk`: how lowering's import construction must materialize it.
+    /// Mirrors the post-materialize dispatchers' per-specifier
+    /// classification exactly — `None` means "keep the chunk
+    /// re-import" (the post-strip consumer gate stays the safety net
+    /// for shapes with no live rewrite, e.g. a symbol whose package
+    /// coordinates are missing the required `namespace`).
+    pub fn swapped_named_import_action(
+        &self,
+        chunk: ChunkId,
+        imported_name: &str,
+    ) -> Option<VendorImportAction> {
+        if let Some(partial) = self.partial_swaps.get(&chunk) {
+            let symbol = partial.symbols.get(imported_name)?;
+            let coords = partial.packages.get(&symbol.package)?;
+            return Some(match symbol.kind {
+                PartialSwapKind::Member => VendorImportAction::PackageMember {
+                    package: symbol.package.clone(),
+                    namespace: coords.namespace.clone()?,
+                    upstream_export: symbol.upstream_export.clone()?,
+                },
+                PartialSwapKind::Namespace => VendorImportAction::PackageNamespace {
+                    package: symbol.package.clone(),
+                },
+                PartialSwapKind::Default => VendorImportAction::PackageDefault {
+                    package: symbol.package.clone(),
+                },
+                PartialSwapKind::Named => VendorImportAction::PackageNamed {
+                    package: symbol.package.clone(),
+                    upstream_export: symbol.upstream_export.clone()?,
+                },
+            });
+        }
+        let bundled = self.bundled_partial_swaps.get(&chunk)?;
+        let symbol = bundled.symbols.get(imported_name)?;
+        let target = bundled.packages.get(&symbol.package)?;
+        Some(match symbol.kind {
+            PartialSwapKind::Member | PartialSwapKind::Named => VendorImportAction::FacadeMember {
+                package: symbol.package.clone(),
+                facade_app_path: target.facade_app_path.clone(),
+                namespace: target.namespace.clone()?,
+                upstream_export: symbol.upstream_export.clone()?,
+            },
+            PartialSwapKind::Namespace | PartialSwapKind::Default => {
+                VendorImportAction::FacadeDefault {
+                    facade_app_path: target.facade_app_path.clone(),
+                }
+            }
+        })
+    }
+
+    /// Boundary-rename mapping consult for construction-time naming
+    /// (vendor_into_emission §2.4): vendor-local export name → public
+    /// name for a `boundary_rename` / `swap` chunk. While the
+    /// pre-materialize `rename_vendor_exports` wave still runs (until
+    /// PR 4 deletes it), source ASTs reach lowering already renamed,
+    /// so this lookup misses (the keys are vendor-local names) and the
+    /// consult is a structural no-op; double application on pathologic
+    /// chained mappings is excluded by
+    /// `validate_boundary_mapping_collisions`.
+    pub fn boundary_public_export_name(&self, chunk: ChunkId, vendor_local: &str) -> Option<&str> {
+        self.boundary_renames
+            .iter()
+            .find(|plan| plan.chunk_id == chunk)
+            .and_then(|plan| plan.mapping.get(vendor_local))
+            .map(String::as_str)
+    }
+}
+
+/// How a vendor-swapped named import must be constructed in a lowered
+/// module body. Variants mirror [`spec::PartialSwapKind`] split by the
+/// partial (raw package specifier) vs bundled (generated facade)
+/// families.
+#[derive(Debug, Clone)]
+pub enum VendorImportAction {
+    /// partial `kind=member`: one shared
+    /// `import * as <namespace> from "<package>"` per file per package,
+    /// references rewritten to `<namespace>.<upstream_export>`.
+    PackageMember {
+        package: String,
+        namespace: String,
+        upstream_export: String,
+    },
+    /// partial `kind=namespace`: `import * as <local> from "<package>"`.
+    PackageNamespace { package: String },
+    /// partial `kind=default`: `import <local> from "<package>"`.
+    PackageDefault { package: String },
+    /// partial `kind=named`: `import { <upstream_export> } from
+    /// "<package>"`; aliased locals are renamed to the bare upstream
+    /// name in the body.
+    PackageNamed {
+        package: String,
+        upstream_export: String,
+    },
+    /// bundled `kind=member|named`: one shared
+    /// `import <namespace> from "<facade>"` per file per package,
+    /// references rewritten to `<namespace>.<upstream_export>`.
+    FacadeMember {
+        package: String,
+        facade_app_path: String,
+        namespace: String,
+        upstream_export: String,
+    },
+    /// bundled `kind=namespace|default`:
+    /// `import <local> from "<facade>"`.
+    FacadeDefault { facade_app_path: String },
 }
 
 pub(crate) struct BoundaryRenamePlan {

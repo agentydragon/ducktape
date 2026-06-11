@@ -28,6 +28,10 @@ pub(super) struct ChunkContext<'a> {
     /// Program-level cross-module purity output; this chunk's entries land
     /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
     pub(super) cross_module_purities: &'a super::cross_module::CrossModulePurities,
+    /// Vendor-plan consultation for runtime re-import construction
+    /// (vendor_into_emission §2.4); `None` when no vendor mark could
+    /// affect construction.
+    pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }
 
 /// Spec-derived per-chunk inputs: logical-module layout, chunk
@@ -55,6 +59,10 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) validation: ChunkValidationSummary,
     pub(super) report: ChunkModulesReport,
+    /// Per-symbol vendor-swap rewrite counts applied at construction
+    /// time in this chunk's materialized module bodies; rolled up by
+    /// `materialize_logical_modules` for the pipeline's manifest fold.
+    pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
     /// Spec member claims that named a binding for which no
     /// top-level declaration exists in this chunk. Materialization
     /// continues — the binding silently falls through to the
@@ -76,6 +84,7 @@ pub(super) fn materialize_logical_chunk(
         target_dir,
         report_emission,
         cross_module_purities,
+        vendor_import_oracle,
     } = context;
     let ChunkSpec {
         logical_modules,
@@ -339,9 +348,11 @@ pub(super) fn materialize_logical_chunk(
                 artifact,
                 artifact_indexes,
                 chunk_id,
+                chunk_id_interned,
                 source_path: &source_path,
                 entry_file: &target_file,
                 header_lines: &header_lines,
+                vendor_import_oracle,
             },
             ast: LowerChunkAst {
                 runtime_ast,
@@ -368,6 +379,7 @@ pub(super) fn materialize_logical_chunk(
         files,
         file_records,
         applied,
+        vendor_reference_rewrites,
         timings: lower_timings,
     } = lowered;
     timings.extend_prefixed("lower", lower_timings);
@@ -412,6 +424,7 @@ pub(super) fn materialize_logical_chunk(
         directory_dependency_facts,
         validation,
         report,
+        vendor_reference_rewrites,
     })
 }
 

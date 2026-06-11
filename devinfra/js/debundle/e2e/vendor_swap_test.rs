@@ -1043,6 +1043,148 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
 }
 
 #[test]
+fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_consumers() {
+    // `references_rewritten` parity pin (plans/vendor_into_emission.md §5,
+    // open question 6): the manifest must count *emitted* consumer
+    // references identically whether a reference lives in a pass-through
+    // file (the caller chunk's residual entry, rewritten by the
+    // post-materialize wave) or in a materialized module body (whose
+    // vendor-targeted runtime re-import is planned during lowering's
+    // import construction). One swapped member-kind symbol consumed once
+    // from each file class pins the total at 2 — the same count the
+    // all-wave path produced before the file-class split.
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "zod";
+    const PACKAGE_VERSION: &str = "3.23.8";
+    const SUBPATH: &str = "lib/index.mjs";
+
+    let ws = VendorTestWorkspace::new("vendor-partial-swap-count-parity-");
+    ws.write_chunk(
+        MEGACHUNK_PATH,
+        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+    );
+    ws.write_chunk(
+        APP_PATH,
+        "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
+         export const movedFlag = zodBoolean() && kept() === 7;\n\
+         export function stay() { return zodBoolean(); }\n",
+    );
+    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{APP_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        SUBPATH,
+        "export const boolean = () => true;\n",
+    );
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            MEGACHUNK_PATH: {
+                "level": "partial_swap",
+                "identity": "references_rewritten parity fixture",
+                "packages": {
+                    PACKAGE_NAME: {
+                        "namespace": "z",
+                        "version": PACKAGE_VERSION,
+                        "subpath": SUBPATH,
+                    },
+                },
+                "symbols": {
+                    "e6": { "package": PACKAGE_NAME, "upstream_export": "boolean" },
+                },
+            },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "logical_modules": {
+            "static/app": {
+                "flags": {
+                    "members": [
+                        { "name": "movedFlag", "selector": { "binding": { "name": "movedFlag" } } },
+                    ],
+                },
+            },
+        },
+        "unassigned_mode": {
+            "static/app": { "kind": "inline_in_entry" },
+        },
+        "materialize_logical_modules": {
+            "prune_other_chunks": false,
+            "target_dir": "modules",
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let module_path = ws.out_root.join("app/static/app/modules/flags.js");
+    let module = fs::read_to_string(&module_path).expect("materialized module emitted");
+    assert!(
+        module.contains("import * as z from \"zod\"") && module.contains("z.boolean()"),
+        "materialized module should consume the package, not the chunk:\n{module}",
+    );
+    assert!(
+        !module.contains("zodBoolean"),
+        "materialized module should not retain the swapped import alias:\n{module}",
+    );
+    assert!(
+        module.contains("keepMe as kept"),
+        "materialized module keeps the non-swapped chunk re-import:\n{module}",
+    );
+    let entry_path = ws.out_root.join("app/static/app/entry.js");
+    let entry = fs::read_to_string(&entry_path).expect("app entry emitted");
+    assert!(
+        entry.contains("import * as z from \"zod\"") && entry.contains("z.boolean()"),
+        "pass-through entry should consume the package, not the chunk:\n{entry}",
+    );
+
+    let manifest: Value =
+        serde_json::from_str(&fs::read_to_string(&ws.manifest_path).expect("partial manifest"))
+            .expect("partial manifest parses");
+    assert_eq!(
+        manifest
+            .get("partial")
+            .and_then(|r| r.get(MEGACHUNK_PATH))
+            .and_then(|r| r.get("symbols"))
+            .and_then(|r| r.get("e6"))
+            .and_then(|r| r.get("references_rewritten"))
+            .and_then(Value::as_u64),
+        Some(2),
+        "one rewrite per file class (materialized module + residual entry):\n{manifest:#}",
+    );
+
+    let app_root = ws.out_root.join("app");
+    install_node_module(
+        &app_root,
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        "export const boolean = () => true;\n",
+    );
+    let probe_path = ws.out_root.join("__run_count_parity.mjs");
+    write_text_file(
+        &probe_path,
+        "const { stay, movedFlag } = await import(\"./app/static/app/entry.js\");\n\
+         console.log(`${stay()}:${movedFlag}`);\n",
+    );
+    assert_node_output(&probe_path, "true:true\n", "");
+}
+
+#[test]
 fn partial_swap_namespace_kind_replaces_whole_import() {
     // Caller has `import { a as React } from "../megachunk/entry.js"`
     // where the chunk export `a` is the package's whole namespace

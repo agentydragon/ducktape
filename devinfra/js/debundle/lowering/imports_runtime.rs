@@ -64,6 +64,7 @@ pub(super) fn source_chunk_imports_for_moved_body(
     source_runtime_file: &str,
     dest_target_file: &str,
     needed: BTreeMap<Id, &RuntimeImportInfo>,
+    imported_overrides: &BTreeMap<Id, String>,
 ) -> Result<Vec<ModuleItem>> {
     let dest_dir = join_module_path(&[source_chunk_id, &module_path_dirname(dest_target_file)]);
     let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(needed.len());
@@ -98,10 +99,15 @@ pub(super) fn source_chunk_imports_for_moved_body(
             // Bare specifier (npm package etc.) — pass through unchanged.
             info.src.clone()
         };
-        pairs.push((
-            rewritten_source,
-            runtime_reimport_specifier(&local_id, info),
-        ));
+        // Boundary-rename name mapping from the vendor plan
+        // (vendor_into_emission §2.4 "boundary-renamed construction"):
+        // overrides the recorded imported name with the vendor chunk's
+        // public export name.
+        let specifier = match imported_overrides.get(&local_id) {
+            Some(public) => runtime_reimport_named_specifier(&local_id, public),
+            None => runtime_reimport_specifier(&local_id, info),
+        };
+        pairs.push((rewritten_source, specifier));
     }
     Ok(group_specifiers_into_import_decls(pairs))
 }

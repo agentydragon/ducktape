@@ -12,7 +12,7 @@ use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use lowering::{
-    MaterializeLogicalModulesOptions, ReportEmission, UnmatchedSpecClaim,
+    MaterializeLogicalModulesOptions, MaterializeSpecInputs, ReportEmission, UnmatchedSpecClaim,
     materialize_logical_modules,
 };
 use prepare_chunks::prepare_js_chunks;
@@ -213,6 +213,12 @@ pub fn run_transform_cli_with_options(
     // tree/harness emission) so the user sees the full list and the
     // generated output is still available for inspection.
     let mut unmatched_spec_claims: Vec<UnmatchedSpecClaim> = Vec::new();
+    // Vendor rewrites lowering applied at construction time inside
+    // materialized module bodies, keyed by (swapped chunk, chunk
+    // export); folded into the partial-swap manifests below so
+    // `references_rewritten` keeps counting emitted references across
+    // both application sites.
+    let mut vendor_lowering_rewrites: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
             file,
@@ -227,11 +233,14 @@ pub fn run_transform_cli_with_options(
         (indexed, _) = indexed.update(|artifact, _indexes| {
             let materialize_result = materialize_logical_modules(
                 artifact,
-                &spec.logical_modules,
-                &spec.chunk_renames,
-                &spec.unassigned_mode,
-                &spec.chunk_analysis_options,
-                &spec.chunk_export_purity,
+                MaterializeSpecInputs {
+                    logical_modules: &spec.logical_modules,
+                    chunk_renames: &spec.chunk_renames,
+                    unassigned_mode: &spec.unassigned_mode,
+                    chunk_analysis_options: &spec.chunk_analysis_options,
+                    chunk_export_purity: &spec.chunk_export_purity,
+                },
+                &vendor_plan,
                 MaterializeLogicalModulesOptions {
                     chunk_ids: materialise_chunk_ids,
                     file,
@@ -254,13 +263,18 @@ pub fn run_transform_cli_with_options(
             selected_lowerings = materialize_result.selected_lowerings;
             decomposition_by_chunk = materialize_result.decomposition_by_chunk;
             unmatched_spec_claims = materialize_result.unmatched_spec_claims;
+            vendor_lowering_rewrites = materialize_result.vendor_reference_rewrites;
             Ok((materialize_result.artifact, ()))
         })?;
     }
 
     let partial_outcome;
-    (indexed, partial_outcome) =
-        run_partial_vendor_swaps(indexed, &vendor_plan, write_vendor_outputs)?;
+    (indexed, partial_outcome) = run_partial_vendor_swaps(
+        indexed,
+        &vendor_plan,
+        write_vendor_outputs,
+        &vendor_lowering_rewrites,
+    )?;
     vendor_report.partial = partial_outcome.partial_swap_resolutions;
     vendor_report.bundled_partial = partial_outcome.bundled_partial_swap_resolutions;
     vendor_report.strip_stats = partial_outcome.strip_stats;
@@ -438,6 +452,7 @@ fn run_partial_vendor_swaps(
     mut indexed: IndexedArtifact,
     plan: &VendorResolutionPlan,
     write_outputs: bool,
+    vendor_lowering_rewrites: &BTreeMap<(ChunkId, String), usize>,
 ) -> Result<(IndexedArtifact, PartialVendorSwapOutcome)> {
     let mut partial_swap_resolutions = BTreeMap::new();
     let mut bundled_partial_swap_resolutions = BTreeMap::new();
@@ -446,7 +461,8 @@ fn run_partial_vendor_swaps(
         let mut replacement_import_locals_by_chunk_path = BTreeMap::new();
         if plan.has_partial_swaps() {
             (indexed, partial_swap_resolutions) = indexed.update(|artifact, indexes| {
-                let partial_result = apply_partial_vendor_swaps(artifact, plan, indexes)?;
+                let partial_result =
+                    apply_partial_vendor_swaps(artifact, plan, indexes, vendor_lowering_rewrites)?;
                 Ok((partial_result.artifact, partial_result.manifest.resolutions))
             })?;
         }
@@ -458,8 +474,13 @@ fn run_partial_vendor_swaps(
                     bundled_partial_swap_resolutions,
                 ),
             ) = indexed.update(|artifact, indexes| {
-                let bundled_result =
-                    apply_bundled_partial_vendor_swaps(artifact, plan, indexes, write_outputs)?;
+                let bundled_result = apply_bundled_partial_vendor_swaps(
+                    artifact,
+                    plan,
+                    indexes,
+                    write_outputs,
+                    vendor_lowering_rewrites,
+                )?;
                 Ok((
                     bundled_result.artifact,
                     (

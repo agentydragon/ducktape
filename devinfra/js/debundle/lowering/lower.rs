@@ -32,6 +32,10 @@ pub(super) struct LoweredChunk {
     pub(super) files: Vec<JsFile>,
     pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
+    /// Per-symbol vendor-swap rewrite counts applied at construction
+    /// time across this chunk's module bodies (see
+    /// `vendor_imports::plan_vendor_reimports`).
+    pub(super) vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
     pub(super) timings: PhaseTimings,
 }
 
@@ -41,9 +45,11 @@ pub(super) struct LowerChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
     pub(super) chunk_id: &'a str,
+    pub(super) chunk_id_interned: ChunkId,
     pub(super) source_path: &'a str,
     pub(super) entry_file: &'a str,
     pub(super) header_lines: &'a [String],
+    pub(super) vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }
 
 /// AST-side inputs: the parsed runtime module plus the top-level
@@ -119,9 +125,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         artifact,
         artifact_indexes,
         chunk_id,
+        chunk_id_interned,
         source_path,
         entry_file,
         header_lines,
+        vendor_import_oracle,
     } = context;
     let LowerChunkAst {
         runtime_ast,
@@ -593,12 +601,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     let per_plan_bodies: Vec<Vec<ModuleItem>> = std::mem::take(&mut naturalized_bodies);
     let per_plan_local_renames: Vec<NaturalizedRenames> =
         std::mem::take(&mut local_renames_by_module);
-    let module_outputs: Vec<(
-        JsFile,
-        (String, FileRole),
-        SelectedModuleLowering,
-        PhaseTimings,
-    )> = GLOBALS.with(|globals| -> Result<_> {
+    let module_outputs: Vec<LoweredModuleOutput> = GLOBALS.with(|globals| -> Result<_> {
         per_plan_bodies
             .into_par_iter()
             .zip(per_plan_local_renames.into_par_iter())
@@ -623,20 +626,26 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
                         cross_module_chunk_renames: &cross_module_chunk_renames,
                         source_import_cache: &source_import_cache,
                         chunk_id,
+                        chunk_id_interned,
                         entry_file,
                         source_path,
                         chunk_top_level_mark,
                         runtime_ast,
+                        vendor_import_oracle,
                     })
                 })
             })
             .collect()
     })?;
-    for (file, record, lowering, local_timings) in module_outputs {
-        files.push(file);
-        file_records.push(record);
-        applied.push(lowering);
-        for (name, duration) in local_timings.durations {
+    let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
+    for output in module_outputs {
+        files.push(output.file);
+        file_records.push(output.record);
+        applied.push(output.lowering);
+        for (key, count) in output.vendor_reference_rewrites {
+            *vendor_reference_rewrites.entry(key).or_insert(0) += count;
+        }
+        for (name, duration) in output.timings.durations {
             timings.add(name, duration);
         }
     }
@@ -645,6 +654,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         files,
         file_records,
         applied,
+        vendor_reference_rewrites,
         timings,
     })
 }
@@ -740,20 +750,25 @@ struct LowerSinglePlanInputs<'a> {
     cross_module_chunk_renames: &'a BTreeMap<String, String>,
     source_import_cache: &'a Mutex<ArtifactSourceImportResolutionCache<'a>>,
     chunk_id: &'a str,
+    chunk_id_interned: ChunkId,
     entry_file: &'a str,
     source_path: &'a str,
     chunk_top_level_mark: swc_common::Mark,
     runtime_ast: &'a ParsedJsModule,
+    vendor_import_oracle: Option<&'a VendorReimportOracle<'a>>,
 }
 
-fn lower_single_plan(
-    inputs: LowerSinglePlanInputs<'_>,
-) -> Result<(
-    JsFile,
-    (String, FileRole),
-    SelectedModuleLowering,
-    PhaseTimings,
-)> {
+/// One module plan's lowered output: the emitted file plus the
+/// per-plan bookkeeping `lower_chunk` rolls up.
+struct LoweredModuleOutput {
+    file: JsFile,
+    record: (String, FileRole),
+    lowering: SelectedModuleLowering,
+    vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+    timings: PhaseTimings,
+}
+
+fn lower_single_plan(inputs: LowerSinglePlanInputs<'_>) -> Result<LoweredModuleOutput> {
     let LowerSinglePlanInputs {
         index,
         plan,
@@ -770,10 +785,12 @@ fn lower_single_plan(
         cross_module_chunk_renames,
         source_import_cache,
         chunk_id,
+        chunk_id_interned,
         entry_file,
         source_path,
         chunk_top_level_mark,
         runtime_ast,
+        vendor_import_oracle,
     } = inputs;
     let mut timings = PhaseTimings::default();
     let ModuleReferenceNeeds {
@@ -888,6 +905,27 @@ fn lower_single_plan(
             renamer.captured,
         );
     }
+    // Vendor consultation for the planned runtime re-imports
+    // (vendor_into_emission §2.4): named re-imports whose source
+    // directive targets a partially / bundled-partially swapped chunk
+    // are constructed as package / facade imports straight from the
+    // plan oracle; everything else stays a chunk re-import (with the
+    // boundary-rename mapping applied at construction).
+    let PlannedVendorReimports {
+        retained: runtime_reimports,
+        imported_overrides,
+        external_imports: vendor_external_imports,
+        body_rewrites: vendor_body_rewrites,
+        references_rewritten: mut vendor_reference_rewrites,
+    } = time_phase!(timings, "module.plan_vendor_reimports", {
+        plan_vendor_reimports(
+            runtime_reimports,
+            vendor_import_oracle,
+            chunk_id_interned,
+            entry_file,
+            &plan.target_file,
+        )
+    });
     // Re-import any source-chunk import-specifier-bound locals that
     // moved code in `body` references but no top-level decl
     // satisfies (e.g. `const { decode } = gge;` where `gge` was an
@@ -908,6 +946,7 @@ fn lower_single_plan(
             entry_file,
             &plan.target_file,
             runtime_reimports,
+            &imported_overrides,
         )
     })?;
     // The residual-entry import targets the chunk's residual module
@@ -960,9 +999,55 @@ fn lower_single_plan(
             }
         });
     }
+    // External package / facade imports join the runtime re-import
+    // block after the retained chunk re-imports, deterministic in
+    // first-need order (vendor_into_emission §2.2: external targets
+    // are outside the per-chunk I-graph the gate orders). Spliced
+    // after the chunk_renames application so the locals they
+    // introduce are never subject to spec renames — matching the
+    // post-hoc wave, which introduced them after every rename had run.
+    if !vendor_external_imports.is_empty() {
+        let import_count = body
+            .iter()
+            .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
+            .count();
+        let tail = body.split_off(import_count);
+        body.extend(vendor_external_imports);
+        body.extend(tail);
+    }
     time_phase!(timings, "module.rewrite_runtime_sources", {
         rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
     });
+    // Plan-driven vendor body replacements (member accesses off the
+    // package / facade namespace, named-kind auto-renames). Not a
+    // RenameLedger entry — ident→member-expression replacement is an
+    // expression rewrite, not a rename — so it runs as a separate
+    // plan-driven visitor sequenced after the sealed rename
+    // application, like the runtime-URL rewrite above
+    // (vendor_into_emission §2.4).
+    if !vendor_body_rewrites.is_empty() {
+        time_phase!(timings, "module.vendor_body_rewrites", {
+            // `cross_module_chunk_renames` may have renamed an import
+            // local's sym in place (ctxt preserved); remap the keys so
+            // the replacement still matches the body's idents.
+            let bindings: BTreeMap<Id, vendor::IdentRewriteTarget> = vendor_body_rewrites
+                .into_iter()
+                .map(
+                    |(id, target)| match cross_module_chunk_renames.get(id.0.as_ref()) {
+                        Some(renamed) => ((renamed.as_str().into(), id.1), target),
+                        None => (id, target),
+                    },
+                )
+                .collect();
+            let mut rewriter = vendor::PartialSwapIdentRewriter {
+                bindings: &bindings,
+                references_by_symbol: &mut vendor_reference_rewrites,
+            };
+            for item in body.iter_mut() {
+                item.visit_mut_with(&mut rewriter);
+            }
+        });
+    }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `factorization.analysis.bindings()`): for each `Imported` binding whose
     // `re_exported_by` map names this module, emit a re-import
@@ -1034,7 +1119,13 @@ fn lower_single_plan(
         };
         build_module_output(plan, body, &local_renames.explicit, &output_context)
     });
-    Ok((file, record, lowering, timings))
+    Ok(LoweredModuleOutput {
+        file,
+        record,
+        lowering,
+        vendor_reference_rewrites,
+        timings,
+    })
 }
 
 fn build_module_output(

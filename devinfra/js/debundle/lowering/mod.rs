@@ -58,6 +58,7 @@ mod rewrite_runtime;
 mod runtime_imports;
 mod scope_names;
 mod util;
+mod vendor_imports;
 mod visitors;
 
 use anonymous::resolve_anonymous_statement_ordinals;
@@ -102,9 +103,10 @@ use rename_ledger::{
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
-    record_runtime_imports, runtime_reimport_specifier,
+    record_runtime_imports, runtime_reimport_named_specifier, runtime_reimport_specifier,
 };
 use util::normalize_optional_relative_dir;
+use vendor_imports::{PlannedVendorReimports, VendorReimportOracle, plan_vendor_reimports};
 use visitors::{
     IdentifierRenamer, RenameAndShorthandNaturalizer, RenameCaptureProbe, ShorthandNaturalizer,
 };
@@ -146,6 +148,13 @@ pub struct MaterializeLogicalModulesResult {
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+    /// Per-symbol counts of vendor-swap rewrites applied at
+    /// construction time in materialized module bodies, keyed by
+    /// (swapped chunk, chunk export). Folded into the vendor waves'
+    /// `references_rewritten` manifest fields by the pipeline so the
+    /// manifest keeps counting emitted references across both
+    /// application sites (vendor_into_emission §5).
+    pub vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in the source chunk. Previously dropped
     /// silently — the binding would fall through to the residual and
@@ -253,15 +262,29 @@ pub struct MaterializeLogicalModulesOptions {
     pub target_dir: String,
 }
 
+/// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
+/// chunk id.
+pub struct MaterializeSpecInputs<'a> {
+    pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
+    pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
+    pub chunk_analysis_options: &'a BTreeMap<String, OwnerGraphOptions>,
+    pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+}
+
 pub fn materialize_logical_modules(
     mut artifact: ChunkBundle,
-    logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
-    chunk_renames: &BTreeMap<String, ChunkRenames>,
-    unassigned_mode: &BTreeMap<String, UnassignedMode>,
-    chunk_analysis_options: &BTreeMap<String, OwnerGraphOptions>,
-    chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
+    spec_inputs: MaterializeSpecInputs<'_>,
+    vendor_plan: &vendor::VendorResolutionPlan,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
+    let MaterializeSpecInputs {
+        logical_modules,
+        chunk_renames,
+        unassigned_mode,
+        chunk_analysis_options,
+        chunk_export_purity,
+    } = spec_inputs;
     if options.chunk_ids.is_empty() {
         bail!("materialize_logical_modules requires at least one chunk_id");
     }
@@ -293,6 +316,14 @@ pub fn materialize_logical_modules(
     );
 
     let artifact_ref: &ChunkBundle = &artifact;
+    // Vendor consultation for lowering's import construction
+    // (vendor_into_emission §2.4): runtime re-imports whose source
+    // directive targets a partially / bundled-partially swapped chunk
+    // are constructed as package / facade imports from the plan oracle
+    // instead of chunk re-imports the post-materialize wave would
+    // rewrite. `None` when no vendor mark could affect construction.
+    let vendor_import_oracle =
+        VendorReimportOracle::new(vendor_plan, &artifact.chunk_table, &artifact_indexes);
     // SWC's `swc_common::GLOBALS` is a `scoped_tls` thread-local, so the
     // outer `GLOBALS.set` wrap in `main.rs` / `run_agent` does NOT carry
     // into rayon worker threads. Capture a reference to the current
@@ -312,6 +343,7 @@ pub fn materialize_logical_modules(
                             target_dir: &target_dir,
                             report_emission: &options.report_emission,
                             cross_module_purities: &cross_module_purities,
+                            vendor_import_oracle: vendor_import_oracle.as_ref(),
                         },
                         spec: ChunkSpec {
                             logical_modules,
@@ -328,6 +360,7 @@ pub fn materialize_logical_modules(
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
+    let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
     for chunk_result in &chunk_results {
         if let Some(report_out_dir) = options.report_emission.full_dir() {
             write_chunk_report_json(
@@ -340,6 +373,9 @@ pub fn materialize_logical_modules(
         applied.extend(chunk_result.applied.iter().cloned());
         reports.push(chunk_result.report.clone());
         unmatched_spec_claims.extend(chunk_result.unmatched_spec_claims.iter().cloned());
+        for (key, count) in &chunk_result.vendor_reference_rewrites {
+            *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
+        }
     }
     let apply_result = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
     artifact = apply_result.artifact;
@@ -351,6 +387,7 @@ pub fn materialize_logical_modules(
         selected_lowerings: applied,
         module_count,
         decomposition_by_chunk,
+        vendor_reference_rewrites,
         unmatched_spec_claims,
     })
 }

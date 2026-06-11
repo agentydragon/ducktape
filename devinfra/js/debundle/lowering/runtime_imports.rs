@@ -117,6 +117,19 @@ pub(super) fn runtime_reimport_specifier(local: &Id, info: &RuntimeImportInfo) -
     }
 }
 
+/// Named re-import specifier with an explicit imported name, used when
+/// the vendor plan's boundary mapping overrides the recorded source
+/// name (vendor_into_emission §2.4 "boundary-renamed construction").
+pub(super) fn runtime_reimport_named_specifier(local: &Id, imported: &str) -> ImportSpecifier {
+    ImportSpecifier::Named(ImportNamedSpecifier {
+        span: DUMMY_SP,
+        local: ident_from_id(local),
+        imported: (imported != local.0.as_ref())
+            .then(|| ModuleExportName::Ident(Ident::new_no_ctxt(imported.into(), DUMMY_SP))),
+        is_type_only: false,
+    })
+}
+
 /// Build a single Named specifier (`{ <imported> as <local> }`, or just
 /// `{ <local> }` when local == imported) for an ImportSpecifier-bound
 /// reexport. Callers group same-source specifiers and wrap the list in

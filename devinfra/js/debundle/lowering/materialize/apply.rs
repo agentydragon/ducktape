@@ -70,10 +70,11 @@ pub(super) fn materialized_chunk_artifact(
         directory_dependency_facts,
         validation,
         report,
-        // `unmatched_spec_claims` is rolled up by
-        // `materialize_logical_modules` before this point; downstream
-        // artifact construction doesn't carry it.
+        // `unmatched_spec_claims` and `vendor_reference_rewrites` are
+        // rolled up by `materialize_logical_modules` before this point;
+        // downstream artifact construction doesn't carry them.
         unmatched_spec_claims: _,
+        vendor_reference_rewrites: _,
     } = chunk;
     let chunk_name = chunk_table.name(chunk_id).to_string();
     let manifest_files = file_records
