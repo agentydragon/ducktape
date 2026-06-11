@@ -26,8 +26,9 @@ and would **not** come back just because `atlas`/`wyrm2` returns.
 - **Docker CI**: `docker-ci` — parked.
 - **Firecrawl**: `firecrawl-{namespace,db,app}` — parked.
 - **Google Workspace MCP**: `google-workspace-mcp` — parked 2026-05-13; resources + PVC deleted.
-- **Harbor**: `harbor-*` — parked. It was mostly a registry for props, which now use the
-  Forgejo registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
+- **Harbor**: `harbor-{namespace,secrets,db,agent-rbac,ci,oidc-config,props,proxy-cache,servicemonitor}` —
+  parked 2026-06-11. It was mostly a registry for props, which now use the Forgejo
+  registry for backing. (`harbor-db` spec already moved to `local-path-ovh` /
   `region=hil` should it ever be revived.)
 - **HomeAssistant Proxy**: `homeassistant-proxy` — parked 2026-06-01; unsuspend once back
   somewhere that uses Home Assistant.

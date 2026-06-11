@@ -8,7 +8,6 @@
 # TODO: SSH authorized_keys - add keys to openssh.authorizedKeys.keys
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
 # TODO: auto-cpufreq - services.auto-cpufreq for dynamic CPU governor (power saving on battery, performance on AC)
-# TODO: zram - consider zramSwap.enable for memory compression (swap file already exists at /swap/swapfile)
 # TODO: Vulkan crash on Lunar Lake - Snapshot (and likely other GTK4 apps) segfault with VK_ERROR_DEVICE_LOST.
 #   Workaround: GSK_RENDERER=gl. Consider adding to environment.sessionVariables or wrapping affected apps.
 # TODO: PipeWire - explicit audio config (services.pipewire with pulse/alsa/jack support)
@@ -97,6 +96,16 @@ in
   # investigation. Leaving it enabled during normal use flooded journald and
   # caused periodic desktop stalls. See debug/rugged/stalls/report.md.
   ducktape.iioDebug.enable = false;
+
+  # Prefer compressed RAM over the disk swapfile for interactive use. The
+  # existing disk swap remains available as a lower-priority fallback.
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+    memoryPercent = 50;
+    priority = 100;
+  };
+  boot.kernel.sysctl."vm.swappiness" = 10;
 
   # Add Plasma as a parallel Wayland session for tablet/OSK testing while
   # keeping the existing GNOME session and GDM display manager intact.

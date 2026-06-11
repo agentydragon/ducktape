@@ -280,3 +280,53 @@ Deployment note: rugged currently uses the CI-released pinned Nix artifact, not
 the local source tree. The fix needs either a temporary user-local extension
 install or a normal release + artifact pin sync before `home-manager switch`
 will install it declaratively.
+
+## 2026-06-11 Follow-up: Current Choppiness Is Not the IIO Log Flood
+
+The old custom-Nix IIO log flood is not active on the current boot:
+
+- `ducktape.iioDebug.enable = false` in
+  `nix/nixos/hosts/rugged/default.nix`
+- `iio-debug-watchdog.timer`, `iio-debug-watchdog.service`, and
+  `iio-debug-dyndbg.service`: not found
+- `iio-sensor-proxy.service` has empty `Environment=`
+- recent live rate: 92 total journal lines in 10 minutes, 0 kernel lines in
+  10 minutes
+
+The May 20 aiquota GNOME Shell blocker is also not the current installed
+failure mode: `aiquota@allegedly.works` is enabled, but the installed extension
+uses `Gio.Subprocess.communicate_utf8_async()` rather than
+`GLib.spawn_command_line_sync()`. A manual `aiquota gnome-extension-json` run
+completed in about 1.5 seconds and no longer blocks the Shell main loop.
+
+Current evidence points at two remaining contributors:
+
+- Disk swap/refault stalls: `free -h` showed 15 GiB used swap while only
+  7.7 GiB RAM was used and 23 GiB was available. `swapon --show --bytes`
+  listed only `/swap/swapfile`; `zramctl` returned nothing; current
+  `vm.swappiness` was 60. A short `vmstat -SM 1 8` sample caught block reads
+  above 330 GiB/s reported by vmstat units and one sample at 7% IO wait, while
+  swap-in was still nonzero.
+- USB HID flapping: the active pointer is
+  `/dev/input/by-path/pci-0000:00:14.0-usb-0:4.3:1.2-event-mouse`, i.e.
+  `USB-HID Keyboard Mouse` on `usb-0000:00:14.0-4.3/input2`. Kernel logs show
+  repeated resets/disconnects for that exact `usb 3-4.3` composite HID path
+  throughout this boot, including today.
+
+Repo mitigation added in `nix/nixos/hosts/rugged/default.nix`:
+
+```nix
+zramSwap = {
+  enable = true;
+  algorithm = "zstd";
+  memoryPercent = 50;
+  priority = 100;
+};
+boot.kernel.sysctl."vm.swappiness" = 10;
+```
+
+This keeps the existing disk swapfile as a lower-priority fallback while making
+future swap activity prefer compressed RAM and reducing eager disk swap-out of
+cold desktop pages. It does not fix the USB HID reset path; if pointer-only
+lag continues after the memory change, test the same mouse/dongle through a
+different port/hub or swap the device to isolate hardware/cable/dock flapping.
