@@ -73,10 +73,43 @@ spec:
               port: 8080
             initialDelaySeconds: 2
             periodSeconds: 5
+        # Turns the nginx access log into Prometheus metrics. nginx streams the
+        # lean `wayback_metrics` line over loopback syslog (udp :5140, same pod
+        # netns); this parses it and serves /metrics on :4040 (scraped by the
+        # ServiceMonitor). Stateless — no shared log file, so no rotation needed.
+        - name: metrics
+          image: quay.io/martinhelmich/prometheus-nginxlog-exporter:v1.11.0
+          args:
+            - -config-file=/etc/nginxlog-exporter/config.hcl
+          ports:
+            - containerPort: 4040
+              name: metrics
+          volumeMounts:
+            - name: exporter-config
+              mountPath: /etc/nginxlog-exporter
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
       volumes:
         - name: config
           configMap:
             name: wayback-cache-config
+        - name: exporter-config
+          configMap:
+            name: wayback-cache-exporter-config
         - name: cache
           persistentVolumeClaim:
             claimName: wayback-cache-data-ovh

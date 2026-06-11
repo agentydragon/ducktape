@@ -6,6 +6,8 @@ kind: Service
 metadata:
   name: wayback-cache
   namespace: wayback-cache
+  labels:
+    app.kubernetes.io/name: wayback-cache
 spec:
   selector:
     app.kubernetes.io/name: wayback-cache
@@ -19,3 +21,8 @@ spec:
       targetPort: 8090
       protocol: TCP
       name: authed
+    # prometheus-nginxlog-exporter sidecar; scraped by the ServiceMonitor.
+    - port: 4040
+      targetPort: 4040
+      protocol: TCP
+      name: metrics

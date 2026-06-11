@@ -24,3 +24,4 @@ spec:
       namespace: wayback-cache
   dependsOn:
     - name: seaweedfs-csi
+    - name: monitoring-stack # ServiceMonitor CRD for the metrics sidecar
