@@ -84,7 +84,11 @@ spec:
         - name: AUTH_CUSTOM_NAME
           value: "Authentik"
         - name: AUTH_CUSTOM_ISSUER
-          value: "https://auth.allegedly.works/application/o/langfuse/"
+          # No trailing slash: next-auth builds the discovery URL as
+          # ${AUTH_CUSTOM_ISSUER}/.well-known/openid-configuration, and a
+          # trailing slash yields a double slash that Authentik 301-redirects —
+          # openid-client doesn't follow redirects on discovery (OAuthSignin).
+          value: "https://auth.allegedly.works/application/o/langfuse"
         - name: AUTH_CUSTOM_SCOPE
           value: "openid email profile"
         - name: AUTH_CUSTOM_CLIENT_ID
