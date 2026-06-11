@@ -7,11 +7,15 @@
 //!   prefixed with `STMT_`; they match exactly one statement.
 //!
 //! List holes (variable-length):
-//! - `STMT_LIST_*;` in a block body absorbs a contiguous run of
-//!   statements (including an empty run) — e.g. a method body you don't
-//!   want to pin.
-//! - `CLASS_REST*;` as a class field absorbs the remaining class members
-//!   — e.g. "match this class by these members, ignore the rest".
+//! - `STMT_LIST_*;` in a block body absorbs a run of statements
+//!   (including an empty run) — e.g. a method body you don't want to pin.
+//! - `CLASS_REST*;` as a class field absorbs a run of class members —
+//!   e.g. "match this class by these members, ignore the rest".
+//!
+//! Several list holes may appear in one block or class body: they split
+//! the pinned statements/members into an ordered subsequence with gaps,
+//! so a selector can bracket a few stable members with `CLASS_REST;`
+//! holes and match any class that contains them in that order.
 
 use debundle_e2e_support::*;
 
@@ -471,10 +475,13 @@ export { Counter };
 }
 
 #[test]
-fn member_source_match_two_class_rest_holes_never_match() {
-    // At most one CLASS_REST hole per class body; a second one is
-    // ambiguous, so the selector matches nothing.
-    let opts = FixtureOpts::new(
+fn member_source_match_class_rest_holes_bracket_interior_member() {
+    // Two `CLASS_REST;` holes bracket a single pinned member, so the
+    // selector matches a class by an interior member it contains: the
+    // leading hole absorbs `a`, the trailing hole absorbs `c`, and `b`
+    // is pinned in between. (Previously a second `CLASS_REST` was a hard
+    // "ambiguous, never matches"; it is now an ordered-subsequence gap.)
+    let fixture = run_fixture(FixtureOpts::new(
         r#"class Counter {
   a() {
     return 1;
@@ -482,9 +489,126 @@ fn member_source_match_two_class_rest_holes_never_match() {
   b() {
     return 2;
   }
+  c() {
+    return 3;
+  }
 }
-console.log(new Counter().a());
+console.log(new Counter().b());
 export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Counter",
+                r#"class K {
+  CLASS_REST;
+  b() {
+    STMT_LIST_B;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "2\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["Counter"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        // The whole class moved; the bracketing holes are selector-only.
+        &["class", "a()", "b()", "c()"],
+        &["CLASS_REST", "STMT_LIST_B"],
+    );
+}
+
+#[test]
+fn member_source_match_interleaved_class_rest_holes_match_ordered_members() {
+    // Two pinned members separated by a `CLASS_REST;` hole match a class
+    // that contains them in that order with other members interspersed:
+    // `open` (after `setup`) then `close` (after `tick`). This is the
+    // ordered-subset fingerprint — pin a few stable members, ignore the
+    // rest.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Widget {
+  setup() {
+    return 0;
+  }
+  open() {
+    return 1;
+  }
+  tick() {
+    return 2;
+  }
+  close() {
+    return 3;
+  }
+}
+console.log(new Widget().open() + new Widget().close());
+export { Widget };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Widget",
+                r#"class K {
+  CLASS_REST;
+  open() {
+    STMT_LIST_O;
+  }
+  CLASS_REST;
+  close() {
+    STMT_LIST_C;
+  }
+  CLASS_REST;
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "4\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["Widget"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["setup()", "open()", "tick()", "close()"],
+        &["CLASS_REST"],
+    );
+}
+
+#[test]
+fn member_source_match_interleaved_class_rest_holes_enforce_order() {
+    // The same `Widget`, but the selector pins `close` before `open`.
+    // Ordered-subsequence matching keeps source order, so pinning them
+    // in the wrong order matches nothing — it is not an unordered
+    // "contains both somewhere" match.
+    let opts = FixtureOpts::new(
+        r#"class Widget {
+  setup() {
+    return 0;
+  }
+  open() {
+    return 1;
+  }
+  tick() {
+    return 2;
+  }
+  close() {
+    return 3;
+  }
+}
+console.log(new Widget().open());
+export { Widget };
 "#,
         vec![logical_module(
             "shapes",
@@ -492,8 +616,12 @@ export { Counter };
                 "Selected",
                 r#"class K {
   CLASS_REST;
-  a() {
-    STMT_LIST_A;
+  close() {
+    STMT_LIST_C;
+  }
+  CLASS_REST;
+  open() {
+    STMT_LIST_O;
   }
   CLASS_REST;
 }"#,
@@ -502,6 +630,49 @@ export { Counter };
     );
 
     expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+}
+
+#[test]
+fn anonymous_source_match_multiple_stmt_list_holes_bracket_pinned_statements() {
+    // Three `STMT_LIST_*;` holes bracket two pinned statements inside a
+    // block: the holes absorb the `a`/`b`/`c` logs, leaving `pinned1`
+    // then `pinned2` matched in order.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"if (true) {
+  console.log("a");
+  console.log("pinned1");
+  console.log("b");
+  console.log("pinned2");
+  console.log("c");
+}
+const marker = "ready";
+export { marker };
+"#,
+        vec![logical_module_with_anon_alpha_syntactic_holes(
+            "init",
+            &[Member::new("marker")],
+            r#"if (true) {
+  STMT_LIST_HEAD;
+  console.log("pinned1");
+  STMT_LIST_MID;
+  console.log("pinned2");
+  STMT_LIST_TAIL;
+}"#,
+        )],
+    ));
+
+    assert_entry_output(&fixture, "a\npinned1\nb\npinned2\nc\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/init.js",
+        &[
+            r#"console.log("a")"#,
+            r#"console.log("pinned1")"#,
+            r#"console.log("pinned2")"#,
+            "const marker",
+        ],
+        &["STMT_LIST_HEAD", "STMT_LIST_MID", "STMT_LIST_TAIL"],
+    );
 }
 
 #[test]

@@ -16,18 +16,22 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 const EXPR_HOLE_PREFIX: &str = "EXPR_";
 const STMT_HOLE_PREFIX: &str = "STMT_";
 /// A bare `STMT_LIST_*;` expression-statement in a block body is a
-/// statement-**list** hole: it absorbs a contiguous run of candidate
-/// statements (including an empty run) at that position. Distinct from
-/// the single-statement `STMT_` hole, which matches exactly one
-/// statement. `STMT_LIST_` is checked before `STMT_` since it is a
-/// prefix of it.
+/// statement-**list** hole: it absorbs a run of candidate statements
+/// (including an empty run) at that position. Several may appear in one
+/// block, splitting the pinned statements into an ordered subsequence
+/// with gaps (see [`AstWildcardMatcher::match_list_with_holes`]).
+/// Distinct from the single-statement `STMT_` hole, which matches
+/// exactly one statement. `STMT_LIST_` is checked before `STMT_` since
+/// it is a prefix of it.
 const STMT_LIST_HOLE_PREFIX: &str = "STMT_LIST_";
 /// A bare `CLASS_REST;` class field (no initializer) is a class-member
-/// hole: it absorbs the remaining class members at that position. Lets
-/// a selector pin a class by a few stable members and ignore the rest.
-/// Matched as an exact token (not a prefix) so it never collides with a
-/// real field whose name merely starts with `CLASS_REST`, and because it
-/// never reuses, a suffix would be meaningless anyway.
+/// hole: it absorbs a run of class members at its position. Several may
+/// appear in one class body, bracketing pinned members so a selector can
+/// match a class by an ordered subset of its members and ignore the gaps
+/// (see [`AstWildcardMatcher::match_list_with_holes`]). Matched as an
+/// exact token (not a prefix) so it never collides with a real field
+/// whose name merely starts with `CLASS_REST`, and because it never
+/// reuses, a suffix would be meaningless anyway.
 const CLASS_REST_HOLE_TOKEN: &str = "CLASS_REST";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -599,6 +603,35 @@ struct AstWildcardMatcher<'a> {
     alpha: bool,
     ident_forward: BTreeMap<Atom, Atom>,
     ident_backward: BTreeMap<Atom, Atom>,
+}
+
+/// A clone of the matcher's mutable binding state, captured before a
+/// tentative segment placement during ordered-subsequence (multi-hole)
+/// list matching and restored when that placement fails — so a
+/// half-applied segment never leaks identifier or wildcard bindings into
+/// the next attempt.
+#[derive(Clone)]
+struct MatcherState {
+    replacements: WildcardReplacements,
+    ident_forward: BTreeMap<Atom, Atom>,
+    ident_backward: BTreeMap<Atom, Atom>,
+}
+
+/// Loop-invariant inputs for the recursive ordered-subsequence search in
+/// [`AstWildcardMatcher::match_list_with_holes`]. Only the `seg_idx` and
+/// `cand_min` cursor arguments change as the search descends.
+struct SegmentSearch<'a, T> {
+    needle: &'a [T],
+    candidate: &'a [T],
+    /// `(needle_start, len)` of each maximal fixed (non-hole) run, in
+    /// source order.
+    segments: &'a [(usize, usize)],
+    /// Whether the first segment is pinned to the candidate's start
+    /// (true unless a hole leads the needle list).
+    anchored_left: bool,
+    /// Whether the last segment is pinned to the candidate's end (true
+    /// unless a hole trails the needle list).
+    anchored_right: bool,
 }
 
 impl<'a> AstWildcardMatcher<'a> {
@@ -1813,86 +1846,168 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
-    /// Match a statement list, honoring a single `STMT_LIST_*` hole that
-    /// absorbs a contiguous run of candidate statements at its position.
-    /// With no hole this is an exact element-wise match. Two or more
-    /// statement-list holes in one block are ambiguous and never match.
+    /// Match a statement list. `STMT_LIST_*;` holes split the needle into
+    /// fixed segments matched as an ordered subsequence with gaps (see
+    /// [`Self::match_list_with_holes`]); with no hole this is an exact
+    /// element-wise match.
     fn match_stmt_slice(&mut self, needle: &[Stmt], candidate: &[Stmt]) -> bool {
-        let holes: Vec<usize> = needle
+        if needle
             .iter()
-            .enumerate()
-            .filter(|(_, stmt)| statement_list_hole_name(stmt).is_some())
-            .map(|(index, _)| index)
-            .collect();
-        match holes.as_slice() {
-            [] => self.match_slice(needle, candidate, Self::match_stmt),
-            &[hole] => self.match_list_around_hole(needle, candidate, hole, Self::match_stmt),
-            _ => false,
+            .any(|stmt| statement_list_hole_name(stmt).is_some())
+        {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                |stmt| statement_list_hole_name(stmt).is_some(),
+                Self::match_stmt,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_stmt)
         }
     }
 
-    /// Match a class member list, honoring a single `CLASS_REST*` hole
-    /// that absorbs the remaining members at its position. Members
-    /// pinned before/after the hole match the candidate's leading/
-    /// trailing members in order (see [`Self::match_list_around_hole`]).
-    /// Two or more `CLASS_REST*` holes in one class body are ambiguous
-    /// and never match.
+    /// Match a class member list. `CLASS_REST*;` holes split the needle
+    /// into fixed segments matched as an ordered subsequence with gaps
+    /// (see [`Self::match_list_with_holes`]); with no hole this is an
+    /// exact element-wise match.
     fn match_class_member_slice(
         &mut self,
         needle: &[ClassMember],
         candidate: &[ClassMember],
     ) -> bool {
-        let holes: Vec<usize> = needle
-            .iter()
-            .enumerate()
-            .filter(|(_, member)| is_class_rest_hole(member))
-            .map(|(index, _)| index)
-            .collect();
-        match holes.as_slice() {
-            [] => self.match_slice(needle, candidate, Self::match_class_member),
-            &[hole] => {
-                self.match_list_around_hole(needle, candidate, hole, Self::match_class_member)
-            }
-            _ => false,
+        if needle.iter().any(is_class_rest_hole) {
+            self.match_list_with_holes(
+                needle,
+                candidate,
+                is_class_rest_hole,
+                Self::match_class_member,
+            )
+        } else {
+            self.match_slice(needle, candidate, Self::match_class_member)
         }
     }
 
-    /// Match a list whose needle has exactly one list-hole at index
-    /// `hole`: the elements before it match the candidate prefix, the
-    /// elements after it match the candidate suffix, and the hole
-    /// absorbs the contiguous middle (any run, including empty). Like
-    /// the single-node holes, identifiers are matched positionally
-    /// post-alpha-canonicalization, so a hole is most robust at the end
-    /// of a list (a trailing hole keeps the matched prefix's identifier
-    /// numbering aligned with the candidate).
-    fn match_list_around_hole<T>(
+    /// Match a needle list carrying one or more list-holes against a
+    /// candidate list as an **ordered subsequence with gaps**. The holes
+    /// partition the needle into maximal fixed-element segments; each
+    /// segment must appear in the candidate as a contiguous block, the
+    /// segments in source order and non-overlapping, with the gaps
+    /// between them (plus any leading/trailing hole) absorbing arbitrary
+    /// runs of candidate elements — including empty runs. A leading hole
+    /// un-anchors the first segment from the candidate's start; a
+    /// trailing hole un-anchors the last segment from its end. A single
+    /// interior hole degenerates to the old contiguous prefix/suffix
+    /// match (both ends anchored, one gap in the middle).
+    ///
+    /// Matching is greedy-leftmost and commits the first placement under
+    /// which every segment matches, keeping the identifier/wildcard
+    /// bindings it accumulated. This is a pure existence check: the
+    /// interior alignment chosen when several placements are possible
+    /// never changes *which* enclosing declaration matched, and the
+    /// "matched more than one top-level declaration" ambiguity is still a
+    /// hard error in the caller that counts those matches.
+    fn match_list_with_holes<T>(
         &mut self,
         needle: &[T],
         candidate: &[T],
-        hole: usize,
-        mut match_item: impl FnMut(&mut Self, &T, &T) -> bool,
+        is_hole: impl Fn(&T) -> bool,
+        match_item: fn(&mut Self, &T, &T) -> bool,
     ) -> bool {
-        let prefix = hole;
-        let suffix = needle.len() - hole - 1;
-        if candidate.len() < prefix + suffix {
+        let mut segments: Vec<(usize, usize)> = Vec::new();
+        let mut idx = 0;
+        while idx < needle.len() {
+            if is_hole(&needle[idx]) {
+                idx += 1;
+                continue;
+            }
+            let start = idx;
+            while idx < needle.len() && !is_hole(&needle[idx]) {
+                idx += 1;
+            }
+            segments.push((start, idx - start));
+        }
+        // An all-holes needle pins nothing, so it matches any candidate
+        // run (including an empty one).
+        if segments.is_empty() {
+            return true;
+        }
+        let search = SegmentSearch {
+            needle,
+            candidate,
+            segments: &segments,
+            anchored_left: !is_hole(&needle[0]),
+            anchored_right: !is_hole(&needle[needle.len() - 1]),
+        };
+        self.place_segments(&search, 0, 0, match_item)
+    }
+
+    /// Recursive ordered-subsequence search backing
+    /// [`Self::match_list_with_holes`]. Places `segments[seg_idx..]` into
+    /// `candidate[cand_min..]`, trying the leftmost feasible start first
+    /// and rolling the matcher state back after each failed attempt.
+    /// Returns true — leaving the committed bindings in place — once
+    /// every remaining segment is placed.
+    fn place_segments<T>(
+        &mut self,
+        search: &SegmentSearch<T>,
+        seg_idx: usize,
+        cand_min: usize,
+        match_item: fn(&mut Self, &T, &T) -> bool,
+    ) -> bool {
+        let Some(&(needle_start, seg_len)) = search.segments.get(seg_idx) else {
+            return true; // every segment placed
+        };
+        let remaining: usize = search.segments[seg_idx..].iter().map(|(_, len)| len).sum();
+        // The latest start that still leaves room for this and every
+        // following segment; `None` means the candidate is too short.
+        let Some(latest_start) = search.candidate.len().checked_sub(remaining) else {
             return false;
+        };
+        let mut lo = cand_min;
+        let mut hi = latest_start;
+        if seg_idx == 0 && search.anchored_left {
+            // The first segment must start at the candidate's first element.
+            hi = hi.min(0);
         }
-        for index in 0..prefix {
-            if !match_item(self, &needle[index], &candidate[index]) {
-                return false;
+        if seg_idx == search.segments.len() - 1 && search.anchored_right {
+            // The last segment must end at the candidate's last element.
+            lo = lo.max(latest_start);
+        }
+        // An empty `lo..=hi` (e.g. an anchor pushed `lo` past `hi`) means
+        // no feasible placement, so the search backtracks.
+        for start in lo..=hi {
+            let snapshot = self.snapshot();
+            let mut segment_ok = true;
+            for offset in 0..seg_len {
+                if !match_item(
+                    self,
+                    &search.needle[needle_start + offset],
+                    &search.candidate[start + offset],
+                ) {
+                    segment_ok = false;
+                    break;
+                }
             }
-        }
-        let candidate_suffix_start = candidate.len() - suffix;
-        for offset in 0..suffix {
-            if !match_item(
-                self,
-                &needle[hole + 1 + offset],
-                &candidate[candidate_suffix_start + offset],
-            ) {
-                return false;
+            if segment_ok && self.place_segments(search, seg_idx + 1, start + seg_len, match_item) {
+                return true;
             }
+            self.restore(snapshot);
         }
-        true
+        false
+    }
+
+    fn snapshot(&self) -> MatcherState {
+        MatcherState {
+            replacements: self.replacements.clone(),
+            ident_forward: self.ident_forward.clone(),
+            ident_backward: self.ident_backward.clone(),
+        }
+    }
+
+    fn restore(&mut self, state: MatcherState) {
+        self.replacements = state.replacements;
+        self.ident_forward = state.ident_forward;
+        self.ident_backward = state.ident_backward;
     }
 
     fn match_slice<T>(

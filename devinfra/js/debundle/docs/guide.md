@@ -374,15 +374,22 @@ members:
     name: Counter
 ```
 
-A list takes **at most one** hole — a second `STMT_LIST_*` in the same block,
-or a second `CLASS_REST` in the same class body, is ambiguous and never
-matches. The members or statements you pin around the hole are still matched
-**in order and contiguously**: the elements before the hole must be the
-candidate's leading elements, in that order, and the elements after it the
-candidate's trailing elements, with the hole absorbing only the contiguous
-middle. So `class K { a() { … } b() { … } CLASS_REST; }` matches a class whose
-**first two** members are `a` then `b` (in that order), followed by anything —
-it is _not_ an unordered "class that contains `a` and `b` somewhere" match.
+A list may take **several** holes. Each hole is a gap, and the members or
+statements you pin between the holes are matched as an **ordered subsequence**:
+in source order, each pinned run contiguous, with every hole absorbing an
+arbitrary run (including none) of the candidate's elements. With no leading
+hole the first pinned run is anchored to the candidate's start; with no
+trailing hole the last pinned run is anchored to its end. So
+`class K { a() { … } b() { … } CLASS_REST; }` matches a class whose **first
+two** members are `a` then `b`, followed by anything, while
+`class K { CLASS_REST; open() { … } CLASS_REST; close() { … } CLASS_REST; }`
+matches any class with an `open` method somewhere before a `close` method.
+Either way the match is ordered — it is _not_ an unordered "contains these
+somewhere" match, and pinning `close` before `open` would not match a class
+that defines `open` first. When more than one alignment is possible the
+leftmost is used; that interior choice never changes _which_ declaration
+matched, and a selector that matches more than one top-level declaration is
+still a hard error.
 
 A hole works in **any** position — leading, middle, or trailing. Under
 `alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
