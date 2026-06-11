@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TextIO
 
 import aiohttp
+from multidict import CIMultiDictProxy
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from yarl import URL
 
@@ -428,7 +429,9 @@ class WaybackResolver:
             return {"Authorization": self._config.upstream_auth}
         return {}
 
-    def _emit_upstream_error(self, request_url: str, status: int, body: bytes, headers: object | None = None) -> None:
+    def _emit_upstream_error(
+        self, request_url: str, status: int, body: bytes, headers: CIMultiDictProxy[str] | None = None
+    ) -> None:
         """Upstream-failure record: archive/cache returned HTTP ≥400 unexpectedly
         (an IA bad gateway or a rate-limit notice, not an archived error page).
 
