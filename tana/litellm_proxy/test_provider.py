@@ -666,6 +666,209 @@ def test_anthropic_messages_stream_has_single_merged_tool_block() -> None:
     assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
 
 
+def test_anthropic_messages_stream_finishes_eof_tool_call_without_orphan_delta() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "securetoken.googleapis.com":
+            return httpx.Response(
+                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
+            )
+        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=(
+                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+                b'"toolName":"echo_tool","input":{}}\n'
+                b'data: {"type":"tool-input-available","toolCallId":"call-1",'
+                b'"toolName":"echo_tool","input":{"value":"hi"}}\n'
+            ),
+        )
+
+    original_custom_provider_map = list(litellm.custom_provider_map)
+    original_provider_list = list(litellm.provider_list)
+    original_custom_providers = list(litellm._custom_providers)
+    original_model_list_set = set(litellm.model_list_set)
+
+    async def collect_events() -> list[dict[str, Any]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
+            register_litellm_provider(TanaLiteLLM(client))
+            stream = await litellm.anthropic.messages.acreate(
+                model="tana/claude-test",
+                max_tokens=64,
+                stream=True,
+                messages=[{"role": "user", "content": "call echo_tool"}],
+                tools=[
+                    {
+                        "name": "echo_tool",
+                        "description": "Echo a value.",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"value": {"type": "string"}},
+                            "required": ["value"],
+                        },
+                    }
+                ],
+            )
+            raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
+            return [_decode_anthropic_sse_event(event) for event in raw_events]
+
+    try:
+        events = asyncio.run(collect_events())
+    finally:
+        litellm.custom_provider_map = original_custom_provider_map
+        litellm.provider_list = original_provider_list
+        litellm._custom_providers = original_custom_providers
+        litellm.model_list_set = original_model_list_set
+
+    started_blocks: set[int] = set()
+    stopped_blocks: set[int] = set()
+    for event in events:
+        event_type = event.get("type")
+        index = event.get("index")
+        if event_type == "content_block_start":
+            assert isinstance(index, int)
+            started_blocks.add(index)
+        if event_type == "content_block_delta":
+            assert isinstance(index, int)
+            assert index in started_blocks
+            assert index not in stopped_blocks
+        if event_type == "content_block_stop":
+            assert isinstance(index, int)
+            stopped_blocks.add(index)
+
+    tool_starts = [
+        event
+        for event in events
+        if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
+    ]
+    tool_deltas = [
+        event
+        for event in events
+        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "input_json_delta"
+    ]
+    message_deltas = [event for event in events if event.get("type") == "message_delta"]
+    assert len(tool_starts) == 1
+    assert tool_starts[0]["content_block"] == {"type": "tool_use", "id": "call-1", "name": "echo_tool", "input": {}}
+    assert len(tool_deltas) == 1
+    assert json.loads(tool_deltas[0]["delta"]["partial_json"]) == {"value": "hi"}
+    assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
+
+
+def test_anthropic_messages_stream_ignores_empty_chunk_after_tool_finish() -> None:
+    class FakeClient(_NoStreamingClient):
+        async def chat_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> TanaChatResult:
+            raise AssertionError("streaming test should not call non-streaming chat_completion")
+
+        async def astream_completion(
+            self, model: str, messages: Sequence[Mapping[str, Any]], optional_params: Mapping[str, Any] | None = None
+        ) -> AsyncIterator[GenericStreamingChunk]:
+            assert model == "claude-test"
+            assert messages == [{"role": "user", "content": "call echo_tool"}]
+            assert optional_params is not None
+            assert "tools" in optional_params
+            yield GenericStreamingChunk(
+                text="",
+                tool_use={
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "echo_tool", "arguments": '{"value": "hi"}'},
+                    "index": 0,
+                },
+                is_finished=False,
+                finish_reason="",
+                usage=None,
+                index=0,
+            )
+            yield GenericStreamingChunk(
+                text="",
+                tool_use=None,
+                is_finished=True,
+                finish_reason="tool_calls",
+                usage={"prompt_tokens": 4, "completion_tokens": 5, "total_tokens": 9},
+                index=0,
+            )
+            yield GenericStreamingChunk(
+                text="", tool_use=None, is_finished=False, finish_reason="", usage=None, index=0
+            )
+
+    original_custom_provider_map = list(litellm.custom_provider_map)
+    original_provider_list = list(litellm.provider_list)
+    original_custom_providers = list(litellm._custom_providers)
+    original_model_list_set = set(litellm.model_list_set)
+
+    async def collect_events() -> list[dict[str, Any]]:
+        register_litellm_provider(TanaLiteLLM(FakeClient()))
+        stream = await litellm.anthropic.messages.acreate(
+            model="tana/claude-test",
+            max_tokens=64,
+            stream=True,
+            messages=[{"role": "user", "content": "call echo_tool"}],
+            tools=[
+                {
+                    "name": "echo_tool",
+                    "description": "Echo a value.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"value": {"type": "string"}},
+                        "required": ["value"],
+                    },
+                }
+            ],
+        )
+        raw_events = [event async for event in cast(AsyncIterator[Any], stream)]
+        return [_decode_anthropic_sse_event(event) for event in raw_events]
+
+    try:
+        events = asyncio.run(collect_events())
+    finally:
+        litellm.custom_provider_map = original_custom_provider_map
+        litellm.provider_list = original_provider_list
+        litellm._custom_providers = original_custom_providers
+        litellm.model_list_set = original_model_list_set
+
+    started_blocks: set[int] = set()
+    stopped_blocks: set[int] = set()
+    for event in events:
+        event_type = event.get("type")
+        index = event.get("index")
+        if event_type == "content_block_start":
+            assert isinstance(index, int)
+            started_blocks.add(index)
+        if event_type == "content_block_delta":
+            assert isinstance(index, int)
+            assert index in started_blocks
+            assert index not in stopped_blocks
+        if event_type == "content_block_stop":
+            assert isinstance(index, int)
+            stopped_blocks.add(index)
+
+    tool_starts = [
+        event
+        for event in events
+        if event.get("type") == "content_block_start" and event.get("content_block", {}).get("type") == "tool_use"
+    ]
+    tool_deltas = [
+        event
+        for event in events
+        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "input_json_delta"
+    ]
+    text_deltas = [
+        event
+        for event in events
+        if event.get("type") == "content_block_delta" and event.get("delta", {}).get("type") == "text_delta"
+    ]
+    message_deltas = [event for event in events if event.get("type") == "message_delta"]
+    assert len(tool_starts) == 1
+    assert tool_starts[0]["content_block"] == {"type": "tool_use", "id": "call-1", "name": "echo_tool", "input": {}}
+    assert len(tool_deltas) == 1
+    assert json.loads(tool_deltas[0]["delta"]["partial_json"]) == {"value": "hi"}
+    assert text_deltas == []
+    assert message_deltas[-1]["delta"]["stop_reason"] == "tool_use"
+
+
 def _decode_anthropic_sse_event(event: Any) -> dict[str, Any]:
     if isinstance(event, dict):
         return event

@@ -398,7 +398,7 @@ class TanaLiteLLM(CustomLLM):
         model = _required_kwarg("model", kwargs)
         messages = _required_kwarg("messages", kwargs)
         optional_params = kwargs.get("optional_params") or {}
-        return self._client.stream_completion(model, messages, optional_params)
+        yield from _filter_stream_chunks(self._client.stream_completion(model, messages, optional_params))
 
     # LiteLLM's base type annotates this as a coroutine, but the streaming
     # dispatcher consumes the returned object as an async iterator.
@@ -426,7 +426,11 @@ class TanaLiteLLM(CustomLLM):
         async for chunk in self._client.astream_completion(
             model, cast(Sequence[Mapping[str, Any]], messages), optional_params
         ):
+            if _is_empty_nonterminal_stream_chunk(chunk):
+                continue
             yield chunk
+            if _is_terminal_stream_chunk(chunk):
+                break
 
 
 def register_litellm_provider(handler: TanaLiteLLM | None = None) -> TanaLiteLLM:
@@ -899,19 +903,52 @@ def _parse_tana_stream_line(line: str) -> list[GenericStreamingChunk]:
     return chunks
 
 
+def _filter_stream_chunks(chunks: Iterator[GenericStreamingChunk]) -> Iterator[GenericStreamingChunk]:
+    for chunk in chunks:
+        if _is_empty_nonterminal_stream_chunk(chunk):
+            continue
+        yield chunk
+        if _is_terminal_stream_chunk(chunk):
+            break
+
+
+def _is_empty_nonterminal_stream_chunk(chunk: GenericStreamingChunk) -> bool:
+    return (
+        not _is_terminal_stream_chunk(chunk)
+        and chunk.get("text") == ""
+        and chunk.get("tool_use") is None
+        and chunk.get("usage") is None
+        and chunk.get("provider_specific_fields") is None
+    )
+
+
+def _is_terminal_stream_chunk(chunk: GenericStreamingChunk) -> bool:
+    return bool(chunk.get("is_finished") or chunk.get("finish_reason"))
+
+
 class _TanaStreamParser:
     def __init__(self) -> None:
         self._pending_tool_calls: dict[str, dict[str, Any]] = {}
+        self._emitted_tool_calls = False
+        self._finished = False
 
     def parse_line(self, line: str) -> list[GenericStreamingChunk]:
         return self._parse_line(line)
 
     def finish(self) -> list[GenericStreamingChunk]:
-        return self._flush_tool_call_chunks()
+        if self._finished:
+            return []
+        tool_chunks = self._flush_tool_call_chunks()
+        if not tool_chunks:
+            return []
+        self._finished = True
+        return [*tool_chunks, _stream_chunk(is_finished=True, finish_reason="tool_calls")]
 
     def _parse_line(self, line: str) -> list[GenericStreamingChunk]:
         stripped = line.strip()
         if not stripped:
+            return []
+        if self._finished:
             return []
 
         if stripped.startswith("data:"):
@@ -933,12 +970,7 @@ class _TanaStreamParser:
                 return []
             if not isinstance(data, Mapping):
                 return []
-            tool_chunks = self._flush_tool_call_chunks()
-            finish_reason = _stream_finish_reason(str(data.get("finishReason") or "stop"), bool(tool_chunks))
-            return [
-                *tool_chunks,
-                _stream_chunk(is_finished=True, finish_reason=finish_reason, usage=_normalize_stream_usage(data)),
-            ]
+            return self._finish_chunks(str(data.get("finishReason") or "stop"), _normalize_stream_usage(data))
 
         if stripped.startswith("0:"):
             try:
@@ -972,29 +1004,20 @@ class _TanaStreamParser:
             message_metadata = data.get("messageMetadata")
             if isinstance(message_metadata, Mapping):
                 self._remember_tool_calls(message_metadata.get("toolCalls"))
-                tool_chunks = self._flush_tool_call_chunks()
-                chunks.extend(tool_chunks)
                 provider_fields: dict[str, Any] = {}
                 _copy_if_set(message_metadata, provider_fields, "providerMetadata", "tana_providerMetadata")
                 _copy_if_set(message_metadata, provider_fields, "warnings", "tana_warnings")
                 _copy_if_set(message_metadata, provider_fields, "response", "tana_response")
-                finish_reason = _stream_finish_reason(
-                    str(data.get("finishReason") or message_metadata.get("finishReason") or "stop"), bool(tool_chunks)
-                )
-                chunks.append(
-                    _stream_chunk(
-                        is_finished=True,
-                        finish_reason=finish_reason,
-                        usage=_normalize_stream_usage(message_metadata),
+                chunks.extend(
+                    self._finish_chunks(
+                        str(data.get("finishReason") or message_metadata.get("finishReason") or "stop"),
+                        _normalize_stream_usage(message_metadata),
                         provider_specific_fields=provider_fields or None,
                     )
                 )
             else:
-                tool_chunks = self._flush_tool_call_chunks()
-                chunks.extend(tool_chunks)
-                finish_reason = _stream_finish_reason(str(data.get("finishReason") or "stop"), bool(tool_chunks))
-                chunks.append(
-                    _stream_chunk(is_finished=True, finish_reason=finish_reason, usage=_normalize_stream_usage(data))
+                chunks.extend(
+                    self._finish_chunks(str(data.get("finishReason") or "stop"), _normalize_stream_usage(data))
                 )
             return chunks
 
@@ -1025,7 +1048,26 @@ class _TanaStreamParser:
             if chunk is not None:
                 chunks.append(_stream_chunk(tool_use=chunk))
         self._pending_tool_calls.clear()
+        if chunks:
+            self._emitted_tool_calls = True
         return chunks
+
+    def _finish_chunks(
+        self, finish_reason: str, usage: dict[str, int] | None, provider_specific_fields: dict[str, Any] | None = None
+    ) -> list[GenericStreamingChunk]:
+        if self._finished:
+            return []
+        tool_chunks = self._flush_tool_call_chunks()
+        self._finished = True
+        return [
+            *tool_chunks,
+            _stream_chunk(
+                is_finished=True,
+                finish_reason=_stream_finish_reason(finish_reason, bool(tool_chunks) or self._emitted_tool_calls),
+                usage=usage,
+                provider_specific_fields=provider_specific_fields,
+            ),
+        ]
 
 
 def _merge_tana_tool_call(existing: Mapping[str, Any] | None, new: Mapping[str, Any]) -> dict[str, Any]:
