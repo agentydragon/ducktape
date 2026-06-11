@@ -20,8 +20,9 @@ import subprocess
 import tarfile
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 CARET_ANSI_RE = re.compile(r"\^\[\[[0-9;]*m")
@@ -65,6 +66,22 @@ def intish(value: Any) -> int | None:
 
 def strip_ansi(line: str) -> str:
     return CARET_ANSI_RE.sub("", ANSI_RE.sub("", line))
+
+
+def as_json_dict(value: Any) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def as_json_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def float_values(values: Iterable[Any]) -> list[float]:
+    return [value for value in values if isinstance(value, float)]
+
+
+def int_values(values: Iterable[Any]) -> list[int]:
+    return [value for value in values if isinstance(value, int)]
 
 
 def parse_kv(text: str) -> dict[str, str]:
@@ -243,40 +260,48 @@ def fetch_bes_events(invocation_id: str) -> list[dict[str, Any]]:
     query = urllib.parse.urlencode({"invocation_id": invocation_id, "artifact": "raw_json"})
     req = urllib.request.Request(f"{base_url}/file/download?{query}", headers={"x-buildbuddy-api-key": api_key})
     with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+        data = json.loads(resp.read())
+    if not isinstance(data, list):
+        raise RuntimeError(f"BES raw JSON for {invocation_id} was not a list")
+    return cast(list[dict[str, Any]], data)
 
 
 def bes_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     id_counts: dict[str, int] = {}
     for event in events:
-        event_id = event.get("id", {})
+        event_id = as_json_dict(event.get("id"))
         for key in event_id:
             id_counts[key] = id_counts.get(key, 0) + 1
 
-    started = next((event.get("started", {}) for event in events if event.get("started")), {})
-    metrics = next((event.get("buildMetrics", {}) for event in reversed(events) if event.get("buildMetrics")), {})
-    action_summary = metrics.get("actionSummary", {})
-    ac = action_summary.get("actionCacheStatistics", {})
-    timing = metrics.get("timingMetrics", {})
-    target = metrics.get("targetMetrics", {})
-    package = metrics.get("packageMetrics", {})
+    started: dict[str, Any] = next((as_json_dict(event.get("started")) for event in events if event.get("started")), {})
+    metrics: dict[str, Any] = next(
+        (as_json_dict(event.get("buildMetrics")) for event in reversed(events) if event.get("buildMetrics")), {}
+    )
+    action_summary = as_json_dict(metrics.get("actionSummary"))
+    ac = as_json_dict(action_summary.get("actionCacheStatistics"))
+    timing = as_json_dict(metrics.get("timingMetrics"))
+    target = as_json_dict(metrics.get("targetMetrics"))
+    package = as_json_dict(metrics.get("packageMetrics"))
 
     miss_details = {}
-    for row in ac.get("missDetails", []):
+    for row_value in as_json_list(ac.get("missDetails")):
+        row = as_json_dict(row_value)
         reason = row.get("reason", "UNKNOWN")
         miss_details[reason] = intish(row.get("count")) or 0
 
     runner_counts = {}
-    for row in action_summary.get("runnerCount", []):
+    for row_value in as_json_list(action_summary.get("runnerCount")):
+        row = as_json_dict(row_value)
         name = row.get("name", "")
         if name:
             runner_counts[name] = intish(row.get("count")) or 0
 
-    build_graph = metrics.get("buildGraphMetrics", {})
+    build_graph = as_json_dict(metrics.get("buildGraphMetrics"))
     skyframe = {}
     for field in ["dirtiedValues", "changedValues", "builtValues", "cleanedValues", "evaluatedValues"]:
         rows = {}
-        for row in build_graph.get(field, []):
+        for row_value in as_json_list(build_graph.get(field)):
+            row = as_json_dict(row_value)
             name = row.get("skyfunctionName", "")
             if name:
                 rows[name] = intish(row.get("count")) or 0
@@ -320,7 +345,10 @@ def bes_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 def gh_run_metadata(repo: str, run_id: str) -> dict[str, Any]:
     fields = "databaseId,workflowName,event,headBranch,headSha,displayTitle,status,conclusion,createdAt,updatedAt,jobs"
-    return json.loads(run(["gh", "run", "view", run_id, "--repo", repo, "--json", fields]).stdout)
+    data = json.loads(run(["gh", "run", "view", run_id, "--repo", repo, "--json", fields]).stdout)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"GitHub run metadata for {run_id} was not a JSON object")
+    return cast(dict[str, Any], data)
 
 
 def bazel_job_id(run_meta: dict[str, Any]) -> str:
@@ -398,7 +426,7 @@ def collect_run(repo: str, run_id: str, out_root: Path, bbapi: Path) -> dict[str
             except tarfile.TarError as e:
                 cas["tar_error"] = repr(e)
 
-    summary = {"run": meta, "job_id": job_id, **parsed}
+    summary: dict[str, Any] = {"run": meta, "job_id": job_id, **parsed}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     return summary
 
@@ -424,14 +452,15 @@ def range_s(values: list[float]) -> str:
 
 
 def invocation_by_role(summary: dict[str, Any], role: str) -> dict[str, Any]:
-    for invocation in summary["invocations"]:
+    for invocation_value in as_json_list(summary.get("invocations")):
+        invocation = as_json_dict(invocation_value)
         if invocation.get("role") == role:
             return invocation
     return {}
 
 
 def build_metrics(invocation: dict[str, Any]) -> dict[str, Any]:
-    return invocation.get("bes_summary", {}).get("build_metrics", {})
+    return as_json_dict(as_json_dict(invocation.get("bes_summary")).get("build_metrics"))
 
 
 def write_aggregate(summaries: list[dict[str, Any]], out: Path) -> None:
@@ -487,14 +516,13 @@ def write_aggregate(summaries: list[dict[str, Any]], out: Path) -> None:
             )
         )
 
-    test_elapsed = [invocation_by_role(s, "test").get("elapsed_s") for s in summaries]
-    test_elapsed = [v for v in test_elapsed if isinstance(v, float)]
-    test_critical = [invocation_by_role(s, "test").get("critical_path_s") for s in summaries]
-    test_critical = [v for v in test_critical if isinstance(v, float)]
-    test_cfg = [build_metrics(invocation_by_role(s, "test")).get("targets_configured") for s in summaries]
-    test_cfg = [v for v in test_cfg if isinstance(v, int)]
-    test_analysis = [build_metrics(invocation_by_role(s, "test")).get("analysis_phase_s") for s in summaries]
-    test_analysis = [v for v in test_analysis if isinstance(v, float)]
+    test_elapsed = float_values(invocation_by_role(s, "test").get("elapsed_s") for s in summaries)
+    test_critical = float_values(invocation_by_role(s, "test").get("critical_path_s") for s in summaries)
+    test_cfg = int_values(build_metrics(invocation_by_role(s, "test")).get("targets_configured") for s in summaries)
+    test_analysis = float_values(
+        build_metrics(invocation_by_role(s, "test")).get("analysis_phase_s") for s in summaries
+    )
+    test_cfg_floats = [float(v) for v in test_cfg]
 
     lines.extend(
         [
@@ -505,13 +533,7 @@ def write_aggregate(summaries: list[dict[str, Any]], out: Path) -> None:
             md_row(["test elapsed s", median(test_elapsed), range_s(test_elapsed)]),
             md_row(["test critical path s", median(test_critical), range_s(test_critical)]),
             md_row(["test BES analysis phase s", median(test_analysis), range_s(test_analysis)]),
-            md_row(
-                [
-                    "test BES configured targets",
-                    median([float(v) for v in test_cfg]),
-                    range_s([float(v) for v in test_cfg]),
-                ]
-            ),
+            md_row(["test BES configured targets", median(test_cfg_floats), range_s(test_cfg_floats)]),
         ]
     )
 

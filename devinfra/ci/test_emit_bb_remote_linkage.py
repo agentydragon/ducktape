@@ -61,7 +61,7 @@ def test_missing_ids_are_warnings() -> None:
         log_text="no useful lines", log_path=Path("/tmp/bb-remote.log"), roles=[], env={}, bb_remote_exit_code=1
     )
 
-    assert record["buildbuddy"]["runner_invocation_id"] is None
+    assert record["buildbuddy"].get("runner_invocation_id") is None
     assert record["buildbuddy"]["bazel_invocations"] == []
     assert record["warnings"] == ["runner invocation id not found", "child Bazel invocation ids not found"]
 
