@@ -222,3 +222,35 @@ import of one of these names disables its global treatment chunk-wide.
 
 See `docs/design.md` → "Emission modes" for the precise dataflow-aware
 emission rule (including the write-after-read edges).
+
+## Input-chunk admission checks
+
+Every materialized chunk is screened against the statically checkable
+input assumptions of `docs/design.md` → "Conditions on the input
+chunk" before any quotient or lowering work (`chunk_admission.rs`,
+run from `stage_one::compute_stage_one_analysis` next to the A2
+top-level-await bail). The enforced shapes:
+
+- **A1** — direct `eval(...)` / seq-indirect `(0, eval)(...)` calls at
+  module top level.
+- **A3** — string-literal dynamic `import(...)` resolving back into
+  the same chunk (any depth), and non-literal specifiers at module
+  top level.
+- **A5** (minimal) — `import.meta` use at module top level beyond
+  `import.meta.url`.
+
+A2 (top-level `await`) bails in the same place; A4 (`with`) is
+rejected at parse time. Rejections name the chunk, the offending
+statement ordinal, and the matched shape. For audited corpora,
+disable individual checks per chunk in the spec:
+
+```yaml
+chunk_analysis_options:
+  static/app:
+    admission_overrides: [a1_eval]
+```
+
+Each override prints a one-line notice per run; an override that no
+longer suppresses any violation is reported as redundant (remove it).
+The deliberately unchecked residual shapes are listed in
+`docs/design.md` → "Coverage gaps".

@@ -233,9 +233,18 @@ fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile)
         .map_err(|error| anyhow::anyhow!("failed to parse {source_name}: {:?}", error.kind()))?;
     let recovered = parser.take_errors();
     if !recovered.is_empty() {
+        // Include each recovered error's message so the rejection is
+        // actionable — e.g. a `with` statement in module (strict)
+        // code surfaces as its strict-mode syntax error here
+        // (docs/design.md A4) rather than as an opaque count.
+        let details = recovered
+            .iter()
+            .map(|error| error.kind().msg())
+            .collect::<Vec<_>>()
+            .join("; ");
         bail!(
-            "failed to parse {source_name}: {} recoverable parser error(s)",
-            recovered.len()
+            "failed to parse {source_name}: {count} recoverable parser error(s): {details}",
+            count = recovered.len(),
         );
     }
     Ok(module)

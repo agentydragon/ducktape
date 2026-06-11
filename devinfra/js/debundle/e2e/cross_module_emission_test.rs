@@ -645,6 +645,7 @@ export { St as B, Ite };
         chunk_id: "static/app",
         unassigned_mode: unassigned_mode_inline(),
         dataflow_aware_s_chain: false,
+        admission_overrides: &[],
         extra_files: &[(
             "static/app/vendor.js",
             r#"export function o(value) {

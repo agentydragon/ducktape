@@ -11,19 +11,25 @@
 //! - the structural atomic units (owner-level SCCs of `G_atomic`),
 //!   which any valid factorization must keep co-located.
 //!
-//! The composer also owns the two side-effects that derive purely
+//! The composer also owns the side-effects that derive purely
 //! from Stage A output:
 //!
 //! - stderr warnings for redundant-purity / redundant-pure-member
 //!   spec hints the analyzer can already infer;
 //! - the fatal bail when a chunk contains a top-level `await` (which
-//!   the realizability theorem does not cover).
+//!   the realizability theorem does not cover);
+//! - the input-chunk admission scan for the other statically
+//!   checkable input assumptions (docs/design.md A1/A3/A5; see
+//!   `chunk_admission`), including its override notices.
 //!
 //! Stage A is a pure function of `(chunk_id, module, hints,
-//! owner_graph_options)` plus the spec-free `source_path` annotation
-//! and the line-index callback for source-location resolution. It
-//! does not read the spec, the partition, chunk renames, or the
-//! unassigned-mode policy — those are Stage B inputs.
+//! owner_graph_options)` plus the spec-free `source_path` annotation,
+//! the line-index callback for source-location resolution, and the
+//! caller-supplied dynamic-import resolver (the A3 admission check
+//! needs "which chunk does this specifier land in", but Stage A
+//! itself stays artifact-free). It does not read the spec, the
+//! partition, chunk renames, or the unassigned-mode policy — those
+//! are Stage B inputs.
 //!
 //! Stage A is materialized only in memory, by callers
 //! (today: `materialize_logical_chunk`) that call
@@ -51,6 +57,7 @@ use swc_ecma_ast::Module;
 
 use crate::AnalysisHints;
 use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
+use crate::chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
 use crate::facts::{ChunkFactAnalysis, analyze_chunk};
 use crate::graph::OwnerGraphOptions;
 use crate::purity::{RedundantPureMemberReason, RedundantPurityReason};
@@ -72,11 +79,16 @@ pub struct StageOneAnalysis {
 
 /// Run Stage A: analyze the chunk's facts, emit any
 /// redundant-purity-hint diagnostics, fail fast if the chunk has
-/// top-level `await`, then derive the owner graph + structural atomic
-/// units.
+/// top-level `await` or fails the input-chunk admission scan, then
+/// derive the owner graph + structural atomic units.
 ///
 /// Returns `Err` if the chunk has top-level `await` (the realizability
-/// theorem does not cover async modules — see docs/design.md A2).
+/// theorem does not cover async modules — see docs/design.md A2) or
+/// violates a non-overridden admission check (docs/design.md
+/// A1/A3/A5; see `chunk_admission`). `resolve_dynamic_import`
+/// supplies the artifact-aware "where does this dynamic-import
+/// specifier land" answer for the A3 check — Stage A itself stays
+/// artifact-free.
 pub fn compute_stage_one_analysis<F>(
     chunk_id: &str,
     module: &Module,
@@ -84,6 +96,7 @@ pub fn compute_stage_one_analysis<F>(
     source_path: Option<&str>,
     line_range_for_span: F,
     owner_graph_options: OwnerGraphOptions,
+    resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<StageOneAnalysis>
 where
     F: FnMut(Span) -> Option<(usize, usize)>,
@@ -99,6 +112,12 @@ where
             ordinal = ord.0,
         );
     }
+    enforce_chunk_admission(
+        chunk_id,
+        module,
+        owner_graph_options.admission_overrides,
+        resolve_dynamic_import,
+    )?;
     let owner_graph_and_units =
         compute_owner_graph_and_units_with(&fact_analysis.facts, owner_graph_options);
     Ok(StageOneAnalysis {
@@ -183,6 +202,7 @@ mod tests {
             None,
             |_| None,
             OwnerGraphOptions::default(),
+            &|_| DynamicImportTarget::External,
         )
         .expect("stage one");
 
@@ -217,6 +237,7 @@ mod tests {
             None,
             |_| None,
             OwnerGraphOptions::default(),
+            &|_| DynamicImportTarget::External,
         );
         let err = result.expect_err("TLA chunks must fail Stage A");
         let msg = format!("{err:#}");

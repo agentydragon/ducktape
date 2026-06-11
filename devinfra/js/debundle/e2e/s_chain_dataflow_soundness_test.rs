@@ -267,19 +267,26 @@ export { got };
 /// chain (subsumed by the opaque-call rule).
 #[test]
 fn indirect_eval_is_a_barrier() {
-    let fixture = run_fixture(dataflow_opts(
-        r#"globalThis.alpha = "a";
+    // Top-level indirect eval also violates the A1 admission check
+    // (chunk_admission_test pins that rejection); this fixture opts
+    // out via the spec override so the per-statement dataflow
+    // bail-out stays exercised on its own.
+    let fixture = run_fixture(
+        dataflow_opts(
+            r#"globalThis.alpha = "a";
 const tagB = ((0, eval)("globalThis.beta = globalThis.alpha + 'b'"), "t");
 const got = globalThis.beta;
 console.log(got, tagB);
 export { tagB, got };
 "#,
-        vec![
-            logical_module_with_anon("mod_a", &[], &[r#"globalThis.alpha = "a";"#]),
-            logical_module("mod_b", &[Member::new("tagB")]),
-            logical_module("mod_read", &[Member::new("got")]),
-        ],
-    ));
+            vec![
+                logical_module_with_anon("mod_a", &[], &[r#"globalThis.alpha = "a";"#]),
+                logical_module("mod_b", &[Member::new("tagB")]),
+                logical_module("mod_read", &[Member::new("got")]),
+            ],
+        )
+        .with_admission_overrides(&["a1_eval"]),
+    );
     assert_entry_output(&fixture, "ab t\n");
     let graph = read_owner_graph(&fixture);
     assert_sequenced_edge(

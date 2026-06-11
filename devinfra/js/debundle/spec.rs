@@ -126,6 +126,107 @@ pub struct OwnerGraphOptions {
     /// check.
     #[serde(default)]
     pub dataflow_aware_s_chain: bool,
+    /// Input-chunk admission checks (docs/design.md A1/A3/A5) the
+    /// spec author has audited and explicitly disabled for this
+    /// chunk. YAML surface is a list of check names
+    /// (`admission_overrides: [a1_eval, a5_import_meta]`). Every configured
+    /// override prints a one-line notice when it suppresses a
+    /// violation, and a redundant-override warning when it no longer
+    /// suppresses anything.
+    #[serde(default, skip_serializing_if = "AdmissionOverrides::is_empty")]
+    pub admission_overrides: AdmissionOverrides,
+}
+
+/// One named input-chunk admission check, identified by the
+/// docs/design.md assumption it enforces. Used both as the
+/// spec-override list-element type and as the violation tag in
+/// admission diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdmissionCheck {
+    /// A1: no `eval(...)` / `(0, eval)(...)` at module top level.
+    A1Eval,
+    /// A3: no dynamic `import()` of a debundled internal module
+    /// (same-chunk literal target, or non-literal specifier at
+    /// module top level).
+    A3DynamicImport,
+    /// A5 (partial): no `import.meta` reflection beyond
+    /// `import.meta.url` at module top level.
+    A5ImportMeta,
+}
+
+impl AdmissionCheck {
+    /// The spec-facing snake_case name (the `admission_overrides`
+    /// list element spelling), for diagnostics.
+    pub fn spec_name(self) -> &'static str {
+        match self {
+            Self::A1Eval => "a1_eval",
+            Self::A3DynamicImport => "a3_dynamic_import",
+            Self::A5ImportMeta => "a5_import_meta",
+        }
+    }
+}
+
+impl fmt::Display for AdmissionCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.spec_name())
+    }
+}
+
+/// Per-chunk escape hatch for the input-chunk admission scan: the set
+/// of checks disabled for an audited chunk. Serialized as a list of
+/// [`AdmissionCheck`] names so the YAML reads as
+/// `admission_overrides: [a1_eval, ...]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(from = "Vec<AdmissionCheck>", into = "Vec<AdmissionCheck>")]
+pub struct AdmissionOverrides {
+    pub a1_eval: bool,
+    pub a3_dynamic_import: bool,
+    pub a5_import_meta: bool,
+}
+
+impl AdmissionOverrides {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn contains(&self, check: AdmissionCheck) -> bool {
+        match check {
+            AdmissionCheck::A1Eval => self.a1_eval,
+            AdmissionCheck::A3DynamicImport => self.a3_dynamic_import,
+            AdmissionCheck::A5ImportMeta => self.a5_import_meta,
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = AdmissionCheck> + '_ {
+        [
+            AdmissionCheck::A1Eval,
+            AdmissionCheck::A3DynamicImport,
+            AdmissionCheck::A5ImportMeta,
+        ]
+        .into_iter()
+        .filter(|check| self.contains(*check))
+    }
+}
+
+impl From<Vec<AdmissionCheck>> for AdmissionOverrides {
+    fn from(checks: Vec<AdmissionCheck>) -> Self {
+        let mut overrides = Self::default();
+        for check in checks {
+            match check {
+                AdmissionCheck::A1Eval => overrides.a1_eval = true,
+                AdmissionCheck::A3DynamicImport => overrides.a3_dynamic_import = true,
+                AdmissionCheck::A5ImportMeta => overrides.a5_import_meta = true,
+            }
+        }
+        overrides
+    }
+}
+
+impl From<AdmissionOverrides> for Vec<AdmissionCheck> {
+    fn from(overrides: AdmissionOverrides) -> Self {
+        overrides.iter().collect()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -940,4 +1041,44 @@ pub enum MemberEffect {
     /// effect on the target class/prototype instead of as a global
     /// side-effect-order edge. See docs/design.md A10.
     TypescriptDecorateHelper,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The YAML override list parses into the typed set and unknown
+    /// check names are rejected (strict data mapping).
+    #[test]
+    fn admission_overrides_parse_from_list() {
+        let options: OwnerGraphOptions =
+            serde_json::from_str(r#"{ "admission_overrides": ["a1_eval", "a5_import_meta"] }"#)
+                .unwrap();
+        assert!(options.admission_overrides.contains(AdmissionCheck::A1Eval));
+        assert!(
+            options
+                .admission_overrides
+                .contains(AdmissionCheck::A5ImportMeta)
+        );
+        assert!(
+            !options
+                .admission_overrides
+                .contains(AdmissionCheck::A3DynamicImport)
+        );
+
+        let invalid: Result<OwnerGraphOptions, _> =
+            serde_json::from_str(r#"{ "admission_overrides": ["a99_bogus"] }"#);
+        assert!(invalid.is_err(), "unknown admission check must be rejected");
+    }
+
+    /// Default (empty) overrides serialize away entirely so untouched
+    /// specs round-trip without a spurious `admission_overrides: []`.
+    #[test]
+    fn empty_admission_overrides_are_skipped_on_serialize() {
+        let serialized = serde_json::to_string(&OwnerGraphOptions::default()).unwrap();
+        assert!(
+            !serialized.contains("admission_overrides"),
+            "default overrides must not serialize: {serialized}"
+        );
+    }
 }

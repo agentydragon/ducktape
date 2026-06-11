@@ -55,6 +55,7 @@ _STANDARD_E2E_DEPS = [
     for name in [
         "anonymous_statement_test",
         "binding_group_adopt_names_test",
+        "chunk_admission_test",
         "comma_list_owner_split_test",
         "lowering_test",
         "mini_factors_test",

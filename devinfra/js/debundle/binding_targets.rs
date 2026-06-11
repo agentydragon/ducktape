@@ -256,3 +256,14 @@ pub fn strip_parens(expr: &Expr) -> &Expr {
     }
     cur
 }
+
+/// Look through parens and comma sequences to a callee's final
+/// operand: `(0, eval)(...)` is an indirect eval call with the same
+/// arbitrary-cell-write power as a direct one.
+pub fn callee_base_expr(expr: &Expr) -> &Expr {
+    let mut cur = strip_parens(expr);
+    while let Expr::Seq(seq) = cur {
+        cur = strip_parens(seq.exprs.last().expect("SeqExpr is non-empty"));
+    }
+    cur
+}

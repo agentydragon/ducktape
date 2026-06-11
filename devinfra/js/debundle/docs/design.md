@@ -907,7 +907,14 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 - **A1. No `eval` at module-top reading cross-module bindings
   dynamically.** `eval` opens an arbitrary read into the lexical
   scope at the call site; the static analyzer cannot see what it
-  references; `I` would be incomplete.
+  references; `I` would be incomplete. **Enforced (partially)**: the
+  input-chunk admission scan (`chunk_admission`, run by
+  `stage_one::compute_stage_one_analysis` next to the A2 bail)
+  rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
+  at module top level (looking through parens and comma sequences to
+  the callee), with the offending statement ordinal in the
+  diagnostic. Function-body `eval` and aliased `eval`
+  (`const e = eval`) remain unchecked — see §"Coverage gaps".
 - **A2. No top-level `await` in any emitted module.** TLA changes
   the linker's evaluation algorithm to AsyncCycleRoot semantics
   (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
@@ -927,15 +934,44 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   imports of vendor / route chunks are fine — the proof treats
   those as black-box leaves with their own evaluation. Internal
   dynamic imports would route around the static `import` graph,
-  invalidating `I` as a complete picture.
+  invalidating `I` as a complete picture. **Enforced (partially)**:
+  the admission scan resolves every string-literal `import(...)`
+  specifier through the artifact indexes (the same resolution the
+  specifier rewriter uses) and rejects, at any depth, specifiers
+  that resolve back into the chunk being debundled — `I` is the
+  per-chunk graph, so "internal" means same-chunk; other artifact
+  chunks stay black-box leaves per the sentence above (a
+  same-chunk-only rule also avoids over-flagging code-splitting
+  bundlers, whose route-chunk `import()` thunks are everywhere).
+  Non-literal specifiers in eager (module-top) position are also
+  rejected — soundness over completeness: the target cannot be
+  proven external. Non-literal specifiers in lazy positions are
+  allowed and remain a documented residual gap (only `Lit::Str`
+  counts as literal, matching `prepare_js_chunks` /
+  `rewrite_chunk_entry_specifiers`).
 - **A4. No `with` blocks.** Banned in strict mode (which ESM is
-  by spec); listed only for completeness.
+  by spec). **Enforced (at parse)**: even with the parser's
+  `no_early_errors: true` TypeScript syntax, `with` surfaces as a
+  recoverable parse error and `js_ast` fails chunk loading on any
+  recovered error, naming the strict-mode violation. Pinned by
+  `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`;
+  no separate admission check is needed.
 - **A5. No reflection on module namespaces during evaluation.**
   No `Function.prototype.toString` reads of cross-module bodies
   whose result depends on evaluation order; no `Reflect`-based
   property descriptor inspection on the module namespace object
   during link; no `import.meta` introspection that depends on
-  order. (Standard `import.meta.url` is fine.)
+  order. (Standard `import.meta.url` is fine.) **Enforced
+  (minimally)**: the admission scan rejects only the cheap,
+  low-false-positive sub-shape — `import.meta` use at module top
+  level beyond `import.meta.url` (named props like
+  `import.meta.env`, computed `import.meta[...]`, and bare
+  `import.meta` as a value). The other A5 sub-shapes
+  (`Function.prototype.toString` reads, `Reflect` descriptor
+  inspection, lazy-position `import.meta`) are deliberately
+  unchecked: a precise analysis would over-flag mainstream
+  bundles, which is the worse failure mode here. They remain
+  input-shape contracts — see §"Coverage gaps".
 - **A6. The input chunk runs to completion in the original
   bundler's load.** Observational equivalence has no baseline if
   the input chunk itself diverges, hangs, or throws during
@@ -1047,12 +1083,22 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   patch intrinsics would need the affected whitelist entries
   disabled for soundness.)
 
-A1–A5 are statically checkable on each chunk: grep for top-level
-`await`, dynamic `import()` of internal paths, `eval`, and `with`.
-A2 in particular is enforced by the TLA scan inside fact analysis —
+A1–A5 are statically checkable on each chunk, and each now has an
+enforced core. A2 is enforced by the TLA scan inside fact analysis —
 `stage_one::compute_stage_one_analysis` `bail!`s with the offending
 statement ordinal as soon as fact analysis returns, before any
-quotient or lowering work. A6 (no module-eval reentry) is relied
+quotient or lowering work. A1, A3, and A5 are enforced (to the
+per-assumption strengths described above) by the input-chunk
+admission scan in `chunk_admission`, which
+`compute_stage_one_analysis` runs right after the A2 bail; its
+diagnostics carry the chunk id, the offending statement ordinal,
+and the matched shape. A4 is enforced at parse time. The admission
+scan is on by default for every materialized chunk; for audited
+corpora a spec can disable individual checks per chunk via
+`chunk_analysis_options.<chunk>.admission_overrides`
+(`[a1_eval, a3_dynamic_import, a5_import_meta]`) — every override
+use prints a one-line notice, and overrides that no longer suppress
+anything are reported as redundant. A6 (no module-eval reentry) is relied
 on by observation: the unmodified bundle loads in the browser.
 A7 (multi-chunk DAG) is satisfied by typical bundlers' vendor-leaf
 chunking. A8 (whitelist receivers not shadowed) is dropped to
@@ -1203,14 +1249,30 @@ It does not establish:
 - **Top-level await (A2 violation).** Async modules use a
   different evaluation algorithm (`InnerModuleEvaluation` returns
   a Promise; cyclic async-module groups have AsyncCycleRoot
-  semantics). A separate proof would be needed; the validator
-  has no analysis of TLA today. If a future bundle introduces
-  TLA, the materializer should refuse the chunk explicitly.
+  semantics). A separate proof would be needed; instead the
+  materializer refuses TLA chunks explicitly (the Stage A bail
+  described under A2 above).
 - **Dynamic eval / reflection bypassing the static graph (A1, A5
   violations).** The `I` graph is incomplete in this case;
   cycle-freeness in `I` doesn't imply cycle-freeness in the
-  actual evaluation graph. The materializer cannot rule this out
-  statically; treat A1/A5 as input-shape contracts on the bundler.
+  actual evaluation graph. The admission scan rejects the
+  module-top shapes (direct / seq-indirect `eval` calls,
+  non-`url` `import.meta` use, eager non-literal `import()`),
+  but cannot rule out the rest statically. The shapes that remain
+  pure input-shape contracts on the bundler:
+  - `eval` in function bodies and other lazy positions — A1's
+    wording only bans module-top eval, but a lazy direct `eval`
+    still reads its lexical scope dynamically when the enclosing
+    function is called after the split, and the split may have
+    moved the bindings it names into other modules.
+  - aliased eval (`const e = eval; e(...)`) and `eval` reached
+    through any value flow.
+  - non-literal dynamic-import specifiers in lazy positions,
+    which could resolve to an internal module at runtime.
+  - `Function.prototype.toString` reads of cross-module bodies
+    and `Reflect`-based descriptor inspection of namespace
+    objects (the fuzzier A5 sub-shapes; checking them cheaply
+    without over-flagging mainstream bundles is not possible).
 - **Cross-chunk imports through CommonJS interop.** ECMA-262's
   evaluation rules don't apply to CJS modules; a CJS module's
   `module.exports` mutation can fire mid-evaluation in arbitrary

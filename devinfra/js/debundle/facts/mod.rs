@@ -10,8 +10,8 @@ pub use wire::{
 };
 
 use binding_targets::{
-    TargetAccessRecorder, declaration_ids, hoisted_var_ids, record_assign_target, record_pat_write,
-    record_update_target, strip_parens,
+    TargetAccessRecorder, callee_base_expr, declaration_ids, hoisted_var_ids, record_assign_target,
+    record_pat_write, record_update_target, strip_parens,
 };
 use serde::{Deserialize, Serialize};
 use swc_common::{Span, Spanned};
@@ -1744,17 +1744,6 @@ impl Visit for StatementFactsCollector {
     fn visit_class_member(&mut self, member: &ClassMember) {
         lazy_visit_class_member(self, member);
     }
-}
-
-/// Look through parens and comma sequences to a callee's final
-/// operand: `(0, eval)(...)` is an indirect eval call with the same
-/// arbitrary-cell-write power as a direct one.
-fn callee_base_expr(expr: &Expr) -> &Expr {
-    let mut cur = strip_parens(expr);
-    while let Expr::Seq(seq) = cur {
-        cur = strip_parens(seq.exprs.last().expect("SeqExpr is non-empty"));
-    }
-    cur
 }
 
 /// The member expression a simple assignment target writes through,

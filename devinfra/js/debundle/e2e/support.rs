@@ -521,6 +521,10 @@ pub struct FixtureOpts<'a> {
     /// adjacent-impure chain. Tests that exercise the relaxation set
     /// this `true`.
     pub dataflow_aware_s_chain: bool,
+    /// Input-chunk admission checks to disable for this chunk
+    /// (`chunk_analysis_options.<chunk>.admission_overrides`), e.g.
+    /// `&["a1_eval"]`. Default empty — all admission checks enforced.
+    pub admission_overrides: &'a [&'a str],
     pub extra_files: &'a [(&'a str, &'a str)],
 }
 
@@ -539,8 +543,16 @@ impl<'a> FixtureOpts<'a> {
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
             dataflow_aware_s_chain: false,
+            admission_overrides: &[],
             extra_files: &[],
         }
+    }
+
+    /// Disable the named admission checks for this chunk via
+    /// `chunk_analysis_options.<chunk>.admission_overrides`.
+    pub fn with_admission_overrides(mut self, overrides: &'a [&'a str]) -> Self {
+        self.admission_overrides = overrides;
+        self
     }
 
     /// Enable the dataflow-aware S-chain emission for this chunk. Used
@@ -602,6 +614,9 @@ pub struct Fixture {
     pub entry_path: PathBuf,
     pub out_root: PathBuf,
     pub report_root: PathBuf,
+    /// The debundler's stderr from the successful run, for asserting
+    /// on warnings/notices (e.g. admission-override notices).
+    pub stderr: String,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -645,6 +660,7 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         entry_path,
         out_root: app_root,
         report_root: setup.report_root,
+        stderr: result.stderr,
         _root: setup.root,
     }
 }
@@ -910,11 +926,18 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
     unassigned_mode.insert(chunk_id.to_string(), opts.unassigned_mode.clone());
 
     let mut chunk_analysis_options = BTreeMap::new();
+    let mut analysis_options = serde_json::Map::new();
     if opts.dataflow_aware_s_chain {
-        chunk_analysis_options.insert(
-            chunk_id.to_string(),
-            serde_json::json!({ "dataflow_aware_s_chain": true }),
+        analysis_options.insert("dataflow_aware_s_chain".to_string(), Value::Bool(true));
+    }
+    if !opts.admission_overrides.is_empty() {
+        analysis_options.insert(
+            "admission_overrides".to_string(),
+            serde_json::json!(opts.admission_overrides),
         );
+    }
+    if !analysis_options.is_empty() {
+        chunk_analysis_options.insert(chunk_id.to_string(), Value::Object(analysis_options));
     }
 
     TransformSpecFixture {

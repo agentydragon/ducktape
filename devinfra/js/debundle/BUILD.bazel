@@ -259,6 +259,7 @@ rust_library(
         "analysis_hints.rs",
         "analysis_tests/mod.rs",
         "atomic_units.rs",
+        "chunk_admission.rs",
         "chunk_analysis.rs",
         "chunk_factorization.rs",
         "factor_assembly.rs",

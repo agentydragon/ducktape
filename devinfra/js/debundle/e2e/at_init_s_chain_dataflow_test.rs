@@ -288,17 +288,25 @@ fn bail_out_keeps_s_edge_when_statement_uses_direct_eval() {
     // whether its syntactic write set is otherwise disjoint from the
     // prior statement's writes. See `README.md` →
     // "Conditionally-correct optimizations" for the full bail-out list.
-    let fixture = run_fixture(dataflow_opts(
-        r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
+    //
+    // Top-level eval also violates the A1 admission check
+    // (chunk_admission_test pins that rejection); this fixture opts
+    // out via the spec override so the per-statement dataflow bail-out
+    // stays exercised on its own.
+    let fixture = run_fixture(
+        dataflow_opts(
+            r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (eval("globalThis.beta = 'beta-val'"), "tag-b");
 console.log(tagA, tagB, globalThis.alpha, globalThis.beta);
 export { tagA, tagB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("tagA")]),
-            logical_module("mod_b", &[Member::new("tagB")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("tagA")]),
+                logical_module("mod_b", &[Member::new("tagB")]),
+            ],
+        )
+        .with_admission_overrides(&["a1_eval"]),
+    );
     assert_entry_output(&fixture, "tag-a tag-b alpha-val beta-val\n");
 
     let graph: OwnerGraphReport =

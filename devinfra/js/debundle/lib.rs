@@ -16,6 +16,7 @@
 
 mod analysis_hints;
 mod atomic_units;
+mod chunk_admission;
 mod chunk_analysis;
 mod chunk_factorization;
 mod factor_assembly;
@@ -35,6 +36,7 @@ pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
     compute_owner_graph_and_units_with,
 };
+pub use chunk_admission::{DynamicImportTarget, enforce_chunk_admission};
 pub use chunk_analysis::ChunkAnalysis;
 pub use chunk_factorization::ChunkFactorization;
 pub use factor_assembly::{

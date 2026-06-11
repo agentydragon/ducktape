@@ -198,6 +198,22 @@ pub(super) fn materialize_logical_chunk(
         .get(chunk_id)
         .copied()
         .unwrap_or_default();
+    // A3 admission resolver: where does a dynamic-import specifier in
+    // this chunk's entry land? Same artifact resolution the specifier
+    // rewriter uses; `SameChunk` marks a debundled internal module.
+    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
+        .resolve_runtime_import_reference(
+            specifier,
+            chunk_id_interned,
+            &target_file,
+            &artifact.chunk_table,
+        ) {
+        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
+            DynamicImportTarget::SameChunk
+        }
+        Some(_) => DynamicImportTarget::OtherChunk,
+        None => DynamicImportTarget::External,
+    };
     let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
         compute_stage_one_analysis(
             chunk_id,
@@ -206,6 +222,7 @@ pub(super) fn materialize_logical_chunk(
             Some(&source_path),
             |span| line_index.line_range_for_span(span),
             owner_graph_options,
+            &resolve_dynamic_import,
         )?
     });
     let StageOneAnalysis {
