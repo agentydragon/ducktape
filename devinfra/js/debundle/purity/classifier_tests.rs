@@ -579,6 +579,74 @@ fn unshadowed_builtin_new_is_pure() {
 }
 
 #[test]
+fn whatwg_platform_constructors_no_args_are_pure() {
+    // No-arg WHATWG constructors: TextDecoder defaults to "utf-8"
+    // (cannot reach the RangeError label-validation path),
+    // TextEncoder takes no parameters, URLSearchParams constructs an
+    // empty query list. None fires user code.
+    assert!((classify("new TextDecoder()")).is_pure());
+    assert!((classify("new TextEncoder()")).is_pure());
+    assert!((classify("new URLSearchParams()")).is_pure());
+}
+
+#[test]
+fn text_decoder_with_label_arg_stays_unknown() {
+    // Even a LITERAL label is not admitted: an invalid label throws
+    // RangeError at construction — an observable init effect under
+    // statement reordering — and validating labels statically would
+    // mean embedding the encodings registry.
+    assert!(!(classify(r#"new TextDecoder("utf-8")"#)).is_pure());
+}
+
+#[test]
+fn url_search_params_string_literal_arg_is_pure() {
+    // The string branch of `new URLSearchParams(init)` parses
+    // application/x-www-form-urlencoded, which is total over
+    // arbitrary strings (never throws) and fires no user code.
+    assert!((classify(r#"new URLSearchParams("a=1&b=2")"#)).is_pure());
+}
+
+#[test]
+fn url_search_params_non_literal_args_stay_unknown() {
+    // A non-literal string-valued expression would need value-class
+    // tracking to prove it can't be an object whose ToString fires
+    // user code; the record/iterable form fires [[Get]]/iterator
+    // protocol on user values.
+    assert!(!(classify("new URLSearchParams(q)")).is_pure());
+    assert!(!(classify("new URLSearchParams({ a: 1 })")).is_pure());
+    assert!(!(classify("new URLSearchParams(`a=${x}`)")).is_pure());
+}
+
+#[test]
+fn regexp_constructor_stays_unknown_even_with_literal_args() {
+    // Deliberate exclusion (see PURE_BUILTIN_NEW_STRING_LITERAL_ARG
+    // doc): pattern compilation can throw SyntaxError at
+    // construction; admitting RegExp soundly needs a static
+    // ECMA-262 pattern validator.
+    assert!(!(classify(r#"new RegExp("a+", "g")"#)).is_pure());
+}
+
+#[test]
+fn shadowed_whatwg_constructor_falls_back_to_unknown() {
+    // The new tables join SHADOW_TRACKED_GLOBALS via the derived
+    // union, so a chunk-top rebind disables the whitelist.
+    assert!(
+        !(classify_with_module(
+            "const TextDecoder = class { constructor() { globalThis.boom = 1; } };",
+            "new TextDecoder()"
+        ))
+        .is_pure()
+    );
+    assert!(
+        !(classify_with_module(
+            "function URLSearchParams() {}",
+            r#"new URLSearchParams("a=1")"#
+        ))
+        .is_pure()
+    );
+}
+
+#[test]
 fn shadowed_builtin_new_falls_back_to_unknown() {
     // SOUNDNESS: `compute_shadowed_globals` must track every name
     // any whitelist table keys on (SHADOW_TRACKED_GLOBALS — the

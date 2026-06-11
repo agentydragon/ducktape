@@ -16,8 +16,9 @@ use crate::SourceLocation;
 use crate::facts::TopLevelItemView;
 use whitelists::{
     PLAIN_DATA_HOSTILE_BUILTINS, PURE_BUILTIN_NEW_ARRAY_ITERABLE, PURE_BUILTIN_NEW_NO_ARGS,
-    PURE_GLOBAL_CALLS, PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS, PURE_OBJECT_CALLS_ON_PLAIN_DATA,
-    PURE_STATIC_CALLS, PURE_STATIC_FUNCTION_REFS, PURE_STATIC_PROPS,
+    PURE_BUILTIN_NEW_STRING_LITERAL_ARG, PURE_GLOBAL_CALLS, PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS,
+    PURE_OBJECT_CALLS_ON_PLAIN_DATA, PURE_STATIC_CALLS, PURE_STATIC_FUNCTION_REFS,
+    PURE_STATIC_PROPS,
 };
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
@@ -2408,6 +2409,25 @@ fn classify_new_expr_purity(
         && !shadowed.contains(name)
         && !local_shadowed.contains(name)
         && arg_count == 0
+    {
+        return Purity::Pure;
+    }
+    // `new X("literal")` against PURE_BUILTIN_NEW_STRING_LITERAL_ARG.
+    // The argument must be a string LITERAL (no spread): the
+    // admission arguments on the table are about parsing a string —
+    // a non-literal expression would additionally need value-class
+    // tracking to prove it can't be an object whose ToString fires
+    // user code.
+    if let Some(name) = PURE_BUILTIN_NEW_STRING_LITERAL_ARG
+        .iter()
+        .copied()
+        .find(|n| *n == callee.sym.as_ref())
+        && !shadowed.contains(name)
+        && !local_shadowed.contains(name)
+        && let Some(args) = new_expr.args.as_ref()
+        && args.len() == 1
+        && args[0].spread.is_none()
+        && matches!(args[0].expr.as_ref(), Expr::Lit(Lit::Str(_)))
     {
         return Purity::Pure;
     }

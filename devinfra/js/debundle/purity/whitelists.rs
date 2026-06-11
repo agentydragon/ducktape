@@ -123,7 +123,51 @@ pub(super) const PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS: &[&str] = &["Symbol"];
 /// code (no iterator protocol, no getters fired). Same admission
 /// contract as `PURE_GLOBAL_CALLS`. `Set` / `Map` also accept
 /// an Array-literal iterable; see `PURE_BUILTIN_NEW_ARRAY_ITERABLE`.
-pub(super) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &["Map", "Set", "WeakMap", "WeakSet", "Array"];
+///
+/// WHATWG platform constructors, same no-arg contract:
+/// * `TextDecoder`: Encoding §"new TextDecoder(label, options)" —
+///   label defaults to `"utf-8"`, which is a known label, so the
+///   no-arg form cannot reach the RangeError throw path and runs no
+///   user code. The WITH-label form is intentionally NOT admitted:
+///   an invalid label throws RangeError at construction, an
+///   observable init effect under reordering, and validating labels
+///   statically would mean embedding the encodings registry.
+/// * `TextEncoder`: Encoding §"new TextEncoder()" — takes no
+///   parameters at all; constructs a utf-8 encoder, no throw path,
+///   no user code.
+/// * `URLSearchParams`: URL §"new URLSearchParams(init)" — with init
+///   absent the query list is empty; no parsing, no user code. The
+///   one-string-arg form is also pure — see
+///   `PURE_BUILTIN_NEW_STRING_LITERAL_ARG`.
+pub(super) const PURE_BUILTIN_NEW_NO_ARGS: &[&str] = &[
+    "Map",
+    "Set",
+    "WeakMap",
+    "WeakSet",
+    "Array",
+    "TextDecoder",
+    "TextEncoder",
+    "URLSearchParams",
+];
+
+/// Built-in constructors whose 1-arg form is pure when the argument
+/// is a single string **literal** (`Lit::Str`, no spread). Admission
+/// argument per entry:
+/// * `URLSearchParams`: URL §"new URLSearchParams(init)", string
+///   branch — the input is parsed as `application/x-www-form-urlencoded`,
+///   which is defined total over arbitrary strings (never throws) and
+///   fires no user code. A non-literal string-valued expression is NOT
+///   admitted because proving string-ness statically would need value
+///   tracking; a literal needs none.
+///
+/// `RegExp` is deliberately absent: even with literal pattern/flags
+/// args, ECMA-262 §22.2.4 compiles the pattern at construction and
+/// throws SyntaxError on an invalid one — a deterministic but
+/// observable init effect under statement reordering. Admitting it
+/// soundly requires statically validating the pattern against the
+/// ECMA-262 grammar (a `regress`-style validator), tracked as the
+/// ignore-reason of `inferred_pure_collection_constructors_with_literal_args_emit_no_s_cycle`.
+pub(super) const PURE_BUILTIN_NEW_STRING_LITERAL_ARG: &[&str] = &["URLSearchParams"];
 
 /// Built-in container constructors whose 1-arg form is pure when
 /// the argument is an Array literal with all-Pure elements (no holes;
@@ -248,5 +292,6 @@ pub(crate) static SHADOW_TRACKED_GLOBALS: LazyLock<BTreeSet<&'static str>> = Laz
     names.extend(PURE_GLOBAL_CALLS_WITH_PRIMITIVE_ARGS.iter().copied());
     names.extend(PURE_BUILTIN_NEW_NO_ARGS.iter().copied());
     names.extend(PURE_BUILTIN_NEW_ARRAY_ITERABLE.iter().copied());
+    names.extend(PURE_BUILTIN_NEW_STRING_LITERAL_ARG.iter().copied());
     names
 });
