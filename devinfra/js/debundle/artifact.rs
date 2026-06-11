@@ -202,7 +202,6 @@ pub struct FileMetadata {
     pub chunk_file: String,
     pub role: FileRole,
     pub source_path: String,
-    pub generated_by_selected_module_lowering: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
@@ -1124,7 +1123,6 @@ pub fn load_js_chunks(
                 chunk_file: entry_file.clone(),
                 role: FileRole::Entry,
                 source_path: source_path.clone(),
-                generated_by_selected_module_lowering: false,
             },
         }];
         chunks.push(JsChunk {

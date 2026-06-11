@@ -1495,9 +1495,8 @@ impl IncrementalQuotient {
         owners: &[OwnerId],
         to: ModuleId,
     ) -> QuotientOverlay {
+        let impacted_edges = impacted_owner_edges(owner_graph, owners);
         let owners: BTreeSet<OwnerId> = owners.iter().copied().collect();
-        let impacted_owners: Vec<OwnerId> = owners.iter().copied().collect();
-        let impacted_edges = impacted_owner_edges(owner_graph, &impacted_owners);
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = owner_graph.edge(edge_id);

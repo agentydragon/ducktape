@@ -33,7 +33,7 @@ export { actual };
 "#,
         vec![logical_module(
             "calc",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "calc_value",
                 r#"const readable = Math.max(EXPR_LEFT, EXPR_RIGHT);"#,
             )],
@@ -76,7 +76,7 @@ export { actual };
 "#,
         vec![logical_module(
             "calc",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "calc_value",
                 r#"const readable = [
   EXPR_A,
@@ -118,7 +118,7 @@ export { first, second };
         vec![logical_module_with_binding_groups(
             "pair",
             &[],
-            &[BindingGroup::source_alpha_with_syntactic_holes(
+            &[BindingGroup::source_alpha(
                 r#"var left = EXPR_LEFT, right = EXPR_RIGHT;"#,
                 &[("left", "first_value"), ("right", "second_value")],
             )],
@@ -153,7 +153,7 @@ fn anonymous_source_match_stmt_prefix_hole_matches_arbitrary_nested_statement() 
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -190,7 +190,7 @@ if (true) {
 }
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -224,7 +224,7 @@ fn anonymous_source_match_stmt_list_hole_absorbs_contiguous_statements() {
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -260,7 +260,7 @@ fn anonymous_source_match_stmt_list_hole_absorbs_empty_run() {
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -303,7 +303,7 @@ export { Counter };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Counter",
                 r#"class K {
   constructor() {
@@ -351,7 +351,7 @@ export { Alpha };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Selected",
                 r#"class K {
   run() {
@@ -386,7 +386,7 @@ export { Counter };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Selected",
                 r#"class K {
   b() {
@@ -416,7 +416,7 @@ export { actual };
 "#,
         vec![logical_module(
             "calc",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "calc_value",
                 r#"const readable = Math.max(EXPR, EXPR);"#,
             )],
@@ -444,7 +444,7 @@ fn anonymous_stmt_hole_matches_one_arbitrary_statement() {
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -487,7 +487,7 @@ export { Counter };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Counter",
                 r#"class K {
   constructor() {
@@ -538,7 +538,7 @@ export { Counter };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Counter",
                 r#"class K {
   CLASS_REST;
@@ -594,7 +594,7 @@ export { Widget };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Widget",
                 r#"class K {
   CLASS_REST;
@@ -652,7 +652,7 @@ export { Widget };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Selected",
                 r#"class K {
   CLASS_REST;
@@ -688,7 +688,7 @@ fn anonymous_source_match_multiple_stmt_list_holes_bracket_pinned_statements() {
 const marker = "ready";
 export { marker };
 "#,
-        vec![logical_module_with_anon_alpha_syntactic_holes(
+        vec![logical_module_with_anon_alpha(
             "init",
             &[Member::new("marker")],
             r#"if (true) {
@@ -737,7 +737,7 @@ export { Counter };
 "#,
         vec![logical_module(
             "shapes",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "Counter",
                 r#"class K {
   CLASS_REST;
@@ -778,7 +778,7 @@ export { total };
 "#,
         vec![logical_module(
             "calc",
-            &[Member::source_alpha_with_syntactic_holes(
+            &[Member::source_alpha(
                 "calc_total",
                 r#"const readable = Math.max(EXPR, limit);"#,
             )],

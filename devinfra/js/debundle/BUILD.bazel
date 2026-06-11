@@ -434,19 +434,12 @@ rust_test(
 )
 
 # Integration tests for the QuotientGraph kernel. Compiled as a
-# separate crate against `:peel`'s public API so they bypass the
-# `peel_test` build (which is broken by misplaced helpers in
-# peel/factorize_tests.rs unrelated to the kernel).
+# separate crate so they exercise `:peel`'s public API — the same
+# surface external consumers of the kernel see.
 rust_test(
     name = "peel_quotient_integration_test",
     srcs = ["peel/quotient_integration_test.rs"],
     compile_data = [
-        # Source file included via `include_str!` by the
-        # `unification_eliminates_cell_pipeline` static check.
-        # Embedding the source at build time pins the absence of
-        # deleted symbols (`Cell`, `proposal_cells_from_atomic_graph`,
-        # `promote_anonymous_only_cell_to_extension`).
-        "peel/factorize.rs",
         "peel/golden/closed_residual_unit.json",
         "peel/golden/extend_active_via_anon.json",
         "peel/golden/residual_singletons.json",

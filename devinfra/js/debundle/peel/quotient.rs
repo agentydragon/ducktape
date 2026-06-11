@@ -2790,16 +2790,3 @@ fn lowest_owner_idx<'a>(
 // compile-time guarantee (no public method exists)" approach the
 // plan calls for; the test `contract_never_un_contracts` in
 // `quotient_integration_test.rs` exercises the post-condition.
-
-#[cfg(test)]
-mod tests {
-    // Inline tests live next to the kernel for fast iteration but
-    // would only run under the (currently-broken) `:peel_test`
-    // target. The `:peel_quotient_integration_test` target compiles
-    // an integration test (`peel/quotient_integration_test.rs`)
-    // against the `:peel` library's public API, which is the path
-    // that actually exercises the kernel today.
-    //
-    // Leave this scaffolding in place so when `peel_test` is fixed,
-    // dropping a unit test here just works.
-}

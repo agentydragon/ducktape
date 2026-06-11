@@ -17,7 +17,6 @@ use serde_json::{Value, json};
 
 fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
     json!({
-        "id": "chunk_renames__static_app",
         "members": [
             {
                 "name": rename_to,

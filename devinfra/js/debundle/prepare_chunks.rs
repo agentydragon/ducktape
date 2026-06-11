@@ -305,7 +305,6 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
             chunk_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
             role: FileRole::Entry,
             source_path: source_path.to_string(),
-            generated_by_selected_module_lowering: false,
         },
     }
 }

@@ -54,7 +54,6 @@ export {{ a, b, c }};
         Self {
             source,
             pure_members: json!({
-                "id": "chunk_renames__static_app",
                 "members": [
                     {
                         "name": "React",

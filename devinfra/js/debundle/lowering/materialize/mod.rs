@@ -10,10 +10,10 @@ pub(super) use apply::apply_materialized_logical_chunks;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 
 use super::io::write_chunk_report_json;
-use super::ordinal::statement_ordinal_for_body_index;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
 use super::*;
 use crate::time_phase;
+use js_ast::statement_ordinal_for_body_index;
 use output_layout::{ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT};
 
 /// Per-chunk inputs that identify the chunk and where its outputs

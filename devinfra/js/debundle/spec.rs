@@ -203,9 +203,6 @@ pub struct EmitBrowserHarnessConfig {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkRenames {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub id: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
 }
@@ -605,11 +602,6 @@ impl std::error::Error for AnonymousStatementSelectorError {}
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct SourceMatch {
-    /// Optional documentary kind for future selector families. Anonymous
-    /// statement resolution currently always parses `match` as exactly one
-    /// top-level statement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
     #[serde(
         default,
         skip_serializing_if = "is_default_source_match_identifier_mode"

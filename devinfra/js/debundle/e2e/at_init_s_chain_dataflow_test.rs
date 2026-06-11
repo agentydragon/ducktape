@@ -1,10 +1,11 @@
-//! RED tests: the S-chain should consult per-statement dataflow
-//! before emitting a `Sequenced` owner edge between two
-//! consecutive impure top-level statements.
+//! Regression tests (originally RED) for the dataflow-aware
+//! S-chain: emission consults per-statement dataflow before
+//! emitting a `Sequenced` owner edge between two consecutive
+//! impure top-level statements.
 //!
-//! Background. `graph.rs` (S-chain emission around lines
-//! 469-478) walks every impure top-level statement in source
-//! order and unconditionally emits
+//! Background. The baseline S-chain emission in `graph.rs` walks
+//! every impure top-level statement in source order and
+//! unconditionally emits
 //!
 //! ```ignore
 //! raw_edges.push((curr, prev, EdgeReason::sequenced(curr.ord)));
@@ -25,9 +26,10 @@
 //! before B" and a "after B, before A" state because there is
 //! no shared cell to observe).
 //!
-//! Proposed refinement (the "full dataflow" S-chain): for each
-//! impure top-level statement, compute its write set and read
-//! set (rebinds + global property mutations + property writes;
+//! The refinement under test (the "full dataflow" S-chain,
+//! opt-in via `dataflow_aware_s_chain`): for each impure
+//! top-level statement, compute its write set and read set
+//! (rebinds + global property mutations + property writes;
 //! reads from bindings + global properties); emit
 //! `Sequenced(prev → curr)` only when
 //!
@@ -52,23 +54,23 @@
 //!
 //! 1. **Disjoint global property writes.** Two impure
 //!    statements that each `globalThis.X = ...` distinct,
-//!    independent property keys. Today: S-edge chains them.
-//!    After fix: writes are `{globalThis.alpha}` vs
-//!    `{globalThis.beta}` — disjoint — no edge.
+//!    independent property keys. The baseline S-edge chains
+//!    them; the dataflow-aware chain sees `{globalThis.alpha}`
+//!    vs `{globalThis.beta}` — disjoint — no edge.
 //!
 //! 2. **Fresh-local-only allocation after a global write.** A
 //!    `globalThis.tag = ...` followed by a `new LocalClass()`
 //!    or `Object.freeze({...})` call whose effect is confined
-//!    to a fresh local value. Today: both are impure, S-edge
-//!    chains them. After fix: the fresh-alloc statement's
-//!    write set is just its own binding and its read set
-//!    doesn't intersect `globalThis.tag` — no edge.
+//!    to a fresh local value. Both are impure, so the baseline
+//!    S-edge chains them; under dataflow the fresh-alloc
+//!    statement's write set is just its own binding and its
+//!    read set doesn't intersect `globalThis.tag` — no edge.
 //!
 //! 3. **Independent cross-module inits.** Two modules each
 //!    construct a one-off instance of a local class whose
-//!    constructor only touches `this`. Today: S-edge chains
-//!    them. After fix: each statement writes only its own
-//!    binding (plus the fresh instance); read sets are
+//!    constructor only touches `this`. The baseline S-edge
+//!    chains them; under dataflow each statement writes only
+//!    its own binding (plus the fresh instance); read sets are
 //!    disjoint — no edge.
 //!
 //! ## Test shape

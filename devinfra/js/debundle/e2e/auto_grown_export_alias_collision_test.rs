@@ -1,28 +1,28 @@
-//! RED test: when the chunk's source `export { … }` aliases a
-//! local binding to a public name `P`, and `auto_grown_residual_exports`
-//! would grow an export for a different local binding whose symbol
-//! is *also* `P`, the auto-grow pass produces a duplicate public
-//! export name and the chunk link-fails.
+//! Regression test (originally RED): when the chunk's source
+//! `export { … }` aliases a local binding to a public name `P`,
+//! and `auto_grown_residual_exports` would grow an export for a
+//! different local binding whose symbol is *also* `P`, the
+//! auto-grow pass used to produce a duplicate public export name
+//! and the chunk link-failed.
 //!
 //! Background. `lowering/exports.rs::auto_grown_residual_exports`
 //! gates each candidate against `pre_existing_entry_exports`, but
 //! that set stores LOCAL bindings (the `orig` side of `export {
-//! orig as exported }`). It never inspects the PUBLIC side — the
-//! `exported` names that are already taken in the chunk's emitted
-//! `export { … }` block. When a peeled module's body happens to
-//! reference a residual binding whose symbol happens to coincide
-//! with an alias used in the chunk's source export, the auto-grow
-//! pass blindly emits a fresh `export { <local> as <name> }`
-//! whose `<name>` collides with an existing public name.
+//! orig as exported }`). It used to never inspect the PUBLIC side
+//! — the `exported` names already taken in the chunk's emitted
+//! `export { … }` block. When a peeled module's body referenced a
+//! residual binding whose symbol coincided with an alias used in
+//! the chunk's source export, the auto-grow pass blindly emitted
+//! a fresh `export { <local> as <name> }` whose `<name>` collided
+//! with an existing public name.
 //!
 //! `validate_emitted_exports` (which runs late in the pipeline)
-//! catches the resulting duplicate-export module — surfacing the
+//! caught the resulting duplicate-export module — surfacing the
 //! bug as a build-time error rather than a silent blank page in
-//! Chromium — but the fix belongs upstream: the auto-grow pass
-//! should consult the set of public names already exported (the
-//! `exported` side of named export specifiers and `ExportDecl`
-//! bindings) and either rename the new export to a non-colliding
-//! public name or skip it entirely.
+//! Chromium — but the fix landed upstream: the auto-grow pass now
+//! consults the set of public names already exported
+//! (`pre_existing_public_export_names`) and mints a non-colliding
+//! suffixed name instead.
 //!
 //! ## Generalized pattern
 //!
@@ -47,16 +47,14 @@
 //!   so it grows `export { av }` — colliding with the source's
 //!   `X as av`.
 //!
-//! ## Expected outcomes
+//! ## Pinned behavior
 //!
-//! - **Today (RED)**: `validate_emitted_exports` rejects with a
-//!   duplicate-export error naming `av` in `entry.js`. The
-//!   fixture build fails at pipeline time.
-//! - **After the fix**: `auto_grown_residual_exports` either
-//!   renames the new export to a non-colliding public name
-//!   (e.g. `av$1`) or skips it (forcing the peeled module to
-//!   reach `av` by some other path the upstream invariant
-//!   allows). The fixture build succeeds and the entry runs.
+//! `validate_emitted_exports` used to reject with a
+//! duplicate-export error naming `av` in `entry.js` (the fixture
+//! build failed at pipeline time). Now
+//! `auto_grown_residual_exports` renames the new export to a
+//! non-colliding public name, so the fixture build succeeds and
+//! the entry runs.
 
 use debundle_e2e_support::*;
 
@@ -73,9 +71,9 @@ export { X as av, usesAv };
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
-    // Today the build never reaches this point — validate_emitted_exports
-    // rejects on duplicate public name `av`. After the fix to
-    // `auto_grown_residual_exports`, the entry runs and emits this
-    // line.
+    // Before the fix the build never reached this point —
+    // validate_emitted_exports rejected on duplicate public name
+    // `av`. With the collision-aware auto-grow pass, the entry
+    // runs and emits this line.
     assert_entry_output(&fixture, "x-impl av-impl av-impl\n");
 }

@@ -1,13 +1,10 @@
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
-use swc_common::{
-    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
-    SyntaxContext,
-};
+use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
 use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -246,75 +243,6 @@ fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile)
 
 pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Result<String> {
     emit_js_module_with_comments(parsed, header_lines, &BTreeMap::new(), &BTreeMap::new())
-}
-
-/// Resolve one `anonymous_statements[].match` selector to a top-level
-/// body index in `runtime_module`. Equality ignores spans and syntax
-/// contexts because selector snippets and runtime chunks are parsed
-/// independently.
-pub fn resolve_anonymous_statement_body_index(
-    runtime_module: &Module,
-    request_id: &str,
-    match_source: &str,
-) -> Result<usize> {
-    let matches = find_anonymous_statement_body_indices(runtime_module, request_id, match_source)?;
-    match matches.as_slice() {
-        [single] => Ok(*single),
-        [] => bail!(
-            "logical_module {request_id}: anonymous_statements[].match did not match any \
-             top-level statement in the chunk. Selector:\n{match_source}",
-        ),
-        multiple => bail!(
-            "logical_module {request_id}: anonymous_statements[].match is ambiguous — \
-             matched {} top-level statements at body indices {:?}. Refine the selector. \
-             Source:\n{match_source}",
-            multiple.len(),
-            multiple,
-        ),
-    }
-}
-
-/// Find every top-level body index matched by one
-/// `anonymous_statements[].match` selector. The selector must parse
-/// as exactly one top-level statement; zero matches in the runtime
-/// module are represented as `Ok(Vec::new())`.
-pub fn find_anonymous_statement_body_indices(
-    runtime_module: &Module,
-    request_id: &str,
-    match_source: &str,
-) -> Result<Vec<usize>> {
-    let parsed = parse_js_module_ast(
-        &format!("<anonymous_statement match in {request_id}>"),
-        match_source,
-    )
-    .with_context(|| {
-        format!(
-            "logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{match_source}"
-        )
-    })?;
-    let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
-    let needle = match parsed_items.as_slice() {
-        [single] => *single,
-        [] => bail!(
-            "logical_module {request_id}: anonymous_statements[].match parsed to zero \
-             statements; selector source must contain exactly one top-level \
-             statement:\n{match_source}",
-        ),
-        _ => bail!(
-            "logical_module {request_id}: anonymous_statements[].match parsed to {} \
-             statements; selector source must contain exactly one top-level \
-             statement:\n{match_source}",
-            parsed_items.len(),
-        ),
-    };
-    Ok(SyntaxContext::within_ignored_ctxt(|| {
-        runtime_module
-            .body
-            .iter()
-            .enumerate()
-            .filter_map(|(body_idx, item)| needle.eq_ignore_span(item).then_some(body_idx))
-            .collect()
-    }))
 }
 
 /// Number of post-comma-list-split positions a top-level body item

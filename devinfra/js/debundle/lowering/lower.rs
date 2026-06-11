@@ -430,7 +430,6 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             chunk_file: entry_file.to_string(),
             role: FileRole::Entry,
             source_path: source_path.to_string(),
-            generated_by_selected_module_lowering: false,
         },
     }];
     let mut file_records = vec![(entry_file.to_string(), FileRole::Entry)];
@@ -901,7 +900,6 @@ fn build_module_output(
             chunk_file: plan.target_file.clone(),
             role: FileRole::Module,
             source_path: context.source_path.to_string(),
-            generated_by_selected_module_lowering: true,
         },
     };
     let record = (plan.target_file.clone(), FileRole::Module);

@@ -38,7 +38,6 @@ export { a, b, c };
 "#,
         logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
         chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
             "members": [
                 {
                     "name": "getMobxGlobalState",

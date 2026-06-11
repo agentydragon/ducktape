@@ -39,7 +39,6 @@ use serde_json::{Value, json};
 /// single binding; the helper hides the wire shape.
 fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
     json!({
-        "id": "chunk_renames__static_app",
         "members": [
             {
                 "name": rename_to,
@@ -236,7 +235,6 @@ export { alpha, bravo, charlie, delta };
         vec![],
     )
     .with_chunk_renames(json!({
-        "id": "chunk_renames__static_app",
         "members": [
             // Invalid JS identifier — should report a "not a valid JS identifier" error.
             { "name": "1-bad-ident", "selector": { "binding": { "name": "alpha" } } },

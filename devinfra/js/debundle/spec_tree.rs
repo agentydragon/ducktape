@@ -491,7 +491,6 @@ fn chunk_renames_map(
     BTreeMap::from([(
         main_chunk_id.to_string(),
         ChunkRenames {
-            id: None,
             members: binding_patch_members,
         },
     )])

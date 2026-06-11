@@ -110,13 +110,6 @@ impl BindingGroup {
             exports: exports.iter().copied().collect(),
         }
     }
-
-    pub fn source_alpha_with_syntactic_holes(
-        match_source: impl Into<String>,
-        exports: &[(&'static str, &'static str)],
-    ) -> Self {
-        Self::source_alpha(match_source, exports)
-    }
 }
 
 impl Member {
@@ -174,13 +167,6 @@ impl Member {
             }),
             comment: None,
         }
-    }
-
-    pub fn source_alpha_with_syntactic_holes(
-        name: &'static str,
-        match_source: impl Into<String>,
-    ) -> Self {
-        Self::source_alpha(name, match_source)
     }
 
     /// Attach an author comment to be emitted above the binding's owner
@@ -248,8 +234,6 @@ struct FixtureAnonymousStatement {
     source_match: Option<FixtureSourceMatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    note: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -269,7 +253,6 @@ impl FixtureAnonymousStatement {
             match_source: Some(match_source.into()),
             source_match: None,
             comment: None,
-            note: None,
         }
     }
 
@@ -283,7 +266,6 @@ impl FixtureAnonymousStatement {
                 match_source: match_source.into(),
             }),
             comment: None,
-            note: None,
         }
     }
 
@@ -303,21 +285,6 @@ impl FixtureAnonymousStatement {
                 match_source: match_source.into(),
             }),
             comment: None,
-            note: None,
-        }
-    }
-
-    fn alpha_all_with_syntactic_holes(match_source: impl Into<String>) -> Self {
-        Self {
-            match_source: None,
-            source_match: Some(FixtureSourceMatch {
-                identifiers: "alpha_all",
-                target_binding: None,
-                wildcard_string_literals: Vec::new(),
-                match_source: match_source.into(),
-            }),
-            comment: None,
-            note: None,
         }
     }
 
@@ -511,25 +478,6 @@ pub fn logical_module_with_anon_alpha_string_wildcards(
     )
 }
 
-pub fn logical_module_with_anon_alpha_syntactic_holes(
-    path: &str,
-    members: &[Member],
-    anon_match: &str,
-) -> LogicalModuleEntry {
-    (
-        path.to_string(),
-        serde_json::to_value(LogicalModuleBody {
-            comment: None,
-            members: fixture_members(members),
-            binding_groups: Vec::new(),
-            anonymous_statements: vec![FixtureAnonymousStatement::alpha_all_with_syntactic_holes(
-                anon_match,
-            )],
-        })
-        .expect("logical module fixture must serialize"),
-    )
-}
-
 pub fn logical_module_with_anon_comment(
     path: &str,
     members: &[Member],
@@ -654,8 +602,6 @@ pub struct Fixture {
     pub entry_path: PathBuf,
     pub out_root: PathBuf,
     pub report_root: PathBuf,
-    #[allow(dead_code)]
-    pub snapshot_root: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -699,7 +645,6 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         entry_path,
         out_root: app_root,
         report_root: setup.report_root,
-        snapshot_root: setup.snapshot_root,
         _root: setup.root,
     }
 }
@@ -876,12 +821,6 @@ pub fn assert_generated_module_after_entry_script(
          {source}",
     );
     assert_generated_module_script(out_root, &wrapped, expected_stdout);
-}
-
-pub struct NodeOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub status: std::process::ExitStatus,
 }
 
 pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &str) {

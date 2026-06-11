@@ -96,10 +96,6 @@ Unclear what the three strings mean. A named struct or comment would help.
 
 Every test in `purity_test.rs`, `object_plain_data_calls_test.rs`, `pure_members_test.rs`, and `at_init_s_chain_dataflow_test.rs` follows: create source with SE anchor + target binding + reader → run fixture → assert module source and entry output. A shared `assert_pure_cycle_break(source, logical_modules, module_path, contains, not_contains, expected_stdout)` in support.rs would eliminate ~300 lines.
 
-### `NodeOutput` struct is dead (`support.rs:484`)
-
-Identical to `CommandResult` (line 660). Only used in `assert_node_output` which internally converts to `CommandResult`. Remove and use `CommandResult` directly.
-
 ### `accepted_spec_runs_under_node_test.rs` — `★ RED test` markers
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
@@ -113,10 +109,6 @@ Open structural follow-ups from the pipeline data-shape audit.
 ### `ChunkBundle` ownership ping-pong
 
 Ownership still passes through every stage via return: `artifact = result.artifact`. Could be cleaner with a builder or consuming pipeline, but each stage is now a pure function so the remaining smell is cosmetic.
-
-### Pipeline ordering — `generated_by_selected_module_lowering` flag
-
-`generated_by_selected_module_lowering` exists solely so `rewrite_chunk_entry_specifiers` can skip specifier rewriting on files synthesized by the lowering stage. This flag wouldn't be needed if specifier rewriting ran _before_ lowering. Investigate whether reordering the pipeline stages eliminates the need for the flag entirely.
 
 ---
 
@@ -170,4 +162,4 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 3. **Simplify `StatementFacts`** (`facts/mod.rs`) — see the canonical "### `StatementFacts`" item under P3.
 
-4. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong and the `generated_by_selected_module_lowering` ordering workaround if stage reordering makes that flag unnecessary.
+4. **Consolidate the data-shape follow-ups** — remove the remaining `ChunkBundle` ownership ping-pong.

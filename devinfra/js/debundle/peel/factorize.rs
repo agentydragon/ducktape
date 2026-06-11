@@ -475,15 +475,6 @@ fn emit_proposals(
     size_cap_lines: usize,
     context: &FactorizeContext,
 ) -> Vec<FactorizeProposal> {
-    // Build owner-to-class for every owner. The renderer's edge
-    // attribution treats classes as the unit of accounting (the
-    // pre-commit-4 code keyed by "cell_idx", a parallel index; the
-    // ClassId itself is now the natural key).
-    let mut owner_to_class: HashMap<usize, ClassId> = HashMap::new();
-    for (i, _) in graph.nodes.iter().enumerate() {
-        owner_to_class.insert(i, quotient.class_of(OwnerIdx(i)));
-    }
-
     // Candidate classes: every live class that isn't the residual
     // catch-all and either has owners or carries module labels. We
     // skip classes whose only members are spec-module owners with

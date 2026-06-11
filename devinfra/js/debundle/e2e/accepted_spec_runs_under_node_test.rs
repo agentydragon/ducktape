@@ -1,9 +1,11 @@
-//! RED test: a spec ducktape ACCEPTS should run under Node.
+//! Regression tests (originally RED) for "a spec ducktape ACCEPTS
+//! must run under Node".
 //!
 //! This is a generalization of #1681: that PR pinned the
 //! residual-class TDZ shape. This pins a different shape that
-//! the post-#1683 gate still accepts but TDZs at runtime —
-//! confirmed against a real an upstream bundle reproduction.
+//! the post-#1683 gate accepted while the emitted output TDZ'd
+//! at runtime — confirmed against a reproduction from a real
+//! upstream bundle.
 //!
 //! ## Invariant being pinned
 //!
@@ -46,20 +48,14 @@
 //! `mod_logger`; `mod_logger`'s body hasn't run; `T` is in
 //! TDZ; `ReferenceError`.
 //!
-//! ## Expected outcomes
+//! ## Pinned behavior
 //!
-//! - **Today (RED)**: gate accepts; Node throws
-//!   `ReferenceError: Cannot access 'T' before initialization`
-//!   when running the emitted entry. `assert_entry_output`
-//!   panics on the non-zero exit.
-//! - **After the fix**: either
-//!     - the gate rejects this shape (recognizing
-//!       cross-module-peeled at-init reads as needing
-//!       order enforcement that source_import_position can't
-//!       provide for this pattern), or
-//!     - `source_import_position` correctly puts `mod_logger`
-//!       before `mod_init` in entry's import list, so ESM
-//!       DFS visits `mod_logger` first.
+//! Before the fix, the gate accepted and Node threw
+//! `ReferenceError: Cannot access 'T' before initialization`
+//! when running the emitted entry. Now
+//! `source_import_position` puts `mod_logger` before `mod_init`
+//! in entry's import list, so ESM DFS visits `mod_logger`
+//! first and the emitted entry runs cleanly.
 
 use debundle_e2e_support::*;
 
@@ -115,9 +111,8 @@ fn at_init_through_deep_residual_chain_executes_under_node() {
     // Three-deep call chain: mod_init at-init → bootstrap (residual)
     // → startTracking (residual) → reads T (in mod_logger).
     //
-    // Matches the the upstream chain: an entry-side bootstrap statement → gR
-    // (an outer helper) → an inner helper →
-    // reads T.
+    // Matches the upstream chain: an entry-side bootstrap
+    // statement → an outer helper → an inner helper → reads T.
     let fixture = run_fixture(FixtureOpts::new(
         r#"let T = "ready";
 function startTracking() { return T; }
@@ -140,9 +135,9 @@ fn at_init_through_residual_function_executes_under_node() {
     // mod_init at-init calls a function decl that lives in
     // residual, whose body reads T (in mod_logger).
     //
-    // This matches the the upstream repro shape: an entry-side module's bootstrap
-    // anonymous statement calls `gR()` (an outer helper,
-    // a function decl in residual), whose body eventually
+    // This matches the upstream repro shape: an entry-side
+    // module's bootstrap anonymous statement calls an outer
+    // helper (a function decl in residual), whose body eventually
     // reads `T` (in `logger_module`). At-init
     // promotion through the residual function decl is what we
     // need to surface the eager_use edge `mod_init → mod_logger`
@@ -220,26 +215,25 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
 
 #[test]
 fn peeled_method_reassigning_top_level_let_executes_under_node() {
-    // ★ RED test: minimal reproduction of the
-    // `Assignment to constant variable` runtime crash hit
-    // when peeling the upstream `an upstream class` class.
+    // Regression test (originally RED): minimal reproduction of
+    // the `Assignment to constant variable` runtime crash hit
+    // when peeling an upstream class.
     //
-    // the upstream shape (paraphrased):
+    // Upstream shape (paraphrased):
     //
     //   let isSearchBeingRefreshedForNode = (n) => false;
-    //   class an upstream class {
+    //   class SearchManager {
     //     static setIsSearchBeingRefreshedForNodeHandler(e) {
     //       isSearchBeingRefreshedForNode = e;           // ← write
     //     }
     //   }
     //
-    // Before peeling `an upstream class`, the write lives in
-    // the same module as the `let` declaration: legal. After
-    // peeling `an upstream class` into its own module, the
-    // emitted file looks like:
+    // Before peeling the class, the write lives in the same
+    // module as the `let` declaration: legal. After peeling the
+    // class into its own module, the emitted file looks like:
     //
     //   import { isSearchBeingRefreshedForNode } from "../entry.js";
-    //   class an upstream class {
+    //   class SearchManager {
     //     static setIsSearchBeingRefreshedForNodeHandler(e) {
     //       isSearchBeingRefreshedForNode = e;
     //     }
@@ -249,12 +243,12 @@ fn peeled_method_reassigning_top_level_let_executes_under_node() {
     // throws `TypeError: Assignment to constant variable` the
     // first time it's called.
     //
-    // Ducktape's realizability gate today accepts this peel
-    // because the write is inside a method body (lazy
-    // position). The fix must either reject any peel whose
-    // emitted module assigns to a binding declared in another
-    // module, or rewrite the write through a setter exported
-    // from the declaring module.
+    // The realizability gate used to accept this peel because
+    // the write is inside a method body (lazy position), and the
+    // emitted module crashed at runtime. This test pins that a
+    // peel whose emitted module assigns to a binding declared in
+    // another module now executes correctly (the entry below must
+    // print the post-assignment value).
     let mut opts = FixtureOpts::new(
         r#"let counter = 0;
 class Counter {

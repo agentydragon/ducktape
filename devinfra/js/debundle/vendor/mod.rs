@@ -2716,7 +2716,6 @@ export { b as beta };
                         chunk_file: entry_file.clone(),
                         role: FileRole::Entry,
                         source_path: format!("{chunk_id}.js"),
-                        generated_by_selected_module_lowering: false,
                     },
                 }],
                 metadata: ChunkMetadata {

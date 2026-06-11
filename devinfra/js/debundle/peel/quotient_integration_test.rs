@@ -1,7 +1,7 @@
 //! Integration tests for the `peel::quotient` kernel and the
 //! `factorize` renderer-over-quotient. Compiled against `:peel`'s
-//! public API as a separate crate; bypasses the broken `:peel_test`
-//! target.
+//! public API as a separate crate — the same surface external
+//! consumers of the kernel see.
 //!
 //! Test list (commit 1 + 1b of `plans/peel_proposer_contraction_model.md`):
 //!
@@ -1441,21 +1441,14 @@ fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
 }
 
 #[test]
+#[ignore = "needs GAFFER_OWNER_GRAPH pointing at a real corpus owner_graph.json; run manually"]
 fn greedy_on_gaffer_chunk_completes_under_one_minute() {
-    // Benchmark: real owner_graph.json from a recent gaffer cache.
-    // The fixture is pointed at via GAFFER_OWNER_GRAPH; absence
-    // skips the test (the CI cache may not have one). Local
-    // validation provides the path explicitly. We run the full
-    // factorize pipeline (cells + greedy + emit) since the greedy
-    // is only meaningful with the cells-derived partition's
+    // Benchmark: real owner_graph.json from a recent gaffer cache,
+    // pointed at via GAFFER_OWNER_GRAPH. We run the full factorize
+    // pipeline (cells + greedy + emit) since the greedy is only
+    // meaningful with the cells-derived partition's
     // pre-existing-module markings.
-    let path = match std::env::var("GAFFER_OWNER_GRAPH") {
-        Ok(p) => p,
-        Err(_) => {
-            eprintln!("skipped: GAFFER_OWNER_GRAPH not set");
-            return;
-        }
-    };
+    let path = std::env::var("GAFFER_OWNER_GRAPH").expect("GAFFER_OWNER_GRAPH must be set");
     let body = std::fs::read_to_string(&path).expect("read GAFFER_OWNER_GRAPH");
     let report: OwnerGraphReport = serde_json::from_str(&body).expect("parse owner_graph.json");
     // The factorize CLI loads active claims from a modules-root
@@ -2666,35 +2659,6 @@ fn incremental_kernel_query_matches_rebuild_after_each_contract() {
             );
         }
     }
-}
-
-#[test]
-fn unification_eliminates_cell_pipeline() {
-    // Static check: the `Cell` IR struct and the
-    // `proposal_cells_from_atomic_graph` symbol no longer exist
-    // in the peel crate's source. Embedding the source file at
-    // build time lets us assert at runtime that no recidivist
-    // restoration of the deleted symbols slipped back in.
-    //
-    // A direct compile-time guarantee (no public symbol exists)
-    // would be Rust's `peel::factorize::proposal_cells_from_atomic_graph`
-    // failing to compile — but the function is `fn` (module-
-    // private) in factorize.rs, so we can't probe for it from
-    // outside the crate. The source-embedded grep covers both
-    // module-private and public surfaces uniformly.
-    let factorize_src: &str = include_str!("factorize.rs");
-    assert!(
-        !factorize_src.contains("fn proposal_cells_from_atomic_graph"),
-        "`proposal_cells_from_atomic_graph` was deleted in commit 4; do not restore",
-    );
-    assert!(
-        !factorize_src.contains("struct Cell {"),
-        "the `Cell` IR struct was deleted in commit 4; do not restore",
-    );
-    assert!(
-        !factorize_src.contains("fn promote_anonymous_only_cell_to_extension"),
-        "`promote_anonymous_only_cell_to_extension` was deleted in commit 4 — subsumed by the greedy's 'extend single consumer' merges",
-    );
 }
 
 // ---------------------------------------------------------------------

@@ -2,13 +2,12 @@
 //! for the realizability gate's `S` (side-effect ordering)
 //! sub-graph.
 //!
-//! Most tests run in CI. A few remain `#[ignore]`d as desiderata
+//! Most tests run in CI. Two remain `#[ignore]`d as desiderata
 //! for future work — each ignore-reason names the specific
 //! analysis still missing (fresh-literal-arg gate for
-//! `Object.freeze`, `Expr::New` whitelist for `Set`/`Map`/`RegExp`,
-//! escape analysis for IIFE patterns, lazy-back-edge I-cycle
-//! relaxation for cross-module mutual recursion). Their bodies
-//! become regression fixtures the moment those analyses land.
+//! `Object.freeze`, `Expr::New` whitelist for `Set`/`Map`/`RegExp`).
+//! Their bodies become regression fixtures the moment those
+//! analyses land.
 //!
 //! # Background
 //!
@@ -904,7 +903,6 @@ export { a, b, c };
 "#,
         logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
         chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
             "members": [
                 {
                     "name": "getMobxGlobalState",

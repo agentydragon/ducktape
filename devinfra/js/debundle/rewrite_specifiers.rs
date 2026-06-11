@@ -6,9 +6,8 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, ImportReferenceKind, JsFile,
-    JsFileAstParts, get_chunk_entry_path, join_module_path, module_path_dirname,
-    relative_module_path,
+    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, ImportReferenceKind, JsFile, JsFileAstParts,
+    get_chunk_entry_path, join_module_path, module_path_dirname, relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
 
@@ -48,7 +47,7 @@ pub fn rewrite_chunk_entry_specifiers(
             let Some(file) = chunk_artifact.js.get_file(&file_path) else {
                 continue;
             };
-            if !should_rewrite_file(file) {
+            if !file.is_ast() {
                 continue;
             }
             let file = chunk_artifact
@@ -155,12 +154,6 @@ pub fn runtime_js_href(
         .join(chunk_name.split('/').collect::<std::path::PathBuf>())
         .join(entry_file.split('/').collect::<std::path::PathBuf>());
     Ok(artifact::relative_module_specifier(out_dir, &entry_path))
-}
-
-fn should_rewrite_file(file: &JsFile) -> bool {
-    file.is_ast()
-        && !(file.metadata.role == FileRole::Module
-            && file.metadata.generated_by_selected_module_lowering)
 }
 
 /// Returns true when the parsed module contains any specifier that

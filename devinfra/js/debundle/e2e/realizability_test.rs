@@ -289,7 +289,6 @@ export { Leaf, Dep, Existing };
         vec![logical_module("existing", &[Member::new("Existing")])],
     );
     opts.chunk_renames = Some(json!({
-        "id": "chunk_renames__static_app",
         "members": [
             { "name": "ReadableLeaf", "selector": { "binding": { "name": "Leaf" } } },
             { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }

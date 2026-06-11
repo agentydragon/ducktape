@@ -27,13 +27,12 @@
 //! materialization or strip, so this pass has no leverage on them and
 //! the upstream chunk shape itself is the upstream's contract.
 //!
-//! This stage doesn't *fix* the underlying generation bug — the
-//! emit-side paths that produced the duplicate still need patching
-//! (the immediate one is `auto_grown_residual_exports` in
-//! `lowering/exports.rs`, which compares local binding names to
-//! `pre_existing_entry_exports` but never checks whether the public
-//! name it's about to grow would collide with an existing alias's
-//! public name). It just makes the failure mode unmissable.
+//! This stage doesn't *fix* an underlying generation bug — it makes
+//! the failure mode unmissable when an emit-side path regresses.
+//! (The original offender, `auto_grown_residual_exports` in
+//! `lowering/exports.rs`, now checks candidates against
+//! `pre_existing_public_export_names` and suffix-mints a
+//! non-colliding name.)
 
 use std::collections::BTreeMap;
 
@@ -263,7 +262,6 @@ mod tests {
                 chunk_file: file_name.to_string(),
                 role,
                 source_path: format!("{chunk_name}.js"),
-                generated_by_selected_module_lowering: false,
             },
         };
         if let Some(existing) = bundle.chunks.iter_mut().find(|c| c.chunk_id == chunk_id) {
@@ -413,7 +411,6 @@ export * from \"./sibling.js\";\n";
                     chunk_file: "raw.js".to_string(),
                     role: FileRole::Module,
                     source_path: "c.js".to_string(),
-                    generated_by_selected_module_lowering: false,
                 },
             });
             validate_emitted_exports(&bundle).expect("source-only file skipped");

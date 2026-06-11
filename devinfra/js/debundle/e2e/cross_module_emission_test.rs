@@ -631,7 +631,6 @@ export { St as B, Ite };
             &[Member::renamed("runConsumer", "Ite")],
         )],
         chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
             "members": [
                 {
                     "name": "vendorHelper",

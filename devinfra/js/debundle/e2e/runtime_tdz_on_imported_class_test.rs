@@ -1,8 +1,8 @@
-//! RED test: a chunk the realizability gate ACCEPTS should
-//! actually execute under Node when materialized. Today the
-//! gate sometimes accepts a partition whose emitted ESM graph
-//! TDZs at runtime — the gate's proof is unsound for this
-//! shape.
+//! Regression test (originally RED): a chunk the realizability
+//! gate ACCEPTS must actually execute under Node when
+//! materialized. The gate used to accept a partition whose
+//! emitted ESM graph TDZ'd at runtime — its proof was unsound
+//! for this shape.
 //!
 //! ## Shape
 //!
@@ -47,7 +47,7 @@
 //!    until its line runs. The body crashes with
 //!    `ReferenceError: Cannot access 'Backend' before initialization`.
 //!
-//! ## Why ducktape accepts
+//! ## Why ducktape accepted
 //!
 //! The cycle `entry ↔ mod_logger` carries:
 //!
@@ -66,26 +66,23 @@
 //! puts the cycle dependent (here `mod_logger`) FIRST in entry's
 //! source so the linker's DFS lands entry first.
 //!
-//! That claim is the bug. The cycle dependent (`mod_logger`)
+//! That claim was the bug. The cycle dependent (`mod_logger`)
 //! being put FIRST in entry's source means ESM's DFS visits it
 //! FIRST, not entry first — so post-order evaluation runs
 //! mod_logger's body before entry's body. Backend is TDZ at
 //! mod_logger's evaluation. Lemma 2's direction is inverted for
-//! the `(at-init forward, lazy back)` shape we hit here.
+//! the `(at-init forward, lazy back)` shape hit here.
 //!
-//! ## Expected outcomes
+//! ## Pinned behavior
 //!
-//! - **Today**: pipeline accepts the spec; Node throws
-//!   `ReferenceError: Cannot access 'Backend' before initialization`
-//!   when running the emitted entry.
-//! - **After the fix (this PR)**: the realizability gate
-//!   recognizes the asymmetric-cycle shape `(at-init forward, lazy
-//!   back)` and rejects the spec. The materializer can't emit
-//!   working JS for this partition — ESM hoists all imports above
-//!   any statement, so re-sequencing `source_import_position` is
-//!   never going to put entry's `class Backend` declaration before
-//!   `mod_logger`'s `new Backend()`. The only sound outcome is
-//!   reject loudly so the spec author sees the conflict.
+//! The realizability gate recognizes the asymmetric-cycle shape
+//! `(at-init forward, lazy back)` and rejects the spec. The
+//! materializer can't emit working JS for this partition — ESM
+//! hoists all imports above any statement, so re-sequencing
+//! `source_import_position` is never going to put entry's
+//! `class Backend` declaration before `mod_logger`'s
+//! `new Backend()`. The only sound outcome is to reject loudly
+//! so the spec author sees the conflict.
 
 use debundle_e2e_support::*;
 
