@@ -99,18 +99,6 @@ private corpus details in Ducktape.
   helper declaration may be syntactically identical across many classes,
   but it becomes unambiguous when selected near the class or decorator
   calls whose property strings identify the target.
-- **AST wildcard holes.** Single-node expression (`EXPR_*`) and statement
-  (`STMT_*`) holes ship, as do variable-length **list holes**:
-  `STMT_LIST_*;` absorbs a contiguous run of block statements and
-  `CLASS_REST*;` absorbs the remaining class members, so a selector can pin
-  a class/method skeleton without copying an entire minified body (see
-  `docs/guide.md` and `e2e/syntactic_holes_test.rs`). Repeated single-node
-  holes already require equal subtrees; ambiguous matches stay hard errors.
-  Still open: a hole matching a whole **declaration** subtree, and making
-  list holes robust away from the trailing position — today they match
-  positionally after alpha-canonicalization, so a non-trailing list hole
-  can desync identifier numbering (the same limitation single-node holes
-  have when significant identifiers follow a multi-node hole).
 - **Constrained hole matching.** Multi-hole selectors need cheap local
   constraints so authors can say that a hole appears only as a specific
   argument, callback body, object property value, or statement-list slot. This

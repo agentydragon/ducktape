@@ -22,10 +22,13 @@ const STMT_HOLE_PREFIX: &str = "STMT_";
 /// statement. `STMT_LIST_` is checked before `STMT_` since it is a
 /// prefix of it.
 const STMT_LIST_HOLE_PREFIX: &str = "STMT_LIST_";
-/// A bare `CLASS_REST*;` class field (no initializer) is a class-member
+/// A bare `CLASS_REST;` class field (no initializer) is a class-member
 /// hole: it absorbs the remaining class members at that position. Lets
 /// a selector pin a class by a few stable members and ignore the rest.
-const CLASS_REST_HOLE_PREFIX: &str = "CLASS_REST";
+/// Matched as an exact token (not a prefix) so it never collides with a
+/// real field whose name merely starts with `CLASS_REST`, and because it
+/// never reuses, a suffix would be meaningless anyway.
+const CLASS_REST_HOLE_TOKEN: &str = "CLASS_REST";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -550,27 +553,29 @@ fn module_items_match(
     selector: &AnonymousStatementSelector,
 ) -> bool {
     SyntaxContext::within_ignored_ctxt(|| {
-        let mut needle = needle.clone();
-        let mut candidate = candidate.clone();
-        let wildcard_idents = wildcard_ident_names(&needle);
-        if selector.identifiers == SourceMatchIdentifierMode::AlphaAll {
-            needle.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
-            candidate.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
-        }
+        let wildcard_idents = wildcard_ident_names(needle);
+        let alpha = selector.identifiers == SourceMatchIdentifierMode::AlphaAll;
         if selector.wildcard_string_literals.is_empty() && wildcard_idents.is_empty() {
-            return needle.eq_ignore_span(&candidate);
+            // No wildcards: plain structural equality. Without wildcards
+            // the two trees have identical shape, so global
+            // alpha-canonicalization cannot desync — keep that cheap path.
+            if alpha {
+                let mut needle = needle.clone();
+                let mut candidate = candidate.clone();
+                needle.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
+                candidate.visit_mut_with(&mut AlphaIdentCanonicalizer::new(&wildcard_idents));
+                return needle.eq_ignore_span(&candidate);
+            }
+            return needle.eq_ignore_span(candidate);
         }
-        module_items_match_with_wildcards(&needle, &candidate, selector, &wildcard_idents)
+        // Wildcards present: the structural matcher tracks an identifier
+        // bijection for alpha mode (see `AstWildcardMatcher::alpha`), so
+        // holes that absorb identifier-bearing subtrees don't desync the
+        // identifiers after them — and it walks borrowed trees with no
+        // per-comparison clone + canonicalize.
+        AstWildcardMatcher::new(selector, &wildcard_idents, alpha)
+            .match_module_item(needle, candidate)
     })
-}
-
-fn module_items_match_with_wildcards(
-    needle: &ModuleItem,
-    candidate: &ModuleItem,
-    selector: &AnonymousStatementSelector,
-    wildcard_idents: &WildcardIdents,
-) -> bool {
-    AstWildcardMatcher::new(selector, wildcard_idents).match_module_item(needle, candidate)
 }
 
 #[derive(Clone, Default)]
@@ -584,14 +589,66 @@ struct AstWildcardMatcher<'a> {
     selector: &'a AnonymousStatementSelector,
     wildcard_idents: &'a WildcardIdents,
     replacements: WildcardReplacements,
+    /// Whether value/binding identifiers are alpha-renamable. When true,
+    /// identifier equality is tracked as a bijection built incrementally
+    /// at structurally-corresponding positions, instead of pre-renaming
+    /// both trees. Because holes accept (and never recurse into) the
+    /// subtrees they absorb, absorbed identifiers never enter the
+    /// bijection — so a hole no longer desyncs the numbering of the nodes
+    /// after it, and there is no per-comparison clone + canonicalize.
+    alpha: bool,
+    ident_forward: BTreeMap<Atom, Atom>,
+    ident_backward: BTreeMap<Atom, Atom>,
 }
 
 impl<'a> AstWildcardMatcher<'a> {
-    fn new(selector: &'a AnonymousStatementSelector, wildcard_idents: &'a WildcardIdents) -> Self {
+    fn new(
+        selector: &'a AnonymousStatementSelector,
+        wildcard_idents: &'a WildcardIdents,
+        alpha: bool,
+    ) -> Self {
         Self {
             selector,
             wildcard_idents,
             replacements: WildcardReplacements::default(),
+            alpha,
+            ident_forward: BTreeMap::new(),
+            ident_backward: BTreeMap::new(),
+        }
+    }
+
+    /// Match two value/binding identifier symbols. In exact mode they
+    /// must be equal; in alpha mode they must be consistent with the
+    /// identifier bijection (each needle symbol maps to exactly one
+    /// candidate symbol and vice versa).
+    fn match_sym(&mut self, needle: &Atom, candidate: &Atom) -> bool {
+        if !self.alpha {
+            return needle == candidate;
+        }
+        match (
+            self.ident_forward.get(needle),
+            self.ident_backward.get(candidate),
+        ) {
+            (Some(mapped), _) => mapped == candidate,
+            (None, Some(_)) => false,
+            (None, None) => {
+                self.ident_forward.insert(needle.clone(), candidate.clone());
+                self.ident_backward
+                    .insert(candidate.clone(), needle.clone());
+                true
+            }
+        }
+    }
+
+    fn match_ident(&mut self, needle: &Ident, candidate: &Ident) -> bool {
+        needle.optional == candidate.optional && self.match_sym(&needle.sym, &candidate.sym)
+    }
+
+    fn match_opt_ident(&mut self, needle: &Option<Ident>, candidate: &Option<Ident>) -> bool {
+        match (needle, candidate) {
+            (Some(needle), Some(candidate)) => self.match_ident(needle, candidate),
+            (None, None) => true,
+            _ => false,
         }
     }
 
@@ -694,12 +751,12 @@ impl<'a> AstWildcardMatcher<'a> {
         match (needle, candidate) {
             (Decl::Var(needle), Decl::Var(candidate)) => self.match_var_decl(needle, candidate),
             (Decl::Fn(needle), Decl::Fn(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_ident(&needle.ident, &candidate.ident)
                     && needle.declare == candidate.declare
                     && self.match_function(&needle.function, &candidate.function)
             }
             (Decl::Class(needle), Decl::Class(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_ident(&needle.ident, &candidate.ident)
                     && needle.declare == candidate.declare
                     && self.match_class(&needle.class, &candidate.class)
             }
@@ -713,11 +770,11 @@ impl<'a> AstWildcardMatcher<'a> {
     fn match_default_decl(&mut self, needle: &DefaultDecl, candidate: &DefaultDecl) -> bool {
         match (needle, candidate) {
             (DefaultDecl::Class(needle), DefaultDecl::Class(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_opt_ident(&needle.ident, &candidate.ident)
                     && self.match_class(&needle.class, &candidate.class)
             }
             (DefaultDecl::Fn(needle), DefaultDecl::Fn(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_opt_ident(&needle.ident, &candidate.ident)
                     && self.match_function(&needle.function, &candidate.function)
             }
             _ => needle.eq_ignore_span(candidate),
@@ -849,12 +906,13 @@ impl<'a> AstWildcardMatcher<'a> {
             (Expr::Object(needle), Expr::Object(candidate)) => {
                 self.match_slice(&needle.props, &candidate.props, Self::match_prop_or_spread)
             }
+            (Expr::Ident(needle), Expr::Ident(candidate)) => self.match_ident(needle, candidate),
             (Expr::Fn(needle), Expr::Fn(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_opt_ident(&needle.ident, &candidate.ident)
                     && self.match_function(&needle.function, &candidate.function)
             }
             (Expr::Class(needle), Expr::Class(candidate)) => {
-                needle.ident.eq_ignore_span(&candidate.ident)
+                self.match_opt_ident(&needle.ident, &candidate.ident)
                     && self.match_class(&needle.class, &candidate.class)
             }
             (Expr::Unary(needle), Expr::Unary(candidate)) => {
@@ -1172,6 +1230,10 @@ impl<'a> AstWildcardMatcher<'a> {
                     && self.match_pat(&needle.arg, &candidate.arg)
             }
             (Pat::Expr(needle), Pat::Expr(candidate)) => self.match_expr(needle, candidate),
+            (Pat::Ident(needle), Pat::Ident(candidate)) => {
+                needle.type_ann.eq_ignore_span(&candidate.type_ann)
+                    && self.match_ident(&needle.id, &candidate.id)
+            }
             _ => needle.eq_ignore_span(candidate),
         }
     }
@@ -2037,8 +2099,8 @@ fn is_anonymous_hole(name: &str, prefix: &str) -> bool {
     name == prefix
 }
 
-/// Whether `member` is a `CLASS_REST*;` class-member hole: a class field
-/// whose key identifier carries the prefix and which has no initializer.
+/// Whether `member` is a `CLASS_REST;` class-member hole: a class field
+/// whose key is exactly the marker token and which has no initializer.
 fn is_class_rest_hole(member: &ClassMember) -> bool {
     let ClassMember::ClassProp(prop) = member else {
         return false;
@@ -2046,6 +2108,6 @@ fn is_class_rest_hole(member: &ClassMember) -> bool {
     prop.value.is_none()
         && matches!(
             &prop.key,
-            PropName::Ident(ident) if ident.sym.as_ref().starts_with(CLASS_REST_HOLE_PREFIX)
+            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_TOKEN
         )
 }

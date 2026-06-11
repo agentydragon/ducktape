@@ -491,15 +491,94 @@ export { Counter };
             &[Member::source_alpha_with_syntactic_holes(
                 "Selected",
                 r#"class K {
-  CLASS_REST_ONE;
+  CLASS_REST;
   a() {
     STMT_LIST_A;
   }
-  CLASS_REST_TWO;
+  CLASS_REST;
 }"#,
             )],
         )],
     );
 
     expect_rejection_containing_all(opts, &["static/app::shapes", "did not match"]);
+}
+
+#[test]
+fn non_trailing_class_rest_hole_keeps_later_identifiers_aligned() {
+    // Regression guard for the alpha-identifier bijection: a leading
+    // `CLASS_REST` absorbs `helper`, whose param/body identifiers do not
+    // desync the `run(value) { return value * 2 }` member that follows.
+    // (Under the old global alpha-canonicalization the absorbed `helper`
+    // identifiers shifted the numbering and this failed to match.)
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Counter {
+  helper(seed) {
+    return seed + 1;
+  }
+  run(value) {
+    return value * 2;
+  }
+}
+const counter = new Counter();
+console.log(counter.run(5));
+export { Counter };
+"#,
+        vec![logical_module(
+            "shapes",
+            &[Member::source_alpha_with_syntactic_holes(
+                "Counter",
+                r#"class K {
+  CLASS_REST;
+  run(value) {
+    return value * 2;
+  }
+}"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "10\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["Counter"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/shapes.js",
+        &["class", "helper", "run"],
+        &["CLASS_REST"],
+    );
+}
+
+#[test]
+fn single_node_hole_keeps_later_identifiers_aligned() {
+    // The same bijection guard for single-node holes: `EXPR_` absorbs a
+    // multi-identifier subtree, and the `limit` argument after it still
+    // matches by alpha-correspondence rather than by absolute position.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const limit = 4;
+const alpha = 1, beta = 2, gamma = 3;
+const total = Math.max(Math.min(alpha, beta, gamma), limit);
+console.log(total);
+export { total };
+"#,
+        vec![logical_module(
+            "calc",
+            &[Member::source_alpha_with_syntactic_holes(
+                "calc_total",
+                r#"const readable = Math.max(EXPR_, limit);"#,
+            )],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "4\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/calc.js",
+        &["Math.max", "const calc_total"],
+        &["EXPR_"],
+    );
 }

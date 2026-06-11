@@ -355,8 +355,9 @@ its whole minified body:
 - A bare `STMT_LIST_*;` statement in a block body matches any run of
   statements (including none) at that position — e.g. a method or function
   body you do not want to spell out.
-- A bare `CLASS_REST*;` class field (no initializer) matches the remaining
+- A bare `CLASS_REST;` class field (no initializer) matches the remaining
   class members — "this class by these members, ignore the rest".
+  `CLASS_REST` is an exact token (not a prefix).
 
 ```yaml
 members:
@@ -374,7 +375,7 @@ members:
 ```
 
 A list takes **at most one** hole — a second `STMT_LIST_*` in the same block,
-or a second `CLASS_REST*` in the same class body, is ambiguous and never
+or a second `CLASS_REST` in the same class body, is ambiguous and never
 matches. The members or statements you pin around the hole are still matched
 **in order and contiguously**: the elements before the hole must be the
 candidate's leading elements, in that order, and the elements after it the
@@ -383,12 +384,12 @@ middle. So `class K { a() { … } b() { … } CLASS_REST; }` matches a class who
 **first two** members are `a` then `b` (in that order), followed by anything —
 it is _not_ an unordered "class that contains `a` and `b` somewhere" match.
 
-Like the single-node holes, list holes match positionally after
-alpha-canonicalization, so a hole is most robust at the **end** of its list: a
-trailing hole keeps the matched prefix aligned with the candidate, whereas a
-leading or middle hole that absorbs identifier-bearing nodes can desync the
-alpha-numbering of the elements after it (the same limitation single-node
-holes have).
+A hole works in **any** position — leading, middle, or trailing. Under
+`alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
+it walks both trees, and a hole never contributes the identifiers it absorbs,
+so the members or statements after a hole still match by their own structure
+rather than by absolute position. (Single-node `EXPR_`/`STMT_` holes share this
+property.)
 
 ## Workflow: renaming a binding without moving
 
