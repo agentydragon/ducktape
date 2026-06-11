@@ -1596,6 +1596,16 @@ impl Visit for PlainDataWriteScanner<'_> {
     // binding are assumed not to install accessors on it.
     fn visit_export_named_specifier(&mut self, _node: &ExportNamedSpecifier) {}
 
+    // `import { <exported> as <local> }` — the local side is a
+    // BindingIdent (already skipped); the imported side is the SOURCE
+    // module's export name, pure module metadata that never reads any
+    // local binding's value. Without this override the escape default
+    // fired on the imported-name `Ident`, disqualifying an unrelated
+    // local candidate that happens to share its spelling — real
+    // bundles import hundreds of single-letter vendor export names,
+    // so candidate enums named `j`/`a`/… were lost to coincidence.
+    fn visit_import_named_specifier(&mut self, _node: &ImportNamedSpecifier) {}
+
     // Member-access receivers are reads, not captures. Skip an
     // Ident receiver (candidate or not); everything else (nested
     // receivers, computed keys) is traversed normally.

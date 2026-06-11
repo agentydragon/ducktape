@@ -1485,3 +1485,22 @@ fn plain_data_object_keys_escape_exemption_requires_unshadowed_object() {
         "X"
     ));
 }
+
+#[test]
+fn plain_data_enum_survives_import_specifier_name_collision() {
+    // `import { j as a }` — the IMPORTED side (`j`) is the source
+    // module's export NAME, pure module metadata; the only binding the
+    // statement introduces is the local `a`. Regression: the escape
+    // default used to fire on the imported-name `Ident`, so a chunk
+    // importing any export whose NAME collides with a local PlainData
+    // candidate (here the enum binding `j`) silently lost the
+    // candidate — on real bundles, where vendor chunks export
+    // hundreds of single-letter names, this killed most enum
+    // admissions by name coincidence.
+    let src = r#"
+    import { j as a } from "./vendor.js";
+    var j = ((n) => ((n[(n.A = 0)] = "A"), n))(j || {});
+    const probe = j.A;
+"#;
+    assert!(is_plain_data(src, "j"));
+}
