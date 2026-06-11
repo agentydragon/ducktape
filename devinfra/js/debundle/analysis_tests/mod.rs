@@ -37,6 +37,7 @@ fn hints_with_decorate_helper(name: &str) -> AnalysisHints {
         declared_pure_members: BTreeMap::new(),
         known_effects: BTreeMap::from([(name.to_string(), KnownEffect::TypescriptDecorateHelper)]),
         local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
+        imported_purities: BTreeMap::new(),
     }
 }
 
