@@ -337,27 +337,30 @@ anonymous_statements:
         }
 ```
 
-Identifier expressions whose names start with `EXPR_` match one arbitrary
-expression subtree. Bare expression statements whose names start with `STMT_`
-match one arbitrary statement. Reusing the same placeholder name requires the
-same candidate subtree/statement everywhere it appears. When you don't need
-that equality, use the **bare prefix** as an anonymous wildcard — `EXPR_`,
-`STMT_`, `STMT_LIST_`, or `CLASS_REST` with no suffix — and every occurrence
-matches independently, so there's no need to mint a unique name per
-placeholder. These are still structural selectors: surrounding syntax is exact
-after the identifier policy is applied, and ambiguous matches are rejected
-rather than resolved by source order.
+Each hole keyword has two forms. The **bare keyword** is an anonymous
+wildcard: every occurrence matches independently, so there's no need to mint a
+unique name per throwaway placeholder. The **named form** `KEYWORD_name` binds
+for cross-occurrence equality — the same name must match the same
+candidate subtree/statement everywhere it appears. So `EXPR` is the identifier
+expression that matches one arbitrary expression subtree, and `EXPR_left`
+matches one too but forces every `EXPR_left` to be the same subtree; `STMT` and
+`STMT_setup` are the single-statement equivalents. For example, `foo(EXPR)`
+matches both `foo(123)` and `foo(456)`, and `bar(EXPR, EXPR)` matches
+`bar(1, 2)` (the two holes are independent), whereas `bar(EXPR_x, EXPR_x)` only
+matches a call whose two arguments are identical. These are still structural
+selectors: surrounding syntax is exact after the identifier policy is applied,
+and ambiguous matches are rejected rather than resolved by source order.
 
 Two variable-length **list holes** absorb a contiguous run rather than a
 single node — ideal for pinning a class by a stable skeleton without copying
 its whole minified body:
 
-- A bare `STMT_LIST_*;` statement in a block body matches any run of
-  statements (including none) at that position — e.g. a method or function
-  body you do not want to spell out.
-- A bare `CLASS_REST;` class field (no initializer) matches the remaining
-  class members — "this class by these members, ignore the rest".
-  `CLASS_REST` is an exact token (not a prefix).
+- A bare `STMT_LIST;` statement (or named `STMT_LIST_name;`) in a block body
+  matches any run of statements (including none) at that position — e.g. a
+  method or function body you do not want to spell out.
+- A bare `CLASS_REST;` class field (no initializer) matches a run of class
+  members — "this class by these members, ignore the rest". `CLASS_REST` is an
+  exact token (not a prefix).
 
 ```yaml
 members:
@@ -395,7 +398,7 @@ A hole works in **any** position — leading, middle, or trailing. Under
 `alpha_all`, identifiers match by an alpha-correspondence the matcher builds as
 it walks both trees, and a hole never contributes the identifiers it absorbs,
 so the members or statements after a hole still match by their own structure
-rather than by absolute position. (Single-node `EXPR_`/`STMT_` holes share this
+rather than by absolute position. (Single-node `EXPR`/`STMT` holes share this
 property.)
 
 ## Workflow: renaming a binding without moving

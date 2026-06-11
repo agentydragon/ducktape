@@ -13,26 +13,24 @@ use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-const EXPR_HOLE_PREFIX: &str = "EXPR_";
-const STMT_HOLE_PREFIX: &str = "STMT_";
-/// A bare `STMT_LIST_*;` expression-statement in a block body is a
-/// statement-**list** hole: it absorbs a run of candidate statements
-/// (including an empty run) at that position. Several may appear in one
-/// block, splitting the pinned statements into an ordered subsequence
-/// with gaps (see [`AstWildcardMatcher::match_list_with_holes`]).
-/// Distinct from the single-statement `STMT_` hole, which matches
-/// exactly one statement. `STMT_LIST_` is checked before `STMT_` since
-/// it is a prefix of it.
-const STMT_LIST_HOLE_PREFIX: &str = "STMT_LIST_";
-/// A bare `CLASS_REST;` class field (no initializer) is a class-member
-/// hole: it absorbs a run of class members at its position. Several may
-/// appear in one class body, bracketing pinned members so a selector can
-/// match a class by an ordered subset of its members and ignore the gaps
-/// (see [`AstWildcardMatcher::match_list_with_holes`]). Matched as an
-/// exact token (not a prefix) so it never collides with a real field
-/// whose name merely starts with `CLASS_REST`, and because it never
-/// reuses, a suffix would be meaningless anyway.
-const CLASS_REST_HOLE_TOKEN: &str = "CLASS_REST";
+/// Syntactic-hole keywords. The **bare keyword** is the anonymous form:
+/// it matches independently at every occurrence and never binds, so
+/// authors don't have to mint a unique name per throwaway placeholder. A
+/// `<keyword>_<name>` identifier is the **named** form, which binds for
+/// cross-occurrence equality — the same name must match the same
+/// subtree/statement everywhere it appears.
+///
+/// `EXPR` matches one arbitrary expression and `STMT` one arbitrary
+/// statement. `STMT_LIST` and `CLASS_REST` are variable-length list holes
+/// (see [`AstWildcardMatcher::match_list_with_holes`]): `STMT_LIST`
+/// absorbs a run of block statements and `CLASS_REST` a run of class
+/// members; several may appear in one list, splitting the pinned
+/// elements into an ordered subsequence with gaps. `STMT_LIST` must be
+/// checked before `STMT`, since `STMT` is a keyword-prefix of it.
+const EXPR_HOLE_KEYWORD: &str = "EXPR";
+const STMT_HOLE_KEYWORD: &str = "STMT";
+const STMT_LIST_HOLE_KEYWORD: &str = "STMT_LIST";
+const CLASS_REST_HOLE_KEYWORD: &str = "CLASS_REST";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ResolvedMemberBinding {
@@ -698,11 +696,11 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_expr(&mut self, wildcard: &str, candidate: &Expr) -> bool {
-        // A bare `EXPR_` (the prefix with no suffix) is an anonymous
-        // wildcard: every occurrence matches independently, so authors
-        // don't have to mint a unique name per placeholder. Named holes
-        // (`EXPR_FOO`) keep their cross-occurrence equality.
-        if is_anonymous_hole(wildcard, EXPR_HOLE_PREFIX) {
+        // The bare keyword `EXPR` is an anonymous wildcard: every
+        // occurrence matches independently, so authors don't have to mint
+        // a unique name per placeholder. Named holes (`EXPR_FOO`) keep
+        // their cross-occurrence equality.
+        if hole_is_anonymous(wildcard, EXPR_HOLE_KEYWORD) {
             return true;
         }
         match self.replacements.expressions.get(wildcard) {
@@ -717,8 +715,8 @@ impl<'a> AstWildcardMatcher<'a> {
     }
 
     fn bind_stmt(&mut self, wildcard: &str, candidate: &Stmt) -> bool {
-        // Bare `STMT_` is anonymous; see [`Self::bind_expr`].
-        if is_anonymous_hole(wildcard, STMT_HOLE_PREFIX) {
+        // Bare `STMT` is anonymous; see [`Self::bind_expr`].
+        if hole_is_anonymous(wildcard, STMT_HOLE_KEYWORD) {
             return true;
         }
         match self.replacements.statements.get(wildcard) {
@@ -1846,7 +1844,7 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
-    /// Match a statement list. `STMT_LIST_*;` holes split the needle into
+    /// Match a statement list. `STMT_LIST;` holes split the needle into
     /// fixed segments matched as an ordered subsequence with gaps (see
     /// [`Self::match_list_with_holes`]); with no hole this is an exact
     /// element-wise match.
@@ -1866,7 +1864,7 @@ impl<'a> AstWildcardMatcher<'a> {
         }
     }
 
-    /// Match a class member list. `CLASS_REST*;` holes split the needle
+    /// Match a class member list. `CLASS_REST;` holes split the needle
     /// into fixed segments matched as an ordered subsequence with gaps
     /// (see [`Self::match_list_with_holes`]); with no hole this is an
     /// exact element-wise match.
@@ -2113,10 +2111,10 @@ fn visit_computed_prop_name(prop_name: &mut PropName, visitor: &mut AlphaIdentCa
 struct WildcardIdents {
     expressions: BTreeSet<String>,
     statements: BTreeSet<String>,
-    /// `STMT_LIST_*` statement-list hole names (reserved from
+    /// `STMT_LIST` statement-list hole names (reserved from
     /// alpha-canonicalization like the single-node holes).
     statement_lists: BTreeSet<String>,
-    /// Whether the selector contains any `CLASS_REST*` class-member
+    /// Whether the selector contains any `CLASS_REST` class-member
     /// hole. The marker is a class field key (an `IdentName`, not an
     /// `Ident`), so it survives alpha-canonicalization without being
     /// reserved — only presence matters for routing.
@@ -2126,7 +2124,7 @@ struct WildcardIdents {
 impl WildcardIdents {
     /// True when the selector carries no holes of any kind, so the
     /// caller can take the plain `eq_ignore_span` fast path. List holes
-    /// count: a selector with only `STMT_LIST_*` / `CLASS_REST*` still
+    /// count: a selector with only `STMT_LIST` / `CLASS_REST` holes still
     /// needs the structural matcher.
     fn is_empty(&self) -> bool {
         self.expressions.is_empty()
@@ -2158,12 +2156,13 @@ impl Visit for WildcardIdentCollector {
 
     fn visit_stmt(&mut self, stmt: &Stmt) {
         if let Some(hole_name) = statement_hole_name(stmt) {
-            // `STMT_LIST_` is a prefix of `STMT_`, so it must win first.
-            if hole_name.starts_with(STMT_LIST_HOLE_PREFIX) {
+            // `STMT` is a keyword-prefix of `STMT_LIST`, so the list hole
+            // must win first.
+            if hole_name_for(hole_name, STMT_LIST_HOLE_KEYWORD).is_some() {
                 self.idents.statement_lists.insert(hole_name.to_string());
                 return;
             }
-            if hole_name.starts_with(STMT_HOLE_PREFIX) {
+            if hole_name_for(hole_name, STMT_HOLE_KEYWORD).is_some() {
                 self.idents.statements.insert(hole_name.to_string());
                 return;
             }
@@ -2184,11 +2183,7 @@ fn expression_hole_name(expr: &Expr) -> Option<&str> {
     let Expr::Ident(ident) = expr else {
         return None;
     };
-    ident
-        .sym
-        .as_ref()
-        .starts_with(EXPR_HOLE_PREFIX)
-        .then_some(ident.sym.as_ref())
+    hole_name_for(ident.sym.as_ref(), EXPR_HOLE_KEYWORD)
 }
 
 fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
@@ -2201,21 +2196,34 @@ fn statement_hole_name(stmt: &Stmt) -> Option<&str> {
     Some(ident.sym.as_ref())
 }
 
-/// The name of a statement-list hole (`STMT_LIST_*;`) if `stmt` is one.
+/// The name of a statement-list hole (`STMT_LIST` / `STMT_LIST_*;`) if
+/// `stmt` is one.
 fn statement_list_hole_name(stmt: &Stmt) -> Option<&str> {
-    let name = statement_hole_name(stmt)?;
-    name.starts_with(STMT_LIST_HOLE_PREFIX).then_some(name)
+    hole_name_for(statement_hole_name(stmt)?, STMT_LIST_HOLE_KEYWORD)
 }
 
-/// Whether a hole name is the bare `prefix` with no suffix — the
-/// anonymous form, which matches independently at every occurrence
-/// instead of binding for cross-occurrence equality.
-fn is_anonymous_hole(name: &str, prefix: &str) -> bool {
-    name == prefix
+/// If `name` is a hole identifier for `keyword` — the bare keyword
+/// (anonymous) or a `<keyword>_<suffix>` (named) form — return it. The
+/// keyword must be followed by end-of-string or `_`, so `EXPR` and
+/// `EXPR_FOO` match for keyword `EXPR` but `EXPRESSION` does not.
+fn hole_name_for<'a>(name: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = name.strip_prefix(keyword)?;
+    (rest.is_empty() || rest.starts_with('_')).then_some(name)
+}
+
+/// Whether a hole name is the anonymous form: the bare keyword, or the
+/// keyword with a trailing underscore but no suffix. Anonymous holes
+/// match independently at every occurrence instead of binding for
+/// cross-occurrence equality.
+fn hole_is_anonymous(name: &str, keyword: &str) -> bool {
+    matches!(name.strip_prefix(keyword), Some("") | Some("_"))
 }
 
 /// Whether `member` is a `CLASS_REST;` class-member hole: a class field
-/// whose key is exactly the marker token and which has no initializer.
+/// whose key is exactly the keyword and which has no initializer. Matched
+/// as an exact token (not a `CLASS_REST_*` prefix) so it never collides
+/// with a real field whose name merely starts with `CLASS_REST`; since it
+/// never binds, a suffix would carry no meaning anyway.
 fn is_class_rest_hole(member: &ClassMember) -> bool {
     let ClassMember::ClassProp(prop) = member else {
         return false;
@@ -2223,6 +2231,6 @@ fn is_class_rest_hole(member: &ClassMember) -> bool {
     prop.value.is_none()
         && matches!(
             &prop.key,
-            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_TOKEN
+            PropName::Ident(ident) if ident.sym.as_ref() == CLASS_REST_HOLE_KEYWORD
         )
 }

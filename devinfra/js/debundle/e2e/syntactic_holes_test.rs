@@ -1,15 +1,20 @@
 //! End-to-end coverage for `source_match` syntactic holes.
 //!
+//! Each hole keyword has a bare anonymous form (matches independently,
+//! never binds) and a named `KEYWORD_name` form (binds for
+//! cross-occurrence equality).
+//!
 //! Single-node holes:
-//! - Expression holes are selector-local identifier expressions prefixed
-//!   with `EXPR_`; they match one arbitrary expression subtree.
-//! - Statement holes are selector-local bare expression statements
-//!   prefixed with `STMT_`; they match exactly one statement.
+//! - Expression holes (`EXPR` / `EXPR_name`) are selector-local
+//!   identifier expressions; they match one arbitrary expression subtree.
+//! - Statement holes (`STMT` / `STMT_name`) are selector-local bare
+//!   expression statements; they match exactly one statement.
 //!
 //! List holes (variable-length):
-//! - `STMT_LIST_*;` in a block body absorbs a run of statements
-//!   (including an empty run) — e.g. a method body you don't want to pin.
-//! - `CLASS_REST*;` as a class field absorbs a run of class members —
+//! - `STMT_LIST` / `STMT_LIST_name;` in a block body absorbs a run of
+//!   statements (including an empty run) — e.g. a method body you don't
+//!   want to pin.
+//! - `CLASS_REST;` as a class field absorbs a run of class members —
 //!   e.g. "match this class by these members, ignore the rest".
 //!
 //! Several list holes may appear in one block or class body: they split
@@ -401,7 +406,7 @@ export { Counter };
 
 #[test]
 fn anonymous_expr_holes_match_independent_subtrees() {
-    // Bare `EXPR_` (no suffix) is anonymous: the two occurrences match
+    // The bare keyword `EXPR` is anonymous: the two occurrences match
     // *different* expressions. A named hole `EXPR_X` repeated would
     // instead force the two arguments to be equal.
     let fixture = run_fixture(FixtureOpts::new(
@@ -413,7 +418,7 @@ export { actual };
             "calc",
             &[Member::source_alpha_with_syntactic_holes(
                 "calc_value",
-                r#"const readable = Math.max(EXPR_, EXPR_);"#,
+                r#"const readable = Math.max(EXPR, EXPR);"#,
             )],
         )],
     ));
@@ -423,13 +428,48 @@ export { actual };
         &fixture.out_root,
         "static/app/modules/calc.js",
         &["Math.max", "const calc_value"],
-        &["EXPR_"],
+        &["EXPR"],
+    );
+}
+
+#[test]
+fn anonymous_stmt_hole_matches_one_arbitrary_statement() {
+    // The bare keyword `STMT` matches exactly one statement, with no
+    // suffix to mint — the anonymous single-statement form.
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"if (true) {
+  console.log("setup");
+  console.log("done");
+}
+const marker = "ready";
+export { marker };
+"#,
+        vec![logical_module_with_anon_alpha_syntactic_holes(
+            "init",
+            &[Member::new("marker")],
+            r#"if (true) {
+  STMT;
+  console.log("done");
+}"#,
+        )],
+    ));
+
+    assert_entry_output(&fixture, "setup\ndone\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/init.js",
+        &[
+            r#"console.log("setup")"#,
+            r#"console.log("done")"#,
+            "const marker",
+        ],
+        &["STMT"],
     );
 }
 
 #[test]
 fn anonymous_stmt_list_and_class_rest_holes_need_no_minted_names() {
-    // Bare `STMT_LIST_` and bare `CLASS_REST` select the class with no
+    // Bare `STMT_LIST` and bare `CLASS_REST` select the class with no
     // suffixes to invent.
     let fixture = run_fixture(FixtureOpts::new(
         r#"class Counter {
@@ -451,7 +491,7 @@ export { Counter };
                 "Counter",
                 r#"class K {
   constructor() {
-    STMT_LIST_;
+    STMT_LIST;
   }
   CLASS_REST;
 }"#,
@@ -470,7 +510,7 @@ export { Counter };
         &fixture.out_root,
         "static/app/modules/shapes.js",
         &["class", "increment"],
-        &["STMT_LIST_", "CLASS_REST"],
+        &["STMT_LIST", "CLASS_REST"],
     );
 }
 
@@ -726,7 +766,7 @@ export { Counter };
 
 #[test]
 fn single_node_hole_keeps_later_identifiers_aligned() {
-    // The same bijection guard for single-node holes: `EXPR_` absorbs a
+    // The same bijection guard for single-node holes: `EXPR` absorbs a
     // multi-identifier subtree, and the `limit` argument after it still
     // matches by alpha-correspondence rather than by absolute position.
     let fixture = run_fixture(FixtureOpts::new(
@@ -740,7 +780,7 @@ export { total };
             "calc",
             &[Member::source_alpha_with_syntactic_holes(
                 "calc_total",
-                r#"const readable = Math.max(EXPR_, limit);"#,
+                r#"const readable = Math.max(EXPR, limit);"#,
             )],
         )],
     ));
@@ -750,6 +790,6 @@ export { total };
         &fixture.out_root,
         "static/app/modules/calc.js",
         &["Math.max", "const calc_total"],
-        &["EXPR_"],
+        &["EXPR"],
     );
 }
