@@ -24,11 +24,12 @@ analysis cache survives CI runs. This investigation separates:
 The main suspected hole: the newer runner-recycle analysis classifies only the outer runner
 header. It does not independently measure inner Bazel analysis work in CI.
 
-## Outer Runner Snapshot-Reuse Stats
+## Outer Runner Workspace-Reuse Stats
 
-`runner_recycle_stats.py` classifies BuildBuddy Firecracker runner invocations as warm or
-cold from BuildBuddy history. It answers the outer-VM question only: did the `HOSTED_BAZEL`
-`remote ...` runner resume from a snapshot or start from an empty workspace?
+`runner_recycle_stats.py` is a pre-probe historical classifier for BuildBuddy runner
+invocations. It answers a narrower question than its original name suggested: did the
+`HOSTED_BAZEL` `remote ...` runner take the existing-workspace setup path or the fresh-clone
+setup path?
 
 Every `bbr`/CI run dispatches a `ci_runner` Firecracker VM configured in
 `../../bbr.json` with:
@@ -39,21 +40,39 @@ Every `bbr`/CI run dispatches a `ci_runner` Firecracker VM configured in
 "snapshot-read-policy": "newest"
 ```
 
-The runner's first console lines are the empirical signal:
+The runner's first console lines are the empirical signal for that setup path:
 
-| Verdict  | Console header                                                                             | What it proves                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **warm** | `Syncing existing repo...` -> shallow `git fetch --depth=1` + `git clean` + `git checkout` | the runner workspace/output-base came from a previous snapshot; external repos and Bazel server state may be available |
-| **cold** | `Cloning ...`                                                                              | a fresh VM/workspace was used, so the runner redoes clone/fetch/setup work before invoking Bazel                       |
+| Verdict            | Console header                                                                             | What it proves                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| **warm workspace** | `Syncing existing repo...` -> shallow `git fetch --depth=1` + `git clean` + `git checkout` | `bb remote` found an existing `repo-root`; the adjacent output-base may also contain useful state |
+| **cold workspace** | `Cloning ...`                                                                              | `bb remote` did not find the existing checkout and had to create one before invoking Bazel        |
 
-Warm outer-runner reuse is not the same claim as "the Bazel analysis cache did no work".
+Why this was originally treated as warm/cold runner evidence: in normal `bb remote` setup,
+`Syncing existing repo...` means the runner sees `/home/buildbuddy/workspace/repo-root` from a
+previous run and refreshes it in place, while `Cloning ...` means the workspace is empty. Since
+the Bazel output base is outside `repo-root`, a warm workspace often correlates with preserved
+external repos and possibly a surviving Bazel server.
+
+That is still only a proxy. It should not be treated as proof of Firecracker process-memory
+resume or proof that Bazel analysis did no work. For post-instrumentation CI runs, prefer the
+stronger probe/linkage signals:
+
+- `CI_VM_PROBE_SUMMARY phase=before-test previous_run_log=yes`, showing the VM-local probe
+  directory from an earlier run survived into this runner;
+- `CI_VM_PROBE_SERVER ...` before the first Bazel command, showing a Bazel server already
+  existed before CI started Bazel;
+- the uploaded probe bundle's `previous/probes.jsonl` and `previous/proc/...` raw files,
+  especially raw `/proc/<pid>/stat` `start_ticks` and `cmdline_sha256`;
+- the GitHub linkage artifact, which ties the GitHub run to the BuildBuddy runner invocation,
+  child Bazel invocations, and probe CAS digest.
+
 Use BES metrics, Bazel profiles, and probe bundles from this investigation to answer the inner
-Bazel question.
+Bazel analysis-cache question.
 
 Usage:
 
 ```bash
-# Full sample over the densest recent window
+# Historical setup-path sample over the densest recent window
 devinfra/x/ci_build_profile_analysis/runner_recycle_stats.py --count 600
 
 # Wider window (API pages by recency; larger N == more hours)

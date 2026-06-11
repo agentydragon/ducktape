@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Estimate how often bbr/CI Firecracker runners reuse a snapshot vs cold-start.
+"""Estimate how often bbr/CI runners see a warm vs cold workspace.
 
 Each `bbr`/CI run dispatches a ci_runner Firecracker VM (the `HOSTED_BAZEL`
 "remote ..." invocation, configured in devinfra/bbr.json with recycle-runner,
 remote-snapshot-save-policy=always, snapshot-read-policy=newest). The runner's
-first console lines reveal whether the VM resumed from a snapshot:
+first console lines reveal which workspace setup path `bb remote` took:
 
-  warm (snapshot reused):  "Syncing existing repo..." -> shallow git fetch +
-                           git clean + git checkout. repo and Bazel output-base
-                           survive, so external repos and Bazel server state may
-                           be available.
-  cold (fresh VM):         "Cloning ..." -> full clone, re-fetch every external
-                           repo, reload all packages ("redoing repo fetch work").
+  warm workspace: "Syncing existing repo..." -> shallow git fetch + git clean +
+                  git checkout. The existing checkout survived and the adjacent
+                  Bazel output-base may contain useful state.
+  cold workspace: "Cloning ..." -> full clone before invoking Bazel.
 
-This classifies only the outer runner VM. Use BES metrics and Bazel profiles to
-answer whether the inner Bazel analysis cache did any work. There is no clean
-structured field for runner warm/cold state; the console header is authoritative.
+This is a historical proxy, not definitive proof of Firecracker process-memory
+resume. For post-instrumentation CI runs, prefer CI_VM_PROBE_* data and the
+uploaded probe bundles. Use BES metrics and Bazel profiles to answer whether the
+inner Bazel analysis cache did any work.
+
 We list runner invocations via `bbapi`, fetch each runner's console via `bb view`,
-and classify.
+and classify the workspace setup path.
 
 Usage:
   ./runner_recycle_stats.py [--count N] [--workers W] [--gaps-only] [--json]
@@ -71,7 +71,7 @@ def post_gap_candidates(runners: list[dict], gap_min: float) -> set[str]:
 
 
 def classify(invocation_id: str) -> str:
-    """warm | cold | unknown, from the runner's console header."""
+    """warm | cold | unknown workspace setup path, from the runner console header."""
     proc = subprocess.run(["bb", "view", invocation_id], check=False, capture_output=True, text=True)
     header = "\n".join(proc.stdout.splitlines()[:10])
     m = _MARKERS.search(header)
@@ -125,8 +125,8 @@ def main() -> None:
         f"window: {span_h:.1f}h  runner invocations: {len(runners)}  "
         f"classified: {total}{' (post-gap firsts only)' if args.gaps_only else ''}"
     )
-    print(f"  warm (snapshot reused): {counts['warm']}")
-    print(f"  cold (fresh VM):        {counts['cold']}")
+    print(f"  warm workspace: {counts['warm']}")
+    print(f"  cold workspace: {counts['cold']}")
     if counts["unknown"]:
         print(f"  unknown:                {counts['unknown']}")
     print(f"  warm rate: {warm_pct:.1f}%")
