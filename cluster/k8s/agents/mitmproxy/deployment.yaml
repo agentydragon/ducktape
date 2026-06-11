@@ -80,7 +80,8 @@ spec:
         - name: mitmproxy-data
           emptyDir: {}
 ---
-# Allow Authentik outpost to reach mitmweb UI (port 8081) for proxy auth.
+# Allow sandbox proxy clients to reach mitmproxy (port 8080) and Authentik
+# outpost to reach the mitmweb UI (port 8081) for proxy auth.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -91,6 +92,18 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mitmproxy
   ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - claude-sandbox
+                  - openclaw-sandbox
+                  - openclaw-gateway
+      ports:
+        - port: 8080
+          protocol: TCP
     - from:
         - namespaceSelector:
             matchLabels:
