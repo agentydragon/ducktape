@@ -158,6 +158,7 @@ rust_library(
         "vendor/manifests.rs",
         "vendor/mod.rs",
         "vendor/strip.rs",
+        "vendor/validate.rs",
         "vendor/wrappers.rs",
     ],
     crate_root = "vendor/mod.rs",

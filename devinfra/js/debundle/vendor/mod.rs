@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 mod manifests;
 mod strip;
+mod validate;
 mod wrappers;
 
 use serde_json::Value;
@@ -31,6 +32,11 @@ use spec::{
 pub use strip::{
     ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
 };
+use validate::{
+    PartialSwapPackageCoords, ResolvePartialSwapPackageOptions, build_partial_swap_symbol_tables,
+    resolve_partial_swap_package, resolve_vendor_chunk, validate_partial_swap_symbols,
+    vendor_chunk_name, vendor_entry_ast,
+};
 use wrappers::{
     generate_named_from_default_wrapper, generate_named_from_json_default_wrapper,
     generate_named_from_module_default_wrapper, set_diff,
@@ -43,7 +49,7 @@ pub fn apply_vendor_annotations(
 ) -> Result<VendorAnnotationsManifest> {
     let mut summaries = Vec::with_capacity(vendor.len());
     for (chunk_path, mark) in vendor {
-        let chunk_name = chunk_id_from_chunk_path(chunk_path, "mark_vendor")?;
+        let chunk_name = vendor_chunk_name(chunk_path, "mark_vendor")?;
         let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
             format!("vendor entry {chunk_path} targets unknown chunk: {chunk_name}")
         })?;
@@ -107,24 +113,9 @@ pub fn rename_vendor_exports(
             VendorLevel::BoundaryRename | VendorLevel::Swap(_)
         )
     }) {
-        let chunk_path_owned = chunk_path.clone();
-        let chunk_name = chunk_id_from_chunk_path(chunk_path, "rename_vendor_exports")?;
-        let chunk_id = chunk_table.get(&chunk_name)
-            .with_context(|| format!("rename_vendor_exports vendor entry {chunk_path} targets unknown chunk: {chunk_name}"))?;
-        let vendor_entry_relative_file =
-            get_chunk_entry_path(&artifact, chunk_id).with_context(|| {
-            format!(
-                "rename_vendor_exports vendor entry {chunk_path_owned} targets missing chunk (chunk_id={chunk_name})"
-            )
-        })?;
+        let chunk = resolve_vendor_chunk(&artifact, "rename_vendor_exports", chunk_path)?;
         let mapping = {
-            let vendor_ast = artifact
-                .js_chunk(chunk_id)?
-                .get_file(&vendor_entry_relative_file)
-                .and_then(|file| file.ast())
-                .with_context(|| {
-                    format!("rename_vendor_exports vendor chunk {chunk_name} is missing entry AST")
-                })?;
+            let vendor_ast = vendor_entry_ast(&artifact, "rename_vendor_exports", &chunk)?;
             let mapping = collect_boundary_mapping(&vendor_ast.module);
             validate_boundary_mapping_collisions(&vendor_ast.module, &mapping, chunk_path)?;
             mapping
@@ -132,19 +123,19 @@ pub fn rename_vendor_exports(
         if !mapping.is_empty() {
             chunks_with_mapping += 1;
             mappings
-                .entry(chunk_name.clone())
+                .entry(chunk.chunk_id)
                 .or_default()
-                .insert(vendor_entry_relative_file.clone(), mapping.clone());
+                .insert(chunk.entry_file.clone(), mapping.clone());
         }
         ops.push(RenameVendorExportOp {
-            chunk_path: chunk_path_owned,
-            chunk_name,
-            entry_file: vendor_entry_relative_file,
+            chunk_path: chunk_path.clone(),
+            chunk_id: chunk.chunk_id,
+            entry_file: chunk.entry_file,
             mapping,
         });
     }
 
-    let mut caller_counts_by_target = BTreeMap::<(String, String), BTreeMap<String, usize>>::new();
+    let mut caller_counts_by_target = BTreeMap::<(ChunkId, String), BTreeMap<String, usize>>::new();
     if !mappings.is_empty() {
         let mut jobs = Vec::new();
         for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
@@ -206,12 +197,12 @@ pub fn rename_vendor_exports(
     let considered = ops.len();
     for op in ops {
         let caller_counts = caller_counts_by_target
-            .remove(&(op.chunk_name.clone(), op.entry_file.clone()))
+            .remove(&(op.chunk_id, op.entry_file.clone()))
             .unwrap_or_default();
         let chunk_rewrites = caller_counts.values().sum();
         details.push(RenameVendorExportsDetail {
             chunk_path: op.chunk_path,
-            chunk_id: op.chunk_name,
+            chunk_id: chunk_table.name(op.chunk_id).to_string(),
             mapping_size: op.mapping.len(),
             rewrites: chunk_rewrites,
             callers: caller_counts
@@ -234,11 +225,12 @@ pub fn rename_vendor_exports(
     })
 }
 
-type VendorExportMappings = BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>;
+/// chunk → entry file → vendor-local name → public export name.
+type VendorExportMappings = BTreeMap<ChunkId, BTreeMap<String, BTreeMap<String, String>>>;
 
 struct RenameVendorExportOp {
     chunk_path: String,
-    chunk_name: String,
+    chunk_id: ChunkId,
     entry_file: String,
     mapping: BTreeMap<String, String>,
 }
@@ -258,7 +250,7 @@ struct VendorRenameFileResult {
     file_path: String,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
-    rewrites_by_target: BTreeMap<(String, String), usize>,
+    rewrites_by_target: BTreeMap<(ChunkId, String), usize>,
 }
 
 fn rename_vendor_imports_in_file(
@@ -288,7 +280,7 @@ fn rename_vendor_imports_in_file(
 
 struct SwapVendorJob {
     chunk_path: String,
-    chunk_name: String,
+    chunk_id: ChunkId,
     entry_file: String,
     package: String,
     version: String,
@@ -303,9 +295,11 @@ struct SwapVendorJob {
 
 fn resolve_vendor_swap(
     job: SwapVendorJob,
-    import_alignment_index: &BTreeMap<String, Vec<ImportAlignmentRecord>>,
+    import_alignment_index: &BTreeMap<ChunkId, Vec<ImportAlignmentRecord>>,
     options: &SwapVendorOptions<'_>,
-) -> Result<VendorResolution> {
+    chunk_table: &ChunkTable,
+) -> Result<(ChunkId, VendorResolution)> {
+    let chunk_name = chunk_table.name(job.chunk_id);
     let installed =
         read_installed_package_metadata(&job.package, options.package_roots, options.packages_root)
             .with_context(|| format!("reading metadata for package {}", job.package))?;
@@ -357,7 +351,7 @@ fn resolve_vendor_swap(
             generated_wrapper_path = write_wrapper_if_requested(
                 options.write,
                 options.output_wrapper_dir.as_deref(),
-                &job.chunk_name,
+                chunk_name,
                 &job.entry_file,
                 &wrapper,
             )?;
@@ -394,7 +388,7 @@ fn resolve_vendor_swap(
             generated_wrapper_path = write_wrapper_if_requested(
                 options.write,
                 options.output_wrapper_dir.as_deref(),
-                &job.chunk_name,
+                chunk_name,
                 &job.entry_file,
                 &wrapper,
             )?;
@@ -430,7 +424,7 @@ fn resolve_vendor_swap(
             generated_wrapper_path = write_wrapper_if_requested(
                 options.write,
                 options.output_wrapper_dir.as_deref(),
-                &job.chunk_name,
+                chunk_name,
                 &job.entry_file,
                 &wrapper,
             )?;
@@ -453,7 +447,7 @@ fn resolve_vendor_swap(
     }
 
     for record in import_alignment_index
-        .get(&job.chunk_name)
+        .get(&job.chunk_id)
         .into_iter()
         .flatten()
     {
@@ -464,10 +458,10 @@ fn resolve_vendor_swap(
             bail!(
                 "swap_vendor_chunks vendor entry {} import alignment failed: caller={}/{} imports unknown specifier \"{}\" from vendor {} (known: [{}])",
                 job.chunk_path,
-                record.caller_chunk_id,
+                chunk_table.name(record.caller_chunk_id),
                 record.caller_file,
                 imported_name,
-                job.chunk_name,
+                chunk_name,
                 job.vendor_exports
                     .iter()
                     .cloned()
@@ -483,16 +477,19 @@ fn resolve_vendor_swap(
             .as_deref()
             .map(|manifest_path| manifest_relative_path(manifest_path, path))
     });
-    Ok(VendorResolution {
-        chunk_id: job.chunk_name,
-        chunk_path: job.chunk_path,
-        entry_file: job.entry_file,
-        package: job.package,
-        version: job.version,
-        subpath: job.subpath,
-        wrapper_shape: job.wrapper_shape,
-        generated_wrapper_path,
-    })
+    Ok((
+        job.chunk_id,
+        VendorResolution {
+            chunk_id: chunk_name.to_string(),
+            chunk_path: job.chunk_path,
+            entry_file: job.entry_file,
+            package: job.package,
+            version: job.version,
+            subpath: job.subpath,
+            wrapper_shape: job.wrapper_shape,
+            generated_wrapper_path,
+        },
+    ))
 }
 
 pub fn swap_vendor_chunks(
@@ -510,36 +507,19 @@ pub fn swap_vendor_chunks(
         .collect();
     let swap_chunk_names = ops
         .iter()
-        .map(|(chunk_path, _mark, _swap)| {
-            chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks")
-        })
+        .map(|(chunk_path, _mark, _swap)| vendor_chunk_name(chunk_path, "swap_vendor_chunks"))
         .collect::<Result<BTreeSet<_>>>()?;
     let chunk_table = artifact.chunk_table.clone();
     let swap_chunk_ids: BTreeSet<ChunkId> = swap_chunk_names
         .iter()
         .filter_map(|name| chunk_table.get(name))
         .collect();
-    let import_alignment_index =
-        build_import_alignment_index(references, &swap_chunk_ids, &chunk_table);
+    let import_alignment_index = build_import_alignment_index(references, &swap_chunk_ids);
     let jobs = ops
         .iter()
         .map(|(chunk_path, _mark, swap)| {
-            let chunk_name = chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks")?;
-            let chunk_id = chunk_table
-                .get(&chunk_name)
-                .with_context(|| format!("swap_vendor_chunks vendor entry {chunk_path} targets unknown chunk: {chunk_name}"))?;
-            let entry_relative_file = get_chunk_entry_path(&artifact, chunk_id).with_context(|| {
-            format!(
-                "swap_vendor_chunks vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})"
-            )
-        })?;
-            let entry_ast = artifact
-                .js_chunk(chunk_id)?
-                .get_file(&entry_relative_file)
-                .and_then(|file| file.ast())
-                .with_context(|| {
-                    format!("swap_vendor_chunks vendor chunk {chunk_name} is missing entry AST")
-                })?;
+            let chunk = resolve_vendor_chunk(&artifact, "swap_vendor_chunks", chunk_path)?;
+            let entry_ast = vendor_entry_ast(&artifact, "swap_vendor_chunks", &chunk)?;
             let vendor_exports = collect_exported_names(&entry_ast.module);
             let declared_default_aliases: BTreeSet<String> =
                 swap.default_export_aliases.iter().cloned().collect();
@@ -560,8 +540,8 @@ pub fn swap_vendor_chunks(
             vendor_default_aliases.extend(declared_default_aliases);
             Ok(SwapVendorJob {
                 chunk_path: (*chunk_path).clone(),
-                chunk_name,
-                entry_file: entry_relative_file,
+                chunk_id: chunk.chunk_id,
+                entry_file: chunk.entry_file,
                 package: swap.package.clone(),
                 version: swap.version.clone(),
                 subpath: swap.subpath.clone(),
@@ -577,26 +557,20 @@ pub fn swap_vendor_chunks(
         jobs.into_par_iter()
             .map(|job| {
                 GLOBALS.set(globals, || {
-                    resolve_vendor_swap(job, &import_alignment_index, &options)
+                    resolve_vendor_swap(job, &import_alignment_index, &options, &chunk_table)
                 })
             })
             .collect::<Result<Vec<_>>>()
     })?;
+    let mut removed_chunk_ids = BTreeSet::new();
     let resolutions: BTreeMap<String, VendorResolution> = resolved
         .into_iter()
-        .map(|resolution| {
-            let chunk_id = chunk_table
-                .get(&resolution.chunk_id)
-                .context("swap_vendor_chunks resolution references unknown chunk")?;
+        .map(|(chunk_id, resolution)| {
             artifact.remove_chunk(chunk_id);
-            Ok((resolution.chunk_path.clone(), resolution))
+            removed_chunk_ids.insert(chunk_table.name(chunk_id).to_string());
+            (resolution.chunk_path.clone(), resolution)
         })
-        .collect::<Result<_>>()?;
-
-    let removed_chunk_ids: BTreeSet<String> = resolutions
-        .keys()
-        .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks"))
-        .collect::<Result<BTreeSet<_>>>()?;
+        .collect();
 
     let swapped = resolutions.len();
     Ok(SwapVendorChunksResult {
@@ -607,16 +581,6 @@ pub fn swap_vendor_chunks(
         },
         removed_chunk_ids,
     })
-}
-
-fn chunk_id_from_chunk_path(chunk_path: &str, stage: &str) -> Result<String> {
-    if chunk_path.is_empty() {
-        bail!("{stage}: empty chunk path");
-    }
-    let Some(chunk_id) = chunk_path.strip_suffix(".js") else {
-        bail!("{stage}: chunk path must end in .js: {chunk_path}");
-    };
-    Ok(chunk_id.to_string())
 }
 
 /// Bail when a boundary-mapping key (a vendor-LOCAL binding name) is
@@ -718,7 +682,7 @@ struct VendorImportRenamer<'a> {
     caller_chunk_id: ChunkId,
     caller_file: String,
     mappings: &'a VendorExportMappings,
-    rewrites_by_target: BTreeMap<(String, String), usize>,
+    rewrites_by_target: BTreeMap<(ChunkId, String), usize>,
 }
 
 impl VisitMut for VendorImportRenamer<'_> {
@@ -738,8 +702,7 @@ impl VisitMut for VendorImportRenamer<'_> {
         if target_chunk_id == self.caller_chunk_id {
             return;
         }
-        let target_chunk_name = self.chunk_table.name(target_chunk_id).to_string();
-        let Some(files) = self.mappings.get(&target_chunk_name) else {
+        let Some(files) = self.mappings.get(&target_chunk_id) else {
             return;
         };
         let Some(mapping) = files.get(&target_file) else {
@@ -766,7 +729,7 @@ impl VisitMut for VendorImportRenamer<'_> {
             )));
             *self
                 .rewrites_by_target
-                .entry((target_chunk_name.clone(), target_file.clone()))
+                .entry((target_chunk_id, target_file.clone()))
                 .or_insert(0) += 1;
         }
     }
@@ -774,7 +737,7 @@ impl VisitMut for VendorImportRenamer<'_> {
 
 #[derive(Debug, Clone)]
 struct ImportAlignmentRecord {
-    caller_chunk_id: String,
+    caller_chunk_id: ChunkId,
     caller_file: String,
     named_imports: Vec<String>,
 }
@@ -782,21 +745,18 @@ struct ImportAlignmentRecord {
 fn build_import_alignment_index(
     references: &ArtifactIndexes,
     target_chunk_ids: &BTreeSet<ChunkId>,
-    chunk_table: &ChunkTable,
-) -> BTreeMap<String, Vec<ImportAlignmentRecord>> {
-    let mut index = BTreeMap::<String, Vec<ImportAlignmentRecord>>::new();
+) -> BTreeMap<ChunkId, Vec<ImportAlignmentRecord>> {
+    let mut index = BTreeMap::<ChunkId, Vec<ImportAlignmentRecord>>::new();
     for target_chunk_id in target_chunk_ids {
-        let target_chunk_name = chunk_table.name(*target_chunk_id).to_string();
         for import in references.manifest_imports_targeting_chunk(*target_chunk_id) {
             if import.named_imports.is_empty() {
                 continue;
             }
-            let caller_chunk_name = chunk_table.name(import.caller_chunk_id).to_string();
             index
-                .entry(target_chunk_name.clone())
+                .entry(*target_chunk_id)
                 .or_default()
                 .push(ImportAlignmentRecord {
-                    caller_chunk_id: caller_chunk_name,
+                    caller_chunk_id: import.caller_chunk_id,
                     caller_file: import.caller_file.clone(),
                     named_imports: import.named_imports.clone(),
                 });
@@ -1098,13 +1058,12 @@ fn prop_name(name: &PropName) -> Option<String> {
 // un-swapped exports keep working through the residual import.
 
 /// Per-chunk in-memory mapping built once and shared across parallel
-/// per-file rewriters. Keyed by chunk name.
-type PartialSwapMappings = BTreeMap<String, ChunkPartialSwapMapping>;
+/// per-file rewriters. Keyed by the target chunk's [`ChunkId`].
+type PartialSwapMappings = BTreeMap<ChunkId, ChunkPartialSwapMapping>;
 
 #[derive(Debug, Clone)]
 struct ChunkPartialSwapMapping {
     chunk_path: String,
-    chunk_id: String,
     /// package_name -> namespace + upstream coords.
     packages: BTreeMap<String, PartialSwapPackage>,
     /// chunk_export -> which package + upstream export.
@@ -1112,7 +1071,7 @@ struct ChunkPartialSwapMapping {
 }
 
 #[derive(Debug, Clone)]
-struct PartialSwapSymbolTarget {
+pub(crate) struct PartialSwapSymbolTarget {
     package: String,
     kind: PartialSwapKind,
     /// Only Some(_) when `kind == Member` or `kind == Named`.
@@ -1122,12 +1081,11 @@ struct PartialSwapSymbolTarget {
     local: Option<String>,
 }
 
-type BundledPartialSwapMappings = BTreeMap<String, ChunkBundledPartialSwapMapping>;
+type BundledPartialSwapMappings = BTreeMap<ChunkId, ChunkBundledPartialSwapMapping>;
 
 #[derive(Debug, Clone)]
 struct ChunkBundledPartialSwapMapping {
     chunk_path: String,
-    chunk_id: String,
     packages: BTreeMap<String, BundledPartialSwapPackageTarget>,
     symbols: BTreeMap<String, PartialSwapSymbolTarget>,
 }
@@ -1165,7 +1123,7 @@ struct PartialSwapDispatchOutcome {
 fn dispatch_partial_swap_jobs<M, R, F>(
     artifact: &mut ChunkBundle,
     chunk_table: &ChunkTable,
-    mappings: &BTreeMap<String, M>,
+    mappings: &BTreeMap<ChunkId, M>,
     references: &ArtifactIndexes,
     resolutions: &mut BTreeMap<String, R>,
     rewrite_fn: F,
@@ -1176,7 +1134,7 @@ where
     F: Fn(
             PartialSwapFileJob,
             &ArtifactIndexes,
-            &BTreeMap<String, M>,
+            &BTreeMap<ChunkId, M>,
             &ChunkTable,
             &MaterializedOutputChunkIndex,
         ) -> PartialSwapFileResult
@@ -1240,10 +1198,11 @@ where
     let mut total_references = 0usize;
     let mut self_rewrite_import_locals = Vec::new();
     for result in results {
-        for ((chunk_name, chunk_export), count) in &result.references_by_symbol {
-            let Some(mapping) = mappings_ref.get(chunk_name) else {
+        for ((chunk_id, chunk_export), count) in &result.references_by_symbol {
+            let Some(mapping) = mappings_ref.get(chunk_id) else {
                 bail!(
-                    "partial-swap dispatch: file rewrite reported references to `{chunk_export}` on chunk {chunk_name}, which has no partial-swap mapping"
+                    "partial-swap dispatch: file rewrite reported references to `{chunk_export}` on chunk {}, which has no partial-swap mapping",
+                    chunk_table.name(*chunk_id)
                 );
             };
             if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
@@ -1292,67 +1251,31 @@ pub fn apply_partial_vendor_swaps(
     let mut resolutions: BTreeMap<String, ChunkPartialSwapResolution> = BTreeMap::new();
 
     for (chunk_path, partial) in &ops {
-        let chunk_name = chunk_id_from_chunk_path(chunk_path, "apply_partial_vendor_swaps")?;
-        let chunk_id = chunk_table.get(&chunk_name).with_context(|| {
-            format!(
-                "apply_partial_vendor_swaps vendor entry {chunk_path} targets unknown chunk: {chunk_name}"
-            )
-        })?;
-        let entry_relative_file = get_chunk_entry_path(&artifact, chunk_id).with_context(|| {
-            format!(
-                "apply_partial_vendor_swaps vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})"
-            )
-        })?;
-        let entry_ast = artifact
-            .js_chunk(chunk_id)?
-            .get_file(&entry_relative_file)
-            .and_then(|file| file.ast())
-            .with_context(|| {
-                format!("apply_partial_vendor_swaps vendor chunk {chunk_name} is missing entry AST")
-            })?;
+        let chunk = resolve_vendor_chunk(&artifact, "apply_partial_vendor_swaps", chunk_path)?;
+        let entry_ast = vendor_entry_ast(&artifact, "apply_partial_vendor_swaps", &chunk)?;
         // `default` is a swappable name when the chunk binds it via the
         // named form (`export { x as default }`), which the strip pass
         // can map to a chunk-local binding.
         let chunk_exports = collect_exported_names(&entry_ast.module);
 
-        // Validate every declared chunk_export exists as an actual export
-        // on the chunk; otherwise the per-symbol rewrite would silently
-        // miss the binding.
-        for (chunk_export, symbol) in &partial.symbols {
-            if !chunk_exports.contains(chunk_export) && symbol.local.is_none() {
-                bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: chunk {chunk_name} does not export `{chunk_export}` (known exports: [{}])",
-                    chunk_exports.iter().cloned().collect::<Vec<_>>().join(",")
-                );
-            }
-        }
-
-        // Per-symbol shape validation: `kind: member` and `kind: named`
-        // require `upstream_export`; `kind: namespace` / `kind: default`
-        // forbid it.
-        for (chunk_export, symbol) in &partial.symbols {
-            match (symbol.kind, symbol.upstream_export.as_deref()) {
-                (PartialSwapKind::Member | PartialSwapKind::Named, None) => bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) missing required `upstream_export`",
-                    symbol.kind
-                ),
-                (PartialSwapKind::Namespace | PartialSwapKind::Default, Some(_)) => bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) must not set `upstream_export`",
-                    symbol.kind
-                ),
-                _ => {}
-            }
-            validate_optional_local_symbol(
-                symbol.local.as_deref(),
-                "apply_partial_vendor_swaps",
-                chunk_path,
-                chunk_export,
-            )?;
-        }
+        validate_partial_swap_symbols::<PartialSwapPackage>(
+            "apply_partial_vendor_swaps",
+            chunk_path,
+            &chunk.chunk_name,
+            &chunk_exports,
+            &partial.symbols,
+            None,
+        )?;
 
         // Per-package validation: installed version + upstream subpath
         // exists + every declared upstream_export is actually a named
         // export of the upstream subpath.
+        let resolve_options = ResolvePartialSwapPackageOptions {
+            stage: "apply_partial_vendor_swaps",
+            chunk_path,
+            package_roots: options.package_roots,
+            packages_root: options.packages_root,
+        };
         let mut package_resolutions: BTreeMap<String, PartialSwapPackageResolution> =
             BTreeMap::new();
         for (package_name, package) in &partial.packages {
@@ -1360,37 +1283,11 @@ pub fn apply_partial_vendor_swaps(
                 .symbols
                 .values()
                 .any(|s| s.package == *package_name && matches!(s.kind, PartialSwapKind::Member));
-            if any_member_for_package {
-                let namespace = package.namespace.as_deref().with_context(|| format!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` is referenced by a kind=member symbol but is missing `namespace`",
-                ))?;
-                if !is_valid_identifier(namespace) {
-                    bail!(
-                        "apply_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` namespace `{namespace}` is not a valid JS identifier",
-                    );
-                }
-            }
-            let installed = read_installed_package_metadata(
+            let upstream_path = resolve_partial_swap_package(
+                &resolve_options,
                 package_name,
-                options.package_roots,
-                options.packages_root,
-            )
-            .with_context(|| format!("reading metadata for package {package_name}"))?;
-            let installed_version = installed
-                .get("version")
-                .and_then(Value::as_str)
-                .context("package metadata missing version")?;
-            if installed_version != package.version {
-                bail!(
-                    "apply_partial_vendor_swaps vendor entry {chunk_path} version mismatch for {package_name}: spec={}, installed={installed_version}",
-                    package.version,
-                );
-            }
-            let upstream_path = resolve_package_subpath(
-                package_name,
-                &package.subpath,
-                options.package_roots,
-                options.packages_root,
+                PartialSwapPackageCoords::from(package),
+                any_member_for_package.then_some("kind=member"),
             )?;
             let upstream_code = fs::read_to_string(&upstream_path)
                 .with_context(|| format!("reading {}", upstream_path.display()))?;
@@ -1441,35 +1338,12 @@ pub fn apply_partial_vendor_swaps(
             );
         }
 
-        let mut symbol_resolutions: BTreeMap<String, PartialSwapSymbolResolution> = BTreeMap::new();
-        let mut chunk_targets: BTreeMap<String, PartialSwapSymbolTarget> = BTreeMap::new();
-        for (chunk_export, symbol) in &partial.symbols {
-            symbol_resolutions.insert(
-                chunk_export.clone(),
-                PartialSwapSymbolResolution {
-                    package: symbol.package.clone(),
-                    kind: symbol.kind,
-                    upstream_export: symbol.upstream_export.clone(),
-                    local: symbol.local.clone(),
-                    references_rewritten: 0,
-                },
-            );
-            chunk_targets.insert(
-                chunk_export.clone(),
-                PartialSwapSymbolTarget {
-                    package: symbol.package.clone(),
-                    kind: symbol.kind,
-                    upstream_export: symbol.upstream_export.clone(),
-                    local: symbol.local.clone(),
-                },
-            );
-        }
-
+        let (symbol_resolutions, chunk_targets) =
+            build_partial_swap_symbol_tables(&partial.symbols);
         mappings.insert(
-            chunk_name.clone(),
+            chunk.chunk_id,
             ChunkPartialSwapMapping {
                 chunk_path: (*chunk_path).clone(),
-                chunk_id: chunk_name.clone(),
                 packages: partial.packages.clone(),
                 symbols: chunk_targets,
             },
@@ -1477,7 +1351,7 @@ pub fn apply_partial_vendor_swaps(
         resolutions.insert(
             (*chunk_path).clone(),
             ChunkPartialSwapResolution {
-                chunk_id: chunk_name,
+                chunk_id: chunk.chunk_name,
                 chunk_path: (*chunk_path).clone(),
                 packages: package_resolutions,
                 symbols: symbol_resolutions,
@@ -1544,63 +1418,19 @@ pub fn apply_bundled_partial_vendor_swaps(
     let mut resolutions: BTreeMap<String, ChunkBundledPartialSwapResolution> = BTreeMap::new();
 
     for (chunk_path, bundled) in &ops {
-        let chunk_name =
-            chunk_id_from_chunk_path(chunk_path, "apply_bundled_partial_vendor_swaps")?;
-        let chunk_id = chunk_table.get(&chunk_name).with_context(|| {
-            format!(
-                "apply_bundled_partial_vendor_swaps vendor entry {chunk_path} targets unknown chunk: {chunk_name}"
-            )
-        })?;
-        let entry_relative_file = get_chunk_entry_path(&artifact, chunk_id).with_context(|| {
-            format!(
-                "apply_bundled_partial_vendor_swaps vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})"
-            )
-        })?;
-        let entry_ast = artifact
-            .js_chunk(chunk_id)?
-            .get_file(&entry_relative_file)
-            .and_then(|file| file.ast())
-            .with_context(|| {
-                format!(
-                    "apply_bundled_partial_vendor_swaps vendor chunk {chunk_name} is missing entry AST"
-                )
-            })?;
+        let chunk =
+            resolve_vendor_chunk(&artifact, "apply_bundled_partial_vendor_swaps", chunk_path)?;
+        let entry_ast = vendor_entry_ast(&artifact, "apply_bundled_partial_vendor_swaps", &chunk)?;
         let chunk_exports = collect_exported_names(&entry_ast.module);
 
-        for (chunk_export, symbol) in &bundled.symbols {
-            if !chunk_exports.contains(chunk_export) && symbol.local.is_none() {
-                bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: chunk {chunk_name} does not export `{chunk_export}` (known exports: [{}])",
-                    chunk_exports.iter().cloned().collect::<Vec<_>>().join(",")
-                );
-            }
-        }
-
-        for (chunk_export, symbol) in &bundled.symbols {
-            if !bundled.packages.contains_key(&symbol.package) {
-                bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` references unknown package `{}`",
-                    symbol.package
-                );
-            }
-            match (symbol.kind, symbol.upstream_export.as_deref()) {
-                (PartialSwapKind::Member | PartialSwapKind::Named, None) => bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) missing required `upstream_export`",
-                    symbol.kind
-                ),
-                (PartialSwapKind::Namespace | PartialSwapKind::Default, Some(_)) => bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: symbol `{chunk_export}` (kind={:?}) must not set `upstream_export`",
-                    symbol.kind
-                ),
-                _ => {}
-            }
-            validate_optional_local_symbol(
-                symbol.local.as_deref(),
-                "apply_bundled_partial_vendor_swaps",
-                chunk_path,
-                chunk_export,
-            )?;
-        }
+        validate_partial_swap_symbols(
+            "apply_bundled_partial_vendor_swaps",
+            chunk_path,
+            &chunk.chunk_name,
+            &chunk_exports,
+            &bundled.symbols,
+            Some(&bundled.packages),
+        )?;
 
         let bundle_code = fs::read_to_string(&bundled.bundle.path)
             .with_context(|| format!("reading {}", bundled.bundle.path.display()))?;
@@ -1625,7 +1455,7 @@ pub fn apply_bundled_partial_vendor_swaps(
         let generated = write_bundled_partial_swap_assets_if_requested(
             options.write,
             options.output_wrapper_dir.as_deref(),
-            &chunk_name,
+            &chunk.chunk_name,
             &bundled.bundle.path,
             &bundle_code,
             &bundled.packages,
@@ -1644,42 +1474,22 @@ pub fn apply_bundled_partial_vendor_swaps(
             BTreeMap::new();
         let mut package_targets: BTreeMap<String, BundledPartialSwapPackageTarget> =
             BTreeMap::new();
+        let resolve_options = ResolvePartialSwapPackageOptions {
+            stage: "apply_bundled_partial_vendor_swaps",
+            chunk_path,
+            package_roots: options.package_roots,
+            packages_root: options.packages_root,
+        };
         for (package_name, package) in &bundled.packages {
             let any_member_like_for_package = bundled.symbols.values().any(|s| {
                 s.package == *package_name
                     && matches!(s.kind, PartialSwapKind::Member | PartialSwapKind::Named)
             });
-            if any_member_like_for_package {
-                let namespace = package.namespace.as_deref().with_context(|| format!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` is referenced by a kind=member/named symbol but is missing `namespace`",
-                ))?;
-                if !is_valid_identifier(namespace) {
-                    bail!(
-                        "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: package `{package_name}` namespace `{namespace}` is not a valid JS identifier",
-                    );
-                }
-            }
-            let installed = read_installed_package_metadata(
+            resolve_partial_swap_package(
+                &resolve_options,
                 package_name,
-                options.package_roots,
-                options.packages_root,
-            )
-            .with_context(|| format!("reading metadata for package {package_name}"))?;
-            let installed_version = installed
-                .get("version")
-                .and_then(Value::as_str)
-                .context("package metadata missing version")?;
-            if installed_version != package.version {
-                bail!(
-                    "apply_bundled_partial_vendor_swaps vendor entry {chunk_path} version mismatch for {package_name}: spec={}, installed={installed_version}",
-                    package.version,
-                );
-            }
-            resolve_package_subpath(
-                package_name,
-                &package.subpath,
-                options.package_roots,
-                options.packages_root,
+                PartialSwapPackageCoords::from(package),
+                any_member_like_for_package.then_some("kind=member/named"),
             )?;
             let facade = generated.facades.get(package_name).with_context(|| {
                 format!(
@@ -1709,35 +1519,12 @@ pub fn apply_bundled_partial_vendor_swaps(
             );
         }
 
-        let mut symbol_resolutions: BTreeMap<String, PartialSwapSymbolResolution> = BTreeMap::new();
-        let mut chunk_targets: BTreeMap<String, PartialSwapSymbolTarget> = BTreeMap::new();
-        for (chunk_export, symbol) in &bundled.symbols {
-            symbol_resolutions.insert(
-                chunk_export.clone(),
-                PartialSwapSymbolResolution {
-                    package: symbol.package.clone(),
-                    kind: symbol.kind,
-                    upstream_export: symbol.upstream_export.clone(),
-                    local: symbol.local.clone(),
-                    references_rewritten: 0,
-                },
-            );
-            chunk_targets.insert(
-                chunk_export.clone(),
-                PartialSwapSymbolTarget {
-                    package: symbol.package.clone(),
-                    kind: symbol.kind,
-                    upstream_export: symbol.upstream_export.clone(),
-                    local: symbol.local.clone(),
-                },
-            );
-        }
-
+        let (symbol_resolutions, chunk_targets) =
+            build_partial_swap_symbol_tables(&bundled.symbols);
         mappings.insert(
-            chunk_name.clone(),
+            chunk.chunk_id,
             ChunkBundledPartialSwapMapping {
                 chunk_path: (*chunk_path).clone(),
-                chunk_id: chunk_name.clone(),
                 packages: package_targets,
                 symbols: chunk_targets,
             },
@@ -1745,7 +1532,7 @@ pub fn apply_bundled_partial_vendor_swaps(
         resolutions.insert(
             (*chunk_path).clone(),
             ChunkBundledPartialSwapResolution {
-                chunk_id: chunk_name,
+                chunk_id: chunk.chunk_name,
                 chunk_path: (*chunk_path).clone(),
                 bundle: bundle_resolution,
                 packages: package_resolutions,
@@ -1781,8 +1568,7 @@ pub fn apply_bundled_partial_vendor_swaps(
     let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
         BTreeMap::new();
     for (caller_chunk_id, locals) in &outcome.self_rewrite_locals_by_caller {
-        let caller_chunk_name = chunk_table.name(*caller_chunk_id);
-        if let Some(mapping) = mappings.get(caller_chunk_name) {
+        if let Some(mapping) = mappings.get(caller_chunk_id) {
             self_rewrite_import_locals_by_chunk_path
                 .entry(mapping.chunk_path.clone())
                 .or_default()
@@ -1821,9 +1607,9 @@ struct PartialSwapFileResult {
     caller_chunk_id: ChunkId,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
-    /// (chunk_name, chunk_export) -> count of rewritten references in
+    /// (chunk, chunk_export) -> count of rewritten references in
     /// this file.
-    references_by_symbol: BTreeMap<(String, String), usize>,
+    references_by_symbol: BTreeMap<(ChunkId, String), usize>,
     self_rewrite_import_locals: BTreeSet<Id>,
 }
 
@@ -1847,7 +1633,7 @@ fn rewrite_partial_swap_in_file(
     //     `import <local> from "<pkg>"`; no identifier rewrite.
     let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
     let mut emitted_member_namespace_for: BTreeSet<String> = BTreeSet::new();
-    let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
 
     module.body = rewrite_swap_import_decls(
         std::mem::take(&mut module.body),
@@ -1856,8 +1642,8 @@ fn rewrite_partial_swap_in_file(
         references,
         chunk_table,
         materialized_index,
-        |target_chunk_name, imported_name_lookup, local_sym| {
-            let chunk_mapping = mappings.get(target_chunk_name)?;
+        |target_chunk_id, imported_name_lookup, local_sym| {
+            let chunk_mapping = mappings.get(&target_chunk_id)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
             let package_coords = chunk_mapping.packages.get(&target.package)?;
             let mut imports = Vec::new();
@@ -1870,7 +1656,7 @@ fn rewrite_partial_swap_in_file(
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
-                            chunk_name: chunk_mapping.chunk_id.clone(),
+                            chunk_id: target_chunk_id,
                             chunk_export: imported_name_lookup.to_string(),
                         },
                     );
@@ -1887,10 +1673,7 @@ fn rewrite_partial_swap_in_file(
                         local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
-                        .entry((
-                            chunk_mapping.chunk_id.clone(),
-                            imported_name_lookup.to_string(),
-                        ))
+                        .entry((target_chunk_id, imported_name_lookup.to_string()))
                         .or_insert(0) += 1;
                 }
                 PartialSwapKind::Default => {
@@ -1899,10 +1682,7 @@ fn rewrite_partial_swap_in_file(
                         local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
-                        .entry((
-                            chunk_mapping.chunk_id.clone(),
-                            imported_name_lookup.to_string(),
-                        ))
+                        .entry((target_chunk_id, imported_name_lookup.to_string()))
                         .or_insert(0) += 1;
                 }
                 PartialSwapKind::Named => {
@@ -1917,16 +1697,13 @@ fn rewrite_partial_swap_in_file(
                             local_sym.to_id(),
                             IdentRewriteTarget::Rename {
                                 upstream_export: upstream_export.to_string(),
-                                chunk_name: chunk_mapping.chunk_id.clone(),
+                                chunk_id: target_chunk_id,
                                 chunk_export: imported_name_lookup.to_string(),
                             },
                         );
                     } else {
                         *references_by_symbol
-                            .entry((
-                                chunk_mapping.chunk_id.clone(),
-                                imported_name_lookup.to_string(),
-                            ))
+                            .entry((target_chunk_id, imported_name_lookup.to_string()))
                             .or_insert(0) += 1;
                     }
                 }
@@ -1992,7 +1769,7 @@ fn rewrite_partial_swap_export_from_decls(
     chunk_table: &ChunkTable,
     materialized_index: &MaterializedOutputChunkIndex,
     mappings: &PartialSwapMappings,
-    references_by_symbol: &mut BTreeMap<(String, String), usize>,
+    references_by_symbol: &mut BTreeMap<(ChunkId, String), usize>,
 ) -> Vec<ModuleItem> {
     let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len());
     for item in original_body {
@@ -2016,11 +1793,10 @@ fn rewrite_partial_swap_export_from_decls(
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
             continue;
         };
-        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
         let chunk_mapping = if target_chunk_id == caller_chunk_id {
             None
         } else {
-            mappings.get(&target_chunk_name)
+            mappings.get(&target_chunk_id)
         };
         let Some(chunk_mapping) = chunk_mapping else {
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
@@ -2068,7 +1844,7 @@ fn rewrite_partial_swap_export_from_decls(
             };
             replacements.push(replacement);
             *references_by_symbol
-                .entry((chunk_mapping.chunk_id.clone(), orig_name))
+                .entry((target_chunk_id, orig_name))
                 .or_insert(0) += 1;
         }
         new_body.extend(replacements);
@@ -2091,12 +1867,12 @@ fn rewrite_bundled_partial_swap_in_file(
 
     let mut bindings: BTreeMap<Id, IdentRewriteTarget> = BTreeMap::new();
     let mut emitted_default_namespace_for: BTreeSet<String> = BTreeSet::new();
-    let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut references_by_symbol: BTreeMap<(ChunkId, String), usize> = BTreeMap::new();
     let mut prelude_imports: Vec<DeferredImport> = Vec::new();
     let mut self_rewrite_import_locals: BTreeSet<Id> = BTreeSet::new();
     seed_bundled_partial_swap_self_rewrites(
         module,
-        mappings.get(chunk_table.name(job.caller_chunk_id)),
+        mappings.get(&job.caller_chunk_id),
         chunk_table,
         job.caller_chunk_id,
         &job.file_path,
@@ -2115,8 +1891,8 @@ fn rewrite_bundled_partial_swap_in_file(
         references,
         chunk_table,
         materialized_index,
-        |target_chunk_name, imported_name_lookup, local_sym| {
-            let chunk_mapping = mappings.get(target_chunk_name)?;
+        |target_chunk_id, imported_name_lookup, local_sym| {
+            let chunk_mapping = mappings.get(&target_chunk_id)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
             let package_coords = chunk_mapping.packages.get(&target.package)?;
             let import_source = bundled_facade_import_source(
@@ -2135,7 +1911,7 @@ fn rewrite_bundled_partial_swap_in_file(
                         IdentRewriteTarget::Member {
                             namespace: namespace.to_string(),
                             upstream_export: upstream_export.to_string(),
-                            chunk_name: chunk_mapping.chunk_id.clone(),
+                            chunk_id: target_chunk_id,
                             chunk_export: imported_name_lookup.to_string(),
                         },
                     );
@@ -2152,10 +1928,7 @@ fn rewrite_bundled_partial_swap_in_file(
                         local: local_sym.sym.to_string(),
                     });
                     *references_by_symbol
-                        .entry((
-                            chunk_mapping.chunk_id.clone(),
-                            imported_name_lookup.to_string(),
-                        ))
+                        .entry((target_chunk_id, imported_name_lookup.to_string()))
                         .or_insert(0) += 1;
                 }
             }
@@ -2202,7 +1975,7 @@ fn rewrite_swap_import_decls<F>(
     mut rewrite_one: F,
 ) -> Vec<ModuleItem>
 where
-    F: FnMut(&str, &str, &Ident) -> Option<Vec<DeferredImport>>,
+    F: FnMut(ChunkId, &str, &Ident) -> Option<Vec<DeferredImport>>,
 {
     let mut new_body: Vec<ModuleItem> = Vec::with_capacity(original_body.len() + 4);
     for item in original_body {
@@ -2226,7 +1999,6 @@ where
             new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
             continue;
         }
-        let target_chunk_name = chunk_table.name(target_chunk_id).to_string();
         let mut retained_specifiers: Vec<ImportSpecifier> = Vec::new();
         let mut decl_local_imports: Vec<DeferredImport> = Vec::new();
         for specifier in std::mem::take(&mut import_decl.specifiers) {
@@ -2244,8 +2016,7 @@ where
             let ImportSpecifier::Named(named) = specifier else {
                 unreachable!("classified named above");
             };
-            if let Some(imports) =
-                rewrite_one(&target_chunk_name, &imported_name_lookup, &named.local)
+            if let Some(imports) = rewrite_one(target_chunk_id, &imported_name_lookup, &named.local)
             {
                 decl_local_imports.extend(imports);
             } else {
@@ -2319,7 +2090,7 @@ fn collect_top_level_binding_ids(module: &Module) -> BTreeMap<String, Id> {
 struct SelfRewriteOutputs<'a> {
     bindings: &'a mut BTreeMap<Id, IdentRewriteTarget>,
     prelude_imports: &'a mut Vec<DeferredImport>,
-    references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
+    references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
     self_rewrite_import_locals: &'a mut BTreeSet<Id>,
 }
 
@@ -2373,7 +2144,7 @@ fn seed_bundled_partial_swap_self_rewrites(
                     IdentRewriteTarget::Member {
                         namespace: local.clone(),
                         upstream_export: upstream_export.to_string(),
-                        chunk_name: chunk_mapping.chunk_id.clone(),
+                        chunk_id: caller_chunk_id,
                         chunk_export: chunk_export.clone(),
                     },
                 );
@@ -2383,13 +2154,13 @@ fn seed_bundled_partial_swap_self_rewrites(
                     local_id.clone(),
                     IdentRewriteTarget::Rename {
                         upstream_export: local.clone(),
-                        chunk_name: chunk_mapping.chunk_id.clone(),
+                        chunk_id: caller_chunk_id,
                         chunk_export: chunk_export.clone(),
                     },
                 );
                 *outputs
                     .references_by_symbol
-                    .entry((chunk_mapping.chunk_id.clone(), chunk_export.clone()))
+                    .entry((caller_chunk_id, chunk_export.clone()))
                     .or_insert(0) += 1;
             }
         }
@@ -2649,14 +2420,14 @@ enum IdentRewriteTarget {
     Member {
         namespace: String,
         upstream_export: String,
-        chunk_name: String,
+        chunk_id: ChunkId,
         chunk_export: String,
     },
     /// kind=named auto-rename: rewrite `<local>` references to a bare
     /// `<upstream_export>` identifier (matching the new no-alias import).
     Rename {
         upstream_export: String,
-        chunk_name: String,
+        chunk_id: ChunkId,
         chunk_export: String,
     },
 }
@@ -2673,7 +2444,7 @@ enum IdentRewriteTarget {
 /// untouched, since it carries a different `SyntaxContext`.
 struct PartialSwapIdentRewriter<'a> {
     bindings: &'a BTreeMap<Id, IdentRewriteTarget>,
-    references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
+    references_by_symbol: &'a mut BTreeMap<(ChunkId, String), usize>,
 }
 
 impl VisitMut for PartialSwapIdentRewriter<'_> {
@@ -2711,11 +2482,11 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
         let Some(target) = self.bindings.get(&ident.to_id()) else {
             return;
         };
-        let (chunk_name, chunk_export) = match target {
+        let (chunk_id, chunk_export) = match target {
             IdentRewriteTarget::Member {
                 namespace,
                 upstream_export,
-                chunk_name,
+                chunk_id,
                 chunk_export,
             } => {
                 *expr = Expr::Member(MemberExpr {
@@ -2729,20 +2500,20 @@ impl VisitMut for PartialSwapIdentRewriter<'_> {
                         DUMMY_SP,
                     )),
                 });
-                (chunk_name, chunk_export)
+                (*chunk_id, chunk_export)
             }
             IdentRewriteTarget::Rename {
                 upstream_export,
-                chunk_name,
+                chunk_id,
                 chunk_export,
             } => {
                 *expr = Expr::Ident(Ident::new_no_ctxt(upstream_export.clone().into(), DUMMY_SP));
-                (chunk_name, chunk_export)
+                (*chunk_id, chunk_export)
             }
         };
         *self
             .references_by_symbol
-            .entry((chunk_name.clone(), chunk_export.clone()))
+            .entry((chunk_id, chunk_export.clone()))
             .or_insert(0) += 1;
     }
 }
@@ -2877,17 +2648,21 @@ pub fn validate_partial_swap_consumers(
     references: &ArtifactIndexes,
 ) -> Result<()> {
     let chunk_table = &artifact.chunk_table;
-    let mut swapped_by_chunk: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut swapped_by_chunk: BTreeMap<ChunkId, BTreeSet<String>> = BTreeMap::new();
     for (chunk_path, mark) in vendor {
         let symbols = match &mark.level {
             VendorLevel::PartialSwap(partial) => &partial.symbols,
             VendorLevel::BundledPartialSwap(partial) => &partial.symbols,
             _ => continue,
         };
-        swapped_by_chunk.insert(
-            chunk_id_from_chunk_path(chunk_path, "validate_partial_swap_consumers")?,
-            symbols.keys().cloned().collect(),
-        );
+        let chunk_name = vendor_chunk_name(chunk_path, "validate_partial_swap_consumers")?;
+        // An entry naming a chunk absent from the table can never match a
+        // resolved consumer target; the earlier apply stages already bail
+        // on unknown chunks.
+        let Some(chunk_id) = chunk_table.get(&chunk_name) else {
+            continue;
+        };
+        swapped_by_chunk.insert(chunk_id, symbols.keys().cloned().collect());
     }
     if swapped_by_chunk.is_empty() {
         return Ok(());
@@ -2929,12 +2704,16 @@ pub fn validate_partial_swap_consumers(
                 ) else {
                     continue;
                 };
-                let target_chunk_name = chunk_table.name(target_chunk_id);
-                let Some(swapped) = swapped_by_chunk.get(target_chunk_name) else {
+                let Some(swapped) = swapped_by_chunk.get(&target_chunk_id) else {
                     continue;
                 };
                 let consumer = format!("{caller_chunk_name}/{file_path}");
-                check_partial_swap_consumer_decl(decl, swapped, &consumer, target_chunk_name)?;
+                check_partial_swap_consumer_decl(
+                    decl,
+                    swapped,
+                    &consumer,
+                    chunk_table.name(target_chunk_id),
+                )?;
             }
         }
     }
@@ -3027,23 +2806,6 @@ fn is_valid_identifier(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
-}
-
-fn validate_optional_local_symbol(
-    local: Option<&str>,
-    stage: &str,
-    chunk_path: &str,
-    chunk_export: &str,
-) -> Result<()> {
-    let Some(local) = local else {
-        return Ok(());
-    };
-    if !is_valid_identifier(local) {
-        bail!(
-            "{stage} vendor entry {chunk_path}: symbol `{chunk_export}` local `{local}` is not a valid JS identifier",
-        );
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -3162,7 +2924,7 @@ export { b as beta };
                 IdentRewriteTarget::Member {
                     namespace: "__debundle_bps_l3".to_string(),
                     upstream_export: "DiagLogLevel".to_string(),
-                    chunk_name: "static/vendor".to_string(),
+                    chunk_id: ChunkId(0),
                     chunk_export: "l3".to_string(),
                 },
             )]);

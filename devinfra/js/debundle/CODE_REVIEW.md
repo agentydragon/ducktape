@@ -12,7 +12,7 @@ The simulator (`realizability/esm_simulator.rs`), the incremental quotient + ove
 
 ### `vendor/mod.rs` further split
 
-Remaining: strip-specific helpers and annotation/identity logic could each lift out into their own modules alongside the already-extracted `vendor/manifests.rs`, `vendor/strip.rs`, and `vendor/wrappers.rs`.
+Remaining: strip-specific helpers and annotation/identity logic could each lift out into their own modules alongside the already-extracted `vendor/{manifests,strip,validate,wrappers}.rs`.
 
 ### `purity/mod.rs` (~2570 lines) — remaining concerns
 
@@ -30,10 +30,6 @@ could be sub-split further if it keeps growing.
 ---
 
 ## P1 — Major Duplication
-
-### Partial-swap validation near-duplication in `vendor/mod.rs`
-
-`apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps` each carry a ~250-line validate/resolve block that differs only in manifest type and bundled-vs-unbundled wiring. Lift shared validate/resolve helpers into a `vendor/validate.rs` so the two dispatchers shrink to mode-specific glue.
 
 ### Two parallel top-level fact extractors
 
@@ -98,10 +94,6 @@ Nearly every struct field and function is `pub(super)`. This is "module-private 
 ### Vendor manifest struct proliferation
 
 ~26 manifest/counts/detail structs with similar shapes in `vendor/manifests.rs`. `PartialSwapResolutionManifest` and `BundledPartialSwapResolutionManifest` are field-for-field twins — a generic `ResolutionManifest<R>` collapses the pair. `PartialSwapSymbolTarget` (`vendor/mod.rs`) is likewise a field-for-field twin of `spec::PartialSwapSymbol`.
-
-### Stringly chunk identity in vendor code
-
-Vendor passes juggle `String` chunk names against the typed `ChunkId` index: `vendor/mod.rs` resolves names through `chunk_table` to a `ChunkId`, then stores the _name_ back into fields and locals called `chunk_id`. The double meaning invites mixups; thread the typed `ChunkId` and convert to names only at message/wire boundaries.
 
 ### `ChunkAnalysis` pub inputs + private derived caches
 
@@ -201,7 +193,7 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 1. **Extract `gate_perf_counters` from `realizability/mod.rs`** — see the P0 item; needs the recording-API entanglement untangled first.
 
-2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and partial-swap dispatchers extracted; remaining: strip-specific helpers, annotation/identity logic.
+2. **Continue splitting `vendor/mod.rs`** — manifests, strip, wrappers, and validate/resolve helpers extracted; remaining: strip-specific helpers, annotation/identity logic.
 
 3. **Simplify `StatementFacts`** (`facts/mod.rs`) — see the canonical "### `StatementFacts`" item under P3.
 

@@ -19,6 +19,8 @@ use artifact::{ChunkBundle, JsFile, JsFileAstParts, get_chunk_entry_path};
 use js_ast::ParsedJsModule;
 use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
 
+use crate::validate::vendor_chunk_name;
+
 pub struct StripSwappedVendorExportsResult {
     pub artifact: ChunkBundle,
     pub manifest: StripSwappedVendorExportsManifest,
@@ -72,7 +74,7 @@ pub fn strip_swapped_vendor_exports_with_options(
             _ => continue,
         };
 
-        let chunk_name = chunk_id_from_chunk_path(chunk_path)?;
+        let chunk_name = vendor_chunk_name(chunk_path, "strip_swapped_vendor_exports")?;
         let chunk_id = chunk_table.get(&chunk_name).with_context(|| {
             format!(
                 "strip_swapped_vendor_exports vendor entry {chunk_path} targets unknown chunk: {chunk_name}"
@@ -116,7 +118,7 @@ pub fn strip_swapped_vendor_exports_with_options(
     // each job owns its `parts`/`ast` and reads only its own `symbols` and
     // `replacement_import_locals`. No two jobs target the same chunk_id
     // (vendor is a BTreeMap keyed by chunk_path, and chunk_path -> chunk_id
-    // is injective via `chunk_id_from_chunk_path`), so collecting outputs
+    // is injective via `vendor_chunk_name`), so collecting outputs
     // back into the artifact in Phase 3 doesn't risk write-write races.
     //
     // `swc_common::GLOBALS` is a `scoped_tls` thread-local that does NOT
@@ -267,16 +269,6 @@ fn strip_one_chunk_with_replacement_imports(
 struct StrippedExport {
     package: String,
     locals: BTreeSet<Id>,
-}
-
-fn chunk_id_from_chunk_path(chunk_path: &str) -> Result<String> {
-    if chunk_path.is_empty() {
-        bail!("strip_swapped_vendor_exports: empty chunk path");
-    }
-    let chunk_id = chunk_path.strip_suffix(".js").with_context(|| {
-        format!("strip_swapped_vendor_exports: chunk path must end in .js: {chunk_path}")
-    })?;
-    Ok(chunk_id.to_string())
 }
 
 /// Walk `module.body` once and strip the chunk's *local* re-exports of
