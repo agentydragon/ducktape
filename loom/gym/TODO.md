@@ -1,5 +1,16 @@
 # loom/gym TODO
 
+- **Internet Archive throttling — the eval runs but IA fails ~⅓ of cold fetches.**
+  The eval now works end-to-end in `claude-sandbox`, but archive.org returns
+  ~900-950 HTTP `502`/`504` per run on cold CDX-index queries, producing ~8-13
+  `nan` (no-answer) samples. Static mitigations (keepalive pool, CDX TTL,
+  concurrency cap) were proven via metrics to shuffle the failure mode without
+  reducing volume. Findings, the metrics/observability runbook, operational
+  gotchas (broken `exec`/`port-forward`, cluster access via SOPS JWT, docker-ci
+  network pool, Flux source lag), and the prioritized next plan (availability-API
+  clamp → signal capture → adaptive backoff → self-hosted shard) are written up in
+  <../plans/wayback_ia_throttling.md>.
+
 - **Rename `baseline_llm.py`.** Once the bare one-shot LLM scaffold is gone, the
   module is purely the shared answer-schema + parse library (`question_schema`,
   `answer_instruction`, `parse_answer`, the per-question input models) — the name
