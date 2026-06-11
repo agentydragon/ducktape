@@ -102,6 +102,7 @@ async def test_manifest_records_served_evidence(fetch: Fetch, manifest: io.Strin
     await fetch(fake_ia.EXAMPLE_URL)
     record = json.loads(manifest.getvalue())
     assert record == {
+        "kind": "served",
         "url": fake_ia.EXAMPLE_URL,
         "capture_ts": fake_ia.GOOD_TS,
         "sha256": hashlib.sha256(fake_ia.EXAMPLE_BODY).hexdigest(),
@@ -148,6 +149,17 @@ async def test_archived_404_is_served_as_of_content(fetch: Fetch) -> None:
 async def test_cdx_failure_maps_to_502(fetch: Fetch) -> None:
     result = await fetch(fake_ia.CDX_BROKEN_URL)
     assert result.status == 502
+
+
+async def test_upstream_error_body_recorded_to_manifest(fetch: Fetch, manifest: io.StringIO) -> None:
+    # A CDX 503 from IA must be captured (status + body) for diagnosis, not
+    # swallowed into an opaque 502 — the body distinguishes a bad gateway from
+    # a rate-limit notice when a degraded archive run is post-mortemed.
+    await fetch(fake_ia.CDX_BROKEN_URL)
+    record = json.loads(manifest.getvalue())
+    assert record["kind"] == "upstream_error"
+    assert record["status"] == 503
+    assert record["body"] == "CDX is having a bad day\n"
 
 
 async def test_explicit_pinned_capture_within_as_of_served(fetch: Fetch) -> None:

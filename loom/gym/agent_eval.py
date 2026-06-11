@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+from collections import Counter
 from pathlib import Path
 
 from inspect_ai import eval as inspect_eval
@@ -106,8 +107,12 @@ def main() -> None:
             meta = score.metadata or {}
             served = meta.get("served_evidence", [])
             fetched = " ".join(record["url"] for record in served) or "-"
+            statuses = Counter(record["status"] for record in meta.get("upstream_errors", []))
+            err_note = (
+                " upstream_errors=" + ",".join(f"{s}×{n}" for s, n in sorted(statuses.items())) if statuses else ""
+            )
             note = f" submission_error={meta['submission_error']}" if "submission_error" in meta else ""
-            print(f"{sample.id}: value={score.value} answer={score.answer!r}{note} fetched=[{fetched}]")
+            print(f"{sample.id}: value={score.value} answer={score.answer!r}{note} fetched=[{fetched}]{err_note}")
 
 
 if __name__ == "__main__":

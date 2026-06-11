@@ -7,7 +7,10 @@ or before the cutoff → 404. Explicit `web.archive.org/web/<ts>/…` requests a
 clamped (`ts ≤ as_of`), CDX queries get their `to=` bound clamped, and redirect
 hops are re-clamped (IA canonicalizes toward the _closest_ capture, which can
 walk forward in time). Every served response is logged as a JSONL evidence line
-`{url, capture_ts, sha256, size}` on stdout.
+`{kind: "served", url, capture_ts, sha256, size}` on stdout; an unexpected
+upstream failure (IA/cache HTTP ≥400 that isn't an archived error page) is logged
+on the same stream as `{kind: "upstream_error", request_url, status, body}` (body
+truncated) so a degraded run is diagnosable rather than collapsing into an opaque 502.
 
 It runs as an embedded [mitmproxy](https://mitmproxy.org/) (a
 [`WaybackAddon`](addon.py) answers every flow from the archive), so **agents

@@ -36,6 +36,10 @@ CDX_PATH = "/cdx/search/cdx"
 ARCHIVE_HOST = "web.archive.org"
 MAX_REDIRECT_HOPS = 10
 MAX_BODY_BYTES = 64 * 2**20
+# Upstream error bodies (IA/cache 5xx pages) are captured to the manifest for
+# diagnosis; a few KB of the HTML is enough to tell a bad-gateway page from a
+# rate-limit notice without bloating the per-sample evidence.
+MAX_ERROR_BODY_BYTES = 4096
 
 # "/web/<ts><modifier?>/<url>" — IA replay path. Modifiers are two letters
 # plus underscore (id_, if_, im_, js_, cs_, ...).
@@ -194,6 +198,7 @@ class WaybackResolver:
         async with self._session.get(URL(self._config.upstream + CDX_PATH), params=params) as response:
             body = await response.content.read(MAX_BODY_BYTES)
             if response.status != 200:
+                self._emit_upstream_error(str(response.url), response.status, body)
                 raise UpstreamError(f"CDX query failed with HTTP {response.status}")
             return ProxyResponse(
                 status=200, headers={"Content-Type": response.headers.get("Content-Type", "text/plain")}, body=body
@@ -204,6 +209,9 @@ class WaybackResolver:
         params = {"url": str(target), "to": self._config.as_of_ts, "output": "json", "limit": "-1"}
         async with self._session.get(URL(self._config.upstream + CDX_PATH), params=params) as response:
             if response.status != 200:
+                self._emit_upstream_error(
+                    str(response.url), response.status, await response.content.read(MAX_ERROR_BODY_BYTES)
+                )
                 raise UpstreamError(f"CDX lookup failed with HTTP {response.status}")
             raw = await response.content.read(MAX_BODY_BYTES)
         if not raw.strip():
@@ -267,6 +275,7 @@ class WaybackResolver:
                 # 404s/500s (which are correct as-of content). Error statuses
                 # without it are the archive/cache itself failing.
                 if response.status >= 400 and "Memento-Datetime" not in response.headers:
+                    self._emit_upstream_error(str(response.url), response.status, body)
                     raise UpstreamError(f"archive upstream returned HTTP {response.status} for {current}")
                 content_type = response.headers.get("Content-Type", "application/octet-stream")
                 return Snapshot(ts=final_ts, status=response.status, content_type=content_type, body=body)
@@ -285,10 +294,28 @@ class WaybackResolver:
         """Served-evidence record; the harness attaches these to the run payload (W3)."""
         line = json.dumps(
             {
+                "kind": "served",
                 "url": url,
                 "capture_ts": snapshot.ts,
                 "sha256": hashlib.sha256(snapshot.body).hexdigest(),
                 "size": len(snapshot.body),
+            }
+        )
+        print(line, file=self._manifest, flush=True)
+
+    def _emit_upstream_error(self, request_url: str, status: int, body: bytes) -> None:
+        """Upstream-failure record: archive/cache returned HTTP ≥400 unexpectedly
+        (an IA bad gateway or a rate-limit notice, not an archived error page).
+
+        Shares the manifest with served records, tagged by `kind`, so the harness
+        surfaces a degraded run's failures per sample instead of swallowing the
+        body into an opaque 502."""
+        line = json.dumps(
+            {
+                "kind": "upstream_error",
+                "request_url": request_url,
+                "status": status,
+                "body": body[:MAX_ERROR_BODY_BYTES].decode("utf-8", errors="replace"),
             }
         )
         print(line, file=self._manifest, flush=True)

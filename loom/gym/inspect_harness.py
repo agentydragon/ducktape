@@ -271,12 +271,12 @@ def headline_metric(metrics: dict[str, float], kind: str) -> str:
     return "mean_pinball_log" if "mean_pinball_log" in metrics else "mean_pinball"
 
 
-async def _served_evidence() -> list[dict[str, object]]:
+async def _read_manifest() -> list[dict[str, object]]:
     try:
         manifest_text = await sandbox("proxy").read_file(MANIFEST_PATH)
     except FileNotFoundError:
-        # The proxy creates the manifest lazily on its first served response;
-        # absence just means this sample fetched nothing.
+        # The proxy creates the manifest lazily on its first emitted record;
+        # absence just means this sample neither fetched nor hit an upstream error.
         return []
     return [json.loads(line) for line in manifest_text.splitlines() if line]
 
@@ -286,7 +286,13 @@ def gym_proper_loss(*, archive: bool = True):
     async def score_fn(state: TaskState, target: Target) -> Score:
         gym_task = Task.model_validate(state.metadata["gym_task"])
         # No-archive runs have no `proxy` service, so sandbox("proxy") would raise.
-        served = await _served_evidence() if archive else []
+        records = await _read_manifest() if archive else []
+        # Records are untyped JSON the proxy emitted; split by `kind` so served
+        # evidence and upstream failures (IA 5xx) are surfaced as distinct
+        # diagnostics rather than one mixed list the consumer must re-sort.
+        served = [r for r in records if r.get("kind") == "served"]
+        upstream_errors = [r for r in records if r.get("kind") == "upstream_error"]
+        evidence = {"served_evidence": served, "upstream_errors": upstream_errors}
         # A contestant that emits no parseable answer (ran out of turns, wrote
         # prose) is a non-submission, not a crash: record it as NaN with the
         # reason so the run can report a submission rate separately from loss.
@@ -296,13 +302,13 @@ def gym_proper_loss(*, archive: bool = True):
             return Score(
                 value=float("nan"),
                 answer=state.output.completion,
-                metadata={"submission_error": f"{type(error).__name__}: {error}", "served_evidence": served},
+                metadata={"submission_error": f"{type(error).__name__}: {error}", **evidence},
             )
         task_score = scoring.score(gym_task, answer)
         return Score(
             value=task_score.metrics[headline_metric(task_score.metrics, gym_task.question.kind)],
             answer=state.output.completion,
-            metadata={**task_score.metrics, "served_evidence": served},
+            metadata={**task_score.metrics, **evidence},
         )
 
     return score_fn
