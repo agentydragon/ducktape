@@ -92,6 +92,9 @@ def main() -> None:
         log_dir=str(args.log_dir),
         display="plain",
         message_limit=args.message_limit,
+        # A transient per-sample failure (e.g. a flaky DNS/connection to the model
+        # endpoint) should drop that sample, not abort the whole run.
+        fail_on_error=False,
     )
     for log in logs:
         print(f"eval status={log.status}" + (f" error={log.error}" if log.error else ""))

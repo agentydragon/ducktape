@@ -179,12 +179,11 @@ AGENT_PROMPT = (
     "persist between calls, so make every command self-contained. python3 is available; the image "
     "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
     "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
-    "If /data/sources.txt exists, it lists URLs that may contain relevant information — possible "
-    "starting points for your research, which you can follow and branch out from. You can browse the "
-    "web as it existed at your information cutoff through a preconfigured proxy: ordinary http:// and "
-    "https:// URLs both work (curl, urllib, and requests honor the proxy and its CA automatically). "
-    "When confident, call the submit tool with your forecast — its arguments are the structured "
-    "answer fields, which the tool schema enforces."
+    "You have access to a snapshotted archive of today's internet through a preconfigured proxy: "
+    "ordinary http:// and https:// URLs both work (curl, urllib, and requests honor the proxy and its "
+    "CA automatically) — use it to gather information. If /data/sources.txt exists, it lists URLs worth "
+    "starting from. When confident, call the submit tool with your forecast — its arguments are the "
+    "structured answer fields, which the tool schema enforces."
 )
 
 AGENT_PROMPT_NO_ARCHIVE = (
@@ -193,8 +192,7 @@ AGENT_PROMPT_NO_ARCHIVE = (
     "persist between calls, so make every command self-contained. python3 is available; the image "
     "(loom/gym/sandbox/Dockerfile) has pandas, numpy, scipy, statsmodels, python-dateutil, requests, "
     "and curl preinstalled, so run analysis with e.g. `python3 - <<'PY' ... PY` or `python3 -c '...'`. "
-    "You have NO network access: forecast from the /data files and your own knowledge of events at or "
-    "before your information cutoff. "
+    "You have NO network access: rely only on the /data files and your own knowledge. "
     "When confident, call the submit tool with your forecast — its arguments are the structured "
     "answer fields, which the tool schema enforces."
 )
@@ -222,9 +220,8 @@ def write_sandbox_compose(
 
 
 _SOURCES_HEADER = (
-    "URLs that may contain information relevant to this question, archived at or before your "
-    "information cutoff. They are possible starting points only — fetch them (http:// or https://) "
-    "through the proxy and branch out as you see fit.\n"
+    "URLs worth checking for this question, from today's archived internet. They are starting points "
+    "only — fetch them (http:// or https://) through the proxy and branch out as you see fit.\n"
 )
 
 
@@ -237,21 +234,22 @@ def _sources_txt(task: Task) -> str:
 
 
 def sample_for_task(task: Task, dossier: dict[str, str], compose_path: Path, *, archive: bool = True) -> Sample:
-    if archive:
-        as_of_line = (
-            f"You are forecasting as of {task.as_of}. The /data files are truncated to what was knowable then, "
-            f"and the web proxy serves pages as archived on or before {task.as_of}; use only those sources and "
-            f"knowledge of events on or before {task.as_of}.\n"
-        )
-    else:
-        as_of_line = (
-            f"You are forecasting as of {task.as_of}. You have no network access: use only the /data files "
-            f"(truncated to what was knowable then) and your own knowledge of events on or before {task.as_of}.\n"
-        )
+    # "Today is <as_of>" frames the as_of as the present, so the contestant
+    # naturally reasons only from then-knowable information; the archive clamp and
+    # truncated /data enforce that physically. With archive, point it at the
+    # snapshotted internet; without, it forecasts from /data + its own knowledge.
+    research_line = (
+        "You can gather information from the snapshotted archive of today's internet through the proxy"
+        " (start from /data/sources.txt if it exists).\n"
+        if archive
+        else ""
+    )
     instructions = (
-        as_of_line + f"Question: {task.question.text}\n"
-        f"Resolution date: {task.resolution_date}\n"
-        f"When done, call the submit tool with your forecast: {answer_instruction(task.question)}."
+        f"Today is {task.as_of}. Answer this question:\n"
+        f"{task.question.text}\n"
+        f"It resolves on {task.resolution_date}.\n"
+        + research_line
+        + f"When you are done, call the submit tool with your forecast: {answer_instruction(task.question)}."
     )
     files = {f"/data/{name}": content for name, content in dossier.items()}
     # No archive means no way to fetch the source URLs, so don't land them.
